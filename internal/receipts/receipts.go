@@ -108,6 +108,19 @@ func Write(dir string, r Receipt) (string, error) {
 	}
 }
 
+// ReadFile parses one receipt written by Write.
+func ReadFile(path string) (Receipt, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Receipt{}, err
+	}
+	var r Receipt
+	if err := json.Unmarshal(data, &r); err != nil {
+		return Receipt{}, fmt.Errorf("%s: malformed receipt: %v", path, err)
+	}
+	return r, nil
+}
+
 // fileNameSafe maps a gate name to a conservative file-name fragment.
 func fileNameSafe(s string) string {
 	var b strings.Builder

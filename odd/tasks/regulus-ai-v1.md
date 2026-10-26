@@ -211,4 +211,14 @@ paraphrase. Read down to `## Log` before working.
   30.18 (complexity 30), internal/crap.exprName and gates.ShRunner.Run
   uncovered — the layer-7 gate refused (exit 1). Paying this debt (tests
   for the uncovered paths; spec.Check decomposed below complexity 30)
-  is part of the F2 exit criterion. Commit: this work unit.
+  is part of the F2 exit criterion. Commit: 3389543.
+- **L16** (F2/WU3 evidence): the human audit surface is live — `regulus
+  evidence list [--task <t>]` prints one line per receipt (timestamp,
+  layer, gate, verdict, exit code, duration, metric, path) and
+  `regulus evidence show <file>` renders one receipt in full (id, task,
+  gate, command, verdict, timing, metric, git_head, sha256-pinned
+  stdout/stderr). receipts.ReadFile parses one append-only receipt;
+  internal/evidence.List walks the store path-ordered with a task
+  filter and refuses malformed receipts. RED 8 → GREEN, suite / vet /
+  fmt clean; live demo over the real WU3 gauntlet receipts of
+  regulus-ai-v1/T2. Commit: this work unit.

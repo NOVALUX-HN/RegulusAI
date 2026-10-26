@@ -130,3 +130,42 @@ func TestWriteSanitizesGateNameInFilename(t *testing.T) {
 		t.Fatalf("sanitized filename = %q", name)
 	}
 }
+
+func TestReadFileRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Unix(1700000000, 0).UTC()
+	p, err := Write(dir, Receipt{
+		Task: "t/x", Gate: "lint", Layer: 2, Command: "x",
+		ExitCode: 1, Verdict: VerdictFail, StartedAt: start,
+		DurationMS: 5, Stdout: "out", Stderr: "err", GitHead: "abc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID == "" || got.Task != "t/x" || got.Gate != "lint" || got.Layer != 2 ||
+		got.ExitCode != 1 || got.Verdict != VerdictFail || got.Stdout != "out" ||
+		got.Stderr != "err" || got.GitHead != "abc" || got.DurationMS != 5 {
+		t.Fatalf("round-tripped receipt = %+v", got)
+	}
+	if !got.StartedAt.Equal(start) {
+		t.Fatalf("started_at = %v, want %v", got.StartedAt, start)
+	}
+}
+
+func TestReadFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := ReadFile(filepath.Join(dir, "missing.json")); err == nil {
+		t.Fatal("a missing receipt must be an error")
+	}
+	bad := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(bad, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFile(bad); err == nil || !strings.Contains(err.Error(), "malformed receipt") {
+		t.Fatalf("want malformed-receipt refusal, got %v", err)
+	}
+}

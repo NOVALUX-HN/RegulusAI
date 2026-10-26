@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
+	"regulus-ai/internal/receipts"
 )
 
 func newCLI(probe func() doctor.Result) (CLI, *bytes.Buffer, *bytes.Buffer) {
@@ -454,5 +456,77 @@ func TestCrapReportsAndEnforcesMax(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "exceeds") {
 		t.Fatalf("stderr must name the violation, got %q", errb.String())
+	}
+}
+
+func TestEvidenceUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"evidence"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus evidence") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestEvidenceListEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"evidence", "list"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no receipts yet)") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestEvidenceListAndShow(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	taskDir := filepath.Join(".regulus", "evidence", "feat__T1")
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	path1, err := receipts.Write(taskDir, receipts.Receipt{
+		Task: "feat/T1", Gate: "typecheck", Layer: 1, Command: "go build ./...",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start,
+		DurationMS: 7, Stdout: "built", GitHead: "abc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receipts.Write(taskDir, receipts.Receipt{
+		Task: "feat/T1", Gate: "lint", Layer: 2, Command: "go vet ./...",
+		ExitCode: 1, Verdict: receipts.VerdictFail, StartedAt: start.Add(time.Second),
+		DurationMS: 3, Stderr: "boom",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"evidence", "list"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "typecheck") || !strings.Contains(out.String(), "lint") || !strings.Contains(out.String(), "exit=1") {
+		t.Fatalf("list output = %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"evidence", "show", path1}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	for _, want := range []string{"verdict:     pass", "built", "typecheck", "stdout (sha256"} {
+		if !strings.Contains(out2.String(), want) {
+			t.Fatalf("show output must contain %q, got:\n%s", want, out2.String())
+		}
+	}
+}
+
+func TestEvidenceShowMissingFile(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"evidence", "show", "nope.json"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "cannot read") {
+		t.Fatalf("stderr = %q", errb.String())
 	}
 }
