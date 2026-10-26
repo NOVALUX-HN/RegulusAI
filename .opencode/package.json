@@ -1,0 +1,10 @@
+{
+  "name": "regulus-opencode-config",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@opencode/plugin": "2.1.4",
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  }
+}

@@ -150,4 +150,19 @@ paraphrase. Read down to `## Log` before working.
   memory with Harness² lesson libraries), data-not-injections framing,
   and code-enforced lesson admission. F1 ships the session-notes slice
   (`regulus memory note/show`); F3 ships the full substrate (PRD §4 F3
-  updated). Acceptance scenario 6 added. Commit: this work unit.
+  updated). Acceptance scenario 6 added. Commit: 01a6fa5.
+- **L11** (F1/WU4 evidence): OpenCode boundary live — V2 plugin at
+  `.opencode/plugins/regulus.ts` registers the regulus tool namespace
+  (gate_run, spec_check, doctor, memory_note, memory_show), two slash
+  commands, a context hook carrying the Regulus discipline, and a
+  compaction hook injecting `regulus memory show` as a DATA block
+  (evidence-is-data invariant). Fail-fast version gate: setup resolves
+  a regulus binary (REGULUS_BIN → bin/regulus.exe → bin/regulus → PATH)
+  and refuses to load without a doctor-verified V2 runtime. Guardian
+  agent regulus-gate-verifier (read-only permissions, bash allowlist)
+  and the regulus-workflow skill ship as `.opencode/` assets. Go:
+  memory package (session notes) — RED 5 → GREEN, vet/fmt clean, live
+  smoke (note+show on the real binary). TS: `tsc --noEmit` clean against
+  @opencode/plugin 2.1.4 (Bun 1.4.4 installed). Live plugin-load
+  verification happens in the user's OpenCode session (WU6/F5 dogfood).
+  Commit: this work unit.

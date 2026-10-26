@@ -266,3 +266,57 @@ func TestGateRunStopsAtFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"memory"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus memory") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"memory", "frobnicate"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "unknown subcommand") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestMemoryNoteRequiresText(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"memory", "note"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus memory note") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestMemoryNoteShowRoundTrip(t *testing.T) {
+	c, _, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"memory", "note", "session", "started", "here"}); code != 0 {
+		t.Fatalf("note exit = %d, want 0", code)
+	}
+	c2, out, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "show"}); code != 0 {
+		t.Fatalf("show exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "session started here") {
+		t.Fatalf("show output = %q", out.String())
+	}
+}
+
+func TestMemoryShowEmptySession(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"memory", "show"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no session notes)") {
+		t.Fatalf("output = %q", out.String())
+	}
+}

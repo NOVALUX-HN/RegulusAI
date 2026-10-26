@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/gates"
+	"regulus-ai/internal/memory"
 	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/spec"
 )
@@ -49,6 +51,8 @@ func (c CLI) Run(args []string) int {
 		return c.specCmd(args[1:])
 	case "gate":
 		return c.gateCmd(args[1:])
+	case "memory":
+		return c.memoryCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])
 		c.usage(c.Stderr)
@@ -136,6 +140,45 @@ func validTaskID(s string) bool {
 	return taskIDRe.MatchString(s) && !strings.Contains(s, "..")
 }
 
+// memoryCmd implements `regulus memory note|show` — the F1 Almanac slice
+// (docs/memory.md): append-only session notes.
+func (c CLI) memoryCmd(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note <text> | regulus memory show")
+		return 2
+	}
+	switch args[0] {
+	case "note":
+		text := strings.TrimSpace(strings.Join(args[1:], " "))
+		if text == "" {
+			fmt.Fprintln(c.Stderr, "usage: regulus memory note <text>")
+			return 2
+		}
+		if err := memory.Note(".", text, time.Now().UTC()); err != nil {
+			fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(c.Stdout, "memory: note saved")
+		return 0
+	case "show":
+		out, err := memory.Show(".")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "memory show: %v\n", err)
+			return 1
+		}
+		if out == "" {
+			fmt.Fprintln(c.Stdout, "(no session notes)")
+			return 0
+		}
+		fmt.Fprint(c.Stdout, out)
+		return 0
+	default:
+		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note <text> | regulus memory show")
+		return 2
+	}
+}
+
 func (c CLI) usage(w io.Writer) {
 	fmt.Fprintf(w, `regulus %s — the Regulus AI core CLI
 
@@ -147,6 +190,7 @@ Commands:
   doctor      probe OpenCode and verify V2 runtime support
   gate run <task>    run the layered gauntlet and write receipts
   help        show this help
+  memory note|show   session notes — the Almanac F1 slice
   spec check <file>  validate the acceptance contract of a feature document
   --version   print the regulus version
 
