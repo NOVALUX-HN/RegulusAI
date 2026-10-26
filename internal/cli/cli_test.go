@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,5 +87,59 @@ func TestDoctorRefusalExitsOne(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "V1 is not supported") {
 		t.Fatalf("stderr must carry the refusal reason, got %q", errb.String())
+	}
+}
+
+func writeTempFeature(t *testing.T, doc string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "feature.md")
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSpecCheckOK(t *testing.T) {
+	c, out, errb := newCLI(nil)
+	path := writeTempFeature(t, "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n- When regulus spec check runs\n- Then the exit code is 0\n")
+	if code := c.Run([]string{"spec", "check", path}); code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr: %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "spec OK: 1 scenario(s)") {
+		t.Fatalf("output = %q, want scenario count", out.String())
+	}
+}
+
+func TestSpecCheckViolationsListed(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	path := writeTempFeature(t, "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n\n## Log\n")
+	if code := c.Run([]string{"spec", "check", path}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "missing When step") || !strings.Contains(errb.String(), "missing Then step") {
+		t.Fatalf("stderr must list every violation, got %q", errb.String())
+	}
+}
+
+func TestSpecCheckMissingFile(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"spec", "check", "does-not-exist.md"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "cannot read") {
+		t.Fatalf("stderr must report the unreadable file, got %q", errb.String())
+	}
+}
+
+func TestSpecSubcommandUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"spec"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus spec check") {
+		t.Fatalf("stderr must print spec usage, got %q", errb.String())
+	}
+	if code := c.Run([]string{"spec", "frobnicate"}); code != 2 {
+		t.Fatalf("unknown spec subcommand: exit = %d, want 2", code)
 	}
 }

@@ -28,6 +28,38 @@ paraphrase. Read down to `## Log` before working.
   debemos crear varias fases para ir llevando todo a esa v1 completa e
   increible"
 
+## Acceptance
+
+### Scenario: doctor refuses non-V2 runtimes
+
+- Given `opencode --version` reports V1, fails, or prints unparseable output
+- When `regulus doctor` runs
+- Then the exit code is 1 and the refusal names the failed condition and the V2 requirement
+
+### Scenario: doctor accepts V2 runtimes
+
+- Given `opencode --version` reports a 2.x version
+- When `regulus doctor` runs
+- Then the exit code is 0 and the output reports supported (V2)
+
+### Scenario: spec check enforces the acceptance contract
+
+- Given a feature document
+- When `regulus spec check` runs on it
+- Then the exit code is 0 with the scenario count, or 1 listing every violation with its line number
+
+### Scenario: gates stop at the first failure and write receipts
+
+- Given a fixture project with gates configured and one failing gate
+- When `regulus gate run` executes
+- Then the exit code is 1, no later gate runs, and an append-only receipt records the failure
+
+### Scenario: reflect admits only evidenced lessons
+
+- Given a closed feature with receipts on disk
+- When `regulus reflect` runs
+- Then lesson candidates carry cue, lesson, evidence and confidence, and the budget ledger records the run
+
 ## Tasks
 
 | ID | Spec | Work | Route | Commit |
@@ -74,3 +106,17 @@ paraphrase. Read down to `## Log` before working.
   unchanged (reflect + adopt with evidence, per L2); Propose–Probe–Compose
   enters in F4 as an opt-in k=1 probe cycle behind the budget ledger. PRD §4
   and this document rewritten in the roadmap revision commit.
+- **L7** (F1/WU1 evidence): Go module `regulus-ai` (go 1.27); CLI skeleton
+  with help/--version/contract/doctor; doctor probes `opencode --version`
+  with a 15s budget and refuses V1/missing/unparseable/failing runtimes,
+  including the runtime's own output in the refusal — OpenCode V2 only
+  (S5). RED observed (14 failing assertions on stubs), then GREEN; go vet
+  and gofmt clean; smoke on the real environment took the refusal path
+  (the local opencode.exe is currently broken on this machine). Commit:
+  a9cc94e.
+- **L8** (F1/WU2 evidence): spec contract live — `regulus spec check`
+  validates the Acceptance section (Given/When/Then, And-continuation,
+  line-numbered violations, all at once). RED observed (15 failing
+  assertions: 11 spec package + 4 CLI), then GREEN. This feature document
+  now declares F1's acceptance criteria and passes `regulus spec check`
+  (dogfood). Commit: this work unit.
