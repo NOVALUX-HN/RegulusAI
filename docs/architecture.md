@@ -66,41 +66,53 @@ Evolution (Loop 3) edits this surface. Nothing else may.
 
 ```
 .regulus/
-├── evidence/<task>/<gate>-<ts>.json    immutable receipts
+├── evidence/<task-slug>/<gate>-<nanos>.json   immutable receipts (append-only)
 ├── library/<domain>/
 │     INDEX.md                          lesson index (regenerated from disk)
 │     └── lessons/<id>/LESSON.md        cue / lesson / evidence / confidence
 ├── memory/session.md                   continuity notes (compaction hook reads this)
 └── budget.json                        ledger of evolution runs
-odd/tasks/<feature>.md                  workflow docs — COMMITTED, not under .regulus/
 ```
+
+Committed, never under `.regulus/`:
+
+- `regulus.json` — project config: gates (`name`/`layer`/`command`/`timeout_sec`)
+- `odd/tasks/<feature>.md` — workflow docs
 
 **Single writer:** the core. The plugin and agents never mutate state
 directly; they invoke core subcommands.
 
 ## 6. Evidence model — receipts
 
-Every gate run writes an immutable receipt:
+Every executed gate writes one immutable receipt (F1 schema, as implemented):
 
 ```json
 {
-  "id": "rec_0192…",
+  "id": "rec_18e1fe6dd8c66648",
   "task": "regulus-ai-v1/T2",
-  "gate": "unit-tests",
-  "layer": 3,
-  "command": "go test ./...",
+  "gate": "typecheck",
+  "layer": 1,
+  "command": "go build ./...",
   "exit_code": 0,
-  "stdout_sha256": "…",
+  "verdict": "pass",
+  "started_at": "2026-10-26T05:51:14.4119394Z",
+  "duration_ms": 909,
+  "stdout": "",
+  "stdout_sha256": "e3b0c442…",
   "stderr": "",
-  "diff_base": "a1b2c3",
-  "diff_head": "d4e5f6",
-  "duration_ms": 8420,
-  "verdict": "pass"
+  "stderr_sha256": "e3b0c442…",
+  "git_head": "f78a132…"
 }
 ```
 
+Captured stdout/stderr are bounded at 8 KiB with a truncation marker; the
+SHA-256 fields pin the FULL content. `git_head` names the commit the
+gauntlet ran against (empty outside a repository). Files are created with
+O_EXCL: append-only, never overwritten — a second run advances to a new
+nanosecond slot.
+
 Guardians verify claims against receipts; the human audits receipts, not
-code. Receipts are append-only.
+code.
 
 ## 7. Gate layering (Loop 1)
 

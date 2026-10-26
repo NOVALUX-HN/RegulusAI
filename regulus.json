@@ -1,0 +1,8 @@
+{
+  "gates": [
+    { "name": "typecheck", "layer": 1, "command": "go build ./..." },
+    { "name": "lint", "layer": 2, "command": "go vet ./..." },
+    { "name": "build", "layer": 3, "command": "go build -o bin/regulus.exe ./cmd/regulus" },
+    { "name": "unit-tests", "layer": 4, "command": "go test ./..." }
+  ]
+}

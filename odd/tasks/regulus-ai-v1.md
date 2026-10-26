@@ -119,4 +119,15 @@ paraphrase. Read down to `## Log` before working.
   line-numbered violations, all at once). RED observed (15 failing
   assertions: 11 spec package + 4 CLI), then GREEN. This feature document
   now declares F1's acceptance criteria and passes `regulus spec check`
-  (dogfood). Commit: this work unit.
+  (dogfood). Commit: f78a132.
+- **L9** (F1/WU3 evidence): gauntlet runner live — `regulus gate run <task>`
+  loads the committed `regulus.json`, runs gates in ascending layer order
+  (cheap first), stops at the first failure, and writes one append-only
+  receipt per executed gate under `.regulus/evidence/<slug>/` (bounded
+  stdout/stderr with SHA-256 of the full content, git HEAD, duration;
+  O_EXCL — never overwritten). Doctor output fixed to print the runtime's
+  own version line exactly. RED observed (25 failing assertions across
+  receipts/gates/cli), then GREEN; go vet and gofmt clean. Dogfood:
+  `regulus gate run regulus-ai-v1/T2` on this repo passes 4/4 gates with
+  receipts (git_head f78a132); the stop-at-failure demo ran only the
+  failing layer. Commit: this work unit.

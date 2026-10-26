@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,5 +142,127 @@ func TestSpecSubcommandUsage(t *testing.T) {
 	}
 	if code := c.Run([]string{"spec", "frobnicate"}); code != 2 {
 		t.Fatalf("unknown spec subcommand: exit = %d, want 2", code)
+	}
+}
+
+type fakeGateResult struct {
+	stdout, stderr string
+	code           int
+	err            error
+}
+
+type fakeGateRunner struct {
+	results map[string]fakeGateResult
+	calls   []string
+}
+
+func (f *fakeGateRunner) Run(_ context.Context, command string) (string, string, int, error) {
+	f.calls = append(f.calls, command)
+	if res, ok := f.results[command]; ok {
+		return res.stdout, res.stderr, res.code, res.err
+	}
+	return "ok", "", 0, nil
+}
+
+func TestDoctorSupportedOutputLine(t *testing.T) {
+	c, out, _ := newCLI(func() doctor.Result {
+		return doctor.Result{Detected: "opencode 2.1.0", Major: 2, Supported: true}
+	})
+	if code := c.Run([]string{"doctor"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if got, want := out.String(), "opencode 2.1.0 — supported (V2)\n"; got != want {
+		t.Fatalf("output = %q, want %q (the runtime's own version line, not doubled)", got, want)
+	}
+}
+
+func writeGatesProject(t *testing.T, cfgJSON string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "regulus.json"), []byte(cfgJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestGateRunUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"gate"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus gate run") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestGateRunInvalidTaskID(t *testing.T) {
+	for _, task := range []string{"../evil", "a..b", `a\b`, ""} {
+		c, _, errb := newCLI(nil)
+		if code := c.Run([]string{"gate", "run", task}); code != 2 {
+			t.Fatalf("task %q: exit = %d, want 2", task, code)
+		}
+		if !strings.Contains(errb.String(), "invalid task id") {
+			t.Fatalf("task %q: stderr must name the invalid task id, got %q", task, errb.String())
+		}
+	}
+}
+
+func TestGateRunMissingConfig(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	c.Runner = &fakeGateRunner{}
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "no regulus.json") {
+		t.Fatalf("stderr must name the missing config, got %q", errb.String())
+	}
+}
+
+func TestGateRunAllPass(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[
+		{"name":"typecheck","layer":1,"command":"echo hi"},
+		{"name":"unit-tests","layer":2,"command":"echo ok"}
+	]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, _ := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"gate", "run", "regulus-ai-v1/T2"}); code != 0 {
+		t.Fatalf("exit = 0 expected; stdout: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "gauntlet: 2/2 gates passed") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "regulus-ai-v1__T2", "*.json"))
+	if len(found) != 2 {
+		t.Fatalf("want 2 receipts under the task slug dir, got %v", found)
+	}
+}
+
+func TestGateRunStopsAtFailure(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[
+		{"name":"typecheck","layer":1,"command":"boom"},
+		{"name":"unit-tests","layer":2,"command":"echo ok"}
+	]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"boom":                        {code: 1, stderr: "type error"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, _ := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(out.String(), "stopped at gate") {
+		t.Fatalf("stdout must report the stop, got %q", out.String())
+	}
+	for _, call := range r.calls {
+		if call == "echo ok" {
+			t.Fatal("no gate may run after a failure")
+		}
 	}
 }
