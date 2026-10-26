@@ -75,7 +75,7 @@ paraphrase. Read down to `## Log` before working.
 | ID | Spec | Work | Route | Commit |
 |---|---|---|---|---|
 | T1 (F0) | S1–S6 | Foundation: PRD, architecture, README, this document, repo skeleton | inline (parent) | 4c135bf |
-| T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, ODD-lite skill, minimal session memory, minimal reflect + library + budget | decide at task start (writer-rule evaluation) | — |
+| T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, ODD-lite skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
 | T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | decide at task start | — |
 | T4 (F3) | S1 | Complete Discipline: full ODD workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
 | T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | decide at task start | — |
@@ -174,4 +174,16 @@ paraphrase. Read down to `## Log` before working.
   show` prints the ledger. RED 13 → GREEN, vet/fmt clean. Dogfood:
   reflect over this feature document citing the 4 real WU3 gauntlet
   receipts — lesson les_18e2043c388e0260 admitted (medium confidence),
-  INDEX and budget entry written. Commit: this work unit.
+  INDEX and budget entry written. Commit: 3906b54.
+- **L13** (F1/WU6 evidence — PHASE EXIT): the deterministic journey
+  `TestF1VerticalSpine` (internal/journey) drives a fixture project
+  through the whole spine in-process with real shell gates: doctor (V2
+  gate) → spec check → gate run leaving 2 append-only receipts → memory
+  note/show → reflect admitting an evidence-gated lesson → library
+  list → budget show. The journey's first run caught one integration
+  gap — an assertion expecting the lesson text where `library list`
+  prints the cue (the pinned CLI contract) — corrected, then GREEN
+  with the full suite; vet and gofmt clean. F1 exit criterion met: a
+  tiny feature developed through Regulus produces receipts for all
+  three loops. Live plugin-load verification remains for the user's
+  OpenCode session (F5 dogfood). Commit: this work unit.
