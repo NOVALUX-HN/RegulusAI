@@ -399,3 +399,60 @@ func TestLibraryListEmpty(t *testing.T) {
 		t.Fatalf("output = %q", out.String())
 	}
 }
+
+func TestCrapUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"crap"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus crap") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func writeCrapFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module fixture\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := `package pkg
+
+func Simple() int {
+	return 1
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "calc.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	content := "mode: set\nfixture/pkg/calc.go:4.9,4.17 1 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "cover.out"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestCrapReportsAndEnforcesMax(t *testing.T) {
+	writeCrapFixture(t)
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"crap", "--profile", "cover.out", "--max", "30"}); code != 0 {
+		t.Fatalf("exit = %d, want 0 (CRAP 1 under max 30)", code)
+	}
+	if !strings.Contains(out.String(), "Simple (complexity 1, coverage 100.0%) CRAP 1.00") {
+		t.Fatalf("output = %q", out.String())
+	}
+	if !strings.Contains(out.String(), "CRAP max: 1.00") {
+		t.Fatalf("output = %q", out.String())
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"crap", "--profile", "cover.out", "--max", "0.5"}); code != 1 {
+		t.Fatalf("exit = %d, want 1 (CRAP 1 over max 0.5)", code)
+	}
+	if !strings.Contains(errb.String(), "exceeds") {
+		t.Fatalf("stderr must name the violation, got %q", errb.String())
+	}
+}

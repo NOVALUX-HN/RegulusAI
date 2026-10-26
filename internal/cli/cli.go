@@ -14,6 +14,7 @@ import (
 
 	"regulus-ai/internal/budget"
 	"regulus-ai/internal/contract"
+	"regulus-ai/internal/crap"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
@@ -63,6 +64,8 @@ func (c CLI) Run(args []string) int {
 		return c.libraryCmd(args[1:])
 	case "reflect":
 		return c.reflectCmd(args[1:])
+	case "crap":
+		return c.crapCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])
 		c.usage(c.Stderr)
@@ -300,6 +303,42 @@ func (c CLI) budgetCmd(args []string) int {
 	return 0
 }
 
+// crapCmd implements `regulus crap --profile <coverprofile> [--max N]
+// [--top N]`: the layer-7 gauntlet gate (PRD R-G2) — Uncle Bob's CRAP
+// formula over a go cover profile.
+func (c CLI) crapCmd(args []string) int {
+	fs := flag.NewFlagSet("crap", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	profile := fs.String("profile", "", "go cover profile path (required)")
+	max := fs.Float64("max", 30, "fail if any function's CRAP exceeds this")
+	top := fs.Int("top", 10, "how many worst functions to print")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *profile == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus crap --profile <coverprofile> [--max N] [--top N]")
+		return 2
+	}
+	rep, err := crap.Analyze(".", *profile)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "crap: %v\n", err)
+		return 1
+	}
+	for i, f := range rep.Functions {
+		if i >= *top {
+			break
+		}
+		fmt.Fprintf(c.Stdout, "%s:%d %s (complexity %d, coverage %.1f%%) CRAP %.2f\n",
+			f.File, f.StartLine, f.Name, f.Complexity, f.Coverage*100, f.CRAP)
+	}
+	fmt.Fprintf(c.Stdout, "CRAP max: %.2f\n", rep.Max)
+	if rep.Max > *max {
+		fmt.Fprintf(c.Stderr, "crap: max CRAP %.2f exceeds %.2f — cover or split the worst functions\n", rep.Max, *max)
+		return 1
+	}
+	return 0
+}
+
 func (c CLI) usage(w io.Writer) {
 	fmt.Fprintf(w, `regulus %s — the Regulus AI core CLI
 
@@ -309,6 +348,7 @@ Usage:
 Commands:
   budget show        show the evolution budget ledger
   contract           print the plugin<->core contract version
+  crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   gate run <task>    run the layered gauntlet and write receipts
   help               show this help

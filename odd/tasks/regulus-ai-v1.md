@@ -196,4 +196,19 @@ paraphrase. Read down to `## Log` before working.
   metric_threshold and metric_operator when evaluated. Config validation
   rejects bad operators and extract modes. Gremlins installed for the
   mutation gate (exit-code thresholds built in). RED 5 → GREEN, suite /
-  vet / fmt clean. Commit: this work unit.
+  vet / fmt clean. Commit: bb55401.
+- **L15** (F2/WU2 evidence): CRAP analyzer live — `regulus crap --profile
+  <go cover profile> [--max N] [--top N]` parses the profile (mode header
+  + block lines), computes per-function cyclomatic complexity via go/ast
+  (1 + branch statements + short-circuit operators; nested function
+  literals count toward their parent), maps profile blocks onto functions
+  for coverage, and applies Uncle Bob's formula comp²×(1-cov)³+comp;
+  exit 1 when max CRAP exceeds the threshold (default 30). RED 6 → GREEN
+  (the RED run caught an arithmetic slip in the formula test's own
+  expected value: CRAP(10,0) = 110, not 1010 — fixed; the implementation
+  was right). First live run ON REGULUS ITSELF found real debt:
+  CLI.libraryCmd CRAP 41.20 (complexity 11, coverage 37%), spec.Check
+  30.18 (complexity 30), internal/crap.exprName and gates.ShRunner.Run
+  uncovered — the layer-7 gate refused (exit 1). Paying this debt (tests
+  for the uncovered paths; spec.Check decomposed below complexity 30)
+  is part of the F2 exit criterion. Commit: this work unit.
