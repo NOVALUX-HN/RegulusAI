@@ -56,10 +56,11 @@ Evolution (Loop 3) edits this surface. Nothing else may.
   and pipes a request; the core prints a typed response and exits. Stateless
   per invocation; the core owns all on-disk state. Schema owned by Regulus,
   semver'd (`regulus contract --version`).
-- **OpenCode version gate:** the plugin probes `opencode --version` at most
-  once per session; unsupported majors refuse with a clear message naming the
-  supported range (Gentle-AI's V1/V2 discipline — V2 broke V1 plugins, so
-  silence is not an option).
+- **OpenCode V2 only:** the plugin probes `opencode --version` at most once
+  per session; V1 and unknown runtimes refuse with a message naming the
+  required major. Regulus maintains no V1 compatibility layer — one plugin
+  surface against SDK v2 (V2 already broke V1 plugins; carrying two surfaces
+  would double the maintenance for no user).
 
 ## 5. State model — `.regulus/` (per project, gitignored)
 

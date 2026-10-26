@@ -1,6 +1,6 @@
 # Regulus AI — Product Requirements Document
 
-Status: founding definition (M0) · Audience: the builder (personal product first) · Scope: v1 vertical slice
+Status: founding definition (F0) · Audience: the builder (personal product first) · Scope: complete v1 built in phases (F1–F5)
 
 ## 1. Problem
 
@@ -49,6 +49,7 @@ agents guarantee the code; the harness learns from every task.*
 ### Non-goals (v1)
 
 - Multi-host support. OpenCode only — depth over breadth.
+- OpenCode V1 support. V2 only — no compatibility layer for V1 runtimes.
 - Benchmark framework. Harness²'s JobBench/LAB/WorkBuddy are inspiration, not scope.
 - Community polish: public branding, licensing, CI. Personal product first.
 - Full Propose–Probe–Compose recursion. Light reflect+adopt by default; probe
@@ -103,22 +104,28 @@ agents guarantee the code; the harness learns from every task.*
   output is executed or trusted as a prompt (anti-injection invariant,
   from Harness²).
 
-## 4. v1 milestones (vertical slice)
+## 4. Phased roadmap to complete v1
 
-| ID | Milestone | Contents |
-|---|---|---|
-| M0 | Foundation | Repo, PRD, architecture, ODD feature document, version-gate decision |
-| M1 | Gauntlet spine | Spec contract format, layered gate runner, receipts, first guardian agent |
-| M2 | Discipline spine | ODD-lite workflow agents/skills, session memory |
-| M3 | Evolution spine | reflect command, lesson library, adoption with evidence, budget ledger |
-| M4 | Dogfood | Build one real Regulus feature using Regulus; receipts prove all three loops end-to-end |
+v1 is a **complete harness**, built through phases. Each phase ends runnable
+and verified; the vertical-slice discipline carries through: F1 ships a thin
+end-to-end spine, F2–F4 complete each loop, F5 integrates and releases.
+
+| Phase | Name | Contents | Exit criterion |
+|---|---|---|---|
+| F0 | Foundation | Repo, PRD, architecture, ODD feature document (commit 4c135bf) | done |
+| F1 | Vertical spine | `regulus` CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent (read-only), ODD-lite skill, minimal session memory, minimal `reflect` + library + budget ledger | a tiny feature developed through Regulus produces receipts for all three loops |
+| F2 | Complete Gauntlet | gate layers 5–7 (coverage floor, mutation testing, CRAP score), full guardian roster (spec-keeper, mutation-auditor, crap-analyst, evidence-auditor), evidence audit UX, per-project gate thresholds | the full 7-layer gauntlet runs green on a real repo, with receipts the human audits without opening a diff |
+| F3 | Complete Discipline | full ODD workflow + task tooling, subagent roster (explore/worker/verify) with `permission.task` matrices, complete skills set, structured session memory + cross-restart resume | a multi-session feature resumes after a restart from the feature document + memory alone |
+| F4 | Complete Evolution | lesson admission flow (candidate → guardian validation → library INDEX), library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (Propose–Probe–Compose, k=1, explicit request) | a lesson produced by real work is adopted with evidence and measurably improves a later task; the ledger shows caps enforced |
+| F5 | Integration & release | complete V2 plugin (all hooks + custom tools), complete CLI UX, deterministic journeys suite, npm installer distributing the Go binaries, user docs, final dogfood | v1: the success criteria below hold on the final dogfood |
 
 ## 5. Success criteria (v1)
 
-- The M4 dogfood task completes with: acceptance criteria approved by the
+- Every phase exit criterion (§4) is met.
+- The F5 final dogfood completes with: acceptance criteria approved by the
   human before implementation; all gates green with receipts; at least one
   reflection-produced lesson admitted with evidence.
-- The human never opens a source diff during M4.
+- The human never opens a source diff during the final dogfood.
 
 ## 6. Risks
 

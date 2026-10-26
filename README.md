@@ -2,9 +2,9 @@
 
 **An OpenCode-native, self-improving engineering harness: a guardian gauntlet over the code, discipline over the workflow, and evidence-driven evolution of the harness itself.**
 
-> Status: founding definition (M0 complete). Documents below; no code yet.
+> Status: founding definition complete (F0). Phased roadmap to the complete v1 in the PRD. No code yet.
 
-Regulus AI fuses three proven ideas into one harness for [OpenCode](https://opencode.ai):
+Regulus AI fuses three proven ideas into one harness for [OpenCode](https://opencode.ai) V2:
 
 - **Runtime discipline** (inspired by [Gentle-AI](https://github.com/Gentleman-Programming/gentle-ai)): task sizing, feature documents with verbatim specs, delegation for a reason — never for size — and receipts for every claim.
 - **Recursive harnessing** (inspired by [Harness²](https://github.com/google-research/harness2), Google Research): the harness treats its own components (prompts, guardrails, memory, skills, agents) as an editable surface and improves them from execution evidence, under an explicit budget.
@@ -14,7 +14,7 @@ Regulus AI fuses three proven ideas into one harness for [OpenCode](https://open
 
 | Document | Contents |
 |---|---|
-| [PRD](docs/PRD.md) | Problem, product definition, requirements per loop, milestones, risks |
+| [PRD](docs/PRD.md) | Problem, product definition, requirements per loop, phased roadmap (F1–F5), risks |
 | [Architecture](docs/architecture.md) | Go core + TS plugin boundary, state model, receipts, gates, evolution flow |
 | [ODD feature document](odd/tasks/regulus-ai-v1.md) | Verbatim specs, task list, decision log for v1 |
 
