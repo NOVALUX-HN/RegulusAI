@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/budget"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/receipts"
@@ -80,6 +81,18 @@ func Run(root string, in Input, gitHead string) (library.Lesson, error) {
 		Outcome:   "candidate-admitted",
 		Detail:    fmt.Sprintf("%d receipts", len(evidence)),
 	}); err != nil {
+		return library.Lesson{}, err
+	}
+	// One substrate: the lesson also lands in the Almanac (the library
+	// LESSON.md stays the human-readable view of the same admission).
+	if _, err := almanac.Save(root, &almanac.Observation{
+		Type: almanac.TypeLesson, Title: l.Cue, Content: l.Lesson,
+		Domain: l.Domain,
+		Lesson: &almanac.Lesson{
+			Cue: l.Cue, Lesson: l.Lesson, Evidence: l.Evidence, Confidence: l.Confidence,
+		},
+		Provenance: &almanac.Provenance{Task: l.Task, GitHead: gitHead, Receipts: l.Evidence},
+	}, in.Now); err != nil {
 		return library.Lesson{}, err
 	}
 	return l, nil

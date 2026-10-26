@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/budget"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/receipts"
@@ -114,5 +115,20 @@ func TestRunAdmitsEvidenceBackedLesson(t *testing.T) {
 	index, err := os.ReadFile(library.IndexFile(root, "go"))
 	if err != nil || !strings.Contains(string(index), l.ID) {
 		t.Fatalf("INDEX.md must list the admitted lesson: %v\n%s", err, string(index))
+	}
+	// One substrate: the lesson admission also lands in the Almanac.
+	obs, err := almanac.All(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(obs) != 1 {
+		t.Fatalf("reflect must append the lesson to the Almanac, got %d observations", len(obs))
+	}
+	lo := obs[0]
+	if lo.Type != almanac.TypeLesson || lo.Lesson == nil || lo.Lesson.Cue != "when the gauntlet passes" {
+		t.Fatalf("almanac lesson observation = %+v", lo)
+	}
+	if lo.Provenance == nil || lo.Provenance.Task != "feature/T1" || len(lo.Provenance.Receipts) != 2 {
+		t.Fatalf("almanac provenance = %+v", lo.Provenance)
 	}
 }

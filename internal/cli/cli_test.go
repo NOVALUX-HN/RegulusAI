@@ -617,3 +617,66 @@ func TestLibraryListMalformedLessonRefused(t *testing.T) {
 		t.Fatalf("stderr = %q", errb.String())
 	}
 }
+
+func TestMemorySaveUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"memory", "save"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus memory save") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "save", "--type", "decision", "--title", "t"}); code != 2 {
+		t.Fatalf("missing content: exit = %d, want 2", code)
+	}
+}
+
+func TestMemorySaveRefusesLessonType(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	t.Chdir(t.TempDir())
+	code := c.Run([]string{"memory", "save", "--type", "lesson", "--title", "t", "content"})
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "regulus reflect") {
+		t.Fatalf("stderr must route lessons through reflect, got %q", errb.String())
+	}
+}
+
+func TestMemorySaveSearchHistoryContext(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "chose postgres", "--topic-key", "db", "pooling everywhere"}); code != 0 {
+		t.Fatalf("save: exit = %d", code)
+	}
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "moved to sqlite", "--topic-key", "db", "simpler ops"}); code != 0 {
+		t.Fatalf("save 2: exit = %d", code)
+	}
+	c2, out, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "search", "postgres"}); code != 0 {
+		t.Fatalf("search: exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "chose postgres") || !strings.Contains(out.String(), "1 hit(s)") {
+		t.Fatalf("search output = %q", out.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"memory", "history", "--topic-key", "db"}); code != 0 {
+		t.Fatalf("history: exit = %d", code)
+	}
+	if !strings.Contains(out3.String(), "chose postgres") || !strings.Contains(out3.String(), "moved to sqlite") {
+		t.Fatalf("history output = %q", out3.String())
+	}
+	c4, _, _ := newCLI(nil)
+	if code := c4.Run([]string{"memory", "note", "f3 in flight"}); code != 0 {
+		t.Fatalf("note: exit = %d", code)
+	}
+	c5, out5, _ := newCLI(nil)
+	if code := c5.Run([]string{"memory", "context"}); code != 0 {
+		t.Fatalf("context: exit = %d", code)
+	}
+	if !strings.Contains(out5.String(), "f3 in flight") {
+		t.Fatalf("context must surface the latest note, got:\n%s", out5.String())
+	}
+}

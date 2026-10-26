@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/budget"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/crap"
@@ -19,7 +20,6 @@ import (
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
-	"regulus-ai/internal/memory"
 	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/reflect"
 	"regulus-ai/internal/spec"
@@ -156,11 +156,12 @@ func validTaskID(s string) bool {
 	return taskIDRe.MatchString(s) && !strings.Contains(s, "..")
 }
 
-// memoryCmd implements `regulus memory note|show` — the F1 Almanac slice
-// (docs/memory.md): append-only session notes.
+// memoryCmd implements the Almanac surface (docs/memory.md): note|show
+// (session notes), save|search|history (the full substrate), context (the
+// deterministic resume block). Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note <text> | regulus memory show")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context")
 		return 2
 	}
 	switch args[0] {
@@ -170,28 +171,165 @@ func (c CLI) memoryCmd(args []string) int {
 			fmt.Fprintln(c.Stderr, "usage: regulus memory note <text>")
 			return 2
 		}
-		if err := memory.Note(".", text, time.Now().UTC()); err != nil {
+		title := text
+		if runes := []rune(title); len(runes) > 60 {
+			title = string(runes[:60])
+		}
+		head := gates.GitHead(context.Background(), c.runner())
+		if _, err := almanac.Save(".", &almanac.Observation{
+			Type: almanac.TypeSessionNote, Title: title, Content: text,
+			Provenance: &almanac.Provenance{GitHead: head},
+		}, time.Now().UTC()); err != nil {
 			fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
 			return 1
 		}
 		fmt.Fprintln(c.Stdout, "memory: note saved")
 		return 0
 	case "show":
-		out, err := memory.Show(".")
+		notes, err := almanac.Notes(".")
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "memory show: %v\n", err)
 			return 1
 		}
-		if out == "" {
+		if len(notes) == 0 {
 			fmt.Fprintln(c.Stdout, "(no session notes)")
 			return 0
 		}
-		fmt.Fprint(c.Stdout, out)
+		for _, n := range notes {
+			fmt.Fprintf(c.Stdout, "- %s %s\n", n.SavedAt.Format(time.RFC3339), n.Content)
+		}
+		return 0
+	case "save":
+		fs := flag.NewFlagSet("memory save", flag.ContinueOnError)
+		fs.SetOutput(c.Stderr)
+		typ := fs.String("type", "", "decision|discovery|preference|session-note (required)")
+		title := fs.String("title", "", "short, searchable title (required)")
+		topicKey := fs.String("topic-key", "", "group for evolving topics (revision chain)")
+		domain := fs.String("domain", "", "domain bucket")
+		task := fs.String("task", "", "task id for provenance")
+		paths := fs.String("path", "", "affected paths, comma-separated")
+		receiptsFlag := fs.String("receipt", "", "receipt paths for provenance, comma-separated")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		content := strings.TrimSpace(strings.Join(fs.Args(), " "))
+		if *typ == "" || *title == "" || content == "" {
+			fmt.Fprintln(c.Stderr, "usage: regulus memory save --type <t> --title <t> [--topic-key --domain --task --path <a,b> --receipt <r1,r2>] <content>")
+			return 2
+		}
+		if *typ == almanac.TypeLesson {
+			fmt.Fprintln(c.Stderr, "memory save: lessons enter through regulus reflect (evidence-gated)")
+			return 1
+		}
+		head := gates.GitHead(context.Background(), c.runner())
+		if _, err := almanac.Save(".", &almanac.Observation{
+			Type: *typ, Title: *title, Content: content,
+			TopicKey: *topicKey, Domain: *domain,
+			Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: splitList(*paths), Receipts: splitList(*receiptsFlag)},
+		}, time.Now().UTC()); err != nil {
+			fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(c.Stdout, "memory: observation saved")
+		return 0
+	case "search":
+		fs := flag.NewFlagSet("memory search", flag.ContinueOnError)
+		fs.SetOutput(c.Stderr)
+		topicKey := fs.String("topic-key", "", "bucket: topic key")
+		domain := fs.String("domain", "", "bucket: domain")
+		typ := fs.String("type", "", "bucket: observation type")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ})
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
+			return 1
+		}
+		if len(hits) == 0 {
+			fmt.Fprintln(c.Stdout, "no matching observations")
+			return 0
+		}
+		fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
+		now := time.Now().UTC()
+		for _, h := range hits {
+			fmt.Fprintf(c.Stdout, "%s %s %s (saved %s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt))
+		}
+		return 0
+	case "history":
+		fs := flag.NewFlagSet("memory history", flag.ContinueOnError)
+		fs.SetOutput(c.Stderr)
+		topicKey := fs.String("topic-key", "", "the revision chain to list (required)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *topicKey == "" {
+			fmt.Fprintln(c.Stderr, "usage: regulus memory history --topic-key <key>")
+			return 2
+		}
+		chain, err := almanac.History(".", *topicKey)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "memory history: %v\n", err)
+			return 1
+		}
+		if len(chain) == 0 {
+			fmt.Fprintln(c.Stdout, "(no observations with that topic key)")
+			return 0
+		}
+		for _, o := range chain {
+			fmt.Fprintf(c.Stdout, "%s %s %s %s\n", o.SavedAt.Format(time.RFC3339), o.ID, o.Type, o.Title)
+		}
+		return 0
+	case "context":
+		ctx, err := almanac.Context(".", time.Now().UTC())
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
+			return 1
+		}
+		fmt.Fprint(c.Stdout, ctx)
 		return 0
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note <text> | regulus memory show")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context")
 		return 2
+	}
+}
+
+// runner returns the injected runner or the real shell runner.
+func (c CLI) runner() gates.CmdRunner {
+	if c.Runner != nil {
+		return c.Runner
+	}
+	return gates.ShRunner{}
+}
+
+// splitList splits a comma-separated flag value, trimming spaces.
+func splitList(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// humanAge renders a coarse age annotation for staleness awareness.
+func humanAge(now, saved time.Time) string {
+	d := now.Sub(saved)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
 }
 
@@ -425,7 +563,7 @@ Commands:
   gate run <task>    run the layered gauntlet and write receipts
   help               show this help
   library list [--domain <name>]  list admitted lessons
-  memory note|show   session notes — the Almanac F1 slice
+  memory note|show|save|search|history|context   the Almanac — persistent memory
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   spec check <file>  validate the acceptance contract of a feature document
   --version          print the regulus version
