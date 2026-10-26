@@ -79,12 +79,15 @@ func (ShRunner) Run(ctx context.Context, command string) (string, string, int, e
 	if err == nil {
 		return out.String(), errb.String(), 0, nil
 	}
+	// A deadline kill surfaces as an ExitError on Windows (exit code 1)
+	// and as a signal ExitError on Unix; the context check must come first
+	// or a timeout masquerades as an ordinary failure.
+	if ctx.Err() != nil {
+		return out.String(), errb.String(), -1, fmt.Errorf("timed out: %w", ctx.Err())
+	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		return out.String(), errb.String(), ee.ExitCode(), nil
-	}
-	if ctx.Err() != nil {
-		return out.String(), errb.String(), -1, fmt.Errorf("timed out: %w", ctx.Err())
 	}
 	return out.String(), errb.String(), -1, err
 }

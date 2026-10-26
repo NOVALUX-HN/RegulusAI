@@ -9,21 +9,86 @@ import (
 	"strings"
 )
 
+// scenario is one acceptance scenario being scanned.
+type scenario struct {
+	name         string
+	line         int
+	given        int
+	when         int
+	then         int
+	lastStepType string
+}
+
+// violations returns the missing-step violations of a closed scenario,
+// each citing its header line.
+func (s *scenario) violations() []string {
+	var vs []string
+	if s.given == 0 {
+		vs = append(vs, fmt.Sprintf("line %d: scenario %q: missing Given step", s.line, s.name))
+	}
+	if s.when == 0 {
+		vs = append(vs, fmt.Sprintf("line %d: scenario %q: missing When step", s.line, s.name))
+	}
+	if s.then == 0 {
+		vs = append(vs, fmt.Sprintf("line %d: scenario %q: missing Then step", s.line, s.name))
+	}
+	return vs
+}
+
+// parseScenarioHeading classifies a "### " line inside the Acceptance
+// section. It returns the scenario name and no violation for a named
+// Scenario heading, or "" and a violation otherwise.
+func parseScenarioHeading(ln int, line string) (name, violation string) {
+	rest := strings.TrimSpace(strings.TrimPrefix(line, "### "))
+	if !strings.HasPrefix(rest, "Scenario:") {
+		return "", fmt.Sprintf("line %d: only Scenario headings are allowed in the Acceptance section", ln)
+	}
+	name = strings.TrimSpace(strings.TrimPrefix(rest, "Scenario:"))
+	if name == "" {
+		return "", fmt.Sprintf("line %d: scenario heading needs a name", ln)
+	}
+	return name, ""
+}
+
+// parseStepLine classifies one step line ("- …") inside a scenario and
+// updates its counters. It returns a violation when the step is invalid.
+func parseStepLine(ln int, body string, sc *scenario) string {
+	var stepType string
+	switch {
+	case strings.HasPrefix(body, "Given "):
+		stepType = "Given"
+	case strings.HasPrefix(body, "When "):
+		stepType = "When"
+	case strings.HasPrefix(body, "Then "):
+		stepType = "Then"
+	case body == "Given" || body == "When" || body == "Then":
+		return fmt.Sprintf("line %d: %s step needs text", ln, body)
+	case strings.HasPrefix(body, "And "):
+		if sc.lastStepType == "" {
+			return fmt.Sprintf("line %d: And step has no preceding Given/When/Then step", ln)
+		}
+		stepType = sc.lastStepType
+	default:
+		return fmt.Sprintf("line %d: unrecognized step (want Given/When/Then/And): %s", ln, truncate(body, 40))
+	}
+	switch stepType {
+	case "Given":
+		sc.given++
+	case "When":
+		sc.when++
+	case "Then":
+		sc.then++
+	}
+	sc.lastStepType = stepType
+	return ""
+}
+
 // Check validates the Acceptance section of a feature document.
 //
 // It returns the number of scenarios found and every violation, each citing
 // its line number. The document passes the contract when no violation was
 // reported. All violations are reported at once, never first-fail.
 func Check(doc string) (scenarios int, errs []string) {
-	type scenario struct {
-		name         string
-		line         int
-		given        int
-		when         int
-		then         int
-		lastStepType string
-	}
-
 	var (
 		inSection   bool
 		sectionLine int
@@ -36,15 +101,7 @@ func Check(doc string) (scenarios int, errs []string) {
 		if cur == nil {
 			return
 		}
-		if cur.given == 0 {
-			violations = append(violations, fmt.Sprintf("line %d: scenario %q: missing Given step", cur.line, cur.name))
-		}
-		if cur.when == 0 {
-			violations = append(violations, fmt.Sprintf("line %d: scenario %q: missing When step", cur.line, cur.name))
-		}
-		if cur.then == 0 {
-			violations = append(violations, fmt.Sprintf("line %d: scenario %q: missing Then step", cur.line, cur.name))
-		}
+		violations = append(violations, cur.violations()...)
 		cur = nil
 	}
 
@@ -74,54 +131,22 @@ func Check(doc string) (scenarios int, errs []string) {
 		switch {
 		case strings.HasPrefix(line, "### "):
 			closeScenario()
-			rest := strings.TrimSpace(strings.TrimPrefix(line, "### "))
-			if !strings.HasPrefix(rest, "Scenario:") {
-				violations = append(violations, fmt.Sprintf("line %d: only Scenario headings are allowed in the Acceptance section", ln))
-				continue
-			}
-			name := strings.TrimSpace(strings.TrimPrefix(rest, "Scenario:"))
-			if name == "" {
-				violations = append(violations, fmt.Sprintf("line %d: scenario heading needs a name", ln))
+			name, violation := parseScenarioHeading(ln, line)
+			if violation != "" {
+				violations = append(violations, violation)
 				continue
 			}
 			cur = &scenario{name: name, line: ln}
 			scenCount++
 		case strings.HasPrefix(line, "- "):
-			body := strings.TrimSpace(strings.TrimPrefix(line, "- "))
 			if cur == nil {
 				violations = append(violations, fmt.Sprintf("line %d: step outside a scenario", ln))
 				continue
 			}
-			var stepType string
-			switch {
-			case strings.HasPrefix(body, "Given "):
-				stepType = "Given"
-			case strings.HasPrefix(body, "When "):
-				stepType = "When"
-			case strings.HasPrefix(body, "Then "):
-				stepType = "Then"
-			case body == "Given" || body == "When" || body == "Then":
-				violations = append(violations, fmt.Sprintf("line %d: %s step needs text", ln, body))
-				continue
-			case strings.HasPrefix(body, "And "):
-				if cur.lastStepType == "" {
-					violations = append(violations, fmt.Sprintf("line %d: And step has no preceding Given/When/Then step", ln))
-					continue
-				}
-				stepType = cur.lastStepType
-			default:
-				violations = append(violations, fmt.Sprintf("line %d: unrecognized step (want Given/When/Then/And): %s", ln, truncate(body, 40)))
-				continue
+			body := strings.TrimSpace(strings.TrimPrefix(line, "- "))
+			if violation := parseStepLine(ln, body, cur); violation != "" {
+				violations = append(violations, violation)
 			}
-			switch stepType {
-			case "Given":
-				cur.given++
-			case "When":
-				cur.when++
-			case "Then":
-				cur.then++
-			}
-			cur.lastStepType = stepType
 		}
 	}
 	closeScenario()

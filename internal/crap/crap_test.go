@@ -145,3 +145,61 @@ func TestAnalyzeRequiresGoModule(t *testing.T) {
 		t.Fatalf("want missing-go.mod refusal, got %v", err)
 	}
 }
+
+func TestAnalyzeNamesReceiverQualified(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module fixture\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := `package pkg
+
+type calc struct{}
+
+func (c calc) Add(a, b int) int {
+	return a + b
+}
+
+func (c *calc) Sub(a, b int) int {
+	return a - b
+}
+
+type wrapper[T any] struct{ v T }
+
+func (w wrapper[T]) Get() int {
+	return 1
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "recv.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(dir, "cover.out")
+	content := "mode: set\n" +
+		"fixture/pkg/recv.go:6.3,6.14 1 1\n" +
+		"fixture/pkg/recv.go:10.3,10.15 1 1\n" +
+		"fixture/pkg/recv.go:16.3,16.11 1 0\n"
+	if err := os.WriteFile(profile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Analyze(dir, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]Scored{}
+	for _, f := range rep.Functions {
+		names[f.Name] = f
+	}
+	if _, ok := names["calc.Add"]; !ok {
+		t.Fatalf("want calc.Add, got %+v", rep.Functions)
+	}
+	sub, ok := names["(*calc).Sub"]
+	if !ok || sub.Coverage != 1 || sub.Complexity != 1 || sub.CRAP != 1 {
+		t.Fatalf("(*calc).Sub = %+v", sub)
+	}
+	get, ok := names["wrapper[T].Get"]
+	if !ok || get.Coverage != 0 {
+		t.Fatalf("wrapper[T].Get = %+v", get)
+	}
+}

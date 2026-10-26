@@ -143,13 +143,9 @@ func Analyze(root, profilePath string) (Report, error) {
 			}
 			startLine := fset.Position(fd.Pos()).Line
 			endLine := fset.Position(fd.End()).Line
-			name := fd.Name.Name
-			if recv := receiverName(fd); recv != "" {
-				name = recv + "." + name
-			}
 			fn := Scored{
 				File:       rel,
-				Name:       name,
+				Name:       qualName(fd),
 				StartLine:  startLine,
 				Complexity: complexity(fd),
 			}
@@ -225,6 +221,20 @@ func receiverName(fd *ast.FuncDecl) string {
 		return ""
 	}
 	return exprName(fd.Recv.List[0].Type)
+}
+
+// qualName renders a function's qualified name, parenthesizing pointer
+// receivers the way Go tooling does: (*calc).Sub, calc.Add, wrapper[T].Get.
+func qualName(fd *ast.FuncDecl) string {
+	name := fd.Name.Name
+	recv := receiverName(fd)
+	if recv == "" {
+		return name
+	}
+	if strings.HasPrefix(recv, "*") {
+		return "(" + recv + ")." + name
+	}
+	return recv + "." + name
 }
 
 func exprName(e ast.Expr) string {

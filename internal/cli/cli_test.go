@@ -530,3 +530,90 @@ func TestEvidenceShowMissingFile(t *testing.T) {
 		t.Fatalf("stderr = %q", errb.String())
 	}
 }
+
+func TestReflectAdmitsAndLibraryListsByDomain(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	doc := "feature.md"
+	content := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When regulus runs\n- Then the exit code is 0\n"
+	if err := os.WriteFile(doc, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	taskDir := filepath.Join(".regulus", "evidence", "tiny__T1")
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	if _, err := receipts.Write(taskDir, receipts.Receipt{
+		Task: "tiny/T1", Gate: "typecheck", Layer: 1, Command: "c",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{
+		"reflect", "--domain", "go", "--task", "tiny/T1",
+		"--cue", "when debt is paid", "--lesson", "cover the uncovered paths", doc,
+	}); code != 0 {
+		t.Fatalf("reflect exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "lesson admitted: les_") {
+		t.Fatalf("reflect output = %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"library", "list", "--domain", "go"}); code != 0 {
+		t.Fatalf("list --domain exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "go:") || !strings.Contains(out2.String(), "when debt is paid") {
+		t.Fatalf("list --domain output = %q", out2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"library", "list"}); code != 0 {
+		t.Fatalf("list exit = %d", code)
+	}
+	if !strings.Contains(out3.String(), "go:") {
+		t.Fatalf("list output = %q", out3.String())
+	}
+}
+
+func TestLibraryListDomainEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "list", "--domain", "typescript"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "typescript: (no lessons admitted yet)") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestLibraryListFlagErrors(t *testing.T) {
+	c, _, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "list", "--domain"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+	if code := c.Run([]string{"library", "list", "extra"}); code != 2 {
+		t.Fatalf("stray positional: exit = %d, want 2", code)
+	}
+}
+
+func TestLibraryListMalformedLessonRefused(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	lessonDir := filepath.Join(".regulus", "library", "go", "lessons", "les_bad")
+	if err := os.MkdirAll(lessonDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# les_bad\n\n- **created_at**: not-a-time\n"
+	if err := os.WriteFile(filepath.Join(lessonDir, "LESSON.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"library", "list"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "parsing") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}

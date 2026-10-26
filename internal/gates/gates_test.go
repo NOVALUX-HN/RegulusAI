@@ -400,3 +400,29 @@ func TestRunMetricGateStillFailsOnExitCode(t *testing.T) {
 		t.Fatal("MetricValue must not be set when the command itself failed")
 	}
 }
+
+// TestShRunnerRealExec pins the REAL runner semantics against a real sh:
+// a completed run (even non-zero, even command-not-found 127) returns its
+// exit code with a nil error; only spawn failures and timeouts refuse with
+// an error.
+func TestShRunnerRealExec(t *testing.T) {
+	r := ShRunner{}
+	out, _, code, err := r.Run(context.Background(), "echo hello")
+	if err != nil || code != 0 || !strings.Contains(out, "hello") {
+		t.Fatalf("echo: out=%q code=%d err=%v", out, code, err)
+	}
+	_, _, code, err = r.Run(context.Background(), "exit 3")
+	if err != nil || code != 3 {
+		t.Fatalf("exit 3: code=%d err=%v", code, err)
+	}
+	_, _, code, err = r.Run(context.Background(), "this-command-does-not-exist-xyz")
+	if err != nil || code != 127 {
+		t.Fatalf("not-found is a completed run with the shell's exit code: code=%d err=%v", code, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	_, _, code, err = r.Run(ctx, "sleep 2")
+	if err == nil || code != -1 || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("timeout must refuse with an error: code=%d err=%v", code, err)
+	}
+}
