@@ -1,13 +1,13 @@
 ---
 name: regulus-workflow
-description: The Regulus Method — the evidence-first workflow (authorize, chart, build, prove, learn); acceptance criteria before code, gauntlet before done, receipts for every claim, session notes for continuity; use for any authorized implementation or bugfix in this project
+description: The Sextant — the evidence-first workflow (authorize, chart, build, prove, learn); acceptance criteria before code, gauntlet before done, receipts for every claim, session notes for continuity; use for any authorized implementation or bugfix in this project
 ---
 
 ## What I do
 
-Run authorized work through **the Regulus Method** — the discipline that
+Run authorized work through **the Sextant** — the discipline that
 drives the three Regulus loops: the Gauntlet (quality gates with
-receipts), Discipline (the Method itself) and Evolution (evidence-gated
+receipts), Discipline (the Sextant itself) and Evolution (evidence-gated
 lessons).
 
 ## When to use me
@@ -16,7 +16,7 @@ Any authorized implementation or bugfix in this project.
 Investigation, explanation and proposal requests stay read-only — no
 skill needed for those.
 
-## The Regulus Method — five movements
+## The Sextant — five movements
 
 1. **AUTHORIZE** — read-only investigation is fine; if the change
    intent is unclear, ask ONE focused question and stop.

@@ -77,7 +77,7 @@ paraphrase. Read down to `## Log` before working.
 | T1 (F0) | S1–S6 | Foundation: PRD, architecture, README, this document, repo skeleton | inline (parent) | 4c135bf |
 | T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, workflow skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
 | T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | inline (writer subagent unavailable) | bb55401 · 3389543 · 2ae3bf6 · 5397b1c · a6491be · this unit (WU5) |
-| T4 (F3) | S1 | Complete Discipline: the full Regulus Method workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
+| T4 (F3) | S1 | Complete Discipline: the full Sextant workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
 | T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | decide at task start | — |
 | T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | decide at task start | — |
 
@@ -264,4 +264,13 @@ paraphrase. Read down to `## Log` before working.
   inspirations — ideas are adapted under their MIT/Apache-2.0 terms
   and credited; only the borrowed NAMES are retired from Regulus's own
   vocabulary. Historical Log entries stay verbatim as the audit
-  trail. Commit: this work unit.
+  trail. Commit: 2616f25.
+- **L20** (nomenclature revision, user verbatim): "podemos cambiar el
+  nombre de the Regulus method por algo que haga referencia a
+  Astrolabio, sextante, etc. algo mas estelar o cosmico" — resolved
+  as **The Sextant** (El Sextante). The method that runs the loops is
+  named for the stellar measurement instrument: it takes the sighting
+  (the receipt), the Log records it, the Chart plots it, the Almanac
+  remembers it — the navigation metaphor closes. "The Regulus Method"
+  (L19) is retired from live text; the five movements are unchanged
+  (authorize → chart → build → prove → learn). Commit: this work unit.

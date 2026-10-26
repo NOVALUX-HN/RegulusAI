@@ -30,7 +30,7 @@ OpenCode (host, TS/Bun runtime)
 ├── Guardian agents (.opencode/agents/*.md, read-only permissions)
 │     spec-keeper, gate-verifier (others later)
 ├── Workflow skills (.opencode/skills/*/SKILL.md)
-│     regulus-gauntlet, regulus-reflect, regulus-workflow (the Regulus Method)
+│     regulus-gauntlet, regulus-reflect, regulus-workflow (the Sextant)
 └── regulus CLI (Go binary, spawned by plugin via $ / humans directly)
       sole owner of state; usable standalone in CI without OpenCode
 ```
