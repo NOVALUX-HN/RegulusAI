@@ -76,7 +76,7 @@ paraphrase. Read down to `## Log` before working.
 |---|---|---|---|---|
 | T1 (F0) | S1–S6 | Foundation: PRD, architecture, README, this document, repo skeleton | inline (parent) | 4c135bf |
 | T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, ODD-lite skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
-| T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | decide at task start | — |
+| T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | inline (writer subagent unavailable) | bb55401 · 3389543 · 2ae3bf6 · 5397b1c · a6491be · this unit (WU5) |
 | T4 (F3) | S1 | Complete Discipline: full ODD workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
 | T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | decide at task start | — |
 | T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | decide at task start | — |
@@ -237,4 +237,16 @@ paraphrase. Read down to `## Log` before working.
   render like Go tooling ((*calc).Sub). Guardian roster complete:
   spec-keeper, mutation-auditor, crap-analyst, evidence-auditor,
   gate-verifier leading with metrics across all seven layers.
-  Commit: this work unit.
+  Commit: a6491be.
+- **L18** (F2/WU5 evidence — PHASE EXIT): the deterministic journey
+  `TestF2SevenLayers` (internal/journey/f2_test.go) walks a REAL Go
+  fixture module (mutation-killing tests, git init + commit) through
+  the complete seven-layer gauntlet in-process with a freshly built
+  regulus binary: 7/7 gates pass in ~12s, 7 receipts written, the
+  coverage-floor receipt records its metric, mutation and CRAP receipts
+  prove pass. The journey skips with a printed reason when gremlins is
+  absent (the mutation gate was verified live in the L17 dogfood).
+  Building the gates config via json.Marshal of the typed gates.Config
+  caught a JSON-escaping trap a hand-written template hid. F2 exit
+  criterion met: the full 7-layer gauntlet runs green on a real repo,
+  with receipts the human audits without opening a diff.
