@@ -30,7 +30,7 @@ OpenCode (host, TS/Bun runtime)
 ├── Guardian agents (.opencode/agents/*.md, read-only permissions)
 │     spec-keeper, gate-verifier (others later)
 ├── Workflow skills (.opencode/skills/*/SKILL.md)
-│     regulus-gauntlet, regulus-reflect, regulus-workflow (ODD-lite)
+│     regulus-gauntlet, regulus-reflect, regulus-workflow (the Regulus Method)
 └── regulus CLI (Go binary, spawned by plugin via $ / humans directly)
       sole owner of state; usable standalone in CI without OpenCode
 ```
@@ -77,7 +77,7 @@ Evolution (Loop 3) edits this surface. Nothing else may.
 Committed, never under `.regulus/`:
 
 - `regulus.json` — project config: gates (`name`/`layer`/`command`/`timeout_sec`)
-- `odd/tasks/<feature>.md` — workflow docs
+- `charts/<feature>.md` — Charts: the committed feature documents
 
 **Single writer:** the core. The plugin and agents never mutate state
 directly; they invoke core subcommands.

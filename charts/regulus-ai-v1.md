@@ -75,9 +75,9 @@ paraphrase. Read down to `## Log` before working.
 | ID | Spec | Work | Route | Commit |
 |---|---|---|---|---|
 | T1 (F0) | S1–S6 | Foundation: PRD, architecture, README, this document, repo skeleton | inline (parent) | 4c135bf |
-| T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, ODD-lite skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
+| T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, workflow skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
 | T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | inline (writer subagent unavailable) | bb55401 · 3389543 · 2ae3bf6 · 5397b1c · a6491be · this unit (WU5) |
-| T4 (F3) | S1 | Complete Discipline: full ODD workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
+| T4 (F3) | S1 | Complete Discipline: the full Regulus Method workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
 | T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | decide at task start | — |
 | T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | decide at task start | — |
 
@@ -250,3 +250,18 @@ paraphrase. Read down to `## Log` before working.
   caught a JSON-escaping trap a hand-written template hid. F2 exit
   criterion met: the full 7-layer gauntlet runs green on a real repo,
   with receipts the human audits without opening a diff.
+  Commit: 3792dc3.
+- **L19** (nomenclature decision, user verbatim): "podemos cambiar ODD
+  y crear nuestra propia nomenclatura para evitar robar la idea, sino
+  adaptar a nuestra idea" — resolved as **The Regulus Method**. Our own
+  vocabulary replaces every borrowed name in live text: the workflow is
+  the Regulus Method (five movements: authorize → chart → build →
+  prove → learn); feature documents are Charts under `charts/` (was
+  `odd/tasks/`, moved with git mv preserving history); the Log keeps
+  its name (the ship's log); the future subagent roster will be the
+  Crew. Attribution stays where it belongs: the sources (PRD §1) and
+  README still credit Gentle-AI, Harness², Engram and Uncle Bob as
+  inspirations — ideas are adapted under their MIT/Apache-2.0 terms
+  and credited; only the borrowed NAMES are retired from Regulus's own
+  vocabulary. Historical Log entries stay verbatim as the audit
+  trail. Commit: this work unit.

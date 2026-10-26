@@ -46,6 +46,10 @@ Regulus AI is an **OpenCode-native engineering harness** that runs three loops:
 One sentence: *the human approves specifications and audits evidence; guardian
 agents guarantee the code; the harness learns from every task.*
 
+**The Regulus Method** is the workflow that runs the loops — five movements:
+authorize → chart → build → prove → learn — and every movement ends in
+evidence.
+
 ### Non-goals (v1)
 
 - Multi-host support. OpenCode only — depth over breadth.
@@ -79,8 +83,8 @@ agents guarantee the code; the harness learns from every task.*
 
 - **R-D1 Task sizing.** Understood / contained-risk / resumable-from-diff
   decides small (inline) vs large (tracked with a feature document).
-- **R-D2 Feature documents.** Large work gets `odd/tasks/<feature>.md` holding
-  the user's spec verbatim, the task list, and a decision log.
+- **R-D2 Charts (feature documents).** Large work gets `charts/<feature>.md`
+  holding the user's spec verbatim, the task list, and the ship's log.
 - **R-D3 Delegation by reason,** not size: ask (open product decision),
   evidence-budget (deep exploration), verification (high risk), writer
   (independent units) — adapted to OpenCode subagents and task permissions.
@@ -112,10 +116,10 @@ end-to-end spine, F2–F4 complete each loop, F5 integrates and releases.
 
 | Phase | Name | Contents | Exit criterion |
 |---|---|---|---|
-| F0 | Foundation | Repo, PRD, architecture, ODD feature document (commit 4c135bf) | done |
-| F1 | Vertical spine | `regulus` CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent (read-only), ODD-lite skill, minimal session memory, minimal `reflect` + library + budget ledger | done — the deterministic journey `TestF1VerticalSpine` (internal/journey) proves it; feature doc L13 |
+| F0 | Foundation | Repo, PRD, architecture, feature document (commit 4c135bf) | done |
+| F1 | Vertical spine | `regulus` CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent (read-only), workflow skill, minimal session memory, minimal `reflect` + library + budget ledger | done — the deterministic journey `TestF1VerticalSpine` (internal/journey) proves it; feature doc L13 |
 | F2 | Complete Gauntlet | gate layers 5–7 (coverage floor, mutation testing, CRAP score), full guardian roster (spec-keeper, mutation-auditor, crap-analyst, evidence-auditor), evidence audit UX, per-project gate thresholds | done — 7/7 layers green on regulus itself (feature doc L17) plus the deterministic `TestF2SevenLayers` journey over a real Go fixture (L18) |
-| F3 | Complete Discipline | full ODD workflow + task tooling, subagent roster (explore/worker/verify) with `permission.task` matrices, complete skills set, Almanac memory (Engram-inspired, evidence-first: observations with provenance, revision chains, deterministic retrieval, resume — docs/memory.md) | a multi-session feature resumes after a restart from the feature document + Almanac alone |
+| F3 | Complete Discipline | the full Regulus Method workflow + task tooling, subagent roster (explore/worker/verify) with `permission.task` matrices, complete skills set, Almanac memory (Engram-inspired, evidence-first: observations with provenance, revision chains, deterministic retrieval, resume — docs/memory.md) | a multi-session feature resumes after a restart from the feature document + Almanac alone |
 | F4 | Complete Evolution | lesson admission flow (candidate → guardian validation → library INDEX), library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (Propose–Probe–Compose, k=1, explicit request) | a lesson produced by real work is adopted with evidence and measurably improves a later task; the ledger shows caps enforced |
 | F5 | Integration & release | complete V2 plugin (all hooks + custom tools), complete CLI UX, deterministic journeys suite, npm installer distributing the Go binaries, user docs, final dogfood | v1: the success criteria below hold on the final dogfood |
 

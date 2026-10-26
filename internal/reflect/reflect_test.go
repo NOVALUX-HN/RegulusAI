@@ -17,7 +17,7 @@ var now = time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
 
 func writeFeatureDoc(t *testing.T, dir string) string {
 	t.Helper()
-	path := filepath.Join(dir, "odd", "tasks", "feature.md")
+	path := filepath.Join(dir, "charts", "feature.md")
 	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When regulus runs\n- Then the exit code is 0\n"
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)

@@ -1,7 +1,7 @@
-// Package spec validates the acceptance-criteria contract of ODD feature
-// documents (PRD R-G1): every authorized change declares Gherkin-style
-// acceptance criteria before implementation begins, and the human reviews
-// these — not diffs.
+// Package spec validates the acceptance-criteria contract of Regulus
+// charts (feature documents; PRD R-G1): every authorized change declares
+// Gherkin-style acceptance criteria before implementation begins, and the
+// human reviews these — not diffs.
 package spec
 
 import (
