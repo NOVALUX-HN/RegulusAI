@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -11,11 +12,14 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/budget"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/gates"
+	"regulus-ai/internal/library"
 	"regulus-ai/internal/memory"
 	"regulus-ai/internal/receipts"
+	"regulus-ai/internal/reflect"
 	"regulus-ai/internal/spec"
 )
 
@@ -53,6 +57,12 @@ func (c CLI) Run(args []string) int {
 		return c.gateCmd(args[1:])
 	case "memory":
 		return c.memoryCmd(args[1:])
+	case "budget":
+		return c.budgetCmd(args[1:])
+	case "library":
+		return c.libraryCmd(args[1:])
+	case "reflect":
+		return c.reflectCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])
 		c.usage(c.Stderr)
@@ -179,6 +189,117 @@ func (c CLI) memoryCmd(args []string) int {
 	}
 }
 
+// reflectCmd implements `regulus reflect --domain --task --cue --lesson
+// [--confidence] <feature-doc>`: admit an evidence-gated lesson (PRD
+// R-E1/R-E2).
+func (c CLI) reflectCmd(args []string) int {
+	fs := flag.NewFlagSet("reflect", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "lesson domain (required)")
+	task := fs.String("task", "", "task id whose receipts are the evidence (required)")
+	cue := fs.String("cue", "", "when this pattern appears (required)")
+	lesson := fs.String("lesson", "", "what to do (required)")
+	confidence := fs.String("confidence", "low", "low | medium | high")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *domain == "" || *task == "" || *cue == "" || *lesson == "" || fs.NArg() != 1 {
+		fmt.Fprintln(c.Stderr, "usage: regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--confidence low|medium|high] <feature-doc>")
+		return 2
+	}
+	r := c.Runner
+	if r == nil {
+		r = gates.ShRunner{}
+	}
+	head := gates.GitHead(context.Background(), r)
+	l, err := reflect.Run(".", reflect.Input{
+		FeatureDoc: fs.Arg(0), Domain: *domain, Task: *task, Cue: *cue, Lesson: *lesson,
+		Confidence: *confidence, Now: time.Now().UTC(),
+	}, head)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "reflect: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "lesson admitted: %s\n", l.ID)
+	fmt.Fprintf(c.Stdout, "index: %s\n", library.IndexFile(".", l.Domain))
+	return 0
+}
+
+// libraryCmd implements `regulus library list [--domain <name>]`.
+func (c CLI) libraryCmd(args []string) int {
+	if len(args) == 0 || args[0] != "list" {
+		fmt.Fprintln(c.Stderr, "usage: regulus library list [--domain <name>]")
+		return 2
+	}
+	if len(args) == 3 && args[1] == "--domain" {
+		lessons, err := library.List(".", args[2])
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "library list: %v\n", err)
+			return 1
+		}
+		c.printLessons(args[2], lessons)
+		return 0
+	}
+	if len(args) != 1 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library list [--domain <name>]")
+		return 2
+	}
+	domains, err := library.Domains(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "library list: %v\n", err)
+		return 1
+	}
+	if len(domains) == 0 {
+		fmt.Fprintln(c.Stdout, "(no lessons admitted yet)")
+		return 0
+	}
+	for _, d := range domains {
+		lessons, err := library.List(".", d)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "library list: %v\n", err)
+			return 1
+		}
+		c.printLessons(d, lessons)
+	}
+	return 0
+}
+
+func (c CLI) printLessons(domain string, lessons []library.Lesson) {
+	if len(lessons) == 0 {
+		fmt.Fprintf(c.Stdout, "%s: (no lessons admitted yet)\n", domain)
+		return
+	}
+	fmt.Fprintf(c.Stdout, "%s:\n", domain)
+	for _, l := range lessons {
+		fmt.Fprintf(c.Stdout, "  %s  %s  (%s, %d receipt(s))\n", l.ID, l.Cue, l.Confidence, len(l.Evidence))
+	}
+}
+
+// budgetCmd implements `regulus budget show`.
+func (c CLI) budgetCmd(args []string) int {
+	if len(args) != 1 || args[0] != "show" {
+		fmt.Fprintln(c.Stderr, "usage: regulus budget show")
+		return 2
+	}
+	entries, err := budget.Show(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "budget show: %v\n", err)
+		return 1
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(c.Stdout, "(no budget entries)")
+		return 0
+	}
+	for _, e := range entries {
+		detail := ""
+		if e.Detail != "" {
+			detail = " (" + e.Detail + ")"
+		}
+		fmt.Fprintf(c.Stdout, "%s %s %s %s %s%s\n", e.Timestamp.Format(time.RFC3339), e.Kind, e.Task, e.Domain, e.Outcome, detail)
+	}
+	return 0
+}
+
 func (c CLI) usage(w io.Writer) {
 	fmt.Fprintf(w, `regulus %s — the Regulus AI core CLI
 
@@ -186,13 +307,16 @@ Usage:
   regulus <command> [arguments]
 
 Commands:
-  contract    print the plugin<->core contract version
-  doctor      probe OpenCode and verify V2 runtime support
+  budget show        show the evolution budget ledger
+  contract           print the plugin<->core contract version
+  doctor             probe OpenCode and verify V2 runtime support
   gate run <task>    run the layered gauntlet and write receipts
-  help        show this help
+  help               show this help
+  library list [--domain <name>]  list admitted lessons
   memory note|show   session notes — the Almanac F1 slice
+  reflect            admit an evidence-gated lesson (regulus reflect --help)
   spec check <file>  validate the acceptance contract of a feature document
-  --version   print the regulus version
+  --version          print the regulus version
 
 Exit codes:
   0  success

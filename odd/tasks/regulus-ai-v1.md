@@ -165,4 +165,13 @@ paraphrase. Read down to `## Log` before working.
   smoke (note+show on the real binary). TS: `tsc --noEmit` clean against
   @opencode/plugin 2.1.4 (Bun 1.4.4 installed). Live plugin-load
   verification happens in the user's OpenCode session (WU6/F5 dogfood).
-  Commit: this work unit.
+  Commit: 199caf3.
+- **L12** (F1/WU5 evidence): Evolution slice live — `regulus reflect`
+  validates the feature document's spec contract, requires the task's
+  receipts (refuses without evidence), admits a lesson with
+  cue/lesson/evidence/confidence and records the budget entry;
+  `regulus library list` reads per-domain INDEX views; `regulus budget
+  show` prints the ledger. RED 13 → GREEN, vet/fmt clean. Dogfood:
+  reflect over this feature document citing the 4 real WU3 gauntlet
+  receipts — lesson les_18e2043c388e0260 admitted (medium confidence),
+  INDEX and budget entry written. Commit: this work unit.

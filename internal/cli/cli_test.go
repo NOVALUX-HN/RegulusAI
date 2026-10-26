@@ -320,3 +320,82 @@ func TestMemoryShowEmptySession(t *testing.T) {
 		t.Fatalf("output = %q", out.String())
 	}
 }
+
+func TestReflectUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"reflect"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus reflect") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestReflectRefusesNoEvidence(t *testing.T) {
+	dir := t.TempDir()
+	doc := filepath.Join(dir, "feature.md")
+	content := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When regulus runs\n- Then the exit code is 0\n"
+	if err := os.WriteFile(doc, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, errb := newCLI(nil)
+	t.Chdir(dir)
+	if code := c.Run([]string{
+		"reflect",
+		"--domain", "go", "--task", "feature/T1",
+		"--cue", "c", "--lesson", "l",
+		doc,
+	}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "no evidence") {
+		t.Fatalf("stderr must name the missing evidence, got %q", errb.String())
+	}
+}
+
+func TestBudgetShowUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"budget"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus budget show") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "frobnicate"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+}
+
+func TestBudgetShowEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no budget entries)") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestLibraryListUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"library"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus library list") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestLibraryListEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "list"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no lessons admitted yet)") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
