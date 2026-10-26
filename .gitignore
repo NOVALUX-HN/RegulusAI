@@ -1,0 +1,12 @@
+# Regulus runtime state — per-project, never committed
+.regulus/
+
+# OpenCode plugin development
+node_modules/
+
+# Build output
+bin/
+dist/
+
+# Tool cache directories
+.atl/
