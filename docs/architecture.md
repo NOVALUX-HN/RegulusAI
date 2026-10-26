@@ -67,10 +67,12 @@ Evolution (Loop 3) edits this surface. Nothing else may.
 ```
 .regulus/
 ├── evidence/<task-slug>/<gate>-<nanos>.json   immutable receipts (append-only)
+├── almanac/
+│     observations.jsonl    append-only observation log (typed, provenance;
+│                           the memory substrate — docs/memory.md)
 ├── library/<domain>/
 │     INDEX.md                          lesson index (regenerated from disk)
 │     └── lessons/<id>/LESSON.md        cue / lesson / evidence / confidence
-├── memory/session.md                   continuity notes (compaction hook reads this)
 └── budget.json                        ledger of evolution runs
 ```
 

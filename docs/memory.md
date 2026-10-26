@@ -39,13 +39,13 @@
 
 ```
 .regulus/
-├── memory/
-│     session.md            F1 slice: append-only session notes (timestamped)
-└── almanac/                F3: the full substrate
-      observations.jsonl    append-only log, one JSON object per line
-      views/<domain>/
-            INDEX.md        lesson index, regenerated from the log
-            lessons/<id>.md rendered lesson (cue / lesson / evidence / confidence)
+└── almanac/
+      observations.jsonl    append-only log, one JSON object per line — THE
+                           substrate of every observation type, including
+                           session notes and lessons
+      views/<domain>/            (F4) rendered lesson views
+            INDEX.md
+            lessons/<id>.md
 ```
 
 Team sharing (F3): `regulus memory export` renders a committed bundle from

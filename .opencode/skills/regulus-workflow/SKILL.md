@@ -41,3 +41,15 @@ skill needed for those.
   verifiers; never ask them to edit code.
 - Task sizing: understood + contained risk + resumable from the diff →
   small (inline); anything else → a tracked Chart under `charts/`.
+
+## The Crew and the guardians
+
+Delegate by reason, never by size:
+
+- **@regulus-scout** — maps territory with `file:line` evidence before
+  you write.
+- **@regulus-worker** — ONE bounded unit against a Chart, when work
+  parallelizes or the context must stay thin.
+- **@regulus-verifier** — independent reproduction when a mistake
+  would be hard to detect or undo.
+- **Guardians** — read-only proof at the end; never ask them to edit.
