@@ -221,4 +221,20 @@ paraphrase. Read down to `## Log` before working.
   internal/evidence.List walks the store path-ordered with a task
   filter and refuses malformed receipts. RED 8 → GREEN, suite / vet /
   fmt clean; live demo over the real WU3 gauntlet receipts of
-  regulus-ai-v1/T2. Commit: this work unit.
+  regulus-ai-v1/T2. Commit: 2ae3bf6.
+- **L17** (F2/WU4 evidence): the seven-layer gauntlet is green on regulus
+  itself — `regulus gate run regulus-ai-v1/T2` exits 0 with 7/7:
+  typecheck, lint, build, unit-tests, coverage-floor (86.7% ≥ 80,
+  metric gate), mutation (gremlins efficacy ≥ 70 over a clean
+  git-archive export of HEAD — 84.62% calibrated in 13s; the naive
+  whole-repo temp copy starved every mutant to timeout on Windows
+  because gremlins copies the module per mutant, node_modules
+  included), CRAP (max 21.23 ≤ 30). Debt from L15 paid first (commit
+  5397b1c): libraryCmd/reflect paths covered (coverage 81.1→86.7%),
+  spec.Check decomposed 30→15, a REAL Windows bug fixed (ShRunner
+  deadline kill surfaced as ExitError exit-1, masking timeouts —
+  context check now precedes the ExitError branch), receiver names
+  render like Go tooling ((*calc).Sub). Guardian roster complete:
+  spec-keeper, mutation-auditor, crap-analyst, evidence-auditor,
+  gate-verifier leading with metrics across all seven layers.
+  Commit: this work unit.
