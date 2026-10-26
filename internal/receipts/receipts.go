@@ -45,6 +45,13 @@ type Receipt struct {
 	Stderr     string    `json:"stderr"`
 	StderrSHA  string    `json:"stderr_sha256"`
 	GitHead    string    `json:"git_head"`
+
+	// Metric fields are set by metric gates (F2) whenever the metric was
+	// extracted, pass or fail. nil MetricValue means: not a metric gate,
+	// or extraction refused (see the receipt stderr).
+	MetricValue     *float64 `json:"metric_value,omitempty"`
+	MetricThreshold *float64 `json:"metric_threshold,omitempty"`
+	MetricOperator  string   `json:"metric_operator,omitempty"`
 }
 
 // Capture bounds s, marking truncation, and returns the SHA-256 of the

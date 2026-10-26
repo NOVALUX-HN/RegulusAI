@@ -186,4 +186,14 @@ paraphrase. Read down to `## Log` before working.
   with the full suite; vet and gofmt clean. F1 exit criterion met: a
   tiny feature developed through Regulus produces receipts for all
   three loops. Live plugin-load verification remains for the user's
-  OpenCode session (F5 dogfood). Commit: this work unit.
+  OpenCode session (F5 dogfood). Commit: 3808f1b.
+- **L14** (F2/WU1 evidence): metric gates live — a gate may declare
+  {extract: last-line-float|last-line-percent, threshold, operator:
+  >=|<=}; the command must exit 0 AND the extracted value must satisfy
+  the operator (extraction: last non-empty stdout line, percent strips
+  "%", last numeric token wins; unextractable = gate failure with the
+  refusal in the receipt stderr). Receipts carry metric_value,
+  metric_threshold and metric_operator when evaluated. Config validation
+  rejects bad operators and extract modes. Gremlins installed for the
+  mutation gate (exit-code thresholds built in). RED 5 → GREEN, suite /
+  vet / fmt clean. Commit: this work unit.

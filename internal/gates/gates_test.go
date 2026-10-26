@@ -76,6 +76,8 @@ func TestLoadValidation(t *testing.T) {
 		{"empty name", `{"gates":[{"name":"","layer":1,"command":"x"}]}`, "must not be empty"},
 		{"empty command", `{"gates":[{"name":"a","layer":1,"command":""}]}`, "must not be empty"},
 		{"duplicate name", `{"gates":[{"name":"a","layer":1,"command":"x"},{"name":"a","layer":2,"command":"y"}]}`, "duplicate gate name"},
+		{"bad metric operator", `{"gates":[{"name":"a","layer":1,"command":"x","metric":{"extract":"last-line-float","threshold":80,"operator":"<"}}]}`, "metric operator"},
+		{"bad metric extract", `{"gates":[{"name":"a","layer":1,"command":"x","metric":{"extract":"magic","threshold":80,"operator":">="}}]}`, "metric extract"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -259,5 +261,142 @@ func TestGitHead(t *testing.T) {
 	}}
 	if got := GitHead(context.Background(), rErr); got != "" {
 		t.Fatalf("git head outside a repo must be empty, got %q", got)
+	}
+}
+
+func readReceiptFile(t *testing.T, path string) receipts.Receipt {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec receipts.Receipt
+	if err := json.Unmarshal(data, &rec); err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
+
+func TestRunMetricFloorPass(t *testing.T) {
+	cfg := Config{Gates: []Gate{{
+		Name: "coverage-floor", Layer: 5, Command: "cover-cmd",
+		Metric: &Metric{Extract: ExtractLastLineFloat, Threshold: 80, Operator: OpAtLeast},
+	}}}
+	r := &fakeRunner{results: map[string]fakeResult{"cover-cmd": {stdout: "85.3"}}}
+	res, err := Run(context.Background(), cfg, t.TempDir(), "t", "abc", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed || res.Passed != 1 {
+		t.Fatalf("res = %+v", res)
+	}
+	rec := readReceiptFile(t, res.Receipts[0])
+	if rec.MetricValue == nil || *rec.MetricValue != 85.3 {
+		t.Fatalf("metric value = %v", rec.MetricValue)
+	}
+	if rec.MetricThreshold == nil || *rec.MetricThreshold != 80 {
+		t.Fatalf("metric threshold = %v", rec.MetricThreshold)
+	}
+	if rec.MetricOperator != OpAtLeast {
+		t.Fatalf("metric operator = %q", rec.MetricOperator)
+	}
+}
+
+func TestRunMetricFloorFails(t *testing.T) {
+	cfg := Config{Gates: []Gate{{
+		Name: "coverage-floor", Layer: 5, Command: "cover-cmd",
+		Metric: &Metric{Extract: ExtractLastLineFloat, Threshold: 80, Operator: OpAtLeast},
+	}}}
+	r := &fakeRunner{results: map[string]fakeResult{"cover-cmd": {stdout: "72.5"}}}
+	res, err := Run(context.Background(), cfg, t.TempDir(), "t", "", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed || res.FailedGate != "coverage-floor" {
+		t.Fatalf("res = %+v", res)
+	}
+	rec := readReceiptFile(t, res.Receipts[0])
+	if rec.MetricValue == nil || *rec.MetricValue != 72.5 {
+		t.Fatalf("metric value = %v", rec.MetricValue)
+	}
+	if !strings.Contains(rec.Stderr, "does not meet") {
+		t.Fatalf("receipt stderr must name the threshold miss, got %q", rec.Stderr)
+	}
+}
+
+func TestRunMetricPercentExtract(t *testing.T) {
+	cfg := Config{Gates: []Gate{{
+		Name: "coverage", Layer: 5, Command: "cover-cmd",
+		Metric: &Metric{Extract: ExtractLastLinePercent, Threshold: 80, Operator: OpAtLeast},
+	}}}
+	r := &fakeRunner{results: map[string]fakeResult{
+		"cover-cmd": {stdout: "total:\t(statements)\t81.2%"},
+	}}
+	res, err := Run(context.Background(), cfg, t.TempDir(), "t", "", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("81.2%% must pass an 80 floor: %+v", res)
+	}
+	rec := readReceiptFile(t, res.Receipts[0])
+	if rec.MetricValue == nil || *rec.MetricValue != 81.2 {
+		t.Fatalf("metric value = %v", rec.MetricValue)
+	}
+}
+
+func TestRunMetricExtractionRefused(t *testing.T) {
+	cfg := Config{Gates: []Gate{{
+		Name: "coverage", Layer: 5, Command: "cover-cmd",
+		Metric: &Metric{Extract: ExtractLastLineFloat, Threshold: 80, Operator: OpAtLeast},
+	}}}
+	r := &fakeRunner{results: map[string]fakeResult{"cover-cmd": {stdout: "no number here"}}}
+	res, err := Run(context.Background(), cfg, t.TempDir(), "t", "", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatal("an unextractable metric must fail the gate")
+	}
+	rec := readReceiptFile(t, res.Receipts[0])
+	if rec.MetricValue != nil {
+		t.Fatal("MetricValue must stay nil when extraction is refused")
+	}
+	if !strings.Contains(rec.Stderr, "could not extract") {
+		t.Fatalf("receipt stderr must name the extraction failure, got %q", rec.Stderr)
+	}
+}
+
+func TestRunMetricAtMostPass(t *testing.T) {
+	cfg := Config{Gates: []Gate{{
+		Name: "crap", Layer: 7, Command: "crap-cmd",
+		Metric: &Metric{Extract: ExtractLastLineFloat, Threshold: 30, Operator: OpAtMost},
+	}}}
+	r := &fakeRunner{results: map[string]fakeResult{"crap-cmd": {stdout: "CRAP max: 12.5"}}}
+	res, err := Run(context.Background(), cfg, t.TempDir(), "t", "", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Failed {
+		t.Fatalf("12.5 must pass a <=30 gate: %+v", res)
+	}
+}
+
+func TestRunMetricGateStillFailsOnExitCode(t *testing.T) {
+	cfg := Config{Gates: []Gate{{
+		Name: "coverage", Layer: 5, Command: "cover-cmd",
+		Metric: &Metric{Extract: ExtractLastLineFloat, Threshold: 80, Operator: OpAtLeast},
+	}}}
+	r := &fakeRunner{results: map[string]fakeResult{"cover-cmd": {code: 1, stdout: "85.3"}}}
+	res, err := Run(context.Background(), cfg, t.TempDir(), "t", "", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Failed {
+		t.Fatal("a non-zero exit must fail a metric gate regardless of the value")
+	}
+	rec := readReceiptFile(t, res.Receipts[0])
+	if rec.MetricValue != nil {
+		t.Fatal("MetricValue must not be set when the command itself failed")
 	}
 }

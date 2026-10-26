@@ -11,20 +11,45 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/receipts"
 )
 
-// Gate is one configured quality gate.
+// Gate is one configured quality gate. A gate with a Metric is a metric
+// gate: the command must exit 0 AND the extracted metric must satisfy the
+// operator against the threshold (F2, PRD R-G2 layers 5–7).
 type Gate struct {
-	Name       string `json:"name"`
-	Layer      int    `json:"layer"`
-	Command    string `json:"command"`
-	TimeoutSec int    `json:"timeout_sec,omitempty"`
+	Name       string  `json:"name"`
+	Layer      int     `json:"layer"`
+	Command    string  `json:"command"`
+	TimeoutSec int     `json:"timeout_sec,omitempty"`
+	Metric     *Metric `json:"metric,omitempty"`
 }
+
+// Metric extracts a number from the gate command's stdout and compares it
+// against a threshold.
+type Metric struct {
+	Extract   string  `json:"extract"` // ExtractLastLineFloat | ExtractLastLinePercent
+	Threshold float64 `json:"threshold"`
+	Operator  string  `json:"operator"` // ">=" | "<="
+}
+
+// Metric extraction modes.
+const (
+	ExtractLastLineFloat   = "last-line-float"
+	ExtractLastLinePercent = "last-line-percent"
+)
+
+// Metric comparison operators.
+const (
+	OpAtLeast = ">="
+	OpAtMost  = "<="
+)
 
 // Config is the project's regulus.json.
 type Config struct {
@@ -127,6 +152,18 @@ func validate(cfg Config) error {
 			return fmt.Errorf("duplicate gate name %q", g.Name)
 		}
 		seenName[g.Name] = true
+		if g.Metric != nil {
+			switch g.Metric.Operator {
+			case OpAtLeast, OpAtMost:
+			default:
+				return fmt.Errorf("gates[%d]: metric operator must be >= or <=", i)
+			}
+			switch g.Metric.Extract {
+			case ExtractLastLineFloat, ExtractLastLinePercent:
+			default:
+				return fmt.Errorf("gates[%d]: metric extract must be last-line-float or last-line-percent", i)
+			}
+		}
 	}
 	return nil
 }
@@ -171,6 +208,39 @@ func Run(ctx context.Context, cfg Config, evidenceDir, task, gitHead string, r C
 			verdict = receipts.VerdictFail
 		}
 
+		// Metric gates (F2): the command must exit 0 AND the extracted
+		// metric must satisfy the operator against the threshold.
+		var metricValue, metricThreshold *float64
+		var metricOp string
+		if verdict == receipts.VerdictPass && g.Metric != nil {
+			metricOp = g.Metric.Operator
+			value, err := extractMetric(g.Metric.Extract, stdout)
+			if err != nil {
+				verdict = receipts.VerdictFail
+				note := "metric: " + err.Error()
+				if stderr == "" {
+					stderr = note
+				} else {
+					stderr += "\n" + note
+				}
+			} else {
+				metricValue = &value
+				th := g.Metric.Threshold
+				metricThreshold = &th
+				ok := (g.Metric.Operator == OpAtLeast && value >= th) ||
+					(g.Metric.Operator == OpAtMost && value <= th)
+				if !ok {
+					verdict = receipts.VerdictFail
+					note := fmt.Sprintf("metric %.2f does not meet %s %.2f", value, g.Metric.Operator, th)
+					if stderr == "" {
+						stderr = note
+					} else {
+						stderr += "\n" + note
+					}
+				}
+			}
+		}
+
 		rec := receipts.Receipt{
 			Task:       task,
 			Gate:       g.Name,
@@ -181,6 +251,10 @@ func Run(ctx context.Context, cfg Config, evidenceDir, task, gitHead string, r C
 			StartedAt:  start,
 			DurationMS: dur.Milliseconds(),
 			GitHead:    gitHead,
+
+			MetricValue:     metricValue,
+			MetricThreshold: metricThreshold,
+			MetricOperator:  metricOp,
 		}
 		rec.Stdout, rec.StdoutSHA = receipts.Capture(stdout)
 		rec.Stderr, rec.StderrSHA = receipts.Capture(stderr)
@@ -209,4 +283,35 @@ func GitHead(ctx context.Context, r CmdRunner) string {
 		return ""
 	}
 	return strings.TrimSpace(out)
+}
+
+var metricNumberRe = regexp.MustCompile(`[-+]?[0-9]*\.?[0-9]+`)
+
+// extractMetric pulls one number out of a metric gate's stdout. Both modes
+// read the last non-empty line; the percent mode strips a trailing "%"
+// first. Within that line the LAST numeric token wins.
+func extractMetric(extract, stdout string) (float64, error) {
+	lines := strings.Split(stdout, "\n")
+	var last string
+	for i := len(lines) - 1; i >= 0; i-- {
+		if s := strings.TrimSpace(lines[i]); s != "" {
+			last = s
+			break
+		}
+	}
+	if last == "" {
+		return 0, errors.New("could not extract a metric: the command printed nothing")
+	}
+	if extract == ExtractLastLinePercent {
+		last = strings.TrimSuffix(last, "%")
+	}
+	matches := metricNumberRe.FindAllString(last, -1)
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("could not extract a metric from %q", last)
+	}
+	v, err := strconv.ParseFloat(matches[len(matches)-1], 64)
+	if err != nil {
+		return 0, fmt.Errorf("could not extract a metric from %q", last)
+	}
+	return v, nil
 }
