@@ -77,7 +77,7 @@ paraphrase. Read down to `## Log` before working.
 | T1 (F0) | S1–S6 | Foundation: PRD, architecture, README, this document, repo skeleton | inline (parent) | 4c135bf |
 | T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, workflow skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
 | T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | inline (writer subagent unavailable) | bb55401 · 3389543 · 2ae3bf6 · 5397b1c · a6491be · this unit (WU5) |
-| T4 (F3) | S1 | Complete Discipline: the full Sextant workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | decide at task start | — |
+| T4 (F3) | S1 | Complete Discipline: the full Sextant workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | inline (writer subagent unavailable) | 9b940f6 · 6e0eba8 · this unit (WU4) |
 | T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | decide at task start | — |
 | T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | decide at task start | — |
 
@@ -273,4 +273,23 @@ paraphrase. Read down to `## Log` before working.
   (the receipt), the Log records it, the Chart plots it, the Almanac
   remembers it — the navigation metaphor closes. "The Regulus Method"
   (L19) is retired from live text; the five movements are unchanged
-  (authorize → chart → build → prove → learn). Commit: this work unit.
+  (authorize → chart → build → prove → learn). Commit: b3e23ee.
+- **L21** (F3 evidence — PHASE EXIT): the Almanac is the substrate
+  (WU1+2, 9b940f6): `.regulus/almanac/observations.jsonl` — append-only,
+  typed, provenance first-class; `memory note|show` rebacked on it
+  (internal/memory absorbed, CLI surface unchanged);
+  `save|search|history|context` with deterministic bucket-then-match
+  retrieval, age annotations and the resume block framed as DATA;
+  one-substrate unification — reflect also appends the lesson
+  observation (LESSON.md stays the human view); lesson-type saves
+  refused at the CLI (one door: reflect, evidence-gated). The Crew
+  landed (WU3, 6e0eba8): regulus-scout (read-only mapping with
+  path:line evidence), regulus-worker (one bounded unit against a
+  Chart, hands back receipts), regulus-verifier (independent
+  reproduction); plugin tools memory_save/search/context (tsc
+  clean) and the compaction hook now injects the full Almanac
+  context. Exit criterion proven by the TestF3Resume journey (WU4):
+  after a cold restart, the Chart plus `regulus memory context`
+  surface the chart pointer, the in-flight notes and the saved
+  decisions — a multi-session feature resumes from the feature
+  document + Almanac alone. Commit: this work unit.
