@@ -27,6 +27,10 @@ paraphrase. Read down to `## Log` before working.
 - **S6**: "Regulus AI debe ser un harness completo desde la v1, asi que
   debemos crear varias fases para ir llevando todo a esa v1 completa e
   increible"
+- **S7**: "tambien debemos hacer algo parecido a engram de gentle ai, pero
+  para esto debemos tomarlo como ejemplo y ver de que forma podemos
+  mejorarlo para adaptarlo a regulus y que funcione de forma optima y
+  precisa"
 
 ## Acceptance
 
@@ -59,6 +63,12 @@ paraphrase. Read down to `## Log` before working.
 - Given a closed feature with receipts on disk
 - When `regulus reflect` runs
 - Then lesson candidates carry cue, lesson, evidence and confidence, and the budget ledger records the run
+
+### Scenario: session memory persists across restarts
+
+- Given notes saved through `regulus memory note`
+- When `regulus memory show` runs in a later session
+- Then every note is listed with its timestamp, oldest first
 
 ## Tasks
 
@@ -130,4 +140,14 @@ paraphrase. Read down to `## Log` before working.
   receipts/gates/cli), then GREEN; go vet and gofmt clean. Dogfood:
   `regulus gate run regulus-ai-v1/T2` on this repo passes 4/4 gates with
   receipts (git_head f78a132); the stop-at-failure demo ran only the
-  failing layer. Commit: this work unit.
+  failing layer. Commit: 9e17fb0.
+- **L10** (S7 evidence): Almanac memory design written (docs/memory.md) —
+  Engram studied from Gentle-AI's own docs and deliberately improved:
+  provenance-first observations, append-only revision chains (no silent
+  upserts), deterministic retrieval by construction (project → topic
+  key/domain bucket → exact match; no embeddings in v1), staleness
+  annotations, one substrate with typed views (unifying Engram session
+  memory with Harness² lesson libraries), data-not-injections framing,
+  and code-enforced lesson admission. F1 ships the session-notes slice
+  (`regulus memory note/show`); F3 ships the full substrate (PRD §4 F3
+  updated). Acceptance scenario 6 added. Commit: this work unit.
