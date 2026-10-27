@@ -96,6 +96,26 @@ func appendEdit(root string, e Edit) error {
 	return err
 }
 
+// Reserved lists harness files the surface gate never edits, even
+// though they sit inside the whitelist: release and delivery
+// infrastructure changes by hand (human decision), never as a
+// side effect of an adopted lesson.
+var Reserved = []string{
+	"scripts/build.bash",
+}
+
+// IsReserved reports whether a whitelisted target is reserved from
+// surface edits (release/delivery infrastructure).
+func IsReserved(target string) bool {
+	normalized := filepath.ToSlash(filepath.Clean(target))
+	for _, r := range Reserved {
+		if normalized == r {
+			return true
+		}
+	}
+	return false
+}
+
 // Propose records a surface edit proposal. The target must be inside
 // the whitelist; the content and reason must be non-empty; the daily
 // evolution cap must not be reached. The proposal is recorded in the
@@ -103,6 +123,9 @@ func appendEdit(root string, e Edit) error {
 func Propose(root, target, content, reason string, now time.Time) (Edit, error) {
 	if err := validateTarget(root, target); err != nil {
 		return Edit{}, err
+	}
+	if IsReserved(target) {
+		return Edit{}, fmt.Errorf("%q is a reserved harness file (release infrastructure): edit it by hand, not through surface edits", target)
 	}
 	if strings.TrimSpace(content) == "" {
 		return Edit{}, errors.New("content must not be empty")

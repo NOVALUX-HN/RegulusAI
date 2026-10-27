@@ -24,11 +24,16 @@ func TestProposeRefusesOutsideWhitelist(t *testing.T) {
 		".opencode/tool-guidance.md",
 		"docs/x.md",
 		"docs/architecture/y.md",
-		"scripts/build.bash",
+		"scripts/other.bash",
 	} {
 		if _, err := Propose(t.TempDir(), ok, "content", "reason", t0); err != nil {
 			t.Fatalf("whitelisted %q must be accepted, got %v", ok, err)
 		}
+	}
+	// scripts/build.bash sits inside the whitelist but is reserved:
+	// release infrastructure changes by hand, never via surface.
+	if _, err := Propose(t.TempDir(), "scripts/build.bash", "content", "reason", t0); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("want reserved refusal, got %v", err)
 	}
 }
 
@@ -155,5 +160,19 @@ func TestListReturnsEverythingOldestFirst(t *testing.T) {
 	}
 	if edits[0].ID != a.ID || edits[2].Status != "applied" {
 		t.Fatalf("order = %+v", edits)
+	}
+}
+
+func TestProposeRefusesReservedFiles(t *testing.T) {
+	_, err := Propose(t.TempDir(), "scripts/build.bash", "content", "reason", t0)
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("want reserved refusal, got %v", err)
+	}
+	// other scripts stay editable
+	if _, err := Propose(t.TempDir(), "scripts/other.bash", "content", "reason", t0); err != nil {
+		t.Fatalf("non-reserved scripts must stay editable, got %v", err)
+	}
+	if !IsReserved("scripts/build.bash") || IsReserved("scripts/other.bash") || IsReserved("docs/x.md") {
+		t.Fatal("IsReserved must match exactly the reserved list")
 	}
 }

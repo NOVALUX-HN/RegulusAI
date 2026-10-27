@@ -24,6 +24,7 @@ import (
 	"regulus-ai/internal/probe"
 	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/reflect"
+	"regulus-ai/internal/skills"
 	"regulus-ai/internal/spec"
 	"regulus-ai/internal/surface"
 	"regulus-ai/internal/trace"
@@ -77,6 +78,8 @@ func (c CLI) Run(args []string) int {
 		return c.libraryCmd(args[1:])
 	case "reflect":
 		return c.reflectCmd(args[1:])
+	case "skills":
+		return c.skillsCmd(args[1:])
 	case "probe":
 		return c.probeCmd(args[1:])
 	case "trace":
@@ -542,6 +545,36 @@ func (c CLI) libraryCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain --candidate --guardian | regulus library forget|retain --domain <d> --task <t>")
 		return 2
 	}
+}
+
+// skillsCmd implements `regulus skills list`: the trigger registry —
+// every skill with its one-line trigger, so agents (and the context
+// hook) know what each skill fires on.
+func (c CLI) skillsCmd(args []string) int {
+	if len(args) == 0 || args[0] != "list" || len(args) != 1 {
+		if len(args) > 0 && args[0] != "list" {
+			fmt.Fprintf(c.Stderr, "skills: unknown subcommand %q\n", args[0])
+		}
+		fmt.Fprintln(c.Stderr, "usage: regulus skills list")
+		return 2
+	}
+	all, err := skills.List(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "skills list: %v\n", err)
+		return 1
+	}
+	if len(all) == 0 {
+		fmt.Fprintln(c.Stdout, "(no skills registered)")
+		return 0
+	}
+	for _, s := range all {
+		if s.Description != "" {
+			fmt.Fprintf(c.Stdout, "%s — %s\n", s.Name, s.Description)
+		} else {
+			fmt.Fprintln(c.Stdout, s.Name)
+		}
+	}
+	return 0
 }
 
 // traceCmd implements `regulus trace record|show|files`: minimal
@@ -1446,6 +1479,7 @@ Commands:
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
   reflect            admit an evidence-gated lesson (regulus reflect --help)
+  skills list        trigger registry: skills with their one-line triggers
   trace record|show|files   capture and inspect per-session tool traces (regulus trace --help)
   spec check <file>  validate the acceptance contract of a feature document
   status             one look at the project: runtime, gauntlet, evolution, receipts

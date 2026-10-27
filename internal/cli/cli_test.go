@@ -1712,3 +1712,34 @@ func TestStatusReportsTimePerTask(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillsListCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll(filepath.Join(".opencode", "skills", "wf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: wf-flow\ndescription: Fires when work starts.\n---\n\n## What I do\nThings.\n"
+	if err := os.WriteFile(filepath.Join(".opencode", "skills", "wf", "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"skills", "list"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "wf-flow — Fires when work starts.") {
+		t.Fatalf("output = %q", out.String())
+	}
+	empty, _, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := empty.Run([]string{"skills", "list"}); code != 0 {
+		t.Fatalf("empty exit = %d", code)
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"skills", "bogus"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus skills list") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
