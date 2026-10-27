@@ -429,3 +429,25 @@ func TestLessonDimensionValidation(t *testing.T) {
 		t.Fatalf("want dimension refusal, got %v", err)
 	}
 }
+
+func TestProvenancePathBucket(t *testing.T) {
+	root := t.TempDir()
+	a := &Observation{Type: TypeDecision, Title: "chose x", Content: "why x",
+		Provenance: &Provenance{Task: "T1", Paths: []string{"internal/cli/cli.go"}}}
+	b := &Observation{Type: TypeDecision, Title: "chose y", Content: "why y",
+		Provenance: &Provenance{Task: "T1", Paths: []string{"other/file.go"}}}
+	if _, err := Save(root, a, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(root, b, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Path: "internal/cli/cli.go"})
+	if err != nil || len(hits) != 1 || hits[0].Title != "chose x" {
+		t.Fatalf("path bucket = %+v (%v)", hits, err)
+	}
+	none, err := Search(root, Query{Path: "missing/file.go"})
+	if err != nil || len(none) != 0 {
+		t.Fatalf("path miss = %+v (%v)", none, err)
+	}
+}

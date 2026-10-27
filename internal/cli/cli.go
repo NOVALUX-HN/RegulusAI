@@ -296,10 +296,11 @@ func (c CLI) memorySearchCmd(args []string) int {
 	domain := fs.String("domain", "", "bucket: domain")
 	typ := fs.String("type", "", "bucket: observation type")
 	dimension := fs.String("dimension", "", "bucket: lesson dimension (inv | dom)")
+	path := fs.String("path", "", "bucket: provenance path (exact match)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension})
+	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path})
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1
@@ -537,13 +538,14 @@ func (c CLI) libraryCmd(args []string) int {
 	}
 }
 
-// traceCmd implements `regulus trace record|show`: minimal agent-process
-// capture (G2.6). `record` appends one tool execution to the session
-// trace; `show` prints the diffable fingerprint (sequence, tool,
-// status) for probe-with-contrast (G2.7).
+// traceCmd implements `regulus trace record|show|files`: minimal
+// agent-process capture (G2.6). `record` appends one tool execution to
+// the session trace; `show` prints the diffable fingerprint (sequence,
+// tool, status) for probe-with-contrast (G2.7); `files` prints the
+// distinct touched paths in call order.
 func (c CLI) traceCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error | regulus trace show --session <s>")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s>")
 		return 2
 	}
 	switch args[0] {
@@ -551,16 +553,18 @@ func (c CLI) traceCmd(args []string) int {
 		return c.traceRecordCmd(args[1:])
 	case "show":
 		return c.traceShowCmd(args[1:])
+	case "files":
+		return c.traceFilesCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error | regulus trace show --session <s>")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s>")
 		return 2
 	}
 }
 
 // traceRecordCmd implements `regulus trace record --session <s> --message
-// <m> --call <c> --tool <t> --status completed|error`: appends one tool
-// execution to the session trace.
+// <m> --call <c> --tool <t> --status completed|error [--files <a,b>]`: appends
+// one tool execution to the session trace.
 func (c CLI) traceRecordCmd(args []string) int {
 	fs := flag.NewFlagSet("trace record", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -569,20 +573,58 @@ func (c CLI) traceRecordCmd(args []string) int {
 	call := fs.String("call", "", "the tool call id (required)")
 	tool := fs.String("tool", "", "the tool name (required)")
 	status := fs.String("status", "", "completed | error (required)")
+	files := fs.String("files", "", "touched paths, comma-separated (summaries only, never values)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *session == "" || *message == "" || *call == "" || *tool == "" || *status == "" || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>]")
 		return 2
 	}
 	if _, err := trace.Record(".", trace.Entry{
 		Session: *session, Message: *message, Call: *call, Tool: *tool, Status: *status,
+		Files: splitList(*files),
 	}, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "trace record: %v\n", err)
 		return 1
 	}
 	fmt.Fprintln(c.Stdout, "trace recorded")
+	return 0
+}
+
+// traceFilesCmd implements `regulus trace files --session <s>`: prints
+// the distinct touched paths in call order, one per line.
+func (c CLI) traceFilesCmd(args []string) int {
+	fs := flag.NewFlagSet("trace files", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	session := fs.String("session", "", "the session id (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *session == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace files --session <s>")
+		return 2
+	}
+	entries, err := trace.List(".", *session)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace files: %v\n", err)
+		return 1
+	}
+	seen := map[string]bool{}
+	any := false
+	for _, e := range entries {
+		for _, f := range e.Files {
+			if seen[f] {
+				continue
+			}
+			seen[f] = true
+			any = true
+			fmt.Fprintln(c.Stdout, f)
+		}
+	}
+	if !any {
+		fmt.Fprintf(c.Stdout, "(no trace for session %s)\n", *session)
+	}
 	return 0
 }
 
@@ -1244,7 +1286,7 @@ Commands:
   memory note|show|save|search|history|context   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   reflect            admit an evidence-gated lesson (regulus reflect --help)
-  trace record|show  capture and inspect per-session tool traces (regulus trace --help)
+  trace record|show|files   capture and inspect per-session tool traces (regulus trace --help)
   spec check <file>  validate the acceptance contract of a feature document
   status             one look at the project: runtime, gauntlet, evolution, receipts
   --version          print the regulus version

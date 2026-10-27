@@ -26,7 +26,9 @@ const (
 	StatusError     = "error"
 )
 
-// Entry is one recorded tool execution.
+// Entry is one recorded tool execution. Files lists touched paths
+// (summaries only — never values); it is a hint for relevance, and
+// Fingerprint deliberately ignores it so diffs stay stable.
 type Entry struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`
@@ -34,7 +36,12 @@ type Entry struct {
 	Call    string    `json:"call"`
 	Tool    string    `json:"tool"`
 	Status  string    `json:"status"` // completed | error
+	Files   []string  `json:"files,omitempty"`
 }
+
+// maxFiles caps the touched-path hints per entry: relevance needs a
+// few paths, not an exhaustive listing.
+const maxFiles = 20
 
 // File returns the session trace log path under a project root.
 func File(root, session string) string {
@@ -64,6 +71,17 @@ func validate(e Entry) error {
 	case StatusCompleted, StatusError:
 	default:
 		return fmt.Errorf("status must be completed or error, got %q", e.Status)
+	}
+	if len(e.Files) > maxFiles {
+		return fmt.Errorf("too many files: %d (max %d)", len(e.Files), maxFiles)
+	}
+	for _, f := range e.Files {
+		if strings.TrimSpace(f) == "" {
+			return errors.New("files must not contain empty entries")
+		}
+		if strings.ContainsAny(f, "\n\r") {
+			return fmt.Errorf("file path must be a single line, got %q", f)
+		}
 	}
 	return nil
 }

@@ -456,6 +456,7 @@ type Query struct {
 	Domain    string
 	Type      string
 	Dimension string // bucket: lesson dimension (inv | dom)
+	Path      string // bucket: provenance path (exact match)
 }
 
 // Search returns the observations that match every term (case-insensitive
@@ -483,6 +484,20 @@ func Search(root string, q Query) ([]Observation, error) {
 		}
 		if q.Dimension != "" && (o.Lesson == nil || o.Lesson.Dimension != q.Dimension) {
 			continue
+		}
+		if q.Path != "" {
+			found := false
+			if o.Provenance != nil {
+				for _, p := range o.Provenance.Paths {
+					if p == q.Path {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				continue
+			}
 		}
 		hay := strings.ToLower(o.Title + "\n" + o.Content)
 		ok := true

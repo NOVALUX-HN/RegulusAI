@@ -1402,3 +1402,72 @@ func TestProbeContrastRefusalRecordsNothing(t *testing.T) {
 	}
 	_ = dir
 }
+
+func TestTraceRecordFilesAndFilesCmd(t *testing.T) {
+	c, _, _ := newCLI(nil)
+	root := t.TempDir()
+	t.Chdir(root)
+	if code := c.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c1", "--tool", "gate_run", "--status", "completed", "--files", "a.go,b.go"}); code != 0 {
+		t.Fatalf("record exit = %d", code)
+	}
+	c2, _, _ := newCLI(nil)
+	_ = c2
+	if code := c.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c2", "--tool", "memory_search", "--status", "error", "--files", "b.go,c.go"}); code != 0 {
+		t.Fatalf("record exit = %d", code)
+	}
+	cf, fout, _ := newCLI(nil)
+	if code := cf.Run([]string{"trace", "files", "--session", "s"}); code != 0 {
+		t.Fatalf("files exit = %d", code)
+	}
+	if fout.String() != "a.go\nb.go\nc.go\n" {
+		t.Fatalf("files = %q, want distinct in call order", fout.String())
+	}
+	show, sout, _ := newCLI(nil)
+	if code := show.Run([]string{"trace", "show", "--session", "s"}); code != 0 {
+		t.Fatalf("show exit = %d", code)
+	}
+	if sout.String() != "1 gate_run completed\n2 memory_search error\n" {
+		t.Fatalf("fingerprint changed with files, got %q", sout.String())
+	}
+}
+
+func TestTraceFilesEmptyAndUsage(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"trace", "files", "--session", "nobody"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no trace for session nobody)") {
+		t.Fatalf("output = %q", out.String())
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"trace", "files"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace files") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestMemorySearchPathBucket(t *testing.T) {
+	c, _, _ := newCLI(nil)
+	root := t.TempDir()
+	t.Chdir(root)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "picked x", "--path", "internal/cli/cli.go", "why x"}); code != 0 {
+		t.Fatalf("save exit = %d", code)
+	}
+	cs, out, _ := newCLI(nil)
+	if code := cs.Run([]string{"memory", "search", "--path", "internal/cli/cli.go", "picked"}); code != 0 {
+		t.Fatalf("search exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "picked x") {
+		t.Fatalf("path bucket missed, got %q", out.String())
+	}
+	cm, outm, _ := newCLI(nil)
+	if code := cm.Run([]string{"memory", "search", "--path", "elsewhere.go", "picked"}); code != 0 {
+		t.Fatalf("search exit = %d", code)
+	}
+	if !strings.Contains(outm.String(), "no matching observations") {
+		t.Fatalf("path miss should be empty, got %q", outm.String())
+	}
+}

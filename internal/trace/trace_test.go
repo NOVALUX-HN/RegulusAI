@@ -98,3 +98,42 @@ func TestListMissingSessionEmpty(t *testing.T) {
 		t.Fatalf("missing session = %v, want empty", got)
 	}
 }
+
+func TestRecordFilesRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	now := time.Unix(1700000000, 0).UTC()
+	e, err := Record(root, Entry{
+		Session: "s", Message: "m", Call: "c", Tool: "t", Status: StatusCompleted,
+		Files: []string{"internal/cli/cli.go", "docs/memory.md"},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Files) != 2 {
+		t.Fatalf("files = %v", e.Files)
+	}
+	entries, err := List(root, "s")
+	if err != nil || len(entries) != 1 || len(entries[0].Files) != 2 {
+		t.Fatalf("round-trip = %+v (%v)", entries, err)
+	}
+	fp := Fingerprint(entries)
+	if len(fp) != 1 || fp[0] != "1 t completed" {
+		t.Fatalf("fingerprint must ignore files, got %v", fp)
+	}
+}
+
+func TestRecordRefusesBadFiles(t *testing.T) {
+	many := make([]string, 0, 21)
+	for i := 0; i < 21; i++ {
+		many = append(many, "a.go")
+	}
+	now := time.Unix(1700000000, 0).UTC()
+	for _, files := range [][]string{many, {""}, {"ok.go", "  "}, {"bad\npath.go"}} {
+		_, err := Record(t.TempDir(), Entry{
+			Session: "s", Message: "m", Call: "c", Tool: "t", Status: StatusCompleted, Files: files,
+		}, now)
+		if err == nil {
+			t.Fatalf("want files refusal for %q", files)
+		}
+	}
+}

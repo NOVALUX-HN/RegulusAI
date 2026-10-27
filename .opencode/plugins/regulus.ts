@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { resolveDomain } from "./domain"
+import { extractPaths, resolveDomain } from "./domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -360,7 +360,7 @@ export default Plugin.define({
     await ctx.tool.hook("execute.after", async (event) => {
       try {
         const status = event.status === "completed" ? "completed" : "error"
-        await run(bin, [
+        const args = [
           "trace",
           "record",
           "--session",
@@ -373,7 +373,10 @@ export default Plugin.define({
           event.tool,
           "--status",
           status,
-        ])
+        ]
+        const files = extractPaths(JSON.stringify((event as { input?: unknown }).input ?? ""))
+        if (files.length > 0) args.push("--files", files.join(","))
+        await run(bin, args)
       } catch {
         // hook failures never break tool execution
       }
@@ -389,7 +392,7 @@ export default Plugin.define({
     // otherwise.
     await ctx.session.hook("context", async (event) => {
       const recent = JSON.stringify(event.messages ?? []).slice(-20000)
-      const domain = await resolveDomain(dir, (args) => run(bin, args), recent)
+      const domain = await resolveDomain(dir, (args) => run(bin, args), recent, event.sessionID)
       const args = ["memory", "search", "--type", "lesson"]
       if (domain !== "") args.push("--domain", domain)
       const lessons = await run(bin, args)
