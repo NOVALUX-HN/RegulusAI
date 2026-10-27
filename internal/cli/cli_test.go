@@ -1743,3 +1743,54 @@ func TestSkillsListCycle(t *testing.T) {
 		t.Fatalf("stderr = %q", errb.String())
 	}
 }
+
+func TestEvolveProposeCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll(filepath.Join(".regulus", "evidence", "demo__T1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	if _, err := receipts.Write(filepath.Join(".regulus", "evidence", "demo__T1"), receipts.Receipt{
+		Task: "demo/T1", Gate: "typecheck", Layer: 1, Command: "echo ok",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"evolve", "propose", "--task", "demo/T1", "--domain", "go"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	for _, want := range []string{
+		"# Evidence pack — task demo/T1, domain go",
+		"## Task receipts",
+		"## Candidate template",
+		"dimension:",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("pack must contain %q, got:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestEvolveProposeRefusals(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"evolve", "propose", "--task", "demo/T9", "--domain", "go"}); code != 1 {
+		t.Fatalf("no-evidence exit = %d, want 1", code)
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"evolve", "propose", "--task", "demo/T1"}); code != 2 {
+		t.Fatalf("usage exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus evolve propose") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c3, _, errb3 := newCLI(nil)
+	if code := c3.Run([]string{"evolve", "bogus"}); code != 2 {
+		t.Fatalf("unknown subcommand exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb3.String(), "unknown subcommand") {
+		t.Fatalf("stderr = %q", errb3.String())
+	}
+}

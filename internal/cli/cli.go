@@ -19,6 +19,7 @@ import (
 	"regulus-ai/internal/crap"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/evidence"
+	"regulus-ai/internal/evolve"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/probe"
@@ -78,6 +79,8 @@ func (c CLI) Run(args []string) int {
 		return c.libraryCmd(args[1:])
 	case "reflect":
 		return c.reflectCmd(args[1:])
+	case "evolve":
+		return c.evolveCmd(args[1:])
 	case "skills":
 		return c.skillsCmd(args[1:])
 	case "probe":
@@ -1241,8 +1244,51 @@ func formatDurationMS(ms int64) string {
 	return fmt.Sprintf("%dh%dm", m/60, m%60)
 }
 
+// evolveCmd implements `regulus evolve propose`: system-driven
+// proposal evidence (V5.7 chart charts/v0.5-evolve-propose.md).
+// `propose` assembles the evidence pack; authoring stays with the
+// agent/guardian. Assembly is read-only and records nothing.
+func (c CLI) evolveCmd(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		return 2
+	}
+	switch args[0] {
+	case "propose":
+		return c.evolveProposeCmd(args[1:])
+	default:
+		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		return 2
+	}
+}
+
+// evolveProposeCmd implements `regulus evolve propose --task --domain`:
+// prints the evidence pack to stdout; exit 0 pack, 1 refusal (no
+// evidence), 2 usage. Records nothing.
+func (c CLI) evolveProposeCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve propose", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	task := fs.String("task", "", "task id whose receipts are the evidence (required)")
+	domain := fs.String("domain", "", "lesson domain for the INDEX section (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *task == "" || *domain == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		return 2
+	}
+	pack, err := evolve.Assemble(".", *task, *domain)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve propose: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(c.Stdout, pack)
+	return 0
+}
+
 // chartCmd implements `regulus chart init <name> | list` — scaffold and
-// discover Charts (committed feature documents under charts/).
+// discover Charts (committed feature documents under charts).
 func (c CLI) chartCmd(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus chart init <name> | regulus chart list")
@@ -1469,6 +1515,7 @@ Commands:
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file>   audit gauntlet receipts
+  evolve propose --task <t> --domain <d>   assemble the evidence pack a proposer needs
   gate run <task>    run the layered gauntlet and write receipts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
