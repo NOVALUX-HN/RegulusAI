@@ -1676,3 +1676,39 @@ func TestMemorySearchPathBucket(t *testing.T) {
 		t.Fatalf("path miss should be empty, got %q", outm.String())
 	}
 }
+
+func TestStatusReportsTimePerTask(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"typecheck","layer":1,"command":"echo ok"}],"evolution":{"max_per_day":3}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	write := func(task, slug string, ms int64) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(".regulus", "evidence", slug), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := receipts.Write(filepath.Join(".regulus", "evidence", slug), receipts.Receipt{
+			Task: task, Gate: "typecheck", Layer: 1, Command: "c",
+			ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: ms,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("t/1", "t__1", 500)
+	write("t/1", "t__1", 1500)
+	write("t/2", "t__2", 125000)
+	c, out, _ := newCLI(func() doctor.Result {
+		return doctor.Result{Detected: "opencode 2.1.4", Major: 2, Supported: true}
+	})
+	c.Runner = &fakeGateRunner{}
+	if code := c.Run([]string{"status"}); code != 0 {
+		t.Fatalf("status exit = %d", code)
+	}
+	for _, want := range []string{"time:       t/1 2s (2 receipt(s))", "time:       t/2 2m5s (1 receipt(s))"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status must report %q, got:\n%s", want, out.String())
+		}
+	}
+}

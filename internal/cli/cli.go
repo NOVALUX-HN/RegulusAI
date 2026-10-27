@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -1152,6 +1153,35 @@ func (c CLI) statusCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "receipts:   %d on disk\n", len(found))
+	// S8: wall-time per task from receipt durations — the evolution
+	// cost that matters (no model spend in the core). Unreadable
+	// receipts are skipped so status stays resilient.
+	type taskTime struct {
+		ms int64
+		n  int
+	}
+	byTask := map[string]*taskTime{}
+	for _, p := range found {
+		rec, err := receipts.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		tt := byTask[rec.Task]
+		if tt == nil {
+			tt = &taskTime{}
+			byTask[rec.Task] = tt
+		}
+		tt.ms += rec.DurationMS
+		tt.n++
+	}
+	tasks := make([]string, 0, len(byTask))
+	for t := range byTask {
+		tasks = append(tasks, t)
+	}
+	sort.Strings(tasks)
+	for _, t := range tasks {
+		fmt.Fprintf(c.Stdout, "time:       %s %s (%d receipt(s))\n", t, formatDurationMS(byTask[t].ms), byTask[t].n)
+	}
 	// gremlins availability for the mutation gate
 	if _, _, code, _ := c.runner().Run(context.Background(), "command -v gremlins || command -v \"$HOME/go/bin/gremlins\""); code == 0 {
 		fmt.Fprintln(c.Stdout, "mutation:    gremlins available")
@@ -1159,6 +1189,23 @@ func (c CLI) statusCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "mutation:    gremlins NOT found — the mutation gate will fail; go install github.com/go-gremlins/gremlins/cmd/gremlins@latest")
 	}
 	return 0
+}
+
+// formatDurationMS renders a wall-time span compactly for status:
+// ms under a second, seconds under a minute, else m/h.
+func formatDurationMS(ms int64) string {
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
+	}
+	s := ms / 1000
+	if s < 60 {
+		return fmt.Sprintf("%ds", s)
+	}
+	m := s / 60
+	if m < 60 {
+		return fmt.Sprintf("%dm%ds", m, s%60)
+	}
+	return fmt.Sprintf("%dh%dm", m/60, m%60)
 }
 
 // chartCmd implements `regulus chart init <name> | list` — scaffold and
