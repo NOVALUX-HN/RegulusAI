@@ -22,10 +22,13 @@ import (
 	"regulus-ai/internal/spec"
 )
 
-// Input is one reflect invocation.
+// Input is one reflect invocation. Dimension is the harness² INV/DOM
+// separation ("" = unset, "inv" = how the agent works, "dom" = what a
+// practitioner knows).
 type Input struct {
 	FeatureDoc string
 	Domain     string
+	Dimension  string
 	Task       string
 	Cue        string
 	Lesson     string
@@ -54,6 +57,9 @@ func Run(root string, in Input, gitHead string) (library.Lesson, error) {
 	confidence := in.Confidence
 	if confidence == "" {
 		confidence = library.ConfidenceLow
+	}
+	if err := library.ValidateDimension(in.Dimension); err != nil {
+		return library.Lesson{}, err
 	}
 	evidence, err := taskReceipts(root, in.Task)
 	if err != nil {
@@ -88,6 +94,7 @@ func Run(root string, in Input, gitHead string) (library.Lesson, error) {
 	l := library.Lesson{
 		ID:         library.NewID(in.Now),
 		Domain:     in.Domain,
+		Dimension:  in.Dimension,
 		Task:       in.Task,
 		Cue:        in.Cue,
 		Lesson:     in.Lesson,
@@ -148,6 +155,7 @@ func Admit(root, domain, id, guardian, gitHead string, now time.Time) (library.L
 		Domain: adm.Domain,
 		Lesson: &almanac.Lesson{
 			Cue: adm.Cue, Lesson: adm.Lesson, Evidence: adm.Evidence, Confidence: adm.Confidence,
+			Dimension: adm.Dimension,
 		},
 		Provenance: &almanac.Provenance{Task: adm.Task, GitHead: gitHead, Receipts: adm.Evidence},
 	}, now); err != nil {

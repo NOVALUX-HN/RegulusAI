@@ -396,3 +396,36 @@ func TestExportWritesBundle(t *testing.T) {
 		}
 	}
 }
+
+func TestLessonDimensionRoundTripAndBucket(t *testing.T) {
+	root := t.TempDir()
+	inv := &Observation{Type: TypeLesson, Title: "inv lesson", Content: "how to run gates",
+		Domain: "go", Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low", Dimension: "inv"}}
+	dom := &Observation{Type: TypeLesson, Title: "dom lesson", Content: "how to structure",
+		Domain: "go", Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low", Dimension: "dom"}}
+	if _, err := Save(root, inv, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(root, dom, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Dimension: "inv"})
+	if err != nil || len(hits) != 1 || hits[0].Title != "inv lesson" {
+		t.Fatalf("dimension bucket = %+v (%v)", hits, err)
+	}
+	if hits[0].Lesson == nil || hits[0].Lesson.Dimension != "inv" {
+		t.Fatalf("dimension must survive the round-trip, got %+v", hits[0].Lesson)
+	}
+	all, err := Search(root, Query{})
+	if err != nil || len(all) != 2 {
+		t.Fatalf("unfiltered search = %+v (%v)", all, err)
+	}
+}
+
+func TestLessonDimensionValidation(t *testing.T) {
+	bad := &Observation{Type: TypeLesson, Title: "t", Content: "c",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low", Dimension: "sideways"}}
+	if _, err := Save(t.TempDir(), bad, t0); err == nil || !strings.Contains(err.Error(), "dimension") {
+		t.Fatalf("want dimension refusal, got %v", err)
+	}
+}

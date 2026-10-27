@@ -36,12 +36,15 @@ const (
 )
 
 // Lesson carries the lesson fields; required for type=lesson observations
-// and evidence-gated in code.
+// and evidence-gated in code. Dimension is the harness² INV/DOM
+// separation ("" = unset legacy, "inv" = how the agent works, "dom" =
+// what a practitioner knows).
 type Lesson struct {
 	Cue        string   `json:"cue"`
 	Lesson     string   `json:"lesson"`
 	Evidence   []string `json:"evidence"`
 	Confidence string   `json:"confidence"`
+	Dimension  string   `json:"dimension,omitempty"`
 }
 
 // Provenance records the conditions under which the observation was true.
@@ -357,6 +360,11 @@ func validate(o *Observation) error {
 		default:
 			return fmt.Errorf("confidence must be low, medium or high, got %q", o.Lesson.Confidence)
 		}
+		switch o.Lesson.Dimension {
+		case "", "inv", "dom":
+		default:
+			return fmt.Errorf("dimension must be inv or dom, got %q", o.Lesson.Dimension)
+		}
 	}
 	return nil
 }
@@ -443,10 +451,11 @@ func History(root, topicKey string) ([]Observation, error) {
 // Query is one deterministic retrieval: bucket filters first, then exact
 // term matching.
 type Query struct {
-	Terms    []string
-	TopicKey string
-	Domain   string
-	Type     string
+	Terms     []string
+	TopicKey  string
+	Domain    string
+	Type      string
+	Dimension string // bucket: lesson dimension (inv | dom)
 }
 
 // Search returns the observations that match every term (case-insensitive
@@ -470,6 +479,9 @@ func Search(root string, q Query) ([]Observation, error) {
 			continue
 		}
 		if q.Type != "" && o.Type != q.Type {
+			continue
+		}
+		if q.Dimension != "" && (o.Lesson == nil || o.Lesson.Dimension != q.Dimension) {
 			continue
 		}
 		hay := strings.ToLower(o.Title + "\n" + o.Content)

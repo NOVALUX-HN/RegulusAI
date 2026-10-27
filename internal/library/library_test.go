@@ -219,3 +219,66 @@ func TestRemoveCandidate(t *testing.T) {
 		t.Fatal("RemoveCandidate must delete the candidate")
 	}
 }
+
+func TestDimensionRoundTripThroughAdmitAndCandidates(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	l.Dimension = DimensionINV
+	if err := Admit(root, l, "regulus-gate-verifier"); err != nil {
+		t.Fatal(err)
+	}
+	lessons, err := List(root, "go")
+	if err != nil || len(lessons) != 1 || lessons[0].Dimension != DimensionINV {
+		t.Fatalf("admitted round-trip = %+v (%v)", lessons, err)
+	}
+	data, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "dimension: inv") {
+		t.Fatalf("INDEX must carry the dimension, got:\n%s", data)
+	}
+	c := validLesson()
+	c.ID = NewID(t0.Add(time.Hour))
+	c.Dimension = DimensionDOM
+	if err := Propose(root, c); err != nil {
+		t.Fatal(err)
+	}
+	cands, err := Candidates(root, "go")
+	if err != nil || len(cands) != 1 || cands[0].Dimension != DimensionDOM {
+		t.Fatalf("candidate round-trip = %+v (%v)", cands, err)
+	}
+}
+
+func TestDimensionValidation(t *testing.T) {
+	l := validLesson()
+	l.Dimension = "sideways"
+	if err := Admit(t.TempDir(), l, "regulus-gate-verifier"); err == nil || !strings.Contains(err.Error(), "dimension") {
+		t.Fatalf("want dimension refusal, got %v", err)
+	}
+	legacy := validLesson()
+	legacy.Dimension = ""
+	if err := Admit(t.TempDir(), legacy, "regulus-gate-verifier"); err != nil {
+		t.Fatalf("unset dimension (legacy) must stay valid, got %v", err)
+	}
+}
+
+func TestLegacyLessonWithoutDimensionLineParses(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(Dir(root, "go"), "lessons", "les_legacy")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "# les_legacy\n\n- **domain**: go\n- **task**: feature/T1\n- **cue**: c\n- **lesson**: l\n- **evidence**: rec_1.json\n- **confidence**: low\n- **git_head**: abc\n- **created_at**: 2026-10-26T08:00:00Z\n"
+	if err := os.WriteFile(filepath.Join(dir, "LESSON.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lessons, err := List(root, "go")
+	if err != nil || len(lessons) != 1 {
+		t.Fatalf("legacy list = %+v (%v)", lessons, err)
+	}
+	if lessons[0].Dimension != "" {
+		t.Fatalf("legacy lesson dimension = %q, want unset", lessons[0].Dimension)
+	}
+}

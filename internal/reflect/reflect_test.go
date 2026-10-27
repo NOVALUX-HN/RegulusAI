@@ -200,3 +200,39 @@ func TestRunRefusesWhenCapReached(t *testing.T) {
 		t.Fatalf("nothing may be proposed over the cap, got %+v", cands)
 	}
 }
+
+func TestRunAndAdmitCarryDimension(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	writeReceipts(t, root, "feature/T1", 1)
+	l, err := Run(root, Input{
+		FeatureDoc: doc, Domain: "go", Dimension: "dom", Task: "feature/T1",
+		Cue: "c", Lesson: "l", Now: now,
+	}, "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Dimension != "dom" {
+		t.Fatalf("candidate dimension = %q, want dom", l.Dimension)
+	}
+	if _, err := Admit(root, "go", l.ID, "regulus-gate-verifier", "abc123", now); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := almanac.Search(root, almanac.Query{Dimension: "dom"})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("admitted dimension bucket = %+v (%v)", hits, err)
+	}
+}
+
+func TestRunRefusesBadDimension(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	writeReceipts(t, root, "feature/T1", 1)
+	_, err := Run(root, Input{
+		FeatureDoc: doc, Domain: "go", Dimension: "sideways", Task: "feature/T1",
+		Cue: "c", Lesson: "l", Now: now,
+	}, "abc123")
+	if err == nil || !strings.Contains(err.Error(), "dimension") {
+		t.Fatalf("want dimension refusal, got %v", err)
+	}
+}

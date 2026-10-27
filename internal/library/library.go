@@ -21,6 +21,16 @@ const (
 	ConfidenceHigh   = "high"
 )
 
+// Lesson dimensions (harness² INV/DOM separation): INV lessons are
+// about how the agent works (procedure, tool use, completion); DOM
+// lessons are about what a practitioner knows (analytic moves,
+// audience, structure, consistency). Empty means unset (legacy
+// lessons admitted before dimensions existed).
+const (
+	DimensionINV = "inv"
+	DimensionDOM = "dom"
+)
+
 // Lesson is one lesson candidate or admitted lesson. Evidence cites
 // receipt paths — a lesson without evidence is refused (PRD R-E2,
 // docs/memory.md §2.7). Status is candidate until a guardian validates
@@ -28,6 +38,7 @@ const (
 type Lesson struct {
 	ID         string
 	Domain     string
+	Dimension  string // "" (unset, legacy) | "inv" | "dom"
 	Task       string
 	Cue        string
 	Lesson     string
@@ -62,6 +73,9 @@ func validate(l Lesson) error {
 	if strings.TrimSpace(l.Domain) == "" {
 		return errors.New("domain must not be empty")
 	}
+	if err := ValidateDimension(l.Dimension); err != nil {
+		return err
+	}
 	if strings.TrimSpace(l.Cue) == "" {
 		return errors.New("cue must not be empty")
 	}
@@ -79,7 +93,22 @@ func validate(l Lesson) error {
 	return nil
 }
 
+// ValidateDimension accepts the unset legacy value and the two
+// harness² dimensions, and refuses everything else.
+func ValidateDimension(d string) error {
+	switch d {
+	case "", DimensionINV, DimensionDOM:
+		return nil
+	default:
+		return fmt.Errorf("dimension must be %q or %q, got %q", DimensionINV, DimensionDOM, d)
+	}
+}
+
 func (l Lesson) render() string {
+	dimension := ""
+	if l.Dimension != "" {
+		dimension = "- **dimension**: " + l.Dimension + "\n"
+	}
 	guardian := ""
 	if l.Guardian != "" {
 		guardian = "- **guardian**: " + l.Guardian + "\n"
@@ -92,6 +121,7 @@ func (l Lesson) render() string {
 		"# " + l.ID,
 		"",
 		"- **domain**: " + l.Domain,
+		dimension,
 		"- **task**: " + l.Task,
 		"- **cue**: " + l.Cue,
 		"- **lesson**: " + l.Lesson,
@@ -215,6 +245,8 @@ func parseLesson(path string) (Lesson, error) {
 		switch key {
 		case "domain":
 			l.Domain = val
+		case "dimension":
+			l.Dimension = val
 		case "task":
 			l.Task = val
 		case "cue":
@@ -262,8 +294,12 @@ func RebuildIndex(root, domain string) error {
 		b.WriteString("_(empty — no lessons admitted yet)_\n")
 	} else {
 		for _, l := range lessons {
-			fmt.Fprintf(&b, "- `%s` — %s (confidence: %s, evidence: %d receipt(s), task: %s)\n",
-				l.ID, l.Cue, l.Confidence, len(l.Evidence), l.Task)
+			dim := l.Dimension
+			if dim == "" {
+				dim = "—"
+			}
+			fmt.Fprintf(&b, "- `%s` — %s (confidence: %s, dimension: %s, evidence: %d receipt(s), task: %s)\n",
+				l.ID, l.Cue, l.Confidence, dim, len(l.Evidence), l.Task)
 		}
 	}
 	if err := os.MkdirAll(Dir(root, domain), 0o755); err != nil {

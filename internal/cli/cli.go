@@ -289,10 +289,11 @@ func (c CLI) memorySearchCmd(args []string) int {
 	topicKey := fs.String("topic-key", "", "bucket: topic key")
 	domain := fs.String("domain", "", "bucket: domain")
 	typ := fs.String("type", "", "bucket: observation type")
+	dimension := fs.String("dimension", "", "bucket: lesson dimension (inv | dom)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ})
+	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension})
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1
@@ -467,12 +468,13 @@ func humanAge(now, saved time.Time) string {
 }
 
 // reflectCmd implements `regulus reflect --domain --task --cue --lesson
-// [--confidence] <feature-doc>`: admit an evidence-gated lesson (PRD
+// [--dimension] [--confidence] <feature-doc>`: admit an evidence-gated lesson (PRD
 // R-E1/R-E2).
 func (c CLI) reflectCmd(args []string) int {
 	fs := flag.NewFlagSet("reflect", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	domain := fs.String("domain", "", "lesson domain (required)")
+	dimension := fs.String("dimension", "", "inv (how the agent works) | dom (what a practitioner knows)")
 	task := fs.String("task", "", "task id whose receipts are the evidence (required)")
 	cue := fs.String("cue", "", "when this pattern appears (required)")
 	lesson := fs.String("lesson", "", "what to do (required)")
@@ -481,7 +483,7 @@ func (c CLI) reflectCmd(args []string) int {
 		return 2
 	}
 	if *domain == "" || *task == "" || *cue == "" || *lesson == "" || fs.NArg() != 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--confidence low|medium|high] <feature-doc>")
+		fmt.Fprintln(c.Stderr, "usage: regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv|dom] [--confidence low|medium|high] <feature-doc>")
 		return 2
 	}
 	r := c.Runner
@@ -490,7 +492,7 @@ func (c CLI) reflectCmd(args []string) int {
 	}
 	head := gates.GitHead(context.Background(), r)
 	l, err := reflect.Run(".", reflect.Input{
-		FeatureDoc: fs.Arg(0), Domain: *domain, Task: *task, Cue: *cue, Lesson: *lesson,
+		FeatureDoc: fs.Arg(0), Domain: *domain, Dimension: *dimension, Task: *task, Cue: *cue, Lesson: *lesson,
 		Confidence: *confidence, Now: time.Now().UTC(),
 	}, head)
 	if err != nil {
