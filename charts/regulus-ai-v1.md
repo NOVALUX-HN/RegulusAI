@@ -81,7 +81,7 @@ paraphrase. Read down to `## Log` before working.
 | T2 (F1) | S1–S6 | Vertical spine end-to-end: CLI skeleton (contract, doctor with V2 probe), spec contract + `spec check`, gate layers 1–4 with append-only receipts, first guardian agent, workflow skill, minimal session memory, minimal reflect + library + budget | inline (writer subagent unavailable) | a9cc94e · f78a132 · 9e17fb0 · 199caf3 · 3906b54 · this unit (WU6) |
 | T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | inline (writer subagent unavailable) | bb55401 · 3389543 · 2ae3bf6 · 5397b1c · a6491be · this unit (WU5) |
 | T4 (F3) | S1 | Complete Discipline: the full Sextant workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | inline (writer subagent unavailable) | 9b940f6 · 6e0eba8 · this unit (WU4) |
-| T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | decide at task start | — |
+| T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | inline (writer subagent unavailable) | 847c80d (ponytail) · f5e2ffa (WU1-3) · this unit (WU4) |
 | T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | decide at task start | — |
 
 ## Log
@@ -312,4 +312,26 @@ paraphrase. Read down to `## Log` before working.
   UI; revisit with F5's surface) and repo-wide audit commands
   (scheduled with F5's CLI UX). Ponytail's "new logic leaves one
   test" is already enforced — stronger — by gauntlet layers 4–6.
-  Credit added to README and PRD sources. Commit: this work unit.
+  Credit added to README and PRD sources. Commit: 847c80d.
+- **L23** (F4 evidence — PHASE EXIT): lesson admission is two-phase
+  with hard caps (WU1-3, f5e2ffa): `regulus reflect` PROPOSES a
+  candidate (candidates/, ledger candidate-proposed, the admit command
+  printed — nothing admitted without a guardian); `regulus library
+  admit --domain --candidate --guardian` completes the flow (lessons/,
+  INDEX rebuilt, the Almanac observation appended, the ledger records
+  who validated); `library candidates` lists pending; `library show
+  --domain` prints the INDEX for agent consultation; the cap
+  (regulus.json evolution.max_per_day, default 10) refuses proposals
+  and probes over the limit and records refused-cap — admissions are
+  mechanical and do not consume the cap; `budget record --kind probe`
+  records the opt-in Propose–Probe–Compose cycle (k=1), documented in
+  the workflow skill. The gauntlet self-enforced on the new code:
+  libraryCmd (complexity 35) and memoryCmd (31) broke the CRAP-30
+  floor — decomposed into per-subcommand handlers; TodayEvolutionCount
+  got direct tests. Exit criterion proven by TestF4Evolution (WU4):
+  propose → admit with receipts cited → the later task retrieves the
+  lesson (search, library show, context) → the third run hits the
+  cap and the ledger shows candidate-proposed, admitted and
+  refused-cap. A real candidate (les_18e240ab097696d0, domain sextant,
+  7 receipts) is pending on this repo awaiting a guardian validation
+  in a live session. Commit: this work unit.

@@ -67,12 +67,15 @@ func TestTodayEvolutionCountExcludesRefusedOtherKindsAndDays(t *testing.T) {
 	if err := Record(root, Entry{Kind: KindReflect, Timestamp: base.Add(-25 * time.Hour), Outcome: OutcomeCandidateProposed}); err != nil {
 		t.Fatal(err)
 	}
+	if err := Record(root, Entry{Kind: KindReflect, Timestamp: base.Add(30 * time.Minute), Outcome: OutcomeAdmitted}); err != nil {
+		t.Fatal(err)
+	}
 	n, err := TodayEvolutionCount(root, base.Add(4*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 2 {
-		t.Fatalf("TodayEvolutionCount = %d, want 2 (refused, other kinds and yesterday excluded)", n)
+		t.Fatalf("TodayEvolutionCount = %d, want 2 (refused, admitted, other kinds and yesterday excluded)", n)
 	}
 	if n, _ := TodayEvolutionCount(root, base.Add(-48*time.Hour)); n != 0 {
 		t.Fatalf("a day with no entries = %d, want 0", n)

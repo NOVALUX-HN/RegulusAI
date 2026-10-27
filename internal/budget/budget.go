@@ -36,8 +36,9 @@ const (
 // when regulus.json declares no evolution block.
 const DefaultEvolutionCapPerDay = 10
 
-// TodayEvolutionCount counts today's accepted (non-refused) reflect and
-// probe runs in the ledger, UTC calendar day.
+// TodayEvolutionCount counts today's evolution runs that consume the
+// cap: proposals and probes. Refusals are free (and recorded); the
+// admission step is mechanical and does not consume the cap.
 func TodayEvolutionCount(root string, now time.Time) (int, error) {
 	entries, err := Show(root)
 	if err != nil {
@@ -49,7 +50,7 @@ func TodayEvolutionCount(root string, now time.Time) (int, error) {
 		if e.Kind != KindReflect && e.Kind != KindProbe {
 			continue
 		}
-		if e.Outcome == OutcomeRefusedCap {
+		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun {
 			continue
 		}
 		if e.Timestamp.UTC().Format("2006-01-02") == today {
