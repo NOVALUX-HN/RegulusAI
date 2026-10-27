@@ -1498,6 +1498,116 @@ func TestProbeContrastRefusalRecordsNothing(t *testing.T) {
 	_ = dir
 }
 
+func TestProbeComposeUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cases := [][]string{
+		{"probe", "compose"},
+		{"probe", "compose", "--task", "demo/T1"},
+		{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi"},
+		{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye", "extra"},
+		{"probe", "compose", "--task", "../evil", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"},
+	}
+	for _, args := range cases {
+		c, _, errb := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("args %v: exit = %d, want 2", args, code)
+		}
+		if !strings.Contains(errb.String(), "usage: regulus probe compose") && !strings.Contains(errb.String(), "invalid task id") {
+			t.Fatalf("args %v: stderr must carry usage, got %q", args, errb.String())
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"probe", "compose", "--task"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+}
+
+func TestProbeComposeCycle(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo base":                   {stdout: "l1\nl2\nl3\n"},
+		"echo hi":                     {stdout: "A1\nl2\nl3\n"},
+		"echo bye":                    {stdout: "l1\nl2\nB3\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 0 {
+		t.Fatalf("compose exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"## Composed stdout", "A1\nl2\nB3", "(no conflicts)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("compose output must contain %q, got:\n%s", want, out.String())
+		}
+	}
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "*.json"))
+	if len(found) != 3 {
+		t.Fatalf("want 3 real receipts under the task slug dir, got %v", found)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") || !strings.Contains(out2.String(), "sha256") {
+		t.Fatalf("compose must record one probe-run entry with the report digest, got:\n%s", out2.String())
+	}
+}
+
+func TestProbeComposeConflictIsEvidence(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo base":                   {stdout: "out-base\n", code: 0},
+		"echo hi":                     {stdout: "out-a\n", code: 1},
+		"echo bye":                    {stdout: "out-b\n", code: 2},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 0 {
+		t.Fatalf("conflicted compose exit = %d (conflicts are evidence, not failure), stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"## Conflicts", "- exit_code: base 0, A 1, B 2", "out-a", "out-b", "## Composed exit_code\n0\n"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("compose output must contain %q, got:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestProbeComposeRefusalRecordsNothing(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, _, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "nope", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("unknown gate: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), `unknown gate "nope"`) {
+		t.Fatalf("stderr must name the unknown gate, got %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	c2.Runner = r
+	t.Chdir(t.TempDir())
+	if code := c2.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("missing regulus.json: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb2.String(), "no regulus.json") {
+		t.Fatalf("stderr must name the missing config, got %q", errb2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out3.String(), "(no budget entries)") {
+		t.Fatalf("refused composes must leave no probe entry, got:\n%s", out3.String())
+	}
+	_ = dir
+}
+
 func TestTraceRecordFilesAndFilesCmd(t *testing.T) {
 	c, _, _ := newCLI(nil)
 	root := t.TempDir()

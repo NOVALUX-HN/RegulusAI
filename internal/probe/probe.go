@@ -106,20 +106,7 @@ func ContrastWithRunner(root, task, gate, cmdA, cmdB string, now time.Time, r ga
 	head := gates.GitHead(context.Background(), r)
 	evidenceDir := filepath.Join(root, ".regulus", "evidence", receipts.Slug(task))
 	run := func(cmd string) (receipts.Receipt, error) {
-		single := *orig
-		single.Command = cmd
-		res, err := gates.Run(context.Background(), gates.Config{Gates: []gates.Gate{single}}, evidenceDir, task, head, r)
-		if err != nil {
-			return receipts.Receipt{}, err
-		}
-		if len(res.Receipts) == 0 {
-			return receipts.Receipt{}, fmt.Errorf("probe contrast: gate %q wrote no receipt", gate)
-		}
-		rec, err := receipts.ReadFile(res.Receipts[len(res.Receipts)-1])
-		if err != nil {
-			return receipts.Receipt{}, err
-		}
-		return rec, nil
+		return runProbeReceipt("probe contrast", *orig, evidenceDir, task, head, cmd, r)
 	}
 	recA, err := run(cmdA)
 	if err != nil {
@@ -142,6 +129,27 @@ func ContrastWithRunner(root, task, gate, cmdA, cmdB string, now time.Time, r ga
 		return "", false, fmt.Errorf("probe contrast: %v", err)
 	}
 	return diff, true, nil
+}
+
+// runProbeReceipt runs one command variant through the SAME path `gate
+// run` uses (gates.Run, so the run writes a real receipt under
+// evidenceDir) and returns that receipt. op names the calling operation
+// for error messages ("probe contrast", "probe compose").
+func runProbeReceipt(op string, orig gates.Gate, evidenceDir, task, head, cmd string, r gates.CmdRunner) (receipts.Receipt, error) {
+	single := orig
+	single.Command = cmd
+	res, err := gates.Run(context.Background(), gates.Config{Gates: []gates.Gate{single}}, evidenceDir, task, head, r)
+	if err != nil {
+		return receipts.Receipt{}, err
+	}
+	if len(res.Receipts) == 0 {
+		return receipts.Receipt{}, fmt.Errorf("%s: gate %q wrote no receipt", op, orig.Name)
+	}
+	rec, err := receipts.ReadFile(res.Receipts[len(res.Receipts)-1])
+	if err != nil {
+		return receipts.Receipt{}, err
+	}
+	return rec, nil
 }
 
 // Diff renders the line-oriented receipt contrast between runs A and B
