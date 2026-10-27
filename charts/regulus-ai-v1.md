@@ -31,6 +31,9 @@ paraphrase. Read down to `## Log` before working.
   para esto debemos tomarlo como ejemplo y ver de que forma podemos
   mejorarlo para adaptarlo a regulus y que funcione de forma optima y
   precisa"
+- **S8**: "procede con los puntos pendientes y analiza cómo podemos hacer
+  para también incluir de forma precisa ponytail:
+  https://github.com/DietrichGebert/ponytail"
 
 ## Acceptance
 
@@ -292,4 +295,21 @@ paraphrase. Read down to `## Log` before working.
   after a cold restart, the Chart plus `regulus memory context`
   surface the chart pointer, the in-flight notes and the saved
   decisions — a multi-session feature resumes from the feature
-  document + Almanac alone. Commit: this work unit.
+  document + Almanac alone. Commit: 66f61d5.
+- **L22** (S8 evidence — ponytail integration): Ponytail (MIT) studied
+  from its own rules and skills; doctrine adapted with credit, not
+  copied wholesale. Adopted: (1) the Necessity Ladder — does it need
+  to exist? already in this codebase? stdlib or platform? installed
+  dependency? one clear line? then the minimum that works — now part
+  of the Sextant's BUILD movement and the worker's contract; (2) the
+  never-cut list (validation at trust boundaries, error handling that
+  prevents data loss, security, accessibility, what the user asked
+  for) in the skill and the worker; (3) a sixth guardian,
+  regulus-reviewer — the senior read: reviews the code the change
+  touches (not just the diff), findings in four lines (what it does /
+  what goes wrong / how to fix / if you don't), names what to cut and
+  what was not checked. Deferred: the cost/token band (Claude-specific
+  UI; revisit with F5's surface) and repo-wide audit commands
+  (scheduled with F5's CLI UX). Ponytail's "new logic leaves one
+  test" is already enforced — stronger — by gauntlet layers 4–6.
+  Credit added to README and PRD sources. Commit: this work unit.

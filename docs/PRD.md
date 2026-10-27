@@ -32,6 +32,14 @@ Three sources define the answer:
    behavior. CRAP analysis (coverage × branching complexity) finds risky
    functions. Gates run cheap→expensive. The human earns "the right not to
    read the code."
+4. **Ponytail** (MIT) — the lazy-senior-dev craft doctrine: solve the
+   whole problem with the least new code (the Necessity Ladder: reuse
+   first, then stdlib, then installed dependencies — never cut
+   validation, error handling, security or accessibility), and review
+   the code the change touches, not just the diff. Regulus adopts the
+   ladder into the Sextant's BUILD movement and the senior read as its
+   sixth guardian, regulus-reviewer; Ponytail's "new logic leaves one
+   test" is already enforced — stronger — by gauntlet layers 4–6.
 
 ## 2. Product definition
 

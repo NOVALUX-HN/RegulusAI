@@ -27,8 +27,13 @@ Contract:
 Procedure:
 
 1. Read the Chart section you were handed; restate the unit in one line.
-2. Implement — small, reviewable changes; behavior, tests and docs
-   together.
+2. Implement — the Necessity Ladder decides what gets written (does it
+   need to exist? already in this codebase? stdlib or platform?
+   installed dependency? one clear line? then the minimum that works);
+   lazy about the solution, never about the change: finish every
+   caller, test and fixture the change breaks; never cut validation at
+   trust boundaries, error handling that prevents data loss, security
+   or accessibility; behavior, tests and docs together.
 3. Run `regulus gate run <task>`; fix failures before anything else.
 4. Hand back: what you built, the spec numbers covered, gate verdicts
    with receipt ids, and anything you deliberately did not do.

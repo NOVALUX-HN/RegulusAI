@@ -24,7 +24,14 @@ skill needed for those.
    under `charts/`) declares its acceptance scenarios (Given/When/Then)
    in `## Acceptance` BEFORE implementation; validate with the
    `regulus_spec_check` tool.
-3. **BUILD** — keep changes reviewable; run the gauntlet with
+3. **BUILD** — keep changes reviewable; the Necessity Ladder decides
+   what gets written (adapted from Ponytail, MIT): does it need to
+   exist? → already in this codebase? → stdlib or platform? → installed
+   dependency? → one clear line? → only then the minimum that works.
+   Lazy about the solution, never about the change: finish every
+   caller, test and fixture the change breaks. Never cut validation at
+   trust boundaries, error handling that prevents data loss, security,
+   accessibility, or anything the user asked for. Run the gauntlet with
    `regulus_gate_run` for the task after each meaningful step.
 4. **PROVE** — never claim done without all gates green; cite receipt
    ids (`rec_…`) as evidence. A failing layer stops the gauntlet: fix
