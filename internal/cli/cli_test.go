@@ -1069,3 +1069,63 @@ func TestCommitsBehindSuffix(t *testing.T) {
 		t.Fatalf("error: suffix = %q", s)
 	}
 }
+
+func TestChartInitAndList(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"chart", "init", "my-feature"}); code != 0 {
+		t.Fatalf("init: exit = %d", code)
+	}
+	slashPath := filepath.Join("charts", "my-feature.md")
+	if !strings.Contains(out.String(), slashPath) {
+		t.Fatalf("init output = %q", out.String())
+	}
+	// the scaffold passes spec check
+	cS, outS, _ := newCLI(nil)
+	if code := cS.Run([]string{"spec", "check", "charts/my-feature.md"}); code != 0 {
+		t.Fatalf("scaffold spec check: exit = %d", code)
+	}
+	if !strings.Contains(outS.String(), "spec OK: 1 scenario(s)") {
+		t.Fatalf("scaffold must pass spec check, got %q", outS.String())
+	}
+	// double init is refused
+	cD, _, errb := newCLI(nil)
+	if code := cD.Run([]string{"chart", "init", "my-feature"}); code != 1 {
+		t.Fatalf("double init: exit = %d", code)
+	}
+	if !strings.Contains(errb.String(), "already exists") {
+		t.Fatalf("double init stderr = %q", errb.String())
+	}
+	// invalid name
+	cI, _, _ := newCLI(nil)
+	if code := cI.Run([]string{"chart", "init", "my feature"}); code != 2 {
+		t.Fatalf("invalid name: exit = %d", code)
+	}
+	// list shows the chart with its scenario count
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"chart", "list"}); code != 0 {
+		t.Fatalf("list: exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), slashPath) || !strings.Contains(out2.String(), "OK (1 scenario)") {
+		t.Fatalf("list output = %q", out2.String())
+	}
+	// usage
+	c3, _, errb3 := newCLI(nil)
+	if code := c3.Run([]string{"chart"}); code != 2 {
+		t.Fatalf("chart bare: exit = %d", code)
+	}
+	if !strings.Contains(errb3.String(), "usage: regulus chart") {
+		t.Fatalf("stderr = %q", errb3.String())
+	}
+}
+
+func TestChartListEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"chart", "list"}); code != 0 {
+		t.Fatalf("list empty: exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "(no charts)") {
+		t.Fatalf("list output = %q", out.String())
+	}
+}

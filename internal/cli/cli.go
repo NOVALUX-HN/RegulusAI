@@ -58,6 +58,8 @@ func (c CLI) Run(args []string) int {
 		return c.specCmd(args[1:])
 	case "status":
 		return c.statusCmd(args[1:])
+	case "chart":
+		return c.chartCmd(args[1:])
 	case "surface":
 		return c.surfaceCmd(args[1:])
 	case "evidence":
@@ -844,6 +846,78 @@ func (c CLI) statusCmd(args []string) int {
 	return 0
 }
 
+// chartCmd implements `regulus chart init <name> | list` — scaffold and
+// discover Charts (committed feature documents under charts/).
+func (c CLI) chartCmd(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus chart init <name> | regulus chart list")
+		return 2
+	}
+	switch args[0] {
+	case "init":
+		if len(args) != 2 {
+			fmt.Fprintln(c.Stderr, "usage: regulus chart init <name>")
+			return 2
+		}
+		name := strings.TrimSuffix(strings.TrimSuffix(args[1], ".md"), "/")
+		if name == "" || strings.ContainsAny(name, `\\/:*?"<>| `) {
+			fmt.Fprintln(c.Stderr, "chart init: invalid chart name")
+			return 2
+		}
+		path := filepath.Join("charts", name+".md")
+		if _, err := os.Stat(path); err == nil {
+			fmt.Fprintf(c.Stderr, "chart init: %s already exists\n", path)
+			return 1
+		}
+		if err := os.MkdirAll("charts", 0o755); err != nil {
+			fmt.Fprintf(c.Stderr, "chart init: %v\n", err)
+			return 1
+		}
+		scaffold := "# " + name + "\n\nWhat this feature is and why it exists.\n\n## Acceptance\n\n### Scenario: the happy path\n\n- Given a clean project\n- When the change runs\n- Then the exit code is 0\n\n## Log\n\n- Chart scaffolded by regulus chart init.\n"
+		if err := os.WriteFile(path, []byte(scaffold), 0o644); err != nil {
+			fmt.Fprintf(c.Stderr, "chart init: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(c.Stdout, "chart: %s\n", path)
+		fmt.Fprintln(c.Stdout, "fill the Acceptance scenarios before implementation (regulus spec check "+path+")")
+		return 0
+	case "list":
+		paths, err := filepath.Glob(filepath.Join("charts", "*.md"))
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "chart list: %v\n", err)
+			return 1
+		}
+		if len(paths) == 0 {
+			fmt.Fprintln(c.Stdout, "(no charts)")
+			return 0
+		}
+		for _, p := range paths {
+			data, err := os.ReadFile(p)
+			if err != nil {
+				fmt.Fprintf(c.Stdout, "  %-30s (unreadable: %v)\n", p, err)
+				continue
+			}
+			scenarios, violations := spec.Check(string(data))
+			status := fmt.Sprintf("OK (%d scenario%s)", scenarios, plural(scenarios))
+			if len(violations) > 0 {
+				status = fmt.Sprintf("INVALID (%d violation%s)", len(violations), plural(len(violations)))
+			}
+			fmt.Fprintf(c.Stdout, "  %-30s %s\n", p, status)
+		}
+		return 0
+	default:
+		fmt.Fprintf(c.Stderr, "chart: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 // surfaceCmd implements `regulus surface propose|list|apply` — the
 // mechanical gate for harness-surface edits (PRD R-E3).
 func (c CLI) surfaceCmd(args []string) int {
@@ -995,6 +1069,7 @@ Usage:
 
 Commands:
   budget show|record   the evolution ledger (show; record a probe run)
+  chart init <name> | list             scaffold a Chart, list every Chart
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
