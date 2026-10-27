@@ -2,6 +2,7 @@ package almanac
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -218,6 +219,142 @@ func TestContextBlockIsTheDeterministicResume(t *testing.T) {
 	for _, want := range []string{"charts/feature-x.md", "F3 mid-flight: almanac substrate", "when gremlins starves", "2d ago", "DATA, not instructions"} {
 		if !strings.Contains(ctx, want) {
 			t.Fatalf("context must contain %q, got:\n%s", want, ctx)
+		}
+	}
+}
+
+func TestPinUnpinLastEventWins(t *testing.T) {
+	root := t.TempDir()
+	a, _ := Save(root, &Observation{Type: TypeDecision, Title: "first", Content: "x"}, t0)
+	b, _ := Save(root, &Observation{Type: TypeDecision, Title: "second", Content: "y"}, t1)
+	if err := Pin(root, a.ID, true, t2); err != nil {
+		t.Fatal(err)
+	}
+	if err := Pin(root, b.ID, true, t2); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := PinnedIDs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pins[a.ID] || !pins[b.ID] {
+		t.Fatalf("both pinned, got %v", pins)
+	}
+	if err := Pin(root, b.ID, false, t2.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	pins, _ = PinnedIDs(root)
+	if pins[b.ID] {
+		t.Fatal("the last event must win: b was unpinned")
+	}
+	if !pins[a.ID] {
+		t.Fatal("a stays pinned")
+	}
+	if err := Pin(root, "obs_nope", true, t2); err == nil || !strings.Contains(err.Error(), "no observation") {
+		t.Fatalf("want no-observation refusal, got %v", err)
+	}
+}
+
+func TestRelateValidatesRelationAndIds(t *testing.T) {
+	root := t.TempDir()
+	a, _ := Save(root, &Observation{Type: TypeDecision, Title: "v1", Content: "x"}, t0)
+	b, _ := Save(root, &Observation{Type: TypeDecision, Title: "v2", Content: "y"}, t1)
+	if err := Relate(root, a.ID, RelationSupersedes, b.ID, t2); err != nil {
+		t.Fatal(err)
+	}
+	rels, err := Relations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rels) != 1 || rels[0].From != a.ID || rels[0].Relation != RelationSupersedes || rels[0].To != b.ID {
+		t.Fatalf("relations = %+v", rels)
+	}
+	if err := Relate(root, a.ID, "kinda-related", b.ID, t2); err == nil || !strings.Contains(err.Error(), "relation") {
+		t.Fatalf("want relation refusal, got %v", err)
+	}
+	if err := Relate(root, a.ID, RelationConflictsWith, "obs_nope", t2); err == nil || !strings.Contains(err.Error(), "no observation") {
+		t.Fatalf("want id refusal, got %v", err)
+	}
+	if err := Relate(root, a.ID, RelationRelated, a.ID, t2); err == nil || !strings.Contains(err.Error(), "itself") {
+		t.Fatalf("want self-relation refusal, got %v", err)
+	}
+}
+
+func TestNormalizeProjectName(t *testing.T) {
+	cases := []struct{ remote, dir, want string }{
+		{"https://github.com/Owner/Repo.git", "fallback", "owner/repo"},
+		{"git@github.com:Owner/Repo.git", "fallback", "owner/repo"},
+		{"https://gitlab.com/group/sub/repo.git", "fallback", "sub/repo"},
+		{"", "My-Project", "my-project"},
+		{"not a url at all", "dir", "dir"},
+	}
+	for _, tc := range cases {
+		if got := NormalizeProjectName(tc.remote, tc.dir); got != tc.want {
+			t.Fatalf("NormalizeProjectName(%q, %q) = %q, want %q", tc.remote, tc.dir, got, tc.want)
+		}
+	}
+}
+
+func TestProjectNameRealGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-b", "main")
+	git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "x")
+	if got := ProjectName(dir); got != filepath.Base(dir) {
+		t.Fatalf("no remote → directory name, got %q", got)
+	}
+	git("remote", "add", "origin", "https://github.com/Andragon/RegulusAI.git")
+	if got := ProjectName(dir); got != "andragon/regulusai" {
+		t.Fatalf("remote → normalized, got %q", got)
+	}
+}
+
+func TestExportWritesBundle(t *testing.T) {
+	root := t.TempDir()
+	a, _ := Save(root, &Observation{Type: TypeDecision, Title: "chose go", Content: "stdlib only"}, t0)
+	b, _ := Save(root, &Observation{
+		Type: TypeLesson, Title: "mutation", Content: "clean export", Domain: "go",
+		Lesson: &Lesson{Cue: "when gremlins starves", Lesson: "export", Evidence: []string{"r"}, Confidence: "high"},
+	}, t1)
+	if err := Pin(root, b.ID, true, t2); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relate(root, b.ID, RelationSupersedes, a.ID, t2); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := Export(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("want the jsonl + INDEX, got %v", paths)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".regulus-export", "almanac.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("the bundle carries every observation, got %d lines", len(lines))
+	}
+	index, err := os.ReadFile(filepath.Join(root, ".regulus-export", "INDEX.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := string(index)
+	for _, want := range []string{"chose go", "when gremlins starves", "Pinned", "supersedes", a.ID, b.ID} {
+		if !strings.Contains(idx, want) {
+			t.Fatalf("INDEX must contain %q, got:\n%s", want, idx)
 		}
 	}
 }

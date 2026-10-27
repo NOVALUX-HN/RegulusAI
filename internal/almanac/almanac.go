@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -67,6 +68,257 @@ type Observation struct {
 // File returns the observation log path under a project root.
 func File(root string) string {
 	return filepath.Join(root, ".regulus", "almanac", "observations.jsonl")
+}
+
+func pinsFile(root string) string {
+	return filepath.Join(root, ".regulus", "almanac", "pins.jsonl")
+}
+
+func relationsFile(root string) string {
+	return filepath.Join(root, ".regulus", "almanac", "relations.jsonl")
+}
+
+// Pin toggles whether an observation is pinned. Pins are append-only
+// events (last event wins); the id must exist.
+func Pin(root, id string, pinned bool, now time.Time) error {
+	all, err := All(root)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, o := range all {
+		if o.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("no observation %q", id)
+	}
+	type pinEvent struct {
+		ID     string    `json:"id"`
+		Pinned bool      `json:"pinned"`
+		At     time.Time `json:"at"`
+	}
+	if err := os.MkdirAll(filepath.Dir(pinsFile(root)), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(pinsFile(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	line, err := json.Marshal(pinEvent{ID: id, Pinned: pinned, At: now.UTC()})
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// PinnedIDs returns the ids whose last pin event is pinned.
+func PinnedIDs(root string) (map[string]bool, error) {
+	data, err := os.ReadFile(pinsFile(root))
+	if os.IsNotExist(err) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	pins := map[string]bool{}
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		var ev struct {
+			ID     string `json:"id"`
+			Pinned bool   `json:"pinned"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return nil, fmt.Errorf("malformed pin event: %v", err)
+		}
+		pins[ev.ID] = ev.Pinned
+	}
+	return pins, nil
+}
+
+// Relation types.
+const (
+	RelationSupersedes    = "supersedes"
+	RelationConflictsWith = "conflicts_with"
+	RelationRelated       = "related"
+)
+
+// Relation is one recorded relation between two observations.
+type Relation struct {
+	From     string    `json:"from"`
+	Relation string    `json:"relation"`
+	To       string    `json:"to"`
+	At       time.Time `json:"at"`
+}
+
+// Relate records a validated relation between two existing observations.
+func Relate(root, from, relation, to string, now time.Time) error {
+	switch relation {
+	case RelationSupersedes, RelationConflictsWith, RelationRelated:
+	default:
+		return fmt.Errorf("relation %q is not one of supersedes, conflicts_with, related", relation)
+	}
+	if from == to {
+		return errors.New("an observation cannot relate to itself")
+	}
+	all, err := All(root)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for _, o := range all {
+		have[o.ID] = true
+	}
+	if !have[from] {
+		return fmt.Errorf("no observation %q", from)
+	}
+	if !have[to] {
+		return fmt.Errorf("no observation %q", to)
+	}
+	if err := os.MkdirAll(filepath.Dir(relationsFile(root)), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(relationsFile(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	line, err := json.Marshal(Relation{From: from, Relation: relation, To: to, At: now.UTC()})
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// Relations returns every recorded relation, oldest first.
+func Relations(root string) ([]Relation, error) {
+	data, err := os.ReadFile(relationsFile(root))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var rels []Relation
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		var r Relation
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			return nil, fmt.Errorf("malformed relation: %v", err)
+		}
+		rels = append(rels, r)
+	}
+	return rels, nil
+}
+
+// NormalizeProjectName renders a git remote URL as owner/name, or the
+// directory name when the remote is empty.
+func NormalizeProjectName(remoteURL, dirName string) string {
+	remote := strings.ToLower(strings.TrimSpace(remoteURL))
+	remote = strings.TrimSuffix(remote, ".git")
+	remote = strings.TrimPrefix(remote, "https://")
+	remote = strings.TrimPrefix(remote, "http://")
+	remote = strings.TrimPrefix(remote, "git@")
+	if i := strings.Index(remote, ":"); i >= 0 && !strings.Contains(remote[:i], "/") {
+		remote = remote[i+1:]
+	} else if i := strings.Index(remote, "/"); i >= 0 {
+		remote = remote[i+1:]
+	}
+	parts := strings.Split(strings.Trim(remote, "/"), "/")
+	if len(parts) < 2 {
+		return strings.ToLower(dirName)
+	}
+	return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+}
+
+// ProjectName resolves the project name from its git remote origin,
+// falling back to the directory name.
+func ProjectName(root string) string {
+	out, err := exec.Command("git", "-C", root, "config", "--get", "remote.origin.url").Output()
+	if err != nil {
+		return strings.ToLower(filepath.Base(root))
+	}
+	return NormalizeProjectName(strings.TrimSpace(string(out)), filepath.Base(root))
+}
+
+// Export writes the committed team bundle: .regulus-export/almanac.jsonl
+// (verbatim copy of the log) and .regulus-export/INDEX.md (a rendered
+// digest grouped by type, with pinned and relations sections).
+func Export(root string) (paths []string, err error) {
+	all, err := All(root)
+	if err != nil {
+		return nil, err
+	}
+	pins, err := PinnedIDs(root)
+	if err != nil {
+		return nil, err
+	}
+	rels, err := Relations(root)
+	if err != nil {
+		return nil, err
+	}
+	exportDir := filepath.Join(root, ".regulus-export")
+	if err := os.MkdirAll(exportDir, 0o755); err != nil {
+		return nil, err
+	}
+	// verbatim copy of the log
+	src, err := os.ReadFile(File(root))
+	if os.IsNotExist(err) {
+		src = []byte("")
+	} else if err != nil {
+		return nil, err
+	}
+	jsonl := filepath.Join(exportDir, "almanac.jsonl")
+	if err := os.WriteFile(jsonl, src, 0o644); err != nil {
+		return nil, err
+	}
+	// rendered INDEX
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Almanac export — %s\n\n", ProjectName(root))
+	fmt.Fprintf(&b, "%d observation(s), %d pinned, %d relation(s).\n\n", len(all), len(pins), len(rels))
+	b.WriteString("## Pinned\n\n")
+	any := false
+	for _, o := range all {
+		if pins[o.ID] {
+			any = true
+			fmt.Fprintf(&b, "- `%s` %s: %s\n", o.ID, o.Type, o.Title)
+		}
+	}
+	if !any {
+		b.WriteString("_(none)_\n")
+	}
+	b.WriteString("\n## Relations\n\n")
+	if len(rels) == 0 {
+		b.WriteString("_(none)_\n")
+	} else {
+		for _, r := range rels {
+			fmt.Fprintf(&b, "- `%s` **%s** `%s`\n", r.From, r.Relation, r.To)
+		}
+	}
+	b.WriteString("\n## Observations\n\n")
+	for _, o := range all {
+		fmt.Fprintf(&b, "### `%s` — %s: %s\n\n- saved: %s\n", o.ID, o.Type, o.Title, o.SavedAt.Format(time.RFC3339))
+		if o.Lesson != nil {
+			fmt.Fprintf(&b, "- cue: %s\n- lesson: %s\n- confidence: %s\n", o.Lesson.Cue, o.Lesson.Lesson, o.Lesson.Confidence)
+		}
+		b.WriteString("\n")
+	}
+	index := filepath.Join(exportDir, "INDEX.md")
+	if err := os.WriteFile(index, []byte(b.String()), 0o644); err != nil {
+		return nil, err
+	}
+	return []string{jsonl, index}, nil
 }
 
 func validType(t string) bool {

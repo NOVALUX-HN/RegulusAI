@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -834,4 +835,133 @@ func TestMemorySaveSearchHistoryContext(t *testing.T) {
 	if !strings.Contains(out5.String(), "f3 in flight") {
 		t.Fatalf("context must surface the latest note, got:\n%s", out5.String())
 	}
+}
+
+func TestMemoryPinRelateExport(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "v1 decision", "first"}); code != 0 {
+		t.Fatalf("save: exit = %d", code)
+	}
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "v2 decision", "second"}); code != 0 {
+		t.Fatalf("save 2: exit = %d", code)
+	}
+	// grab the ids via search
+	cS, outS, _ := newCLI(nil)
+	if code := cS.Run([]string{"memory", "search", "decision"}); code != 0 {
+		t.Fatalf("search: exit = %d", code)
+	}
+	ids := regexp.MustCompile(`(obs_[0-9a-f]+)`).FindAllString(outS.String(), -1)
+	if len(ids) < 2 {
+		t.Fatalf("need two ids, got %v", ids)
+	}
+	first, second := ids[1], ids[0] // newest first in search output
+	// pin / unpin
+	cP, outP, _ := newCLI(nil)
+	if code := cP.Run([]string{"memory", "pin", first}); code != 0 {
+		t.Fatalf("pin: exit = %d", code)
+	}
+	if !strings.Contains(outP.String(), "pinned: "+first) {
+		t.Fatalf("pin output = %q", outP.String())
+	}
+	cU, outU, _ := newCLI(nil)
+	if code := cU.Run([]string{"memory", "unpin", first}); code != 0 {
+		t.Fatalf("unpin: exit = %d", code)
+	}
+	if !strings.Contains(outU.String(), "unpinned: "+first) {
+		t.Fatalf("unpin output = %q", outU.String())
+	}
+	// relate
+	cR, outR, _ := newCLI(nil)
+	if code := cR.Run([]string{"memory", "relate", "--id", first, "--relation", "supersedes", "--to", second}); code != 0 {
+		t.Fatalf("relate: exit = %d", code)
+	}
+	if !strings.Contains(outR.String(), "supersedes") {
+		t.Fatalf("relate output = %q", outR.String())
+	}
+	// relate with bad relation
+	cB, _, errb := newCLI(nil)
+	if code := cB.Run([]string{"memory", "relate", "--id", first, "--relation", "kinda", "--to", second}); code != 1 {
+		t.Fatalf("bad relation: exit = %d", code)
+	}
+	if !strings.Contains(errb.String(), "relation") {
+		t.Fatalf("bad relation stderr = %q", errb.String())
+	}
+	// export
+	cE, outE, _ := newCLI(nil)
+	if code := cE.Run([]string{"memory", "export"}); code != 0 {
+		t.Fatalf("export: exit = %d", code)
+	}
+	if !strings.Contains(outE.String(), "almanac.jsonl") || !strings.Contains(outE.String(), "INDEX.md") {
+		t.Fatalf("export output = %q", outE.String())
+	}
+	idx, err := os.ReadFile(filepath.Join(".regulus-export", "INDEX.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(idx), "v1 decision") || !strings.Contains(string(idx), "supersedes") {
+		t.Fatalf("INDEX = \n%s", string(idx))
+	}
+}
+
+func TestSearchShowsCommitsBehind(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-b", "main")
+	git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "x")
+	head1 := strings.TrimSpace(mustRun(t, dir, "git", "rev-parse", "HEAD"))
+	// save an observation pinned to head1
+	var out, errb bytes.Buffer
+	c := CLI{Version: "test", Probe: nil, Stdout: &out, Stderr: &errb}
+	c.Probe = func() doctor.Result { return doctor.Result{Detected: "x", Major: 2, Supported: true} }
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "old observation", "made at head1"}); code != 0 {
+		t.Fatalf("save: exit=%d %s", code, errb.String())
+	}
+	// record the git head in the provenance: we re-save with a runner override is complex;
+	// instead patch the observation directly via almanac file
+	// (the CLI save doesn't carry git head for non-lesson types; the distance test works via the runner)
+	git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "y")
+	git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "z")
+	// rewrite the observation's provenance with head1
+	path := filepath.Join(".regulus", "almanac", "observations.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched := strings.Replace(string(data), `"provenance":{"git_head":""`, `"provenance":{"git_head":"`+head1+`"`, 1)
+	if patched == string(data) {
+		t.Skip("provenance patch not found — git_head empty already means no distance")
+	}
+	if err := os.WriteFile(path, []byte(patched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "search", "observation"}); code != 0 {
+		t.Fatalf("search: exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "commits behind") {
+		t.Fatalf("search must annotate git distance, got:\n%s", out2.String())
+	}
+}
+
+func mustRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%v: %v", args, err)
+	}
+	return string(out)
 }

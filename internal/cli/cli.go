@@ -178,11 +178,19 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memorySearchCmd(args[1:])
 	case "history":
 		return c.memoryHistoryCmd(args[1:])
+	case "pin":
+		return c.memoryPinCmd(true, args[1:])
+	case "unpin":
+		return c.memoryPinCmd(false, args[1:])
+	case "relate":
+		return c.memoryRelateCmd(args[1:])
+	case "export":
+		return c.memoryExportCmd(args[1:])
 	case "context":
 		return c.memoryContextCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context")
 		return 2
 	}
 }
@@ -291,7 +299,7 @@ func (c CLI) memorySearchCmd(args []string) int {
 	fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
 	now := time.Now().UTC()
 	for _, h := range hits {
-		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt))
+		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s%s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt), c.commitsBehindSuffix(h))
 	}
 	return 0
 }
@@ -320,6 +328,64 @@ func (c CLI) memoryHistoryCmd(args []string) int {
 	for _, o := range chain {
 		fmt.Fprintf(c.Stdout, "%s %s %s %s\n", o.SavedAt.Format(time.RFC3339), o.ID, o.Type, o.Title)
 	}
+	return 0
+}
+
+// memoryPinCmd implements `regulus memory pin|unpin <id>`.
+func (c CLI) memoryPinCmd(pin bool, args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory pin|unpin <id>")
+		return 2
+	}
+	if err := almanac.Pin(".", args[0], pin, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "memory: %v\n", err)
+		return 1
+	}
+	if pin {
+		fmt.Fprintf(c.Stdout, "pinned: %s\n", args[0])
+	} else {
+		fmt.Fprintf(c.Stdout, "unpinned: %s\n", args[0])
+	}
+	return 0
+}
+
+// memoryRelateCmd implements `regulus memory relate --id --relation --to`.
+func (c CLI) memoryRelateCmd(args []string) int {
+	fs := flag.NewFlagSet("memory relate", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	from := fs.String("id", "", "the observation (required)")
+	relation := fs.String("relation", "", "supersedes | conflicts_with | related (required)")
+	to := fs.String("to", "", "the other observation (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *from == "" || *relation == "" || *to == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory relate --id <a> --relation <r> --to <b>")
+		return 2
+	}
+	if err := almanac.Relate(".", *from, *relation, *to, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "memory relate: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "recorded: %s %s %s\n", *from, *relation, *to)
+	return 0
+}
+
+// memoryExportCmd implements `regulus memory export` — the team bundle.
+func (c CLI) memoryExportCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory export")
+		return 2
+	}
+	paths, err := almanac.Export(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory export: %v\n", err)
+		return 1
+	}
+	for _, p := range paths {
+		fmt.Fprintf(c.Stdout, "exported: %s\n", p)
+	}
+	fmt.Fprintln(c.Stdout, "commit .regulus-export/ to share the Almanac with your team")
 	return 0
 }
 
@@ -360,6 +426,24 @@ func splitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// commitsBehindSuffix renders the git staleness annotation for an
+// observation with a provenance git head — empty when unknown.
+func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
+	if o.Provenance == nil || o.Provenance.GitHead == "" {
+		return ""
+	}
+	head := o.Provenance.GitHead
+	out, _, _, err := c.runner().Run(context.Background(), "git rev-list --count "+head+"..HEAD")
+	if err != nil || strings.TrimSpace(out) == "" {
+		return ""
+	}
+	n := strings.TrimSpace(out)
+	if n == "0" {
+		return ""
+	}
+	return ", " + n + " commits behind"
 }
 
 // humanAge renders a coarse age annotation for staleness awareness.
