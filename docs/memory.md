@@ -99,5 +99,10 @@ log instead of a second mutable copy of the data.
   instructions.
 - The `context` session hook points the agent at the Almanac resume block
   when a feature document is open.
+- Lesson injection is domain-scoped: the hook resolves one domain (the
+  `Domain:` line of a chart cited in recent messages, else the lone
+  chart's line, else the lone library domain) and injects that domain's
+  lessons via `memory search --type lesson --domain`; with no signal it
+  keeps the newest-first behavior.
 - Agents write via the CLI — single writer, like every piece of Regulus
   state. Nothing but `regulus` mutates `.regulus/`.

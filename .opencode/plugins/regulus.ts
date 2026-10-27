@@ -7,6 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
+import { resolveDomain } from "./domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -279,6 +280,7 @@ export default Plugin.define({
             terms: { type: "string", description: "space-separated search terms (all must match)" },
             topic_key: { type: "string", description: "optional bucket: topic key" },
             domain: { type: "string", description: "optional bucket: domain" },
+            dimension: { type: "string", description: "optional bucket: lesson dimension (inv | dom)" },
             type: { type: "string", description: "optional bucket: observation type" },
           },
           required: ["terms"],
@@ -286,10 +288,11 @@ export default Plugin.define({
         },
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
-          const { terms, topic_key, domain, type } = input as Record<string, string>
+          const { terms, topic_key, domain, dimension, type } = input as Record<string, string>
           const args = ["memory", "search"]
           if (topic_key) args.push("--topic-key", topic_key)
           if (domain) args.push("--domain", domain)
+          if (dimension) args.push("--dimension", dimension)
           if (type) args.push("--type", type)
           for (const term of (terms ?? "").split(/\s+/).filter((t) => t !== "")) {
             args.push(term)
@@ -356,9 +359,15 @@ export default Plugin.define({
     })
 
     // Lessons reach the agent without being asked: the newest admitted
-    // lessons inject into every context assembly, DATA-framed.
+    // lessons inject into every context assembly, DATA-framed — scoped
+    // to the detected domain when one resolves (G1.4), newest-first
+    // otherwise.
     await ctx.session.hook("context", async (event) => {
-      const lessons = await run(bin, ["memory", "search", "--type", "lesson"])
+      const recent = JSON.stringify(event.messages ?? []).slice(-20000)
+      const domain = await resolveDomain(dir, (args) => run(bin, args), recent)
+      const args = ["memory", "search", "--type", "lesson"]
+      if (domain !== "") args.push("--domain", domain)
+      const lessons = await run(bin, args)
       if (lessons.exitCode === 0 && lessons.output !== "" && !lessons.output.startsWith("no matching")) {
         event.system.push({ type: "text", text: dataBlock("regulus_admitted_lessons", lessons.output) })
       }

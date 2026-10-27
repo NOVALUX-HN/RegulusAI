@@ -1131,3 +1131,41 @@ func TestChartListEmpty(t *testing.T) {
 		t.Fatalf("list output = %q", out.String())
 	}
 }
+
+func TestLibraryDomainsEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "domains"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if out.String() != "" {
+		t.Fatalf("output = %q, want empty", out.String())
+	}
+}
+
+func TestLibraryDomainsListsSorted(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	root := t.TempDir()
+	t.Chdir(root)
+	for _, d := range []string{"ts", "go"} {
+		if err := os.MkdirAll(filepath.Join(root, ".regulus", "library", d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code := c.Run([]string{"library", "domains"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if out.String() != "go\nts\n" {
+		t.Fatalf("output = %q, want sorted domains", out.String())
+	}
+}
+
+func TestLibraryDomainsRejectsExtraArgs(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"library", "domains", "extra"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus library domains") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}

@@ -23,7 +23,8 @@ skill needed for those.
 2. **CHART** — the feature's Chart (the committed feature document
    under `charts/`) declares its acceptance scenarios (Given/When/Then)
    in `## Acceptance` BEFORE implementation; validate with the
-   `spec_check` tool.
+   `spec_check` tool. A `Domain: <name>` line (optional) tells the
+   context hook which lesson domain to inject.
 3. **BUILD** — keep changes reviewable; the Necessity Ladder decides
    what gets written (adapted from Ponytail, MIT): does it need to
    exist? → already in this codebase? → stdlib or platform? → installed

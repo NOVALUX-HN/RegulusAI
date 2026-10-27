@@ -504,15 +504,17 @@ func (c CLI) reflectCmd(args []string) int {
 	return 0
 }
 
-// libraryCmd implements `regulus library list|candidates|show
+// libraryCmd implements `regulus library list|candidates|show|domains
 // [--domain] | admit --domain --candidate --guardian` — dispatched to
 // one handler per subcommand.
 func (c CLI) libraryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name>")
+		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name>")
 		return 2
 	}
 	switch args[0] {
+	case "domains":
+		return c.libraryDomainsCmd(args[1:])
 	case "list":
 		return c.libraryListCmd(args[1:])
 	case "candidates":
@@ -523,9 +525,28 @@ func (c CLI) libraryCmd(args []string) int {
 		return c.libraryAdmitCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "library: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show [--domain <name>] | regulus library admit --domain --candidate --guardian")
+		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains [--domain <name>] | regulus library admit --domain --candidate --guardian")
 		return 2
 	}
+}
+
+// libraryDomainsCmd implements `regulus library domains`: one domain
+// per line, sorted; empty (exit 0, no output) when no library exists.
+// The OpenCode plugin reads it to auto-detect the lesson domain.
+func (c CLI) libraryDomainsCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library domains")
+		return 2
+	}
+	domains, err := library.Domains(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "library domains: %v\n", err)
+		return 1
+	}
+	for _, d := range domains {
+		fmt.Fprintln(c.Stdout, d)
+	}
+	return 0
 }
 
 // libraryListCmd implements `regulus library list [--domain <name>]`.
