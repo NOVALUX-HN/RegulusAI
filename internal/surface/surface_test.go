@@ -20,6 +20,8 @@ func TestProposeRefusesOutsideWhitelist(t *testing.T) {
 		".opencode/skills/x/SKILL.md",
 		".opencode/agents/x.md",
 		".opencode/plugins/x.ts",
+		".opencode/discipline.md",
+		".opencode/tool-guidance.md",
 		"docs/x.md",
 	} {
 		if _, err := Propose(t.TempDir(), ok, "content", "reason", t0); err != nil {

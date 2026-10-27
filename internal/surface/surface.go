@@ -36,6 +36,8 @@ var Whitelist = []string{
 	".opencode/skills/",
 	".opencode/agents/",
 	".opencode/plugins/",
+	".opencode/discipline.md",
+	".opencode/tool-guidance.md",
 	"docs/",
 }
 
