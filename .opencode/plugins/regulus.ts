@@ -29,6 +29,55 @@ async function loadDiscipline(dir: string): Promise<string> {
   return DEFAULT_DISCIPLINE
 }
 
+// DEFAULT_TOOL_GUIDANCE is the compiled fallback for every tool
+// description. tool-guidance.md overrides it section by section, so a
+// missing file or a missing section keeps the previous behavior.
+const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
+  regulus:
+    "Regulus AI harness: gauntlet gates, spec contract, doctor, session memory",
+  gate_run:
+    "Run the layered quality gauntlet for a task: gates in ascending layer order, stop at first failure, one append-only receipt per executed gate. Returns per-layer verdicts and the summary.",
+  spec_check:
+    "Validate the acceptance-criteria contract of a feature document (## Acceptance section: scenarios need Given/When/Then). Returns 'spec OK: N scenario(s)' or every violation with line numbers.",
+  doctor:
+    "Verify the OpenCode runtime and the regulus install (V2-only version gate).",
+  memory_note:
+    "Append one durable session note (survives restarts and compaction).",
+  memory_show: "List the session notes, oldest first.",
+  memory_save:
+    "Save a typed observation to the Almanac (decision, discovery or preference) with provenance. Lessons are refused here: they enter through regulus reflect (evidence-gated).",
+  memory_search:
+    "Search the Almanac deterministically: optional buckets (topic key, domain, type) then exact term matching — every term must match; newest first with age annotations.",
+  memory_context:
+    "The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.",
+}
+
+// parseToolGuidance reads "## <name>" sections; each body collapses to
+// one line. Unknown sections are kept (future tools), empty bodies
+// are dropped so the default survives.
+function parseToolGuidance(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const part of text.split(/^##\s+/m)) {
+    const nl = part.indexOf("\n")
+    if (nl < 0) continue
+    const name = part.slice(0, nl).trim()
+    const body = part.slice(nl + 1).replace(/\s+/g, " ").trim()
+    if (name !== "" && body !== "") out[name] = body
+  }
+  return out
+}
+
+// loadToolGuidance merges the editable file over the compiled defaults.
+async function loadToolGuidance(dir: string): Promise<Record<string, string>> {
+  try {
+    const text = await Bun.file(`${dir}/.opencode/tool-guidance.md`).text()
+    if (text.trim() !== "") return { ...DEFAULT_TOOL_GUIDANCE, ...parseToolGuidance(text) }
+  } catch {
+    // fall through to the defaults
+  }
+  return { ...DEFAULT_TOOL_GUIDANCE }
+}
+
 function dataBlock(title: string, content: string): string {
   const body = content
     .split("\n")
@@ -101,17 +150,17 @@ export default Plugin.define({
   async setup(ctx) {
     const dir = ctx.location.directory
     const bin = await resolveRegulus(dir)
+    const guidance = await loadToolGuidance(dir)
 
     await ctx.tool.transform((editor) => {
       editor.namespace({
         name: "regulus",
-        description: "Regulus AI harness: gauntlet gates, spec contract, doctor, session memory",
+        description: guidance["regulus"],
       })
 
       editor.add({
         name: "gate_run",
-        description:
-          "Run the layered quality gauntlet for a task: gates in ascending layer order, stop at first failure, one append-only receipt per executed gate. Returns per-layer verdicts and the summary.",
+        description: guidance["gate_run"],
         input: {
           type: "object",
           properties: {
@@ -130,8 +179,7 @@ export default Plugin.define({
 
       editor.add({
         name: "spec_check",
-        description:
-          "Validate the acceptance-criteria contract of a feature document (## Acceptance section: scenarios need Given/When/Then). Returns 'spec OK: N scenario(s)' or every violation with line numbers.",
+        description: guidance["spec_check"],
         input: {
           type: "object",
           properties: {
@@ -150,7 +198,7 @@ export default Plugin.define({
 
       editor.add({
         name: "doctor",
-        description: "Verify the OpenCode runtime and the regulus install (V2-only version gate).",
+        description: guidance["doctor"],
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
@@ -161,7 +209,7 @@ export default Plugin.define({
 
       editor.add({
         name: "memory_note",
-        description: "Append one durable session note (survives restarts and compaction).",
+        description: guidance["memory_note"],
         input: {
           type: "object",
           properties: {
@@ -180,7 +228,7 @@ export default Plugin.define({
 
       editor.add({
         name: "memory_show",
-        description: "List the session notes, oldest first.",
+        description: guidance["memory_show"],
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
@@ -191,8 +239,7 @@ export default Plugin.define({
 
       editor.add({
         name: "memory_save",
-        description:
-          "Save a typed observation to the Almanac (decision, discovery or preference) with provenance. Lessons are refused here: they enter through regulus reflect (evidence-gated).",
+        description: guidance["memory_save"],
         input: {
           type: "object",
           properties: {
@@ -225,8 +272,7 @@ export default Plugin.define({
 
       editor.add({
         name: "memory_search",
-        description:
-          "Search the Almanac deterministically: optional buckets (topic key, domain, type) then exact term matching — every term must match; newest first with age annotations.",
+        description: guidance["memory_search"],
         input: {
           type: "object",
           properties: {
@@ -255,8 +301,7 @@ export default Plugin.define({
 
       editor.add({
         name: "memory_context",
-        description:
-          "The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.",
+        description: guidance["memory_context"],
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
