@@ -513,11 +513,12 @@ func (c CLI) reflectCmd(args []string) int {
 }
 
 // libraryCmd implements `regulus library list|candidates|show|domains
-// [--domain] | admit --domain --candidate --guardian` — dispatched to
+// [--domain] | admit --domain --candidate --guardian |
+// forget|retain --domain --task` — dispatched to
 // one handler per subcommand.
 func (c CLI) libraryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name>")
+		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name> | regulus library forget|retain --domain <d> --task <t>")
 		return 2
 	}
 	switch args[0] {
@@ -531,9 +532,13 @@ func (c CLI) libraryCmd(args []string) int {
 		return c.libraryShowCmd(args[1:])
 	case "admit":
 		return c.libraryAdmitCmd(args[1:])
+	case "forget":
+		return c.libraryForgetCmd(args[1:])
+	case "retain":
+		return c.libraryRetainCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "library: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains [--domain <name>] | regulus library admit --domain --candidate --guardian")
+		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain --candidate --guardian | regulus library forget|retain --domain <d> --task <t>")
 		return 2
 	}
 }
@@ -867,6 +872,67 @@ func (c CLI) libraryAdmitCmd(args []string) int {
 	}
 	fmt.Fprintf(c.Stdout, "lesson admitted: %s (guardian %s)\n", l.ID, l.Guardian)
 	fmt.Fprintf(c.Stdout, "index: %s\n", library.IndexFile(".", l.Domain))
+	return 0
+}
+
+// libraryForgetCmd implements `regulus library forget --domain <d>
+// --task <t>`: drop one task snapshot, then rebuild the INDEX.
+// Forgetting an unknown task is a no-op success.
+func (c CLI) libraryForgetCmd(args []string) int {
+	fs := flag.NewFlagSet("library forget", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "the snapshot's domain (required)")
+	task := fs.String("task", "", "the task snapshot to drop (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *domain == "" || *task == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library forget --domain <d> --task <t>")
+		return 2
+	}
+	if err := library.Forget(".", *domain, *task); err != nil {
+		fmt.Fprintf(c.Stderr, "library forget: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "forgotten: harnesses/%s/ (domain %s)\n", receipts.Slug(*task), *domain)
+	return 0
+}
+
+// libraryRetainCmd implements `regulus library retain --domain <d>
+// --task <t>`: keep only lessons whose task sorts strictly before <t>,
+// drop <t> and everything after it, then rebuild the INDEX.
+func (c CLI) libraryRetainCmd(args []string) int {
+	fs := flag.NewFlagSet("library retain", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "the domain to prune (required)")
+	task := fs.String("task", "", "keep tasks strictly before this one (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *domain == "" || *task == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library retain --domain <d> --task <t>")
+		return 2
+	}
+	if err := library.Retain(".", *domain, *task); err != nil {
+		fmt.Fprintf(c.Stderr, "library retain: %v\n", err)
+		return 1
+	}
+	lessons, err := library.List(".", *domain)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "library retain: %v\n", err)
+		return 1
+	}
+	kept := make([]string, 0, len(lessons))
+	for _, l := range lessons {
+		if l.Task < *task {
+			kept = append(kept, l.Task)
+		}
+	}
+	if len(kept) == 0 {
+		fmt.Fprintf(c.Stdout, "retained: (no tasks before %s in domain %s)\n", *task, *domain)
+		return 0
+	}
+	fmt.Fprintf(c.Stdout, "retained: %s (domain %s)\n", strings.Join(kept, ", "), *domain)
 	return 0
 }
 
@@ -1281,8 +1347,10 @@ Commands:
   evidence list [--task <t>] | show <file>   audit gauntlet receipts
   gate run <task>    run the layered gauntlet and write receipts
   help               show this help
-  library list|candidates|show [--domain <name>]  lessons, pending candidates, domain index
+  library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
+  library forget --domain <d> --task <t>  drop one task snapshot
+  library retain --domain <d> --task <t>  keep tasks strictly before <t>
   memory note|show|save|search|history|context   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   reflect            admit an evidence-gated lesson (regulus reflect --help)

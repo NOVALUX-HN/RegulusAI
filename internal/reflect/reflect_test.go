@@ -140,8 +140,8 @@ func TestAdmitCompletesTheFlow(t *testing.T) {
 		t.Fatalf("library = %+v (%v)", lessons, err)
 	}
 	index, err := os.ReadFile(library.IndexFile(root, "go"))
-	if err != nil || !strings.Contains(string(index), l.ID) {
-		t.Fatalf("INDEX must list the admitted lesson: %v\n%s", err, string(index))
+	if err != nil || !strings.Contains(string(index), "harnesses/feature__T1/") || !strings.Contains(string(index), "when the gauntlet passes") {
+		t.Fatalf("INDEX must list the admitted task snapshot and cue: %v\n%s", err, string(index))
 	}
 	if _, err := os.Stat(filepath.Join(library.CandidateDir(root, "go"), l.ID, "LESSON.md")); !os.IsNotExist(err) {
 		t.Fatal("the candidate must be removed after admission")

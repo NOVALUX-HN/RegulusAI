@@ -15,6 +15,7 @@ import (
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
+	"regulus-ai/internal/library"
 	"regulus-ai/internal/receipts"
 )
 
@@ -733,6 +734,100 @@ func TestStatusReportsMissingPiecesHonestly(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "usage: regulus status") {
 		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestLibraryForgetRetainCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	now := time.Now().UTC()
+	for i, task := range []string{"tiny/T1", "tiny/T2"} {
+		l := library.Lesson{
+			ID:         library.NewID(now.Add(time.Duration(i) * time.Second)),
+			Domain:     "go",
+			Task:       task,
+			Cue:        "cue for " + task,
+			Lesson:     "lesson for " + task,
+			Evidence:   []string{".regulus/evidence/tiny__T1/typecheck-1.json"},
+			Confidence: library.ConfidenceLow,
+			GitHead:    "abc123",
+			CreatedAt:  now.Add(time.Duration(i) * time.Second),
+		}
+		if err := library.Admit(".", l, "regulus-gate-verifier"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// forget drops the snapshot, not the lesson
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"library", "forget", "--domain", "go", "--task", "tiny/T1"}); code != 0 {
+		t.Fatalf("forget exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "forgotten: harnesses/tiny__T1/") {
+		t.Fatalf("forget output = %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(".regulus", "library", "go", "harnesses", "tiny__T1")); !os.IsNotExist(err) {
+		t.Fatal("forget must remove the task snapshot")
+	}
+	// unknown task is a no-op success
+	cU, outU, errbU := newCLI(nil)
+	if code := cU.Run([]string{"library", "forget", "--domain", "go", "--task", "tiny/NONE"}); code != 0 {
+		t.Fatalf("unknown forget exit = %d, stderr %q", code, errbU.String())
+	}
+	if !strings.Contains(outU.String(), "forgotten: harnesses/tiny__NONE/") {
+		t.Fatalf("unknown forget output = %q", outU.String())
+	}
+	// retain keeps strictly-before tasks and drops the bound and later
+	cR, outR, errbR := newCLI(nil)
+	if code := cR.Run([]string{"library", "retain", "--domain", "go", "--task", "tiny/T2"}); code != 0 {
+		t.Fatalf("retain exit = %d, stderr %q", code, errbR.String())
+	}
+	if !strings.Contains(outR.String(), "retained: tiny/T1 (domain go)") {
+		t.Fatalf("retain output = %q", outR.String())
+	}
+	lessons, err := library.List(".", "go")
+	if err != nil || len(lessons) != 1 || lessons[0].Task != "tiny/T1" {
+		t.Fatalf("retain must drop tiny/T2 and later, got %+v (%v)", lessons, err)
+	}
+	// retaining before everything empties the domain
+	cR2, outR2, errbR2 := newCLI(nil)
+	if code := cR2.Run([]string{"library", "retain", "--domain", "go", "--task", "a"}); code != 0 {
+		t.Fatalf("retain-all exit = %d, stderr %q", code, errbR2.String())
+	}
+	if !strings.Contains(outR2.String(), "no tasks before a") {
+		t.Fatalf("retain-all output = %q", outR2.String())
+	}
+}
+
+func TestLibraryForgetRetainUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{
+		{"library", "forget"},
+		{"library", "forget", "--domain", "go"},
+		{"library", "forget", "--task", "tiny/T1"},
+		{"library", "forget", "--domain", "go", "--task", "tiny/T1", "extra"},
+		{"library", "retain"},
+		{"library", "retain", "--domain", "go"},
+		{"library", "retain", "--task", "tiny/T1"},
+		{"library", "retain", "--domain", "go", "--task", "tiny/T1", "extra"},
+	} {
+		c, _, errb := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("args %v: exit = %d, want 2", args, code)
+		}
+		want := "usage: regulus library " + args[1]
+		if !strings.Contains(errb.String(), want) {
+			t.Fatalf("args %v: stderr must print %q, got %q", args, want, errb.String())
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"library", "forget", "--domain"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"library", "frobnicate"}); code != 2 {
+		t.Fatalf("unknown subcommand: exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "forget|retain") {
+		t.Fatalf("unknown subcommand usage must name the new subcommands, got %q", errb2.String())
 	}
 }
 
