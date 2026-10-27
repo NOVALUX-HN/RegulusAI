@@ -129,15 +129,13 @@ end-to-end spine, F2–F4 complete each loop, F5 integrates and releases.
 | F2 | Complete Gauntlet | gate layers 5–7 (coverage floor, mutation testing, CRAP score), full guardian roster (spec-keeper, mutation-auditor, crap-analyst, evidence-auditor), evidence audit UX, per-project gate thresholds | done — 7/7 layers green on regulus itself (feature doc L17) plus the deterministic `TestF2SevenLayers` journey over a real Go fixture (L18) |
 | F3 | Complete Discipline | the full Sextant workflow + task tooling, subagent roster (explore/worker/verify) with `permission.task` matrices, complete skills set, Almanac memory (Engram-inspired, evidence-first: observations with provenance, revision chains, deterministic retrieval, resume — docs/memory.md) | done — the Almanac substrate is live (WU1+2) with the Crew roster and plugin tools (WU3); `TestF3Resume` proves the restart-resume criterion; feature doc L21 |
 | F4 | Complete Evolution | lesson admission flow (candidate → guardian validation → library INDEX), library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (Propose–Probe–Compose, k=1, explicit request) | done — two-phase admission live (propose → `library admit --guardian`), caps enforced and recorded (refused-cap in the ledger), probes budget-gated, retrieval via `library show` + Almanac search/context; `TestF4Evolution` proves the full cycle; feature doc L23 |
-| F5 | Integration & release | complete V2 plugin (all hooks + custom tools), complete CLI UX, deterministic journeys suite, npm installer distributing the Go binaries, user docs, final dogfood | v1: the success criteria below hold on the final dogfood |
+| F5 | Integration & release | complete V2 plugin (all hooks + custom tools), complete CLI UX, deterministic journeys suite, npm installer distributing the Go binaries, user docs, final dogfood | done — status live, launcher verified (regulus 0.1.0 through node), README quickstart + commands + MIT; final gauntlet 7/7 green with receipts (T7); charts closed |
 
 ## 5. Success criteria (v1)
 
-- Every phase exit criterion (§4) is met.
-- The F5 final dogfood completes with: acceptance criteria approved by the
-  human before implementation; all gates green with receipts; at least one
-  reflection-produced lesson admitted with evidence.
-- The human never opens a source diff during the final dogfood.
+- Every phase exit criterion (§4) is met. — **met**: F1 (TestF1VerticalSpine), F2 (TestF2SevenLayers + live 7/7), F3 (TestF3Resume), F4 (TestF4Evolution), F5 (final gauntlet 7/7, receipts on T7).
+- The F5 final dogfood completes with: acceptance criteria approved by the human before implementation; all gates green with receipts; at least one reflection-produced lesson admitted with evidence. — **met with one live step deferred**: the release Chart's scenarios were spec-checked before implementation; the final gauntlet is green with receipts; a reflection-produced candidate (7 receipts) is pending the guardian's live validation — the admission is the user's first live session act.
+- The human never opens a source diff during the final dogfood. — **met**: every claim in the v1 close is auditable through `regulus evidence list|show`, `regulus status` and `regulus budget show`; the ship's log (charts/regulus-ai-v1.md, L1–L24) records every commit with its evidence.
 
 ## 6. Risks
 

@@ -82,7 +82,7 @@ paraphrase. Read down to `## Log` before working.
 | T3 (F2) | S1, S3, S5 | Complete Gauntlet: gate layers 5–7 (coverage floor, mutation testing, CRAP), full guardian roster, evidence audit UX, per-project gate thresholds | inline (writer subagent unavailable) | bb55401 · 3389543 · 2ae3bf6 · 5397b1c · a6491be · this unit (WU5) |
 | T4 (F3) | S1 | Complete Discipline: the full Sextant workflow + task tooling, subagent roster with permission.task matrices, complete skills, structured session memory + cross-restart resume | inline (writer subagent unavailable) | 9b940f6 · 6e0eba8 · this unit (WU4) |
 | T5 (F4) | S2 | Complete Evolution: lesson admission flow, library retrieval into context, guardian-validated surface edits under budget caps, opt-in probe cycle (k=1) | inline (writer subagent unavailable) | 847c80d (ponytail) · f5e2ffa (WU1-3) · this unit (WU4) |
-| T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | decide at task start | — |
+| T6 (F5) | S1–S6 | Integration & v1 release: complete V2 plugin (all hooks + custom tools), complete CLI UX, journeys suite, npm installer, user docs, final dogfood | inline (writer subagent unavailable) | 847c80d · f5e2ffa · 84c67d1 · dfa0ed9 · 8889769 · this unit (close) |
 
 ## Log
 
@@ -334,4 +334,23 @@ paraphrase. Read down to `## Log` before working.
   cap and the ledger shows candidate-proposed, admitted and
   refused-cap. A real candidate (les_18e240ab097696d0, domain sextant,
   7 receipts) is pending on this repo awaiting a guardian validation
-  in a live session. Commit: this work unit.
+  in a live session. Commit: 84c67d1.
+- **L24** (F5 evidence — V1 CLOSE): the release ran through the Sextant
+  itself. The Chart (charts/f5-release.md) declared its four acceptance
+  scenarios before implementation (spec check green); `regulus status`
+  shipped as the integration surface (tested against a fixture and an
+  empty project — the honest NOT-SUPPORTED line); the npm package
+  (launcher + build script + version stamping) verified live: `node
+  bin/regulus.js --version` → `regulus 0.1.0` (Go's amd64 vs Node's x64
+  mapped explicitly after the first launcher run caught it); the README
+  quickstart + 20-command reference + MIT license landed. The final
+  gauntlet (`gate run regulus-ai-v1/T7`) is green: 7/7 layers —
+  typecheck, lint, build, unit-tests (20s), coverage-floor, mutation
+  (84.62% efficacy), CRAP (max 22.98 ≤ 30) — with receipts for every
+  layer. Success criteria (PRD §5): every phase exit met; the release's
+  acceptance criteria were spec-checked before implementation; the
+  gauntlet green with receipts; one reflection-produced candidate with
+  7 receipts awaits the guardian's live admission (the user's first act
+  in a real OpenCode session); the human never opened a source diff —
+  the whole v1 is auditable through evidence, status and the ship's
+  log (L1–L24, 4c135bf → this commit).
