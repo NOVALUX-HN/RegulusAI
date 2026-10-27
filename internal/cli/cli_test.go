@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -531,7 +532,7 @@ func TestEvidenceShowMissingFile(t *testing.T) {
 	}
 }
 
-func TestReflectAdmitsAndLibraryListsByDomain(t *testing.T) {
+func TestReflectProposesAndAdmitsByDomain(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	doc := "feature.md"
@@ -557,22 +558,106 @@ func TestReflectAdmitsAndLibraryListsByDomain(t *testing.T) {
 	}); code != 0 {
 		t.Fatalf("reflect exit = %d, stderr %q", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "lesson admitted: les_") {
+	if !strings.Contains(out.String(), "candidate proposed: les_") {
 		t.Fatalf("reflect output = %q", out.String())
 	}
+	id := candidateID(t, out.String())
 	c2, out2, _ := newCLI(nil)
-	if code := c2.Run([]string{"library", "list", "--domain", "go"}); code != 0 {
-		t.Fatalf("list --domain exit = %d", code)
+	if code := c2.Run([]string{"library", "candidates", "--domain", "go"}); code != 0 {
+		t.Fatalf("candidates exit = %d", code)
 	}
-	if !strings.Contains(out2.String(), "go:") || !strings.Contains(out2.String(), "when debt is paid") {
-		t.Fatalf("list --domain output = %q", out2.String())
+	if !strings.Contains(out2.String(), "go (pending):") || !strings.Contains(out2.String(), "when debt is paid") {
+		t.Fatalf("candidates output = %q", out2.String())
 	}
-	c3, out3, _ := newCLI(nil)
-	if code := c3.Run([]string{"library", "list"}); code != 0 {
+	c3, out3, errb3 := newCLI(nil)
+	if code := c3.Run([]string{"library", "admit", "--domain", "go", "--candidate", id, "--guardian", "regulus-gate-verifier"}); code != 0 {
+		t.Fatalf("admit exit = %d, stderr %q", code, errb3.String())
+	}
+	if !strings.Contains(out3.String(), "lesson admitted") || !strings.Contains(out3.String(), "regulus-gate-verifier") {
+		t.Fatalf("admit output = %q", out3.String())
+	}
+	c4, out4, _ := newCLI(nil)
+	if code := c4.Run([]string{"library", "list", "--domain", "go"}); code != 0 {
 		t.Fatalf("list exit = %d", code)
 	}
-	if !strings.Contains(out3.String(), "go:") {
-		t.Fatalf("list output = %q", out3.String())
+	if !strings.Contains(out4.String(), "go:") || !strings.Contains(out4.String(), "when debt is paid") {
+		t.Fatalf("list output = %q", out4.String())
+	}
+	c5, out5, _ := newCLI(nil)
+	if code := c5.Run([]string{"library", "show", "--domain", "go"}); code != 0 {
+		t.Fatalf("show exit = %d", code)
+	}
+	if !strings.Contains(out5.String(), "Library — go") {
+		t.Fatalf("show output = %q", out5.String())
+	}
+}
+
+var candidateIDPattern = regexp.MustCompile(`candidate proposed: (les_[0-9a-f]+)`)
+
+func candidateID(t *testing.T, out string) string {
+	t.Helper()
+	m := candidateIDPattern.FindStringSubmatch(out)
+	if len(m) != 2 {
+		t.Fatalf("no candidate id in %q", out)
+	}
+	return m[1]
+}
+
+func TestLibraryShowAndCandidatesEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "show", "--domain", "go"}); code != 0 {
+		t.Fatalf("show exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no lessons admitted yet)") {
+		t.Fatalf("show output = %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"library", "candidates"}); code != 0 {
+		t.Fatalf("candidates exit = %d, want 0", code)
+	}
+	if !strings.Contains(out2.String(), "(no candidates pending)") {
+		t.Fatalf("candidates output = %q", out2.String())
+	}
+}
+
+func TestLibraryAdmitUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "admit"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus library admit") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	if code := c2.Run([]string{"library", "admit", "--domain", "go", "--candidate", "les_x"}); code != 2 {
+		t.Fatalf("missing guardian: exit = %d, want 2", code)
+	}
+}
+
+func TestBudgetRecordProbe(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"budget", "record", "--kind", "probe", "--detail", "probed the mutation gate"}); code != 0 {
+		t.Fatalf("record exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "probe recorded") {
+		t.Fatalf("output = %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") || !strings.Contains(out2.String(), "probed the mutation gate") {
+		t.Fatalf("budget show = %q", out2.String())
+	}
+	c3, _, errb := newCLI(nil)
+	if code := c3.Run([]string{"budget", "record", "--kind", "reflect", "--detail", "x"}); code != 2 {
+		t.Fatalf("kind reflect must be refused: exit = %d", code)
+	}
+	if !strings.Contains(errb.String(), "only probe") {
+		t.Fatalf("stderr = %q", errb.String())
 	}
 }
 

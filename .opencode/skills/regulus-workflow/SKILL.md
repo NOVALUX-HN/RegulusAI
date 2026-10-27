@@ -60,3 +60,17 @@ Delegate by reason, never by size:
 - **@regulus-verifier** — independent reproduction when a mistake
   would be hard to detect or undo.
 - **Guardians** — read-only proof at the end; never ask them to edit.
+
+## PROBE (opt-in, budget-gated)
+
+When the user explicitly asks to improve the harness itself — one
+Propose–Probe–Compose step (k=1):
+
+1. **Propose** one candidate edit to the harness surface (a skill, a
+   gate threshold, a prompt line), grounded in what just happened.
+2. **Probe** it on the current task; observe the evidence.
+3. **Compose** the verdict — adopt or discard — and record the run:
+   `regulus budget record --kind probe --detail "<what and why>"`.
+
+The ledger caps probe runs per day like reflect runs; a refusal is
+recorded. Never probe unasked.

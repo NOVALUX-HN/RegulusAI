@@ -51,9 +51,17 @@ const (
 	OpAtMost  = "<="
 )
 
+// EvolutionConfig caps the evolution loop (PRD R-E4): reflect and probe
+// runs per calendar day. The ledger records every run, refused ones
+// included.
+type EvolutionConfig struct {
+	MaxPerDay int `json:"max_per_day,omitempty"`
+}
+
 // Config is the project's regulus.json.
 type Config struct {
-	Gates []Gate `json:"gates"`
+	Gates     []Gate           `json:"gates"`
+	Evolution *EvolutionConfig `json:"evolution,omitempty"`
 }
 
 // DefaultTimeoutSec bounds one gate when no explicit timeout is configured.

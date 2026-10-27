@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -91,21 +92,38 @@ func TestF1VerticalSpine(t *testing.T) {
 		t.Fatalf("memory show: exit=%d out=%q", code, out)
 	}
 
-	// Evolution: reflect admits an evidence-gated lesson and records the budget.
+	// Evolution: reflect proposes an evidence-gated candidate; the
+	// guardian validates; admission completes the library + ledger.
 	code, out = run("reflect",
 		"--domain", "journey-test", "--task", "tiny/T1",
 		"--cue", "when a journey drives the full spine",
 		"--lesson", "all three loops produce receipts, notes and lessons",
 		featurePath)
-	if code != 0 || !strings.Contains(out, "lesson admitted: les_") {
+	if code != 0 || !strings.Contains(out, "candidate proposed: les_") {
 		t.Fatalf("reflect: exit=%d out=%q", code, out)
+	}
+	id := journeyCandidateID(t, out)
+	code, out = run("library", "admit", "--domain", "journey-test", "--candidate", id, "--guardian", "regulus-gate-verifier")
+	if code != 0 || !strings.Contains(out, "lesson admitted") {
+		t.Fatalf("admit: exit=%d out=%q", code, out)
 	}
 	code, out = run("library", "list")
 	if code != 0 || !strings.Contains(out, "when a journey drives the full spine") {
 		t.Fatalf("library list: exit=%d out=%q", code, out)
 	}
 	code, out = run("budget", "show")
-	if code != 0 || !strings.Contains(out, "candidate-admitted") {
+	if code != 0 || !strings.Contains(out, "admitted") {
 		t.Fatalf("budget show: exit=%d out=%q", code, out)
 	}
+}
+
+var journeyCandidateIDPattern = regexp.MustCompile(`candidate proposed: (les_[0-9a-f]+)`)
+
+func journeyCandidateID(t *testing.T, out string) string {
+	t.Helper()
+	m := journeyCandidateIDPattern.FindStringSubmatch(out)
+	if len(m) != 2 {
+		t.Fatalf("no candidate id in %q", out)
+	}
+	return m[1]
 }

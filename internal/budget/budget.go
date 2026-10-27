@@ -21,6 +21,44 @@ type Entry struct {
 	Detail    string    `json:"detail,omitempty"`
 }
 
+// Evolution ledger kinds and outcomes (PRD R-E4).
+const (
+	KindReflect = "reflect"
+	KindProbe   = "probe"
+
+	OutcomeCandidateProposed = "candidate-proposed"
+	OutcomeAdmitted          = "admitted"
+	OutcomeRefusedCap        = "refused-cap"
+	OutcomeProbeRun          = "probe-run"
+)
+
+// DefaultEvolutionCapPerDay bounds reflect+probe runs per calendar day
+// when regulus.json declares no evolution block.
+const DefaultEvolutionCapPerDay = 10
+
+// TodayEvolutionCount counts today's accepted (non-refused) reflect and
+// probe runs in the ledger, UTC calendar day.
+func TodayEvolutionCount(root string, now time.Time) (int, error) {
+	entries, err := Show(root)
+	if err != nil {
+		return 0, err
+	}
+	today := now.UTC().Format("2006-01-02")
+	n := 0
+	for _, e := range entries {
+		if e.Kind != KindReflect && e.Kind != KindProbe {
+			continue
+		}
+		if e.Outcome == OutcomeRefusedCap {
+			continue
+		}
+		if e.Timestamp.UTC().Format("2006-01-02") == today {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // File returns the ledger path under a project root.
 func File(root string) string {
 	return filepath.Join(root, ".regulus", "budget.json")

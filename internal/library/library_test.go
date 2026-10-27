@@ -40,11 +40,19 @@ func TestAdmitRefusesMissingFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			l := validLesson()
 			tc.mutate(&l)
-			err := Admit(t.TempDir(), l)
+			err := Admit(t.TempDir(), l, "regulus-gate-verifier")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q refusal, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+func TestAdmitRequiresGuardian(t *testing.T) {
+	l := validLesson()
+	err := Admit(t.TempDir(), l, "  ")
+	if err == nil || !strings.Contains(err.Error(), "guardian") {
+		t.Fatalf("want guardian refusal, got %v", err)
 	}
 }
 
@@ -62,7 +70,7 @@ func TestAdmitWritesLessonAndIndex(t *testing.T) {
 	root := t.TempDir()
 	l := validLesson()
 	l.ID = NewID(t0)
-	if err := Admit(root, l); err != nil {
+	if err := Admit(root, l, "regulus-gate-verifier"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(Dir(root, "go"), "lessons", l.ID, "LESSON.md"))
@@ -70,7 +78,7 @@ func TestAdmitWritesLessonAndIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	for _, want := range []string{l.ID, l.Cue, l.Lesson, l.Evidence[0], l.Confidence, l.GitHead, l.Domain, l.Task} {
+	for _, want := range []string{l.ID, l.Cue, l.Lesson, l.Evidence[0], l.Confidence, l.GitHead, l.Domain, l.Task, "admitted", "regulus-gate-verifier"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("LESSON.md must contain %q, got:\n%s", want, content)
 		}
@@ -88,13 +96,13 @@ func TestListParsesBackAdmittedLessons(t *testing.T) {
 	root := t.TempDir()
 	l1 := validLesson()
 	l1.ID = NewID(t0)
-	if err := Admit(root, l1); err != nil {
+	if err := Admit(root, l1, "regulus-gate-verifier"); err != nil {
 		t.Fatal(err)
 	}
 	l2 := validLesson()
 	l2.ID = NewID(t0.Add(time.Second))
 	l2.Cue = "second lesson cue"
-	if err := Admit(root, l2); err != nil {
+	if err := Admit(root, l2, "regulus-reviewer"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := List(root, "go")
@@ -116,18 +124,21 @@ func TestListParsesBackAdmittedLessons(t *testing.T) {
 	if got[0].Confidence != ConfidenceLow {
 		t.Fatalf("confidence must round-trip, got %+v", got[0])
 	}
+	if got[0].Status != "admitted" || got[1].Guardian != "regulus-reviewer" {
+		t.Fatalf("status and guardian must round-trip, got %+v", got)
+	}
 }
 
 func TestRebuildIndexRegeneratesFromDisk(t *testing.T) {
 	root := t.TempDir()
 	l1 := validLesson()
 	l1.ID = NewID(t0)
-	if err := Admit(root, l1); err != nil {
+	if err := Admit(root, l1, "regulus-gate-verifier"); err != nil {
 		t.Fatal(err)
 	}
 	l2 := validLesson()
 	l2.ID = NewID(t0.Add(time.Second))
-	if err := Admit(root, l2); err != nil {
+	if err := Admit(root, l2, "regulus-gate-verifier"); err != nil {
 		t.Fatal(err)
 	}
 	orig, err := os.ReadFile(IndexFile(root, "go"))
@@ -153,13 +164,13 @@ func TestDomainsListsAdmittedDomains(t *testing.T) {
 	root := t.TempDir()
 	l1 := validLesson()
 	l1.ID = NewID(t0)
-	if err := Admit(root, l1); err != nil {
+	if err := Admit(root, l1, "regulus-gate-verifier"); err != nil {
 		t.Fatal(err)
 	}
 	l2 := validLesson()
 	l2.ID = NewID(t0.Add(time.Second))
 	l2.Domain = "typescript"
-	if err := Admit(root, l2); err != nil {
+	if err := Admit(root, l2, "regulus-gate-verifier"); err != nil {
 		t.Fatal(err)
 	}
 	domains, err := Domains(root)
@@ -168,5 +179,43 @@ func TestDomainsListsAdmittedDomains(t *testing.T) {
 	}
 	if len(domains) != 2 || domains[0] != "go" || domains[1] != "typescript" {
 		t.Fatalf("domains = %v", domains)
+	}
+}
+
+func TestProposeCreatesCandidateWithoutIndex(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	if err := Propose(root, l); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.ReadFile(filepath.Join(CandidateDir(root, "go"), l.ID, "LESSON.md")); err != nil {
+		t.Fatalf("the candidate must exist: %v", err)
+	}
+	if _, err := os.Stat(IndexFile(root, "go")); !os.IsNotExist(err) {
+		t.Fatal("a proposal must not build the INDEX")
+	}
+	lessons, err := List(root, "go")
+	if err != nil || len(lessons) != 0 {
+		t.Fatalf("candidates are not lessons, got %+v (%v)", lessons, err)
+	}
+	cands, err := Candidates(root, "go")
+	if err != nil || len(cands) != 1 || cands[0].Status != "candidate" {
+		t.Fatalf("candidates = %+v (%v)", cands, err)
+	}
+}
+
+func TestRemoveCandidate(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	if err := Propose(root, l); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveCandidate(root, "go", l.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(CandidateDir(root, "go"), l.ID, "LESSON.md")); !os.IsNotExist(err) {
+		t.Fatal("RemoveCandidate must delete the candidate")
 	}
 }

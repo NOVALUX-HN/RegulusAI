@@ -21,8 +21,10 @@ const (
 	ConfidenceHigh   = "high"
 )
 
-// Lesson is one admitted lesson candidate. Evidence cites receipt paths —
-// a lesson without evidence is refused (PRD R-E2, docs/memory.md §2.7).
+// Lesson is one lesson candidate or admitted lesson. Evidence cites
+// receipt paths — a lesson without evidence is refused (PRD R-E2,
+// docs/memory.md §2.7). Status is candidate until a guardian validates
+// the admission.
 type Lesson struct {
 	ID         string
 	Domain     string
@@ -33,6 +35,8 @@ type Lesson struct {
 	Confidence string
 	GitHead    string
 	CreatedAt  time.Time
+	Status     string // "candidate" | "admitted"
+	Guardian   string // who validated the admission
 }
 
 // NewID returns a lesson id for a timestamp.
@@ -76,6 +80,14 @@ func validate(l Lesson) error {
 }
 
 func (l Lesson) render() string {
+	guardian := ""
+	if l.Guardian != "" {
+		guardian = "- **guardian**: " + l.Guardian + "\n"
+	}
+	status := ""
+	if l.Status != "" {
+		status = "- **status**: " + l.Status + "\n"
+	}
 	return strings.Join([]string{
 		"# " + l.ID,
 		"",
@@ -87,18 +99,69 @@ func (l Lesson) render() string {
 		"- **confidence**: " + l.Confidence,
 		"- **git_head**: " + l.GitHead,
 		"- **created_at**: " + l.CreatedAt.Format(time.RFC3339),
+		status,
+		guardian,
 		"",
 	}, "\n")
 }
 
-// Admit validates and writes one lesson, then rebuilds the domain INDEX.
-func Admit(root string, l Lesson) error {
+// CandidateDir returns the domain candidates path under a project root.
+func CandidateDir(root, domain string) string {
+	return filepath.Join(Dir(root, domain), "candidates")
+}
+
+func candidateFile(root, domain, id string) string {
+	return filepath.Join(CandidateDir(root, domain), id, "LESSON.md")
+}
+
+// Propose validates one lesson and writes it as a candidate under
+// <domain>/candidates/ — awaiting guardian validation. No INDEX change.
+func Propose(root string, l Lesson) error {
 	if err := validate(l); err != nil {
 		return err
 	}
 	if l.ID == "" {
 		l.ID = NewID(l.CreatedAt)
 	}
+	l.Status = "candidate"
+	if err := os.MkdirAll(filepath.Dir(candidateFile(root, l.Domain, l.ID)), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(candidateFile(root, l.Domain, l.ID), []byte(l.render()), 0o644)
+}
+
+// Candidates lists a domain's pending candidates, oldest first.
+func Candidates(root, domain string) ([]Lesson, error) {
+	paths, err := filepath.Glob(filepath.Join(CandidateDir(root, domain), "*", "LESSON.md"))
+	if err != nil {
+		return nil, err
+	}
+	var cands []Lesson
+	for _, p := range paths {
+		l, err := parseLesson(p)
+		if err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", p, err)
+		}
+		cands = append(cands, l)
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].CreatedAt.Before(cands[j].CreatedAt) })
+	return cands, nil
+}
+
+// Admit validates and writes one guardian-validated lesson, then
+// rebuilds the domain INDEX.
+func Admit(root string, l Lesson, guardian string) error {
+	if err := validate(l); err != nil {
+		return err
+	}
+	if strings.TrimSpace(guardian) == "" {
+		return errors.New("guardian must not be empty: only a guardian-validated lesson is admitted")
+	}
+	if l.ID == "" {
+		l.ID = NewID(l.CreatedAt)
+	}
+	l.Status = "admitted"
+	l.Guardian = guardian
 	if err := os.MkdirAll(filepath.Dir(lessonFile(root, l.Domain, l.ID)), 0o755); err != nil {
 		return err
 	}
@@ -106,6 +169,11 @@ func Admit(root string, l Lesson) error {
 		return err
 	}
 	return RebuildIndex(root, l.Domain)
+}
+
+// RemoveCandidate deletes a candidate after admission.
+func RemoveCandidate(root, domain, id string) error {
+	return os.RemoveAll(filepath.Dir(candidateFile(root, domain, id)))
 }
 
 // List returns every lesson of a domain, oldest first. A missing library
@@ -163,6 +231,10 @@ func parseLesson(path string) (Lesson, error) {
 			l.Confidence = val
 		case "git_head":
 			l.GitHead = val
+		case "status":
+			l.Status = val
+		case "guardian":
+			l.Guardian = val
 		case "created_at":
 			t, err := time.Parse(time.RFC3339, val)
 			if err != nil {

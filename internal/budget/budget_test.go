@@ -48,3 +48,36 @@ func TestShowMissingLedgerIsEmpty(t *testing.T) {
 		t.Fatalf("want an empty ledger, got %+v", entries)
 	}
 }
+
+func TestTodayEvolutionCountExcludesRefusedOtherKindsAndDays(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+	if err := Record(root, Entry{Kind: KindReflect, Timestamp: base, Outcome: OutcomeCandidateProposed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Record(root, Entry{Kind: KindProbe, Timestamp: base.Add(time.Hour), Outcome: OutcomeProbeRun}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Record(root, Entry{Kind: KindReflect, Timestamp: base.Add(2 * time.Hour), Outcome: OutcomeRefusedCap}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Record(root, Entry{Kind: "other", Timestamp: base.Add(3 * time.Hour), Outcome: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Record(root, Entry{Kind: KindReflect, Timestamp: base.Add(-25 * time.Hour), Outcome: OutcomeCandidateProposed}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := TodayEvolutionCount(root, base.Add(4*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("TodayEvolutionCount = %d, want 2 (refused, other kinds and yesterday excluded)", n)
+	}
+	if n, _ := TodayEvolutionCount(root, base.Add(-48*time.Hour)); n != 0 {
+		t.Fatalf("a day with no entries = %d, want 0", n)
+	}
+	if n, _ := TodayEvolutionCount(t.TempDir(), base); n != 0 {
+		t.Fatalf("empty ledger count = %d, want 0", n)
+	}
+}

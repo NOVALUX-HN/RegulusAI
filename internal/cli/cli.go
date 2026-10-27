@@ -156,9 +156,10 @@ func validTaskID(s string) bool {
 	return taskIDRe.MatchString(s) && !strings.Contains(s, "..")
 }
 
-// memoryCmd implements the Almanac surface (docs/memory.md): note|show
-// (session notes), save|search|history (the full substrate), context (the
-// deterministic resume block). Lessons have one door: regulus reflect.
+// memoryCmd implements the Almanac surface (docs/memory.md):
+// note|show (session notes), save|search|history (the full substrate),
+// context (the deterministic resume block) — dispatched per subcommand.
+// Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context")
@@ -166,133 +167,174 @@ func (c CLI) memoryCmd(args []string) int {
 	}
 	switch args[0] {
 	case "note":
-		text := strings.TrimSpace(strings.Join(args[1:], " "))
-		if text == "" {
-			fmt.Fprintln(c.Stderr, "usage: regulus memory note <text>")
-			return 2
-		}
-		title := text
-		if runes := []rune(title); len(runes) > 60 {
-			title = string(runes[:60])
-		}
-		head := gates.GitHead(context.Background(), c.runner())
-		if _, err := almanac.Save(".", &almanac.Observation{
-			Type: almanac.TypeSessionNote, Title: title, Content: text,
-			Provenance: &almanac.Provenance{GitHead: head},
-		}, time.Now().UTC()); err != nil {
-			fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
-			return 1
-		}
-		fmt.Fprintln(c.Stdout, "memory: note saved")
-		return 0
+		return c.memoryNoteCmd(args[1:])
 	case "show":
-		notes, err := almanac.Notes(".")
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "memory show: %v\n", err)
-			return 1
-		}
-		if len(notes) == 0 {
-			fmt.Fprintln(c.Stdout, "(no session notes)")
-			return 0
-		}
-		for _, n := range notes {
-			fmt.Fprintf(c.Stdout, "- %s %s\n", n.SavedAt.Format(time.RFC3339), n.Content)
-		}
-		return 0
+		return c.memoryShowCmd(args[1:])
 	case "save":
-		fs := flag.NewFlagSet("memory save", flag.ContinueOnError)
-		fs.SetOutput(c.Stderr)
-		typ := fs.String("type", "", "decision|discovery|preference|session-note (required)")
-		title := fs.String("title", "", "short, searchable title (required)")
-		topicKey := fs.String("topic-key", "", "group for evolving topics (revision chain)")
-		domain := fs.String("domain", "", "domain bucket")
-		task := fs.String("task", "", "task id for provenance")
-		paths := fs.String("path", "", "affected paths, comma-separated")
-		receiptsFlag := fs.String("receipt", "", "receipt paths for provenance, comma-separated")
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
-		}
-		content := strings.TrimSpace(strings.Join(fs.Args(), " "))
-		if *typ == "" || *title == "" || content == "" {
-			fmt.Fprintln(c.Stderr, "usage: regulus memory save --type <t> --title <t> [--topic-key --domain --task --path <a,b> --receipt <r1,r2>] <content>")
-			return 2
-		}
-		if *typ == almanac.TypeLesson {
-			fmt.Fprintln(c.Stderr, "memory save: lessons enter through regulus reflect (evidence-gated)")
-			return 1
-		}
-		head := gates.GitHead(context.Background(), c.runner())
-		if _, err := almanac.Save(".", &almanac.Observation{
-			Type: *typ, Title: *title, Content: content,
-			TopicKey: *topicKey, Domain: *domain,
-			Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: splitList(*paths), Receipts: splitList(*receiptsFlag)},
-		}, time.Now().UTC()); err != nil {
-			fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
-			return 1
-		}
-		fmt.Fprintln(c.Stdout, "memory: observation saved")
-		return 0
+		return c.memorySaveCmd(args[1:])
 	case "search":
-		fs := flag.NewFlagSet("memory search", flag.ContinueOnError)
-		fs.SetOutput(c.Stderr)
-		topicKey := fs.String("topic-key", "", "bucket: topic key")
-		domain := fs.String("domain", "", "bucket: domain")
-		typ := fs.String("type", "", "bucket: observation type")
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
-		}
-		hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ})
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
-			return 1
-		}
-		if len(hits) == 0 {
-			fmt.Fprintln(c.Stdout, "no matching observations")
-			return 0
-		}
-		fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
-		now := time.Now().UTC()
-		for _, h := range hits {
-			fmt.Fprintf(c.Stdout, "%s %s %s (saved %s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt))
-		}
-		return 0
+		return c.memorySearchCmd(args[1:])
 	case "history":
-		fs := flag.NewFlagSet("memory history", flag.ContinueOnError)
-		fs.SetOutput(c.Stderr)
-		topicKey := fs.String("topic-key", "", "the revision chain to list (required)")
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
-		}
-		if *topicKey == "" {
-			fmt.Fprintln(c.Stderr, "usage: regulus memory history --topic-key <key>")
-			return 2
-		}
-		chain, err := almanac.History(".", *topicKey)
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "memory history: %v\n", err)
-			return 1
-		}
-		if len(chain) == 0 {
-			fmt.Fprintln(c.Stdout, "(no observations with that topic key)")
-			return 0
-		}
-		for _, o := range chain {
-			fmt.Fprintf(c.Stdout, "%s %s %s %s\n", o.SavedAt.Format(time.RFC3339), o.ID, o.Type, o.Title)
-		}
-		return 0
+		return c.memoryHistoryCmd(args[1:])
 	case "context":
-		ctx, err := almanac.Context(".", time.Now().UTC())
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
-			return 1
-		}
-		fmt.Fprint(c.Stdout, ctx)
-		return 0
+		return c.memoryContextCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
 		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context")
 		return 2
 	}
+}
+
+// memoryNoteCmd implements `regulus memory note <text>`.
+func (c CLI) memoryNoteCmd(args []string) int {
+	text := strings.TrimSpace(strings.Join(args, " "))
+	if text == "" {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note <text>")
+		return 2
+	}
+	title := text
+	if runes := []rune(title); len(runes) > 60 {
+		title = string(runes[:60])
+	}
+	head := gates.GitHead(context.Background(), c.runner())
+	if _, err := almanac.Save(".", &almanac.Observation{
+		Type: almanac.TypeSessionNote, Title: title, Content: text,
+		Provenance: &almanac.Provenance{GitHead: head},
+	}, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(c.Stdout, "memory: note saved")
+	return 0
+}
+
+// memoryShowCmd implements `regulus memory show`.
+func (c CLI) memoryShowCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory show")
+		return 2
+	}
+	notes, err := almanac.Notes(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory show: %v\n", err)
+		return 1
+	}
+	if len(notes) == 0 {
+		fmt.Fprintln(c.Stdout, "(no session notes)")
+		return 0
+	}
+	for _, n := range notes {
+		fmt.Fprintf(c.Stdout, "- %s %s\n", n.SavedAt.Format(time.RFC3339), n.Content)
+	}
+	return 0
+}
+
+// memorySaveCmd implements `regulus memory save --type --title [...]`.
+// Lesson-type saves are refused: lessons enter through reflect.
+func (c CLI) memorySaveCmd(args []string) int {
+	fs := flag.NewFlagSet("memory save", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	typ := fs.String("type", "", "decision|discovery|preference|session-note (required)")
+	title := fs.String("title", "", "short, searchable title (required)")
+	topicKey := fs.String("topic-key", "", "group for evolving topics (revision chain)")
+	domain := fs.String("domain", "", "domain bucket")
+	task := fs.String("task", "", "task id for provenance")
+	paths := fs.String("path", "", "affected paths, comma-separated")
+	receiptsFlag := fs.String("receipt", "", "receipt paths for provenance, comma-separated")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	content := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	if *typ == "" || *title == "" || content == "" {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory save --type <t> --title <t> [--topic-key --domain --task --path <a,b> --receipt <r1,r2>] <content>")
+		return 2
+	}
+	if *typ == almanac.TypeLesson {
+		fmt.Fprintln(c.Stderr, "memory save: lessons enter through regulus reflect (evidence-gated)")
+		return 1
+	}
+	head := gates.GitHead(context.Background(), c.runner())
+	if _, err := almanac.Save(".", &almanac.Observation{
+		Type: *typ, Title: *title, Content: content,
+		TopicKey: *topicKey, Domain: *domain,
+		Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: splitList(*paths), Receipts: splitList(*receiptsFlag)},
+	}, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(c.Stdout, "memory: observation saved")
+	return 0
+}
+
+// memorySearchCmd implements `regulus memory search [terms]` with
+// bucket flags.
+func (c CLI) memorySearchCmd(args []string) int {
+	fs := flag.NewFlagSet("memory search", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	topicKey := fs.String("topic-key", "", "bucket: topic key")
+	domain := fs.String("domain", "", "bucket: domain")
+	typ := fs.String("type", "", "bucket: observation type")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ})
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
+		return 1
+	}
+	if len(hits) == 0 {
+		fmt.Fprintln(c.Stdout, "no matching observations")
+		return 0
+	}
+	fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
+	now := time.Now().UTC()
+	for _, h := range hits {
+		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt))
+	}
+	return 0
+}
+
+// memoryHistoryCmd implements `regulus memory history --topic-key`.
+func (c CLI) memoryHistoryCmd(args []string) int {
+	fs := flag.NewFlagSet("memory history", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	topicKey := fs.String("topic-key", "", "the revision chain to list (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *topicKey == "" {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory history --topic-key <key>")
+		return 2
+	}
+	chain, err := almanac.History(".", *topicKey)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory history: %v\n", err)
+		return 1
+	}
+	if len(chain) == 0 {
+		fmt.Fprintln(c.Stdout, "(no observations with that topic key)")
+		return 0
+	}
+	for _, o := range chain {
+		fmt.Fprintf(c.Stdout, "%s %s %s %s\n", o.SavedAt.Format(time.RFC3339), o.ID, o.Type, o.Title)
+	}
+	return 0
+}
+
+// memoryContextCmd implements `regulus memory context` — the resume
+// block, DATA-framed.
+func (c CLI) memoryContextCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context")
+		return 2
+	}
+	ctx, err := almanac.Context(".", time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
+		return 1
+	}
+	fmt.Fprint(c.Stdout, ctx)
+	return 0
 }
 
 // runner returns the injected runner or the real shell runner.
@@ -364,29 +406,55 @@ func (c CLI) reflectCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "reflect: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(c.Stdout, "lesson admitted: %s\n", l.ID)
-	fmt.Fprintf(c.Stdout, "index: %s\n", library.IndexFile(".", l.Domain))
+	fmt.Fprintf(c.Stdout, "candidate proposed: %s\n", l.ID)
+	fmt.Fprintf(c.Stdout, "guardian check, then: regulus library admit --domain %s --candidate %s --guardian <name>\n", l.Domain, l.ID)
 	return 0
 }
 
-// libraryCmd implements `regulus library list [--domain <name>]`.
+// libraryCmd implements `regulus library list|candidates|show
+// [--domain] | admit --domain --candidate --guardian` — dispatched to
+// one handler per subcommand.
 func (c CLI) libraryCmd(args []string) int {
-	if len(args) == 0 || args[0] != "list" {
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name>")
+		return 2
+	}
+	switch args[0] {
+	case "list":
+		return c.libraryListCmd(args[1:])
+	case "candidates":
+		return c.libraryCandidatesCmd(args[1:])
+	case "show":
+		return c.libraryShowCmd(args[1:])
+	case "admit":
+		return c.libraryAdmitCmd(args[1:])
+	default:
+		fmt.Fprintf(c.Stderr, "library: unknown subcommand %q\n", args[0])
+		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show [--domain <name>] | regulus library admit --domain --candidate --guardian")
+		return 2
+	}
+}
+
+// libraryListCmd implements `regulus library list [--domain <name>]`.
+func (c CLI) libraryListCmd(args []string) int {
+	fs := flag.NewFlagSet("library list", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only this domain's lessons")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus library list [--domain <name>]")
 		return 2
 	}
-	if len(args) == 3 && args[1] == "--domain" {
-		lessons, err := library.List(".", args[2])
+	if *domain != "" {
+		lessons, err := library.List(".", *domain)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "library list: %v\n", err)
 			return 1
 		}
-		c.printLessons(args[2], lessons)
+		c.printLessons(*domain, lessons)
 		return 0
-	}
-	if len(args) != 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus library list [--domain <name>]")
-		return 2
 	}
 	domains, err := library.Domains(".")
 	if err != nil {
@@ -408,6 +476,104 @@ func (c CLI) libraryCmd(args []string) int {
 	return 0
 }
 
+// libraryCandidatesCmd implements `regulus library candidates
+// [--domain <name>]`.
+func (c CLI) libraryCandidatesCmd(args []string) int {
+	fs := flag.NewFlagSet("library candidates", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only this domain's candidates")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library candidates [--domain <name>]")
+		return 2
+	}
+	var domains []string
+	var err error
+	if *domain != "" {
+		domains = []string{*domain}
+	} else {
+		domains, err = library.Domains(".")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "library candidates: %v\n", err)
+			return 1
+		}
+	}
+	any := false
+	for _, d := range domains {
+		cands, err := library.Candidates(".", d)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "library candidates: %v\n", err)
+			return 1
+		}
+		if len(cands) == 0 {
+			continue
+		}
+		any = true
+		fmt.Fprintf(c.Stdout, "%s (pending):\n", d)
+		for _, l := range cands {
+			fmt.Fprintf(c.Stdout, "  %s  %s  (%s, %d receipt(s))\n", l.ID, l.Cue, l.Confidence, len(l.Evidence))
+		}
+	}
+	if !any {
+		fmt.Fprintln(c.Stdout, "(no candidates pending)")
+	}
+	return 0
+}
+
+// libraryShowCmd implements `regulus library show --domain <name>` —
+// the domain INDEX, verbatim, for agent consultation.
+func (c CLI) libraryShowCmd(args []string) int {
+	fs := flag.NewFlagSet("library show", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "the domain index to print (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *domain == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library show --domain <name>")
+		return 2
+	}
+	data, err := os.ReadFile(library.IndexFile(".", *domain))
+	if os.IsNotExist(err) {
+		fmt.Fprintln(c.Stdout, "(no lessons admitted yet)")
+		return 0
+	}
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "library show: %v\n", err)
+		return 1
+	}
+	fmt.Fprint(c.Stdout, string(data))
+	return 0
+}
+
+// libraryAdmitCmd implements `regulus library admit --domain --candidate
+// --guardian` — the second phase of lesson admission.
+func (c CLI) libraryAdmitCmd(args []string) int {
+	fs := flag.NewFlagSet("library admit", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "candidate's domain (required)")
+	candidate := fs.String("candidate", "", "candidate id (required)")
+	guardian := fs.String("guardian", "", "who validated the admission (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *domain == "" || *candidate == "" || *guardian == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus library admit --domain <d> --candidate <id> --guardian <name>")
+		return 2
+	}
+	head := gates.GitHead(context.Background(), c.runner())
+	l, err := reflect.Admit(".", *domain, *candidate, *guardian, head, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "library admit: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "lesson admitted: %s (guardian %s)\n", l.ID, l.Guardian)
+	fmt.Fprintf(c.Stdout, "index: %s\n", library.IndexFile(".", l.Domain))
+	return 0
+}
+
 func (c CLI) printLessons(domain string, lessons []library.Lesson) {
 	if len(lessons) == 0 {
 		fmt.Fprintf(c.Stdout, "%s: (no lessons admitted yet)\n", domain)
@@ -419,29 +585,75 @@ func (c CLI) printLessons(domain string, lessons []library.Lesson) {
 	}
 }
 
-// budgetCmd implements `regulus budget show`.
+// budgetCmd implements `regulus budget show | record --kind probe`.
 func (c CLI) budgetCmd(args []string) int {
-	if len(args) != 1 || args[0] != "show" {
-		fmt.Fprintln(c.Stderr, "usage: regulus budget show")
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus budget show | regulus budget record --kind probe --detail <text>")
 		return 2
 	}
-	entries, err := budget.Show(".")
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "budget show: %v\n", err)
-		return 1
-	}
-	if len(entries) == 0 {
-		fmt.Fprintln(c.Stdout, "(no budget entries)")
-		return 0
-	}
-	for _, e := range entries {
-		detail := ""
-		if e.Detail != "" {
-			detail = " (" + e.Detail + ")"
+	switch args[0] {
+	case "show":
+		if len(args) != 1 {
+			fmt.Fprintln(c.Stderr, "usage: regulus budget show")
+			return 2
 		}
-		fmt.Fprintf(c.Stdout, "%s %s %s %s %s%s\n", e.Timestamp.Format(time.RFC3339), e.Kind, e.Task, e.Domain, e.Outcome, detail)
+		entries, err := budget.Show(".")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "budget show: %v\n", err)
+			return 1
+		}
+		if len(entries) == 0 {
+			fmt.Fprintln(c.Stdout, "(no budget entries)")
+			return 0
+		}
+		for _, e := range entries {
+			detail := ""
+			if e.Detail != "" {
+				detail = " (" + e.Detail + ")"
+			}
+			fmt.Fprintf(c.Stdout, "%s %s %s %s %s%s\n", e.Timestamp.Format(time.RFC3339), e.Kind, e.Task, e.Domain, e.Outcome, detail)
+		}
+		return 0
+	case "record":
+		fs := flag.NewFlagSet("budget record", flag.ContinueOnError)
+		fs.SetOutput(c.Stderr)
+		kind := fs.String("kind", "", "probe (required; reflect runs are recorded by regulus reflect itself)")
+		detail := fs.String("detail", "", "what was probed")
+		task := fs.String("task", "", "task id")
+		domain := fs.String("domain", "", "domain")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *kind != budget.KindProbe || fs.NArg() != 0 {
+			fmt.Fprintln(c.Stderr, "budget record: only probe runs are recorded manually (reflect runs are recorded by regulus reflect)")
+			fmt.Fprintln(c.Stderr, "usage: regulus budget record --kind probe [--detail <text>] [--task <t>] [--domain <d>]")
+			return 2
+		}
+		now := time.Now().UTC()
+		cap := reflect.EvolutionCap(".")
+		today, err := budget.TodayEvolutionCount(".", now)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "budget record: %v\n", err)
+			return 1
+		}
+		if today >= cap {
+			if err := budget.Record(".", budget.Entry{Kind: budget.KindProbe, Timestamp: now, Task: *task, Domain: *domain, Outcome: budget.OutcomeRefusedCap, Detail: fmt.Sprintf("cap %d reached", cap)}); err != nil {
+				fmt.Fprintf(c.Stderr, "budget record: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(c.Stderr, "budget record: evolution cap reached: %d run(s) today, cap %d\n", today, cap)
+			return 1
+		}
+		if err := budget.Record(".", budget.Entry{Kind: budget.KindProbe, Timestamp: now, Task: *task, Domain: *domain, Outcome: budget.OutcomeProbeRun, Detail: *detail}); err != nil {
+			fmt.Fprintf(c.Stderr, "budget record: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(c.Stdout, "probe recorded")
+		return 0
+	default:
+		fmt.Fprintln(c.Stderr, "usage: regulus budget show | regulus budget record --kind probe")
+		return 2
 	}
-	return 0
 }
 
 // crapCmd implements `regulus crap --profile <coverprofile> [--max N]
@@ -555,14 +767,15 @@ Usage:
   regulus <command> [arguments]
 
 Commands:
-  budget show        show the evolution budget ledger
+  budget show|record   the evolution ledger (show; record a probe run)
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file>   audit gauntlet receipts
   gate run <task>    run the layered gauntlet and write receipts
   help               show this help
-  library list [--domain <name>]  list admitted lessons
+  library list|candidates|show [--domain <name>]  lessons, pending candidates, domain index
+  library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   memory note|show|save|search|history|context   the Almanac — persistent memory
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   spec check <file>  validate the acceptance contract of a feature document
