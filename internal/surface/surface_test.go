@@ -3,6 +3,7 @@ package surface
 import (
 	"os"
 	"path/filepath"
+	"regulus-ai/internal/budget"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,56 @@ func TestApplyAppendsMarkerAndRecordsGuardian(t *testing.T) {
 	// the proposal cannot be applied twice
 	if _, err := Apply(root, e.ID, "regulus-reviewer", t0.Add(2*time.Minute)); err == nil || !strings.Contains(err.Error(), "already applied") {
 		t.Fatalf("want already-applied refusal, got %v", err)
+	}
+}
+
+func TestSurfaceBudgetCapAndRecording(t *testing.T) {
+	root := t.TempDir()
+	// set cap to 1
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "regulus.json"), []byte(`{"gates":[{"name":"typecheck","layer":1,"command":"true"}],"evolution":{"max_per_day":1}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	// first propose: fits inside the cap
+	e1, err := Propose(root, "docs/a.md", "first", "r1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// budget: surface-proposed recorded
+	entries, _ := budget.Show(root)
+	if len(entries) != 1 || entries[0].Kind != budget.KindSurface || entries[0].Outcome != budget.OutcomeSurfaceProposed {
+		t.Fatalf("ledger = %+v", entries)
+	}
+	// second propose: cap reached → refused
+	_, err = Propose(root, "docs/b.md", "second", "r2", now.Add(time.Minute))
+	if err == nil || !strings.Contains(err.Error(), "evolution cap reached") {
+		t.Fatalf("want cap refusal, got %v", err)
+	}
+	// the refusal is recorded
+	entries, _ = budget.Show(root)
+	if len(entries) != 2 || entries[1].Outcome != budget.OutcomeRefusedCap {
+		t.Fatalf("the refusal must be recorded, got %+v", entries)
+	}
+	// apply the first (mechanical — no cap consumption)
+	applied, err := Apply(root, e1.ID, "regulus-reviewer", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Status != "applied" {
+		t.Fatalf("applied = %+v", applied)
+	}
+	// the application is recorded (surface-applied)
+	entries, _ = budget.Show(root)
+	if len(entries) != 3 || entries[2].Outcome != budget.OutcomeSurfaceApplied {
+		t.Fatalf("ledger after apply = %+v", entries)
+	}
+	// the cap count is still 1 (application doesn't consume)
+	count, _ := budget.TodayEvolutionCount(root, now.Add(2*time.Minute))
+	if count != 1 {
+		t.Fatalf("cap count = %d, want 1 (application is mechanical)", count)
 	}
 }
 

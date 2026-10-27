@@ -47,10 +47,16 @@ async function run(bin: string, args: string[], signal?: AbortSignal): Promise<R
 }
 
 function candidates(dir: string): string[] {
+  const home = process.env.HOME || process.env.USERPROFILE || ""
+  const platform = process.platform
+  const arch = process.arch === "x64" ? "amd64" : process.arch
+  const ext = platform === "win32" ? ".exe" : ""
   const list = [
     process.env.REGULUS_BIN,
     `${dir}/bin/regulus.exe`,
     `${dir}/bin/regulus`,
+    `${dir}/binaries/regulus-${platform}-${arch}${ext}`,
+    home ? `${home}/.regulus/bin/regulus${ext}` : "",
     "regulus",
   ]
   return list.filter((c): c is string => typeof c === "string" && c !== "")

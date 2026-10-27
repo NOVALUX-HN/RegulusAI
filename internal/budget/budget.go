@@ -25,11 +25,14 @@ type Entry struct {
 const (
 	KindReflect = "reflect"
 	KindProbe   = "probe"
+	KindSurface = "surface"
 
 	OutcomeCandidateProposed = "candidate-proposed"
 	OutcomeAdmitted          = "admitted"
 	OutcomeRefusedCap        = "refused-cap"
 	OutcomeProbeRun          = "probe-run"
+	OutcomeSurfaceProposed   = "surface-proposed"
+	OutcomeSurfaceApplied    = "surface-applied"
 )
 
 // DefaultEvolutionCapPerDay bounds reflect+probe runs per calendar day
@@ -47,10 +50,10 @@ func TodayEvolutionCount(root string, now time.Time) (int, error) {
 	today := now.UTC().Format("2006-01-02")
 	n := 0
 	for _, e := range entries {
-		if e.Kind != KindReflect && e.Kind != KindProbe {
+		if e.Kind != KindReflect && e.Kind != KindProbe && e.Kind != KindSurface {
 			continue
 		}
-		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun {
+		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun && e.Outcome != OutcomeSurfaceProposed {
 			continue
 		}
 		if e.Timestamp.UTC().Format("2006-01-02") == today {

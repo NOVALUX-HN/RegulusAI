@@ -450,10 +450,14 @@ type Query struct {
 }
 
 // Search returns the observations that match every term (case-insensitive
-// substring over title and content) inside the requested bucket, newest
-// first, ties by id.
+// substring over title and content) inside the requested bucket, pinned
+// first, then newest, ties by id.
 func Search(root string, q Query) ([]Observation, error) {
 	all, err := All(root)
+	if err != nil {
+		return nil, err
+	}
+	pins, err := PinnedIDs(root)
 	if err != nil {
 		return nil, err
 	}
@@ -484,6 +488,9 @@ func Search(root string, q Query) ([]Observation, error) {
 		}
 	}
 	sort.Slice(hits, func(i, j int) bool {
+		if pins[hits[i].ID] != pins[hits[j].ID] {
+			return pins[hits[i].ID]
+		}
 		if !hits[i].SavedAt.Equal(hits[j].SavedAt) {
 			return hits[i].SavedAt.After(hits[j].SavedAt)
 		}
@@ -565,6 +572,24 @@ func Context(root string, now time.Time) (string, error) {
 		}
 		for _, n := range notes[start:] {
 			fmt.Fprintf(&b, "  - %s (saved %s)\n", n.Content, age(now, n.SavedAt))
+		}
+	}
+
+	// Pinned observations surface under their own heading.
+	pins, _ := PinnedIDs(root)
+	hasPinned := false
+	for _, o := range all {
+		if pins[o.ID] {
+			hasPinned = true
+			break
+		}
+	}
+	if hasPinned {
+		b.WriteString("\nPinned:\n")
+		for _, o := range all {
+			if pins[o.ID] {
+				fmt.Fprintf(&b, "  - %s %s: %s (saved %s)\n", o.ID, o.Type, o.Title, age(now, o.SavedAt))
+			}
 		}
 	}
 

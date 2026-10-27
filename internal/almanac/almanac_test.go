@@ -195,6 +195,44 @@ func TestNotesAreTheSessionNotesView(t *testing.T) {
 	}
 }
 
+func TestSearchPinnedFirst(t *testing.T) {
+	root := t.TempDir()
+	old, _ := Save(root, &Observation{Type: TypeDecision, Title: "older result", Content: "matches"}, t0)
+	_, _ = Save(root, &Observation{Type: TypeDecision, Title: "newer result", Content: "matches"}, t1)
+	if err := Pin(root, old.ID, true, t2); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Terms: []string{"matches"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("want 2 hits, got %+v", hits)
+	}
+	if hits[0].ID != old.ID {
+		t.Fatalf("pinned must come first: hits[0] = %+v", hits[0])
+	}
+}
+
+func TestContextShowsPinnedSection(t *testing.T) {
+	root := t.TempDir()
+	a, _ := Save(root, &Observation{Type: TypeDecision, Title: "the key decision", Content: "important"}, t0)
+	_, _ = Save(root, &Observation{Type: TypeSessionNote, Title: "note", Content: "regular"}, t1)
+	if err := Pin(root, a.ID, true, t2); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := Context(root, t2.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ctx, "Pinned:") {
+		t.Fatalf("context must show a Pinned section, got:\n%s", ctx)
+	}
+	if !strings.Contains(ctx, "the key decision") {
+		t.Fatalf("context must show the pinned decision, got:\n%s", ctx)
+	}
+}
+
 func TestContextBlockIsTheDeterministicResume(t *testing.T) {
 	root := t.TempDir()
 	if _, err := Save(root, &Observation{Type: TypeSessionNote, Title: "note", Content: "F3 mid-flight: almanac substrate"}, t0); err != nil {

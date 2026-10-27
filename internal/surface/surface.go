@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/budget"
+	"regulus-ai/internal/reflect"
 )
 
 // Edit is one proposed or applied surface edit.
@@ -91,7 +94,9 @@ func appendEdit(root string, e Edit) error {
 }
 
 // Propose records a surface edit proposal. The target must be inside
-// the whitelist; the content and reason must be non-empty.
+// the whitelist; the content and reason must be non-empty; the daily
+// evolution cap must not be reached. The proposal is recorded in the
+// budget ledger (KindSurface, surface-proposed).
 func Propose(root, target, content, reason string, now time.Time) (Edit, error) {
 	if err := validateTarget(root, target); err != nil {
 		return Edit{}, err
@@ -102,6 +107,23 @@ func Propose(root, target, content, reason string, now time.Time) (Edit, error) 
 	if strings.TrimSpace(reason) == "" {
 		return Edit{}, errors.New("reason must not be empty — cite the lesson or evidence")
 	}
+	// cap check (PRD R-E3: surface edits under budget caps)
+	cap := reflect.EvolutionCap(root)
+	today, err := budget.TodayEvolutionCount(root, now)
+	if err != nil {
+		return Edit{}, err
+	}
+	if today >= cap {
+		if err := budget.Record(root, budget.Entry{
+			Kind:      budget.KindSurface,
+			Timestamp: now.UTC(),
+			Outcome:   budget.OutcomeRefusedCap,
+			Detail:    fmt.Sprintf("cap %d reached", cap),
+		}); err != nil {
+			return Edit{}, err
+		}
+		return Edit{}, fmt.Errorf("evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, cap)
+	}
 	e := Edit{
 		ID:      "sfx_" + fmt.Sprintf("%x", now.UnixNano()),
 		Target:  target,
@@ -111,6 +133,14 @@ func Propose(root, target, content, reason string, now time.Time) (Edit, error) 
 		At:      now.UTC(),
 	}
 	if err := appendEdit(root, e); err != nil {
+		return Edit{}, err
+	}
+	if err := budget.Record(root, budget.Entry{
+		Kind:      budget.KindSurface,
+		Timestamp: now.UTC(),
+		Outcome:   budget.OutcomeSurfaceProposed,
+		Detail:    target,
+	}); err != nil {
 		return Edit{}, err
 	}
 	return e, nil
@@ -160,6 +190,15 @@ func Apply(root, id, guardian string, now time.Time) (Edit, error) {
 	found.Guardian = guardian
 	found.AppliedAt = now.UTC()
 	if err := appendEdit(root, *found); err != nil {
+		return Edit{}, err
+	}
+	// record the application in the budget (mechanical — no cap consumption)
+	if err := budget.Record(root, budget.Entry{
+		Kind:      budget.KindSurface,
+		Timestamp: now.UTC(),
+		Outcome:   budget.OutcomeSurfaceApplied,
+		Detail:    "guardian " + guardian,
+	}); err != nil {
 		return Edit{}, err
 	}
 	return *found, nil

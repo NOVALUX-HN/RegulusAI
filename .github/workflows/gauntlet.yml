@@ -33,4 +33,4 @@ jobs:
       - name: Run the gauntlet (8 layers, receipts)
         run: |
           go build -o bin/regulus ./cmd/regulus
-          node bin/regulus.js gate run ci/push
+          bin/regulus gate run ci/push
