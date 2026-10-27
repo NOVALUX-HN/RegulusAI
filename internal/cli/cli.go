@@ -55,6 +55,8 @@ func (c CLI) Run(args []string) int {
 		return c.doctor()
 	case "spec":
 		return c.specCmd(args[1:])
+	case "status":
+		return c.statusCmd(args[1:])
 	case "evidence":
 		return c.evidenceCmd(args[1:])
 	case "gate":
@@ -692,6 +694,63 @@ func (c CLI) crapCmd(args []string) int {
 	return 0
 }
 
+// statusCmd implements `regulus status` — one look at the project: the
+// runtime gate, the gauntlet configuration, today's evolution against
+// the cap, pending candidates, admitted lessons and receipts on disk.
+func (c CLI) statusCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus status")
+		return 2
+	}
+	res := c.Probe()
+	if res.Supported {
+		fmt.Fprintf(c.Stdout, "runtime:    %s — supported (V2)\n", res.Detected)
+	} else {
+		fmt.Fprintf(c.Stdout, "runtime:    NOT SUPPORTED — %s\n", res.Reason)
+	}
+	cfg, err := gates.Load("regulus.json")
+	if err != nil {
+		fmt.Fprintf(c.Stdout, "gauntlet:   not configured — %v\n", err)
+	} else {
+		fmt.Fprintf(c.Stdout, "gauntlet:   %d gate(s) configured\n", len(cfg.Gates))
+	}
+	now := time.Now().UTC()
+	today, err := budget.TodayEvolutionCount(".", now)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "status: budget: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "evolution:  %d/%d run(s) today\n", today, reflect.EvolutionCap("."))
+	domains, err := library.Domains(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "status: library: %v\n", err)
+		return 1
+	}
+	pending, lessons := 0, 0
+	for _, d := range domains {
+		cands, err := library.Candidates(".", d)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "status: candidates: %v\n", err)
+			return 1
+		}
+		ls, err := library.List(".", d)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "status: lessons: %v\n", err)
+			return 1
+		}
+		pending += len(cands)
+		lessons += len(ls)
+	}
+	fmt.Fprintf(c.Stdout, "lessons:    %d admitted, %d candidate(s) pending\n", lessons, pending)
+	found, err := filepath.Glob(filepath.Join(".regulus", "evidence", "*", "*.json"))
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "status: evidence: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "receipts:   %d on disk\n", len(found))
+	return 0
+}
+
 // evidenceCmd implements `regulus evidence list [--task <t>] | show
 // <file>`: the human audit surface (PRD R-G6) — receipts, never diffs.
 func (c CLI) evidenceCmd(args []string) int {
@@ -779,6 +838,7 @@ Commands:
   memory note|show|save|search|history|context   the Almanac — persistent memory
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   spec check <file>  validate the acceptance contract of a feature document
+  status             one look at the project: runtime, gauntlet, evolution, receipts
   --version          print the regulus version
 
 Exit codes:

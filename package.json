@@ -1,0 +1,25 @@
+{
+  "name": "regulus-ai",
+  "version": "0.1.0",
+  "description": "The Regulus AI core CLI — the compiled owner of gauntlet evidence, the Almanac memory and the evolution ledger (the Sextant harness for OpenCode V2).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Andragon/RegulusAI"
+  },
+  "bin": {
+    "regulus": "./bin/regulus.js"
+  },
+  "files": [
+    "bin/regulus.js",
+    "binaries/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "bash scripts/build.bash"
+  }
+}

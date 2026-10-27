@@ -10,3 +10,4 @@ dist/
 
 # Tool cache directories
 .atl/
+binaries/

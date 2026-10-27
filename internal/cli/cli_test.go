@@ -661,6 +661,76 @@ func TestBudgetRecordProbe(t *testing.T) {
 	}
 }
 
+func TestStatusReportsTheProjectTruthfully(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"typecheck","layer":1,"command":"echo ok"}],"evolution":{"max_per_day":3}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// receipts on disk
+	if err := os.MkdirAll(filepath.Join(".regulus", "evidence", "t__1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	if _, err := receipts.Write(filepath.Join(".regulus", "evidence", "t__1"), receipts.Receipt{
+		Task: "t/1", Gate: "typecheck", Layer: 1, Command: "c",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// a pending candidate
+	if err := os.MkdirAll(filepath.Join(".regulus", "library", "go", "candidates", "les_p1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# les_p1\n\n- **domain**: go\n- **cue**: c\n- **lesson**: l\n- **evidence**: r.json\n- **confidence**: low\n- **created_at**: " + start.Format(time.RFC3339) + "\n- **status**: candidate\n"
+	if err := os.WriteFile(filepath.Join(".regulus", "library", "go", "candidates", "les_p1", "LESSON.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, errb := newCLI(func() doctor.Result {
+		return doctor.Result{Detected: "opencode 2.1.4", Major: 2, Supported: true}
+	})
+	if code := c.Run([]string{"status"}); code != 0 {
+		t.Fatalf("status exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{
+		"runtime:    opencode 2.1.4 — supported (V2)",
+		"gauntlet:   1 gate(s) configured",
+		"evolution:  0/3 run(s) today",
+		"lessons:    0 admitted, 1 candidate(s) pending",
+		"receipts:   1 on disk",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status must report %q, got:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestStatusReportsMissingPiecesHonestly(t *testing.T) {
+	c, out, _ := newCLI(func() doctor.Result {
+		return doctor.Result{Reason: "opencode binary not found on PATH — install OpenCode V2"}
+	})
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"status"}); code != 0 {
+		t.Fatalf("status exit = %d, want 0 (status always reports)", code)
+	}
+	if !strings.Contains(out.String(), "runtime:    NOT SUPPORTED — opencode binary not found") {
+		t.Fatalf("status output = %q", out.String())
+	}
+	if !strings.Contains(out.String(), "gauntlet:   not configured") {
+		t.Fatalf("status output = %q", out.String())
+	}
+	if !strings.Contains(out.String(), "receipts:   0 on disk") {
+		t.Fatalf("status output = %q", out.String())
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"status", "extra"}); code != 2 {
+		t.Fatalf("status extra arg: exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus status") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
 func TestLibraryListDomainEmpty(t *testing.T) {
 	c, out, _ := newCLI(nil)
 	t.Chdir(t.TempDir())
