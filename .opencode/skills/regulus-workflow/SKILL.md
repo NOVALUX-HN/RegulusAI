@@ -39,7 +39,11 @@ skill needed for those.
    it before anything else.
 5. **LEARN** — report verdicts, receipt ids and the next step; save a
    durable session note with `memory_note`; when the feature
-   closes, admit its lesson with `reflect`.
+   closes, admit its lesson with `reflect`. GENERALIZE, don't
+   memorize: anchor verified workspace facts ("in this workspace, X
+   maps to Y"), write procedure transferable to the next project, and
+   prefer a named component (skill, script, subagent) over always-on
+   prose — prose is paid for on every run and travels badly.
 
 ## Rules of evidence
 

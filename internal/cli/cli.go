@@ -490,6 +490,7 @@ func (c CLI) reflectCmd(args []string) int {
 	}
 	if *domain == "" || *task == "" || *cue == "" || *lesson == "" || fs.NArg() != 1 {
 		fmt.Fprintln(c.Stderr, "usage: regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv|dom] [--confidence low|medium|high] <feature-doc>")
+		fmt.Fprintln(c.Stderr, "lesson guidance: anchor workspace facts ('in this workspace, ...'), keep procedure transferable across projects, prefer skills/scripts over always-on prose")
 		return 2
 	}
 	r := c.Runner
