@@ -1169,3 +1169,105 @@ func TestLibraryDomainsRejectsExtraArgs(t *testing.T) {
 		t.Fatalf("stderr = %q", errb.String())
 	}
 }
+
+func TestTraceUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace record") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"trace", "frobnicate"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), `unknown subcommand "frobnicate"`) {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestTraceRecordShowCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "record", "--session", "ses1", "--message", "msg1", "--call", "call1", "--tool", "read", "--status", "completed"}); code != 0 {
+		t.Fatalf("record exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "trace recorded") {
+		t.Fatalf("record output = %q", out.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"trace", "record", "--session", "ses1", "--message", "msg2", "--call", "call2", "--tool", "write", "--status", "error"}); code != 0 {
+		t.Fatalf("record 2 exit = %d, stderr %q", code, errb2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"trace", "show", "--session", "ses1"}); code != 0 {
+		t.Fatalf("show exit = %d", code)
+	}
+	if got, want := out3.String(), "1 read completed\n2 write error\n"; got != want {
+		t.Fatalf("show output = %q, want %q", got, want)
+	}
+}
+
+func TestTraceRecordUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "record"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace record") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	if code := c2.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c", "--tool", "t"}); code != 2 {
+		t.Fatalf("missing status: exit = %d, want 2", code)
+	}
+	c3, _, _ := newCLI(nil)
+	if code := c3.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c", "--tool", "t", "--status", "completed", "extra"}); code != 2 {
+		t.Fatalf("stray positional: exit = %d, want 2", code)
+	}
+}
+
+func TestTraceRecordBadStatusRefused(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c", "--tool", "t", "--status", "done"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "completed or error") {
+		t.Fatalf("stderr must name the valid statuses, got %q", errb.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"trace", "show", "--session", "s"}); code != 0 {
+		t.Fatalf("show exit = %d, want 0", code)
+	}
+	if !strings.Contains(out2.String(), "(no trace for session s)") {
+		t.Fatalf("refused record must leave the trace empty, got %q", out2.String())
+	}
+}
+
+func TestTraceShowEmptySession(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"trace", "show", "--session", "ghost"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if got, want := out.String(), "(no trace for session ghost)\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestTraceShowUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "show"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace show") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c2.Run([]string{"trace", "show", "--session", "s", "extra"}); code != 2 {
+		t.Fatalf("stray positional: exit = %d, want 2", code)
+	}
+}

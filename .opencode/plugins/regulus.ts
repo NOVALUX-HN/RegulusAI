@@ -354,6 +354,31 @@ export default Plugin.define({
       })
     })
 
+    // Trace capture (G2.6): every tool execution appends one line to the
+    // session trace via the binary. Awaited inside try/catch so a hook
+    // failure never breaks tool execution.
+    await ctx.tool.hook("execute.after", async (event) => {
+      try {
+        const status = event.status === "completed" ? "completed" : "error"
+        await run(bin, [
+          "trace",
+          "record",
+          "--session",
+          event.sessionID,
+          "--message",
+          event.messageID,
+          "--call",
+          event.id,
+          "--tool",
+          event.tool,
+          "--status",
+          status,
+        ])
+      } catch {
+        // hook failures never break tool execution
+      }
+    })
+
     await ctx.session.hook("context", async (event) => {
       event.system.push({ type: "text", text: await loadDiscipline(dir) })
     })

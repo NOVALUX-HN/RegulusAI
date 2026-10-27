@@ -24,6 +24,7 @@ import (
 	"regulus-ai/internal/reflect"
 	"regulus-ai/internal/spec"
 	"regulus-ai/internal/surface"
+	"regulus-ai/internal/trace"
 )
 
 // CLI holds the injected dependencies of one regulus invocation.
@@ -74,6 +75,8 @@ func (c CLI) Run(args []string) int {
 		return c.libraryCmd(args[1:])
 	case "reflect":
 		return c.reflectCmd(args[1:])
+	case "trace":
+		return c.traceCmd(args[1:])
 	case "crap":
 		return c.crapCmd(args[1:])
 	default:
@@ -528,6 +531,83 @@ func (c CLI) libraryCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains [--domain <name>] | regulus library admit --domain --candidate --guardian")
 		return 2
 	}
+}
+
+// traceCmd implements `regulus trace record|show`: minimal agent-process
+// capture (G2.6). `record` appends one tool execution to the session
+// trace; `show` prints the diffable fingerprint (sequence, tool,
+// status) for probe-with-contrast (G2.7).
+func (c CLI) traceCmd(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error | regulus trace show --session <s>")
+		return 2
+	}
+	switch args[0] {
+	case "record":
+		return c.traceRecordCmd(args[1:])
+	case "show":
+		return c.traceShowCmd(args[1:])
+	default:
+		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error | regulus trace show --session <s>")
+		return 2
+	}
+}
+
+// traceRecordCmd implements `regulus trace record --session <s> --message
+// <m> --call <c> --tool <t> --status completed|error`: appends one tool
+// execution to the session trace.
+func (c CLI) traceRecordCmd(args []string) int {
+	fs := flag.NewFlagSet("trace record", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	session := fs.String("session", "", "the session id (required)")
+	message := fs.String("message", "", "the message id (required)")
+	call := fs.String("call", "", "the tool call id (required)")
+	tool := fs.String("tool", "", "the tool name (required)")
+	status := fs.String("status", "", "completed | error (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *session == "" || *message == "" || *call == "" || *tool == "" || *status == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error")
+		return 2
+	}
+	if _, err := trace.Record(".", trace.Entry{
+		Session: *session, Message: *message, Call: *call, Tool: *tool, Status: *status,
+	}, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "trace record: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(c.Stdout, "trace recorded")
+	return 0
+}
+
+// traceShowCmd implements `regulus trace show --session <s>`: prints the
+// session fingerprint (sequence, tool, status), one per line.
+func (c CLI) traceShowCmd(args []string) int {
+	fs := flag.NewFlagSet("trace show", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	session := fs.String("session", "", "the session id (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *session == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace show --session <s>")
+		return 2
+	}
+	entries, err := trace.List(".", *session)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace show: %v\n", err)
+		return 1
+	}
+	if len(entries) == 0 {
+		fmt.Fprintf(c.Stdout, "(no trace for session %s)\n", *session)
+		return 0
+	}
+	for _, line := range trace.Fingerprint(entries) {
+		fmt.Fprintln(c.Stdout, line)
+	}
+	return 0
 }
 
 // libraryDomainsCmd implements `regulus library domains`: one domain
@@ -1103,6 +1183,7 @@ Commands:
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   memory note|show|save|search|history|context   the Almanac — persistent memory
   reflect            admit an evidence-gated lesson (regulus reflect --help)
+  trace record|show  capture and inspect per-session tool traces (regulus trace --help)
   spec check <file>  validate the acceptance contract of a feature document
   status             one look at the project: runtime, gauntlet, evolution, receipts
   --version          print the regulus version
