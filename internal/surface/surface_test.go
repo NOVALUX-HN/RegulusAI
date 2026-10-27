@@ -23,6 +23,8 @@ func TestProposeRefusesOutsideWhitelist(t *testing.T) {
 		".opencode/discipline.md",
 		".opencode/tool-guidance.md",
 		"docs/x.md",
+		"docs/architecture/y.md",
+		"scripts/build.bash",
 	} {
 		if _, err := Propose(t.TempDir(), ok, "content", "reason", t0); err != nil {
 			t.Fatalf("whitelisted %q must be accepted, got %v", ok, err)

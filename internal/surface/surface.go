@@ -39,6 +39,7 @@ var Whitelist = []string{
 	".opencode/discipline.md",
 	".opencode/tool-guidance.md",
 	"docs/",
+	"scripts/",
 }
 
 func File(root string) string {
