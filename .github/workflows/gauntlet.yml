@@ -1,0 +1,36 @@
+name: Gauntlet
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Typecheck the plugin
+        working-directory: .opencode
+        run: |
+          bun install
+          bunx tsc --noEmit
+
+      - name: Run the gauntlet (8 layers, receipts)
+        run: |
+          go build -o bin/regulus ./cmd/regulus
+          node bin/regulus.js gate run ci/push

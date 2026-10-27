@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/receipts"
@@ -964,4 +966,106 @@ func mustRun(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("%v: %v", args, err)
 	}
 	return string(out)
+}
+
+func TestSurfaceProposeListApplyUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"surface"}); code != 2 {
+		t.Fatalf("surface bare: exit = %d", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus surface") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"surface", "propose", "--target", "cmd/main.go", "--content", "x", "--reason", "r"}); code != 1 {
+		t.Fatalf("whitelist refusal: exit = %d", code)
+	}
+	if !strings.Contains(errb2.String(), "whitelist") {
+		t.Fatalf("whitelist stderr = %q", errb2.String())
+	}
+	c3, _, _ := newCLI(nil)
+	if code := c3.Run([]string{"surface", "propose", "--target", "docs/x.md", "--content", "c", "--reason", "r"}); code != 0 {
+		t.Fatalf("propose: exit = %d", code)
+	}
+	c4, out4, _ := newCLI(nil)
+	if code := c4.Run([]string{"surface", "list"}); code != 0 {
+		t.Fatalf("list: exit = %d", code)
+	}
+	if !strings.Contains(out4.String(), "proposed") || !strings.Contains(out4.String(), "docs/x.md") {
+		t.Fatalf("list output = %q", out4.String())
+	}
+	c5, _, _ := newCLI(nil)
+	if code := c5.Run([]string{"surface", "apply"}); code != 2 {
+		t.Fatalf("apply bare: exit = %d", code)
+	}
+	c6, _, _ := newCLI(nil)
+	if code := c6.Run([]string{"surface", "frobnicate"}); code != 2 {
+		t.Fatalf("unknown subcommand: exit = %d", code)
+	}
+}
+
+func TestSurfaceApplyRoundTrip(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"surface", "propose", "--target", "docs/learned.md", "--content", "## Learned: surface edits work", "--reason", "V2 proved it"}); code != 0 {
+		t.Fatalf("propose: exit = %d", code)
+	}
+	idPattern := regexp.MustCompile(`proposed: (sfx_[0-9a-f]+)`)
+	m := idPattern.FindStringSubmatch(out.String())
+	if len(m) != 2 {
+		t.Fatalf("no sfx id in %q", out.String())
+	}
+	id := m[1]
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"surface", "apply", "--id", id, "--guardian", "regulus-reviewer"}); code != 0 {
+		t.Fatalf("apply: exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "applied") || !strings.Contains(out2.String(), "regulus-reviewer") {
+		t.Fatalf("apply output = %q", out2.String())
+	}
+	data, err := os.ReadFile(filepath.Join("docs", "learned.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "## Learned: surface edits work") || !strings.Contains(string(data), "regulus:surface-edit") {
+		t.Fatalf("learned.md = \n%s", string(data))
+	}
+	c3, _, errb3 := newCLI(nil)
+	if code := c3.Run([]string{"surface", "apply", "--id", id, "--guardian", "regulus-reviewer"}); code != 1 {
+		t.Fatalf("re-apply: exit = %d", code)
+	}
+	if !strings.Contains(errb3.String(), "already applied") {
+		t.Fatalf("re-apply stderr = %q", errb3.String())
+	}
+}
+
+func TestCommitsBehindSuffix(t *testing.T) {
+	// with a fake runner returning count output
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-list --count abc123..HEAD": {stdout: "42\n"},
+	}}
+	c, _, _ := newCLI(nil)
+	c.Runner = r
+	suffix := c.commitsBehindSuffix(almanac.Observation{
+		Provenance: &almanac.Provenance{GitHead: "abc123"},
+	})
+	if !strings.Contains(suffix, "42 commits behind") {
+		t.Fatalf("suffix = %q", suffix)
+	}
+	// no provenance → empty
+	c2, _, _ := newCLI(nil)
+	c2.Runner = r
+	if s := c2.commitsBehindSuffix(almanac.Observation{}); s != "" {
+		t.Fatalf("no provenance: suffix = %q", s)
+	}
+	// git error → empty (graceful)
+	rErr := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-list --count bad..HEAD": {err: errors.New("bad ref")},
+	}}
+	c3, _, _ := newCLI(nil)
+	c3.Runner = rErr
+	if s := c3.commitsBehindSuffix(almanac.Observation{Provenance: &almanac.Provenance{GitHead: "bad"}}); s != "" {
+		t.Fatalf("error: suffix = %q", s)
+	}
 }

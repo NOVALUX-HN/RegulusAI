@@ -835,6 +835,12 @@ func (c CLI) statusCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "receipts:   %d on disk\n", len(found))
+	// gremlins availability for the mutation gate
+	if _, _, code, _ := c.runner().Run(context.Background(), "command -v gremlins || command -v \"$HOME/go/bin/gremlins\""); code == 0 {
+		fmt.Fprintln(c.Stdout, "mutation:    gremlins available")
+	} else {
+		fmt.Fprintln(c.Stdout, "mutation:    gremlins NOT found — the mutation gate will fail; go install github.com/go-gremlins/gremlins/cmd/gremlins@latest")
+	}
 	return 0
 }
 
