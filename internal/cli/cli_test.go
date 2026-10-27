@@ -1271,3 +1271,134 @@ func TestTraceShowUsage(t *testing.T) {
 		t.Fatalf("stray positional: exit = %d, want 2", code)
 	}
 }
+
+func TestProbeUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"probe"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus probe contrast") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"probe", "frobnicate"}); code != 2 {
+		t.Fatalf("unknown subcommand: exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), `unknown subcommand "frobnicate"`) {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestProbeContrastUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cases := [][]string{
+		{"probe", "contrast"},
+		{"probe", "contrast", "--task", "demo/T1"},
+		{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi"},
+		{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye", "extra"},
+		{"probe", "contrast", "--task", "../evil", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye"},
+	}
+	for _, args := range cases {
+		c, _, errb := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("args %v: exit = %d, want 2", args, code)
+		}
+		if !strings.Contains(errb.String(), "usage: regulus probe contrast") && !strings.Contains(errb.String(), "invalid task id") {
+			t.Fatalf("args %v: stderr must carry usage, got %q", args, errb.String())
+		}
+	}
+	// a bare flag parse error is also a usage error (flag defaults go to
+	// stderr, as with the other commands)
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"probe", "contrast", "--task"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+}
+
+func TestProbeContrastCycle(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo hi":                     {stdout: "hi\n"},
+		"echo bye":                    {stdout: "bye\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye"}); code != 0 {
+		t.Fatalf("contrast exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"echo hi", "echo bye", "hi", "bye", "- A:", "+ B:"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("contrast output must contain %q, got:\n%s", want, out.String())
+		}
+	}
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "*.json"))
+	if len(found) != 2 {
+		t.Fatalf("want 2 real receipts under the task slug dir, got %v", found)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") || !strings.Contains(out2.String(), "sha256") {
+		t.Fatalf("contrast must record one probe-run entry with the diff digest, got:\n%s", out2.String())
+	}
+}
+
+func TestProbeContrastIdentical(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo same"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo same":                   {stdout: "same\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo same", "--b", "echo same"}); code != 0 {
+		t.Fatalf("identical contrast exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "no differences") {
+		t.Fatalf("identical receipts must be reported, got %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") {
+		t.Fatalf("identical runs still record the probe, got:\n%s", out2.String())
+	}
+}
+
+func TestProbeContrastRefusalRecordsNothing(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, _, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "nope", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("unknown gate: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), `unknown gate "nope"`) {
+		t.Fatalf("stderr must name the unknown gate, got %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	c2.Runner = r
+	t.Chdir(t.TempDir())
+	if code := c2.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("missing regulus.json: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb2.String(), "no regulus.json") {
+		t.Fatalf("stderr must name the missing config, got %q", errb2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out3.String(), "(no budget entries)") {
+		t.Fatalf("refused probes must leave no probe entry, got:\n%s", out3.String())
+	}
+	_ = dir
+}

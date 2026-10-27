@@ -20,6 +20,7 @@ import (
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
+	"regulus-ai/internal/probe"
 	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/reflect"
 	"regulus-ai/internal/spec"
@@ -75,6 +76,8 @@ func (c CLI) Run(args []string) int {
 		return c.libraryCmd(args[1:])
 	case "reflect":
 		return c.reflectCmd(args[1:])
+	case "probe":
+		return c.probeCmd(args[1:])
 	case "trace":
 		return c.traceCmd(args[1:])
 	case "crap":
@@ -607,6 +610,62 @@ func (c CLI) traceShowCmd(args []string) int {
 	for _, line := range trace.Fingerprint(entries) {
 		fmt.Fprintln(c.Stdout, line)
 	}
+	return 0
+}
+
+// probeCmd implements `regulus probe contrast --task <t> --gate <g> --a
+// <cmdA> --b <cmdB>`: run one gate twice with two command variants and
+// diff the two real receipts as evidence (G2.7). Exit 0 when both runs
+// executed (a non-empty diff is evidence, not failure), 1 on run or
+// refusal errors, 2 on usage errors.
+func (c CLI) probeCmd(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>")
+		return 2
+	}
+	switch args[0] {
+	case "contrast":
+		return c.probeContrastCmd(args[1:])
+	default:
+		fmt.Fprintf(c.Stderr, "probe: unknown subcommand %q\n", args[0])
+		fmt.Fprintln(c.Stderr, "usage: regulus probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>")
+		return 2
+	}
+}
+
+// probeContrastCmd implements `regulus probe contrast`.
+func (c CLI) probeContrastCmd(args []string) int {
+	fs := flag.NewFlagSet("probe contrast", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	task := fs.String("task", "", "task id for the evidence receipts (required)")
+	gate := fs.String("gate", "", "configured gate to run twice (required)")
+	cmdA := fs.String("a", "", "first command variant (required)")
+	cmdB := fs.String("b", "", "second command variant (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *task == "" || *gate == "" || *cmdA == "" || *cmdB == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>")
+		return 2
+	}
+	if !validTaskID(*task) {
+		fmt.Fprintf(c.Stderr, "probe contrast: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')\n", *task)
+		return 2
+	}
+	diff, ran, err := probe.ContrastWithRunner(".", *task, *gate, *cmdA, *cmdB, time.Now().UTC(), c.runner())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "probe contrast: %v\n", err)
+		return 1
+	}
+	if !ran {
+		fmt.Fprintln(c.Stderr, "probe contrast: runs did not execute")
+		return 1
+	}
+	if diff == "" {
+		fmt.Fprintln(c.Stdout, "no differences: receipts identical")
+		return 0
+	}
+	fmt.Fprintln(c.Stdout, diff)
 	return 0
 }
 
@@ -1182,6 +1241,7 @@ Commands:
   library list|candidates|show [--domain <name>]  lessons, pending candidates, domain index
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   memory note|show|save|search|history|context   the Almanac — persistent memory
+  probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   trace record|show  capture and inspect per-session tool traces (regulus trace --help)
   spec check <file>  validate the acceptance contract of a feature document
