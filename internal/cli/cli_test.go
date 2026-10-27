@@ -692,6 +692,7 @@ func TestStatusReportsTheProjectTruthfully(t *testing.T) {
 	c, out, errb := newCLI(func() doctor.Result {
 		return doctor.Result{Detected: "opencode 2.1.4", Major: 2, Supported: true}
 	})
+	c.Runner = &fakeGateRunner{}
 	if code := c.Run([]string{"status"}); code != 0 {
 		t.Fatalf("status exit = %d, stderr %q", code, errb.String())
 	}
@@ -701,6 +702,7 @@ func TestStatusReportsTheProjectTruthfully(t *testing.T) {
 		"evolution:  0/3 run(s) today",
 		"lessons:    0 admitted, 1 candidate(s) pending",
 		"receipts:   1 on disk",
+		"mutation:    gremlins",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("status must report %q, got:\n%s", want, out.String())

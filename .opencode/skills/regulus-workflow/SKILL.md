@@ -23,7 +23,7 @@ skill needed for those.
 2. **CHART** — the feature's Chart (the committed feature document
    under `charts/`) declares its acceptance scenarios (Given/When/Then)
    in `## Acceptance` BEFORE implementation; validate with the
-   `regulus_spec_check` tool.
+   `spec_check` tool.
 3. **BUILD** — keep changes reviewable; the Necessity Ladder decides
    what gets written (adapted from Ponytail, MIT): does it need to
    exist? → already in this codebase? → stdlib or platform? → installed
@@ -32,13 +32,13 @@ skill needed for those.
    caller, test and fixture the change breaks. Never cut validation at
    trust boundaries, error handling that prevents data loss, security,
    accessibility, or anything the user asked for. Run the gauntlet with
-   `regulus_gate_run` for the task after each meaningful step.
+   the `gate_run` tool after each meaningful step.
 4. **PROVE** — never claim done without all gates green; cite receipt
    ids (`rec_…`) as evidence. A failing layer stops the gauntlet: fix
    it before anything else.
 5. **LEARN** — report verdicts, receipt ids and the next step; save a
-   durable session note with `regulus_memory_note`; when the feature
-   closes, admit its lesson with `regulus reflect`.
+   durable session note with `memory_note`; when the feature
+   closes, admit its lesson with `reflect`.
 
 ## Rules of evidence
 
