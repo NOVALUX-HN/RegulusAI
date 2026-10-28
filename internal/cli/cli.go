@@ -370,10 +370,11 @@ func (c CLI) memorySearchCmd(args []string) int {
 	limit := fs.Int("limit", 20, "keep the first N results (0: all)")
 	any := fs.Bool("any", false, "any term may match (default: all must)")
 	latest := fs.Bool("latest", false, "collapse each topic chain to its best hit (default: all coexist)")
+	includeSuperseded := fs.Bool("include-superseded", false, "show observations a supersedes relation hides")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, Limit: *limit, Any: *any, Latest: *latest})
+	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, Limit: *limit, Any: *any, Latest: *latest, IncludeSuperseded: *includeSuperseded})
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1
@@ -382,10 +383,32 @@ func (c CLI) memorySearchCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "no matching observations")
 		return 0
 	}
+	// Relation semantics in the output: conflicts mark both sides;
+	// superseded hits (only visible with --include-superseded) say
+	// who superseded them.
+	rels, _ := almanac.Relations(".")
+	conflicts := map[string][]string{}
+	supersededBy := map[string]string{}
+	for _, r := range rels {
+		switch r.Relation {
+		case almanac.RelationConflictsWith:
+			conflicts[r.From] = append(conflicts[r.From], r.To)
+			conflicts[r.To] = append(conflicts[r.To], r.From)
+		case almanac.RelationSupersedes:
+			supersededBy[r.To] = r.From
+		}
+	}
 	fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
 	now := time.Now().UTC()
 	for _, h := range hits {
-		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s%s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt), c.commitsBehindSuffix(h))
+		suffix := c.commitsBehindSuffix(h)
+		if by := supersededBy[h.ID]; by != "" {
+			suffix += fmt.Sprintf(" [superseded by %s]", by)
+		}
+		if partners := conflicts[h.ID]; len(partners) > 0 {
+			suffix += fmt.Sprintf(" [conflicts: %s]", strings.Join(partners, ", "))
+		}
+		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s%s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt), suffix)
 	}
 	return 0
 }

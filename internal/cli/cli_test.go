@@ -2032,3 +2032,39 @@ func TestInitHarnessFromRefusals(t *testing.T) {
 		t.Fatalf("stderr = %q", errb2.String())
 	}
 }
+
+func TestMemorySearchMarksRelations(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	a, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "old choice", Content: "x"}, time.Unix(1700000000, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "new choice", Content: "x"}, time.Unix(1700000060, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := almanac.Relate(".", b.ID, almanac.RelationSupersedes, a.ID, time.Unix(1700000120, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := almanac.Relate(".", a.ID, almanac.RelationConflictsWith, b.ID, time.Unix(1700000130, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "search", "choice"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if strings.Contains(out.String(), "old choice") || !strings.Contains(out.String(), b.ID) {
+		t.Fatalf("superseded must hide by default (its line, not its id-as-conflict-partner), got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "[conflicts: "+a.ID+"]") {
+		t.Fatalf("conflict must be marked on the visible side, got %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "search", "--include-superseded", "choice"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "[superseded by "+b.ID+"]") || !strings.Contains(out2.String(), "[conflicts: "+b.ID+"]") {
+		t.Fatalf("include-superseded must mark both sides, got %q", out2.String())
+	}
+}

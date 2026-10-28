@@ -576,3 +576,42 @@ func TestSearchLimitAndConfidenceRank(t *testing.T) {
 		t.Fatalf("limit must keep the top hit, got %+v (%v)", limited, err)
 	}
 }
+
+func TestSearchHidesSuperseded(t *testing.T) {
+	root := t.TempDir()
+	old, err := Save(root, &Observation{Type: TypeDecision, Title: "old choice", Content: "x"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	new, err := Save(root, &Observation{Type: TypeDecision, Title: "new choice", Content: "x"}, t0.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Relate(root, new.ID, RelationSupersedes, old.ID, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{})
+	if err != nil || len(hits) != 1 || hits[0].ID != new.ID {
+		t.Fatalf("superseded must hide by default, got %+v (%v)", hits, err)
+	}
+	shown, err := Search(root, Query{IncludeSuperseded: true})
+	if err != nil || len(shown) != 2 {
+		t.Fatalf("--include-superseded must show both, got %+v (%v)", shown, err)
+	}
+	// A pruned superseder releases the target: swap roles by pruning
+	// the superseder (a non-lesson, unpinned) through the prune door.
+	if err := Pin(root, old.ID, false, t0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := Prune(root, func(o Observation) bool { return o.ID != new.ID })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyPrune(root, removed); err != nil {
+		t.Fatal(err)
+	}
+	hits, err = Search(root, Query{})
+	if err != nil || len(hits) != 1 || hits[0].ID != old.ID {
+		t.Fatalf("a pruned superseder must release its target, got %+v (%v)", hits, err)
+	}
+}

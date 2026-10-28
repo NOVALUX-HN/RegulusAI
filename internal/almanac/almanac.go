@@ -525,15 +525,44 @@ func ApplyPrune(root string, removed []Observation) error {
 
 // term matching.
 type Query struct {
-	Terms     []string
-	TopicKey  string
-	Domain    string
-	Type      string
-	Dimension string // bucket: lesson dimension (inv | dom)
-	Path      string // bucket: provenance path (exact match)
-	Limit     int    // keep the first N results after sorting (<= 0: all)
-	Any       bool   // OR the terms instead of ANDing them
-	Latest    bool   // collapse each topic chain to its best hit (default: all coexist)
+	Terms             []string
+	TopicKey          string
+	Domain            string
+	Type              string
+	Dimension         string // bucket: lesson dimension (inv | dom)
+	Path              string // bucket: provenance path (exact match)
+	Limit             int    // keep the first N results after sorting (<= 0: all)
+	Any               bool   // OR the terms instead of ANDing them
+	Latest            bool   // collapse each topic chain to its best hit (default: all coexist)
+	IncludeSuperseded bool   // show observations a supersedes relation hides (default: hidden)
+}
+
+// SupersededIDs returns the observation ids hidden from Search by a
+// supersedes relation: a target hides only while its superseder still
+// exists in the log (a pruned superseder releases the target).
+func SupersededIDs(root string) (map[string]bool, error) {
+	rels, err := Relations(root)
+	if err != nil {
+		return nil, err
+	}
+	if len(rels) == 0 {
+		return nil, nil
+	}
+	all, err := All(root)
+	if err != nil {
+		return nil, err
+	}
+	exists := map[string]bool{}
+	for _, o := range all {
+		exists[o.ID] = true
+	}
+	out := map[string]bool{}
+	for _, r := range rels {
+		if r.Relation == RelationSupersedes && exists[r.From] && exists[r.To] {
+			out[r.To] = true
+		}
+	}
+	return out, nil
 }
 
 // Search returns the observations that match the terms (case-insensitive
@@ -553,6 +582,13 @@ func Search(root string, q Query) ([]Observation, error) {
 	if err != nil {
 		return nil, err
 	}
+	superseded := map[string]bool{}
+	if !q.IncludeSuperseded {
+		superseded, err = SupersededIDs(root)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var hits []Observation
 	collapsed := map[string]Observation{}
 	better := func(cur, cand Observation) bool {
@@ -566,6 +602,9 @@ func Search(root string, q Query) ([]Observation, error) {
 		return cand.ID > cur.ID
 	}
 	for _, o := range all {
+		if superseded[o.ID] {
+			continue
+		}
 		if q.TopicKey != "" && o.TopicKey != q.TopicKey {
 			continue
 		}
