@@ -63,6 +63,33 @@ func TodayEvolutionCount(root string, now time.Time) (int, error) {
 	return n, nil
 }
 
+// TaskEvolutionCount counts one task's cap-consuming runs today —
+// the per-task share of the evolution budget (same outcomes as the
+// daily count).
+func TaskEvolutionCount(root, task string, now time.Time) (int, error) {
+	entries, err := Show(root)
+	if err != nil {
+		return 0, err
+	}
+	today := now.UTC().Format("2006-01-02")
+	n := 0
+	for _, e := range entries {
+		if e.Task != task {
+			continue
+		}
+		if e.Kind != KindReflect && e.Kind != KindProbe && e.Kind != KindSurface {
+			continue
+		}
+		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun && e.Outcome != OutcomeSurfaceProposed {
+			continue
+		}
+		if e.Timestamp.UTC().Format("2006-01-02") == today {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // File returns the ledger path under a project root.
 func File(root string) string {
 	return filepath.Join(root, ".regulus", "budget.json")

@@ -84,3 +84,27 @@ func TestTodayEvolutionCountExcludesRefusedOtherKindsAndDays(t *testing.T) {
 		t.Fatalf("empty ledger count = %d, want 0", n)
 	}
 }
+
+func TestTaskEvolutionCountFiltersTaskAndOutcomes(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	must := func(e Entry) {
+		t.Helper()
+		if err := Record(root, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(Entry{Kind: KindReflect, Timestamp: base, Task: "a/1", Outcome: OutcomeCandidateProposed})
+	must(Entry{Kind: KindProbe, Timestamp: base.Add(time.Hour), Task: "a/1", Outcome: OutcomeProbeRun})
+	must(Entry{Kind: KindReflect, Timestamp: base.Add(2 * time.Hour), Task: "a/1", Outcome: OutcomeRefusedCap})
+	must(Entry{Kind: KindReflect, Timestamp: base.Add(3 * time.Hour), Task: "b/2", Outcome: OutcomeCandidateProposed})
+	must(Entry{Kind: "other", Timestamp: base.Add(4 * time.Hour), Task: "a/1", Outcome: "x"})
+	n, err := TaskEvolutionCount(root, "a/1", base.Add(5*time.Hour))
+	if err != nil || n != 2 {
+		t.Fatalf("task count = %d, want 2 (refused/other excluded), err=%v", n, err)
+	}
+	n, err = TaskEvolutionCount(root, "b/2", base.Add(5*time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("task count = %d, want 1, err=%v", n, err)
+	}
+}

@@ -224,3 +224,27 @@ func TestContrastRefusesAtEvolutionCap(t *testing.T) {
 		t.Fatalf("last entry must be the probe refusal, got %+v", last)
 	}
 }
+
+func TestContrastEnforcesTaskCap(t *testing.T) {
+	cfg := `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}],"evolution":{"max_per_day":10,"max_per_task":1}}`
+	dir := writeProject(t, cfg)
+	at := time.Now().UTC()
+	runner := &fakeRunner{results: map[string]fakeResult{
+		"echo a":                      {stdout: "a\n"},
+		"echo b":                      {stdout: "b\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	if _, _, err := ContrastWithRunner(dir, "demo/T1", "typecheck", "echo a", "echo b", at, runner); err != nil {
+		t.Fatalf("first contrast: %v", err)
+	}
+	if len(runner.calls) == 0 {
+		t.Fatal("first contrast must run commands")
+	}
+	_, ran, err := ContrastWithRunner(dir, "demo/T1", "typecheck", "echo a", "echo b", at.Add(time.Minute), runner)
+	if err == nil || !strings.Contains(err.Error(), "task evolution cap") {
+		t.Fatalf("want task-cap refusal, got ran=%v err=%v", ran, err)
+	}
+	if ran {
+		t.Fatal("ran must be false on task-cap refusal")
+	}
+}

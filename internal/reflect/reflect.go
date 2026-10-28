@@ -90,6 +90,24 @@ func Run(root string, in Input, gitHead string) (library.Lesson, error) {
 		}
 		return library.Lesson{}, fmt.Errorf("evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, cap)
 	}
+	tcap := TaskCap(root)
+	tcount, err := budget.TaskEvolutionCount(root, in.Task, in.Now)
+	if err != nil {
+		return library.Lesson{}, err
+	}
+	if tcount >= tcap {
+		if err := budget.Record(root, budget.Entry{
+			Kind:      budget.KindReflect,
+			Timestamp: in.Now.UTC(),
+			Task:      in.Task,
+			Domain:    in.Domain,
+			Outcome:   budget.OutcomeRefusedCap,
+			Detail:    fmt.Sprintf("task cap %d reached", tcap),
+		}); err != nil {
+			return library.Lesson{}, err
+		}
+		return library.Lesson{}, fmt.Errorf("task evolution cap reached: task %q has %d run(s) today, task cap %d (regulus.json evolution.max_per_task)", in.Task, tcount, tcap)
+	}
 
 	l := library.Lesson{
 		ID:         library.NewID(in.Now),
@@ -182,6 +200,22 @@ func EvolutionCap(root string) int {
 		return budget.DefaultEvolutionCapPerDay
 	}
 	return cfg.Evolution.MaxPerDay
+}
+
+// TaskCap bounds one task's share of the daily evolution budget. An
+// explicit max_per_task wins; otherwise half the daily cap (minimum 1)
+// so a single glottonous task cannot eat the whole day.
+func TaskCap(root string) int {
+	daily := EvolutionCap(root)
+	cfg, err := gates.Load(filepath.Join(root, "regulus.json"))
+	if err == nil && cfg.Evolution != nil && cfg.Evolution.MaxPerTask > 0 {
+		return cfg.Evolution.MaxPerTask
+	}
+	half := daily / 2
+	if half < 1 {
+		half = 1
+	}
+	return half
 }
 
 func taskReceipts(root, task string) ([]string, error) {

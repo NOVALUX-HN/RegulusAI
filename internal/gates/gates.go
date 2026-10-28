@@ -53,9 +53,12 @@ const (
 
 // EvolutionConfig caps the evolution loop (PRD R-E4): reflect and probe
 // runs per calendar day. The ledger records every run, refused ones
-// included.
+// included. MaxPerTask optionally bounds one task's share of the daily
+// budget (a glottonous task must not eat the whole day); when unset or
+// non-positive it defaults to half the daily cap (minimum 1).
 type EvolutionConfig struct {
-	MaxPerDay int `json:"max_per_day,omitempty"`
+	MaxPerDay  int `json:"max_per_day,omitempty"`
+	MaxPerTask int `json:"max_per_task,omitempty"`
 }
 
 // Config is the project's regulus.json.
