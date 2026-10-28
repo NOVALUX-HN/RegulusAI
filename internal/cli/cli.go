@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,7 +188,7 @@ func validTaskID(s string) bool {
 // Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor")
 		return 2
 	}
 	switch args[0] {
@@ -213,11 +214,70 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryContextCmd(args[1:])
 	case "prune":
 		return c.memoryPruneCmd(args[1:])
+	case "doctor":
+		return c.memoryDoctorCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor")
 		return 2
 	}
+}
+
+// memoryDoctorCmd implements `regulus memory doctor`: the Almanac
+// health report — counts by type, oldest/newest, malformed lines, and
+// provenance events (pins, relations) pointing outside the log.
+func (c CLI) memoryDoctorCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory doctor")
+		return 2
+	}
+	h, err := almanac.Doctor(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory doctor: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "observations: %d\n", h.Total)
+	types := make([]string, 0, len(h.ByType))
+	for t := range h.ByType {
+		types = append(types, t)
+	}
+	sort.Strings(types)
+	for _, t := range types {
+		fmt.Fprintf(c.Stdout, "  %s: %d\n", t, h.ByType[t])
+	}
+	now := time.Now().UTC()
+	if h.Oldest.IsZero() {
+		fmt.Fprintln(c.Stdout, "oldest:     (empty log)")
+	} else {
+		fmt.Fprintf(c.Stdout, "oldest:     %s (%s)\n", h.Oldest.Format(time.RFC3339), humanAge(now, h.Oldest))
+	}
+	if h.Newest.IsZero() {
+		fmt.Fprintln(c.Stdout, "newest:     (empty log)")
+	} else {
+		fmt.Fprintf(c.Stdout, "newest:     %s (%s)\n", h.Newest.Format(time.RFC3339), humanAge(now, h.Newest))
+	}
+	if len(h.MalformedLines) == 0 {
+		fmt.Fprintln(c.Stdout, "malformed:  none")
+	} else {
+		lines := make([]string, 0, len(h.MalformedLines))
+		for _, ln := range h.MalformedLines {
+			lines = append(lines, strconv.Itoa(ln))
+		}
+		fmt.Fprintf(c.Stdout, "malformed:  line(s) %s\n", strings.Join(lines, ", "))
+	}
+	if len(h.OrphanPins) == 0 {
+		fmt.Fprintln(c.Stdout, "orphan pins: none")
+	} else {
+		fmt.Fprintf(c.Stdout, "orphan pins: %s\n", strings.Join(h.OrphanPins, ", "))
+	}
+	if len(h.OrphanRelations) == 0 {
+		fmt.Fprintln(c.Stdout, "orphan relations: none")
+	} else {
+		for _, r := range h.OrphanRelations {
+			fmt.Fprintf(c.Stdout, "orphan relations: %s %s %s\n", r.From, r.Relation, r.To)
+		}
+	}
+	return 0
 }
 
 // memoryPruneCmd implements `regulus memory prune [--older-than-days N]

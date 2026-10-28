@@ -615,3 +615,57 @@ func TestSearchHidesSuperseded(t *testing.T) {
 		t.Fatalf("a pruned superseder must release its target, got %+v (%v)", hits, err)
 	}
 }
+
+func TestDoctorReportsHealth(t *testing.T) {
+	root := t.TempDir()
+	a, err := Save(root, &Observation{Type: TypeDecision, Title: "a", Content: "c"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Save(root, &Observation{Type: TypeDiscovery, Title: "b", Content: "c"}, t0.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Orphans are born when content is pruned away: pin + relate A,
+	// then remove A through the prune door (ApplyPrune keeps no
+	// provenance, by design).
+	if err := Pin(root, a.ID, true, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relate(root, b.ID, RelationConflictsWith, a.ID, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyPrune(root, []Observation{a}); err != nil {
+		t.Fatal(err)
+	}
+	// A malformed line the tolerant scan must report, not fail on.
+	f, err := os.OpenFile(File(root), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{not json}\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	h, err := Doctor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Total != 1 || h.ByType[TypeDecision] != 0 || h.ByType[TypeDiscovery] != 1 {
+		t.Fatalf("counts = %+v", h)
+	}
+	if len(h.MalformedLines) != 1 || h.MalformedLines[0] != 2 {
+		t.Fatalf("malformed = %v", h.MalformedLines)
+	}
+	if len(h.OrphanPins) != 1 || h.OrphanPins[0] != a.ID {
+		t.Fatalf("orphan pins = %v", h.OrphanPins)
+	}
+	if len(h.OrphanRelations) != 1 || h.OrphanRelations[0].To != a.ID {
+		t.Fatalf("orphan relations = %+v", h.OrphanRelations)
+	}
+	// An empty Almanac is healthy.
+	empty, err := Doctor(t.TempDir())
+	if err != nil || empty.Total != 0 || len(empty.MalformedLines) != 0 {
+		t.Fatalf("empty = %+v (%v)", empty, err)
+	}
+}

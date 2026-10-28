@@ -2068,3 +2068,27 @@ func TestMemorySearchMarksRelations(t *testing.T) {
 		t.Fatalf("include-superseded must mark both sides, got %q", out2.String())
 	}
 }
+
+func TestMemoryDoctorCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "a", Content: "c"}, time.Unix(1700000000, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"memory", "doctor"}); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"observations: 1", "decision: 1", "malformed:  none", "orphan pins: none", "orphan relations: none"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor must report %q, got:\n%s", want, out.String())
+		}
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"memory", "doctor", "extra"}); code != 2 {
+		t.Fatalf("usage exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "usage: regulus memory doctor") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
