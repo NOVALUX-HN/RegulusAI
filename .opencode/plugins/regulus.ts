@@ -51,6 +51,13 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
     "Search the Almanac deterministically: optional buckets (topic key, domain, type) then exact term matching — every term must match; newest first with age annotations.",
   memory_context:
     "The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.",
+  evolve_propose:
+    "Assemble the evidence pack for a task (session traces, receipts, domain INDEX, decisions) plus the candidate template — the input for @regulus-proposer.",
+  probe_contrast:
+    "Run one gate twice with two command variants and return the receipt diff as evidence (cap-enforced; both runs executed is success).",
+  trace_show:
+    "Print a session's tool-execution fingerprint (sequence, tool, status) — the diffable process trace.",
+  skills_list: "List the registered skills with their one-line triggers.",
 }
 
 // parseToolGuidance reads "## <name>" sections; each body collapses to
@@ -309,6 +316,82 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
           const res = await run(bin, ["memory", "context"], context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "evolve_propose",
+        description: guidance["evolve_propose"],
+        input: {
+          type: "object",
+          properties: {
+            task: { type: "string", description: "task id whose receipts are the evidence" },
+            domain: { type: "string", description: "lesson domain for the INDEX section" },
+          },
+          required: ["task", "domain"],
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { task, domain } = input as Record<string, string>
+          const res = await run(bin, ["evolve", "propose", "--task", task, "--domain", domain], context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "probe_contrast",
+        description: guidance["probe_contrast"],
+        input: {
+          type: "object",
+          properties: {
+            task: { type: "string", description: "task id for the evidence receipts" },
+            gate: { type: "string", description: "configured gate to run twice" },
+            a: { type: "string", description: "first command variant" },
+            b: { type: "string", description: "second command variant" },
+          },
+          required: ["task", "gate", "a", "b"],
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { task, gate, a, b } = input as Record<string, string>
+          const res = await run(
+            bin,
+            ["probe", "contrast", "--task", task, "--gate", gate, "--a", a, "--b", b],
+            context.signal,
+          )
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "trace_show",
+        description: guidance["trace_show"],
+        input: {
+          type: "object",
+          properties: {
+            session: { type: "string", description: "the session id whose trace to print" },
+          },
+          required: ["session"],
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { session } = input as Record<string, string>
+          const res = await run(bin, ["trace", "show", "--session", session], context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "skills_list",
+        description: guidance["skills_list"],
+        input: { type: "object", properties: {}, additionalProperties: false },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (_input, context) => {
+          const res = await run(bin, ["skills", "list"], context.signal)
           return { content: res.output }
         },
       })

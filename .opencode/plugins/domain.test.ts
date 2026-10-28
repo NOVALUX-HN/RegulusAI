@@ -159,3 +159,26 @@ describe("suggestSkills", () => {
     expect(distinctiveWords("Run the charts when ready")).toEqual(["charts", "ready"]);
   });
 });
+
+describe("tool guidance sync", () => {
+  test("tool-guidance.md sections match the compiled defaults", async () => {
+    const root = import.meta.dir + "/../..";
+    const md = await Bun.file(`${root}/.opencode/tool-guidance.md`).text();
+    const ts = await Bun.file(`${root}/.opencode/plugins/regulus.ts`).text();
+    const block = ts.slice(ts.indexOf("const DEFAULT_TOOL_GUIDANCE"), ts.indexOf("// parseToolGuidance"));
+    const defaults: Record<string, string> = {};
+    for (const m of block.matchAll(/(\w+):\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) defaults[m[1]] = m[2];
+    const sections = md.split(/^##\s+/m).slice(1).map((p) => {
+      const nl = p.indexOf("\n");
+      return [p.slice(0, nl).trim(), p.slice(nl + 1).replace(/\s+/g, " ").trim()];
+    }) as [string, string][];
+    expect(sections.length).toBeGreaterThan(0);
+    for (const [name, body] of sections) {
+      expect(defaults[name]).toBeDefined();
+      expect(body).toBe(defaults[name]);
+    }
+    for (const name of Object.keys(defaults)) {
+      expect(sections.find(([n]) => n === name)).toBeDefined();
+    }
+  });
+});

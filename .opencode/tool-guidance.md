@@ -42,3 +42,19 @@ Search the Almanac deterministically: optional buckets (topic key, domain, type)
 ## memory_context
 
 The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.
+
+## evolve_propose
+
+Assemble the evidence pack for a task (session traces, receipts, domain INDEX, decisions) plus the candidate template — the input for @regulus-proposer.
+
+## probe_contrast
+
+Run one gate twice with two command variants and return the receipt diff as evidence (cap-enforced; both runs executed is success).
+
+## trace_show
+
+Print a session's tool-execution fingerprint (sequence, tool, status) — the diffable process trace.
+
+## skills_list
+
+List the registered skills with their one-line triggers.
