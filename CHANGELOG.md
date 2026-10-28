@@ -4,11 +4,40 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
-## [Unreleased] — v0.4 evolution (harness² gap closure)
+## [0.5.0] — 2026-10-27 — vanguard (harness² mechanisms, personal use)
 
-Branch: `feat/v0.4-evolution`. Closes the gap analysis against
-google-research/harness2: Evolution becomes automatic, relevant and
-intelligent. G0 slice shipped; G1/G2/G3 in progress.
+Branch: `feat/v0.4-evolution` (v0.4 + v0.5 ship together; tags cut on main at merge).
+
+### Added (V5 — vanguard disciplines + system evolution, shipped)
+- `V5.1`: guardian + SKILL disciplines — KEEP_BASE and
+  no-credit-for-elaborate in `regulus-reviewer`, receipt anonymity
+  in `regulus-gate-verifier`, GENERALIZE doctrine in the Sextant
+  LEARN step + `reflect` usage guidance.
+- `V5.2`: trace file paths — `Entry.Files` (capped summaries, never
+  values) + `record --files` + `trace files`; Almanac `Query.Path`
+  bucket + `memory search --path`; the hook records touched paths
+  and `resolveDomain` tries chart, then files, then lone domain.
+- `V5.3`: library snapshots — admitted lessons snapshot the
+  executable surface plus `EXPERIENCE.md` (why + transferable
+  lesson) under `harnesses/<task>/`; INDEX entries are blocks;
+  `library forget` prunes snapshots, `retain` prunes at/after bound.
+- `V5.4`: deterministic compose — `probe compose` runs base+A+B
+  through the gate, merges non-overlapping changes, flags conflicts
+  keeping base; one probe-run budget entry.
+- `V5.5`: per-task wall-time in `status` (`time: <task> <dur>`)
+  aggregated from receipt durations.
+- `V5.6`: `scripts/build.bash` reserved from surface edits
+  (hand-edit only) + skill trigger registry (`skills list` from
+  SKILL.md frontmatter).
+- `V5.7`: system-driven `evolve propose` — evidence pack (session
+  fingerprints, task receipts, domain INDEX, task decisions) +
+  candidate template; design chart `charts/v0.5-evolve-propose.md`.
+
+## [0.4.0] — 2026-10-27 — evolution (harness² gap closure)
+
+Shipped on the same branch as v0.5, tagged together at merge:
+closeness to harness2 — Evolution becomes automatic, relevant
+and intelligent.
 
 ### Added (G0 — self-editable surface, shipped)
 - `G0.1`: `.opencode/discipline.md` — the system prompt as editable
@@ -30,10 +59,11 @@ intelligent. G0 slice shipped; G1/G2/G3 in progress.
 - `G1.5`: `scripts/` admitted to the surface whitelist
   (`docs/architecture` was already covered by `docs/`).
 
-### Planned (G2 — intelligent Evolution)
-- `G2.6`: trace capture via the `tool.execute.after` hook.
-- `G2.7`: probe with contrast — two gate runs, diffed traces/receipts
-  as evidence.
+### Added (G2 — intelligent Evolution, shipped)
+- `G2.6`: trace capture via the `tool.execute.after` hook —
+  `trace record/show/files`, fingerprint `N tool status`.
+- `G2.7`: probe with contrast — two gate runs through the same
+  path, receipt diff as evidence (`probe contrast`), cap-enforced.
 
 ### Dropped (G3 — product)
 - `G3.8`: npm publish — dropped as unnecessary: Regulus is personal
