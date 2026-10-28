@@ -1,6 +1,7 @@
 package almanac
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -667,5 +668,49 @@ func TestDoctorReportsHealth(t *testing.T) {
 	empty, err := Doctor(t.TempDir())
 	if err != nil || empty.Total != 0 || len(empty.MalformedLines) != 0 {
 		t.Fatalf("empty = %+v (%v)", empty, err)
+	}
+}
+
+func TestImportRoundTripIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	a, err := Save(root, &Observation{Type: TypeDecision, Title: "keep", Content: "c"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(t.TempDir(), "bundle.jsonl")
+	rawA, _ := json.Marshal(a)
+	other := `{"id":"obs_imported1","type":"discovery","title":"new","content":"c","saved_at":"2026-10-26T08:00:00Z"}`
+	if err := os.WriteFile(bundle, []byte(string(rawA)+"\n"+other+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, skipped, err := Import(root, bundle)
+	if err != nil || got != 1 || skipped != 1 {
+		t.Fatalf("import = %d/%d (%v)", got, skipped, err)
+	}
+	all, _ := All(root)
+	if len(all) != 2 {
+		t.Fatalf("log must grow by exactly one, got %d", len(all))
+	}
+	got, skipped, err = Import(root, bundle)
+	if err != nil || got != 0 || skipped != 2 {
+		t.Fatalf("re-import must be a no-op, got %d/%d (%v)", got, skipped, err)
+	}
+}
+
+func TestImportRejectsInvalidLines(t *testing.T) {
+	root := t.TempDir()
+	bad := filepath.Join(t.TempDir(), "bad.jsonl")
+	if err := os.WriteFile(bad, []byte("{\"id\":\"x\",\"type\":\"nope\",\"title\":\"t\",\"content\":\"c\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Import(root, bad); err == nil {
+		t.Fatal("invalid type must be refused with its line number")
+	}
+	all, _ := All(root)
+	if len(all) != 0 {
+		t.Fatal("a refused import must not write anything")
+	}
+	if _, _, err := Import(root, filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Fatal("missing file must be an error")
 	}
 }

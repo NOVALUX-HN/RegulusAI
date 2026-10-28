@@ -210,6 +210,8 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryRelateCmd(args[1:])
 	case "export":
 		return c.memoryExportCmd(args[1:])
+	case "import":
+		return c.memoryImportCmd(args[1:])
 	case "context":
 		return c.memoryContextCmd(args[1:])
 	case "prune":
@@ -555,6 +557,24 @@ func (c CLI) memoryExportCmd(args []string) int {
 		fmt.Fprintf(c.Stdout, "exported: %s\n", p)
 	}
 	fmt.Fprintln(c.Stdout, "commit .regulus-export/ to share the Almanac with your team")
+	return 0
+}
+
+// memoryImportCmd implements `regulus memory import <file>`: restores
+// observations from a `memory export` bundle. Idempotent by id —
+// re-importing skips what is already present; the first invalid line
+// aborts with its line number and imports nothing.
+func (c CLI) memoryImportCmd(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory import <file>")
+		return 2
+	}
+	imported, skipped, err := almanac.Import(".", args[0])
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory import: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "imported %d, skipped %d (already present)\n", imported, skipped)
 	return 0
 }
 
@@ -1890,7 +1910,7 @@ Commands:
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   library forget --domain <d> --task <t>  drop one task snapshot
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
-  memory note|show|save|search|history|context   the Almanac — persistent memory
+  memory note|show|save|search|history|context|prune|doctor|import|pin|unpin|relate|export|library   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
   reflect            admit an evidence-gated lesson (regulus reflect --help)

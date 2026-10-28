@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -2090,5 +2091,37 @@ func TestMemoryDoctorCycle(t *testing.T) {
 	}
 	if !strings.Contains(errb2.String(), "usage: regulus memory doctor") {
 		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestMemoryImportCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "mine", Content: "c"}, time.Unix(1700000000, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	bundle := "bundle.jsonl"
+	obs, _ := almanac.All(".")
+	raw, _ := json.Marshal(obs[0])
+	other := `{"id":"obs_cli1","type":"discovery","title":"theirs","content":"c","saved_at":"2026-10-26T08:00:00Z"}`
+	if err := os.WriteFile(bundle, []byte(string(raw)+"\n"+other+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "import", bundle}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "imported 1, skipped 1") {
+		t.Fatalf("output = %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "import", bundle}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "imported 0, skipped 2") {
+		t.Fatalf("re-import output = %q", out2.String())
+	}
+	c3, _, _ := newCLI(nil)
+	if code := c3.Run([]string{"memory", "import"}); code != 2 {
+		t.Fatalf("usage exit = %d, want 2", code)
 	}
 }
