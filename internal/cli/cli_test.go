@@ -1197,6 +1197,14 @@ func TestChartInitAndList(t *testing.T) {
 	if !strings.Contains(out.String(), slashPath) {
 		t.Fatalf("init output = %q", out.String())
 	}
+	// the scaffold carries the Domain template line
+	data, err := os.ReadFile(slashPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Domain: <name>") {
+		t.Fatalf("scaffold must carry the Domain template line, got:\n%s", data)
+	}
 	// the scaffold passes spec check
 	cS, outS, _ := newCLI(nil)
 	if code := cS.Run([]string{"spec", "check", "charts/my-feature.md"}); code != 0 {

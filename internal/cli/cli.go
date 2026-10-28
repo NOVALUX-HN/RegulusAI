@@ -1702,13 +1702,13 @@ func (c CLI) chartCmd(args []string) int {
 			fmt.Fprintf(c.Stderr, "chart init: %v\n", err)
 			return 1
 		}
-		scaffold := "# " + name + "\n\nWhat this feature is and why it exists.\n\n## Acceptance\n\n### Scenario: the happy path\n\n- Given a clean project\n- When the change runs\n- Then the exit code is 0\n\n## Log\n\n- Chart scaffolded by regulus chart init.\n"
+		scaffold := "# " + name + "\n\nDomain: <name>\n\nWhat this feature is and why it exists.\n\n## Acceptance\n\n### Scenario: the happy path\n\n- Given a clean project\n- When the change runs\n- Then the exit code is 0\n\n## Log\n\n- Chart scaffolded by regulus chart init.\n"
 		if err := os.WriteFile(path, []byte(scaffold), 0o644); err != nil {
 			fmt.Fprintf(c.Stderr, "chart init: %v\n", err)
 			return 1
 		}
 		fmt.Fprintf(c.Stdout, "chart: %s\n", path)
-		fmt.Fprintln(c.Stdout, "fill the Acceptance scenarios before implementation (regulus spec check "+path+")")
+		fmt.Fprintln(c.Stdout, "set the Domain: line to the lesson domain, then fill the Acceptance scenarios before implementation (regulus spec check "+path+")")
 		return 0
 	case "list":
 		paths, err := filepath.Glob(filepath.Join("charts", "*.md"))
