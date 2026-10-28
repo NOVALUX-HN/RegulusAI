@@ -1952,3 +1952,83 @@ func TestTraceSessionsAndPruneCycle(t *testing.T) {
 		t.Fatalf("after prune = %+v (%v)", entries, err)
 	}
 }
+
+func TestInitHarnessFromCopiesConfigNotEnvironment(t *testing.T) {
+	src := t.TempDir()
+	oc := filepath.Join(src, ".opencode")
+	for _, p := range []string{
+		filepath.Join(oc, "discipline.md"),
+		filepath.Join(oc, "tool-guidance.md"),
+		filepath.Join(oc, "agents", "regulus-proposer.md"),
+		filepath.Join(oc, "skills", "regulus-workflow", "SKILL.md"),
+		filepath.Join(oc, "plugins", "regulus.ts"),
+		filepath.Join(oc, "node_modules", "junk.js"),
+		filepath.Join(oc, "package.json"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"init", "--harness-from", src}); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), ".opencode copied from") {
+		t.Fatalf("output = %q", out.String())
+	}
+	for _, p := range []string{
+		filepath.Join(".opencode", "discipline.md"),
+		filepath.Join(".opencode", "tool-guidance.md"),
+		filepath.Join(".opencode", "agents", "regulus-proposer.md"),
+		filepath.Join(".opencode", "skills", "regulus-workflow", "SKILL.md"),
+		filepath.Join(".opencode", "plugins", "regulus.ts"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("config %s must be copied: %v", p, err)
+		}
+	}
+	for _, p := range []string{
+		filepath.Join(".opencode", "node_modules"),
+		filepath.Join(".opencode", "package.json"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("environment %s must NOT be copied", p)
+		}
+	}
+}
+
+func TestInitHarnessFromRefusals(t *testing.T) {
+	// missing .opencode in the source
+	empty := t.TempDir()
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"init", "--harness-from", empty}); code != 1 {
+		t.Fatalf("missing source exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "no .opencode directory") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	// target already has .opencode
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, ".opencode", "skills", "s"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, ".opencode", "skills", "s", "SKILL.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(".opencode", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"init", "--harness-from", src}); code != 1 {
+		t.Fatalf("overwrite exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb2.String(), "refusing to overwrite") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
