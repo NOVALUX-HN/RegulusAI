@@ -73,13 +73,20 @@ Delegate by reason, never by size:
 When the user explicitly asks to improve the harness itself — one
 Propose–Probe–Compose step (k=1):
 
-1. **Propose** one candidate edit to the harness surface (a skill, a
-   gate threshold, a prompt line), grounded in what just happened.
-   Route it through `@regulus-proposer`: it assembles the evolve
-   pack and authors the candidate shape a guardian validates.
-2. **Probe** it on the current task; observe the evidence.
-3. **Compose** the verdict — adopt or discard — and record the run:
-   `regulus budget record --kind probe --detail "<what and why>"`.
+1. **Propose** via `@regulus-proposer`: it runs
+   `regulus evolve propose --task <t> --domain <d>` and authors ONE
+   structured candidate (dimension/component/edit/rationale) from
+   the evidence pack; a guardian validates it. KEEP_BASE is a valid
+   answer — adaptation the evidence does not argue for is a
+   regression.
+2. **Probe** with `regulus probe contrast --task <t> --gate <g> --a
+   "<cmdA>" --b "<cmdB>"` — two real gate runs, receipt diff as
+   evidence; `regulus probe compose --base ... --a ... --b ...`
+   merges base+A+B non-conflicting changes and flags conflicts.
+   Every tool execution lands in the session trace
+   (`regulus trace show|files --session <s>`).
+3. **Compose** the verdict — adopt or discard; adopted surface edits
+   go through `regulus surface propose` (guardian + budget).
 
-The ledger caps probe runs per day like reflect runs; a refusal is
-recorded. Never probe unasked.
+Caps bound reflect AND probe per day and per task; refusals are
+recorded and free. Never probe unasked.
