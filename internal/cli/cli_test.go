@@ -15,6 +15,7 @@ import (
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
+	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/receipts"
 )
@@ -1792,5 +1793,73 @@ func TestEvolveProposeRefusals(t *testing.T) {
 	}
 	if !strings.Contains(errb3.String(), "unknown subcommand") {
 		t.Fatalf("stderr = %q", errb3.String())
+	}
+}
+
+func TestInitScaffoldsFreshRepo(t *testing.T) {
+	for _, stack := range []string{"go", "node", "smoke"} {
+		root := t.TempDir()
+		t.Chdir(root)
+		c, out, _ := newCLI(nil)
+		if code := c.Run([]string{"init", "--stack", stack}); code != 0 {
+			t.Fatalf("[%s] exit = %d", stack, code)
+		}
+		data, err := os.ReadFile("regulus.json")
+		if err != nil {
+			t.Fatalf("[%s] regulus.json: %v", stack, err)
+		}
+		cfg, err := gates.Load("regulus.json")
+		if err != nil || len(cfg.Gates) == 0 {
+			t.Fatalf("[%s] config must validate with gates: %+v (%v)", stack, cfg, err)
+		}
+		_ = data
+		if st, err := os.Stat("charts"); err != nil || !st.IsDir() {
+			t.Fatalf("[%s] charts/ missing", stack)
+		}
+		gi, err := os.ReadFile(".gitignore")
+		if err != nil || !strings.Contains(string(gi), ".regulus/") {
+			t.Fatalf("[%s] .gitignore must ignore .regulus/: %q (%v)", stack, gi, err)
+		}
+		if !strings.Contains(out.String(), "initialized:") {
+			t.Fatalf("[%s] output = %q", stack, out.String())
+		}
+	}
+}
+
+func TestInitRefusesOverwriteAndBadStack(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"g","layer":1,"command":"true"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"init"}); code != 1 {
+		t.Fatalf("overwrite exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "already exists") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	t.Chdir(t.TempDir())
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"init", "--stack", "cobol"}); code != 2 {
+		t.Fatalf("bad stack exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "unknown stack") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestInitKeepsExistingGitignoreEntry(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(".gitignore", []byte("node_modules/\n.regulus/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"init", "--stack", "smoke"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	gi, _ := os.ReadFile(".gitignore")
+	if strings.Count(string(gi), ".regulus/") != 1 {
+		t.Fatalf("must not duplicate the entry, got:\n%s", gi)
 	}
 }

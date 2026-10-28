@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -65,6 +66,8 @@ func (c CLI) Run(args []string) int {
 		return c.statusCmd(args[1:])
 	case "chart":
 		return c.chartCmd(args[1:])
+	case "init":
+		return c.initCmd(args[1:])
 	case "surface":
 		return c.surfaceCmd(args[1:])
 	case "evidence":
@@ -1287,7 +1290,102 @@ func (c CLI) evolveProposeCmd(args []string) int {
 	return 0
 }
 
-// chartCmd implements `regulus chart init <name> | list` — scaffold and
+// initCmd implements `regulus init [--stack go|node|smoke]`: onboard a
+// fresh repo (cross-project S8). Writes regulus.json (evolution budget
+// + one stack preset), creates charts/, and ensures .gitignore covers
+// .regulus/. Refuses when regulus.json already exists — init never
+// overwrites a configured project.
+func (c CLI) initCmd(args []string) int {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	stack := fs.String("stack", "smoke", "go | node | smoke")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus init [--stack go|node|smoke]")
+		return 2
+	}
+	if _, err := os.Stat("regulus.json"); err == nil {
+		fmt.Fprintln(c.Stderr, "init: regulus.json already exists — refusing to overwrite")
+		return 1
+	}
+	gates, ok := initPresets[*stack]
+	if !ok {
+		fmt.Fprintf(c.Stderr, "init: unknown stack %q (go | node | smoke)\n", *stack)
+		return 2
+	}
+	cfg := struct {
+		Evolution map[string]int   `json:"evolution"`
+		Gates     []map[string]any `json:"gates"`
+	}{
+		Evolution: map[string]int{"max_per_day": 10},
+		Gates:     gates,
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "init: %v\n", err)
+		return 1
+	}
+	if err := os.WriteFile("regulus.json", append(data, '\n'), 0o644); err != nil {
+		fmt.Fprintf(c.Stderr, "init: %v\n", err)
+		return 1
+	}
+	if err := os.MkdirAll("charts", 0o755); err != nil {
+		fmt.Fprintf(c.Stderr, "init: %v\n", err)
+		return 1
+	}
+	if err := ensureGitignore(); err != nil {
+		fmt.Fprintf(c.Stderr, "init: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)")
+	fmt.Fprintln(c.Stdout, "next: copy the .opencode/ harness config in, run regulus doctor, open your first Chart")
+	return 0
+}
+
+// initPresets are the starter gates per stack. Small and honest: each
+// command runs on a fresh checkout of that stack; replace them with the
+// project's real gates as the harness takes over.
+var initPresets = map[string][]map[string]any{
+	"go": {
+		{"name": "typecheck", "layer": 1, "command": "go build ./..."},
+		{"name": "unit-tests", "layer": 2, "command": "go test ./..."},
+	},
+	"node": {
+		{"name": "unit-tests", "layer": 1, "command": "npm test --if-present"},
+	},
+	"smoke": {
+		{"name": "presence", "layer": 1, "command": "test -f README.md && echo repo-present"},
+	},
+}
+
+// ensureGitignore appends the Regulus runtime-state block when the
+// repo has no .gitignore or it lacks a .regulus/ entry.
+func ensureGitignore() error {
+	data, err := os.ReadFile(".gitignore")
+	if err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.TrimSpace(line) == ".regulus/" {
+				return nil
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	f, err := os.OpenFile(".gitignore", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	block := "\n# Regulus runtime state — per-project, never committed\n.regulus/\n"
+	if err == nil && len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		block = "\n" + strings.TrimPrefix(block, "\n")
+	}
+	_, err = f.WriteString(block)
+	return err
+}
+
 // discover Charts (committed feature documents under charts).
 func (c CLI) chartCmd(args []string) int {
 	if len(args) == 0 {
@@ -1511,6 +1609,7 @@ Usage:
 Commands:
   budget show|record   the evolution ledger (show; record a probe run)
   chart init <name> | list             scaffold a Chart, list every Chart
+  init [--stack go|node|smoke]        scaffold regulus.json, charts/, .gitignore for a fresh repo
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
