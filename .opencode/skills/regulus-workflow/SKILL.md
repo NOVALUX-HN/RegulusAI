@@ -64,6 +64,8 @@ Delegate by reason, never by size:
   parallelizes or the context must stay thin.
 - **@regulus-verifier** — independent reproduction when a mistake
   would be hard to detect or undo.
+- **@regulus-proposer** — authors ONE structured candidate from the
+  `evolve propose` pack for guardian validation; never edits code.
 - **Guardians** — read-only proof at the end; never ask them to edit.
 
 ## PROBE (opt-in, budget-gated)
@@ -73,6 +75,8 @@ Propose–Probe–Compose step (k=1):
 
 1. **Propose** one candidate edit to the harness surface (a skill, a
    gate threshold, a prompt line), grounded in what just happened.
+   Route it through `@regulus-proposer`: it assembles the evolve
+   pack and authors the candidate shape a guardian validates.
 2. **Probe** it on the current task; observe the evidence.
 3. **Compose** the verdict — adopt or discard — and record the run:
    `regulus budget record --kind probe --detail "<what and why>"`.

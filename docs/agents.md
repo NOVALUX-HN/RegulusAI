@@ -31,6 +31,7 @@ back with receipts.
 | `@regulus-scout` | Read-only exploration with `file:line` evidence; reports what was NOT explored | Before writing, when you need a map |
 | `@regulus-worker` | One bounded unit against a Chart; edits, runs the gauntlet, returns receipts | When a unit is parallelizable or context must stay thin |
 | `@regulus-verifier` | Independent reproduction: reproduces the failure, then verifies the fix removes exactly that | High-risk changes; when a mistake would be hard to detect |
+| `@regulus-proposer` | Read-only author: assembles the evolve pack and authors ONE structured candidate (dimension/component/edit/rationale) for guardian validation | When the harness itself should improve from evidence, not intuition |
 
 ## Plugin commands
 
