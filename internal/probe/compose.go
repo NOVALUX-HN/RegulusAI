@@ -225,22 +225,22 @@ func mergeLineField(field, base, a, b string) ([]string, []lineHunk) {
 	if equalLines(al, vl) {
 		return al, nil
 	}
-	type seg struct {
-		b0, b1 int
-		lines  []string
-		fromA  bool
-	}
-	var segs []seg
-	for _, op := range diffOpcodes(bl, al) {
-		if op.tag != 'e' {
-			segs = append(segs, seg{op.b0, op.b1, append([]string{}, al[op.v0:op.v1]...), true})
-		}
-	}
-	for _, op := range diffOpcodes(bl, vl) {
-		if op.tag != 'e' {
-			segs = append(segs, seg{op.b0, op.b1, append([]string{}, vl[op.v0:op.v1]...), false})
-		}
-	}
+	return mergeSegments(field, bl, al, vl)
+}
+
+// seg is one variant's edit of a base range: base[b0:b1] becomes lines.
+type seg struct {
+	b0, b1 int
+	lines  []string
+	fromA  bool
+}
+
+// mergeSegments builds both variants' edits of the base lines, sorts
+// them by base range, clusters overlapping ones and walks the merge
+// left to right.
+func mergeSegments(field string, bl, al, vl []string) ([]string, []lineHunk) {
+	segs := buildSegs(bl, al, true)
+	segs = append(segs, buildSegs(bl, vl, false)...)
 	sort.Slice(segs, func(i, j int) bool {
 		if segs[i].b0 != segs[j].b0 {
 			return segs[i].b0 < segs[j].b0
@@ -250,58 +250,26 @@ func mergeLineField(field, base, a, b string) ([]string, []lineHunk) {
 		}
 		return segs[i].fromA && !segs[j].fromA
 	})
-	// Cluster segments that touch the same base region: strict base
-	// overlap, or two insertions at the same point. An insertion that
-	// merely abuts a change on the other side stays separate so both
-	// apply.
-	hasInsertAt := func(cluster []seg, p int) bool {
-		for _, s := range cluster {
-			if s.b0 == p && s.b1 == p {
-				return true
-			}
+	return walkClusters(field, bl, segs)
+}
+
+// buildSegs turns one variant's opcodes into its non-equal seg edits.
+func buildSegs(bl, variant []string, fromA bool) []seg {
+	var segs []seg
+	for _, op := range diffOpcodes(bl, variant) {
+		if op.tag != 'e' {
+			segs = append(segs, seg{op.b0, op.b1, append([]string{}, variant[op.v0:op.v1]...), fromA})
 		}
-		return false
 	}
-	var merged []string
-	var hunks []lineHunk
-	pos := 0
-	flush := func(cluster []seg, end int) {
-		if len(cluster) == 1 {
-			merged = append(merged, bl[pos:cluster[0].b0]...)
-			merged = append(merged, cluster[0].lines...)
-			pos = end
-			return
-		}
-		identical := true
-		for _, s := range cluster[1:] {
-			if s.b0 != cluster[0].b0 || s.b1 != cluster[0].b1 || !equalLines(s.lines, cluster[0].lines) {
-				identical = false
-				break
-			}
-		}
-		if identical {
-			merged = append(merged, bl[pos:cluster[0].b0]...)
-			merged = append(merged, cluster[0].lines...)
-			pos = end
-			return
-		}
-		merged = append(merged, bl[pos:cluster[0].b0]...)
-		merged = append(merged, bl[cluster[0].b0:end]...)
-		pos = end
-		var ha, hb []string
-		for _, s := range cluster {
-			if s.fromA {
-				ha = append(ha, s.lines...)
-			} else {
-				hb = append(hb, s.lines...)
-			}
-		}
-		hunks = append(hunks, lineHunk{
-			field: field, b0: cluster[0].b0, b1: end,
-			base: append([]string{}, bl[cluster[0].b0:end]...),
-			a:    ha, b: hb, insertLabel: cluster[0].b0 == end,
-		})
-	}
+	return segs
+}
+
+// walkClusters clusters segments that touch the same base region —
+// strict base overlap, or two insertions at the same point; an
+// insertion that merely abuts a change on the other side stays
+// separate so both apply — and flushes each cluster in order.
+func walkClusters(field string, bl []string, segs []seg) ([]string, []lineHunk) {
+	m := &merger{field: field, bl: bl}
 	cluster := []seg{segs[0]}
 	clusterEnd := segs[0].b1
 	for _, s := range segs[1:] {
@@ -312,13 +280,76 @@ func mergeLineField(field, base, a, b string) ([]string, []lineHunk) {
 			}
 			continue
 		}
-		flush(cluster, clusterEnd)
+		m.flush(cluster, clusterEnd)
 		cluster = []seg{s}
 		clusterEnd = s.b1
 	}
-	flush(cluster, clusterEnd)
-	merged = append(merged, bl[pos:]...)
-	return merged, hunks
+	m.flush(cluster, clusterEnd)
+	m.merged = append(m.merged, bl[m.pos:]...)
+	return m.merged, m.hunks
+}
+
+// hasInsertAt reports whether a cluster already inserts at base point p.
+func hasInsertAt(cluster []seg, p int) bool {
+	for _, s := range cluster {
+		if s.b0 == p && s.b1 == p {
+			return true
+		}
+	}
+	return false
+}
+
+// merger carries the left-to-right merge state: position in the base
+// lines, the merged output and the conflict hunks so far.
+type merger struct {
+	field  string
+	bl     []string
+	merged []string
+	hunks  []lineHunk
+	pos    int
+}
+
+// flush applies one cluster: a single edit (or several identical
+// ones) lands in the output; conflicting edits keep the base lines
+// and are recorded as a hunk for the caller to report.
+func (m *merger) flush(cluster []seg, end int) {
+	m.merged = append(m.merged, m.bl[m.pos:cluster[0].b0]...)
+	m.pos = end
+	if len(cluster) == 1 || identicalCluster(cluster) {
+		m.merged = append(m.merged, cluster[0].lines...)
+		return
+	}
+	m.merged = append(m.merged, m.bl[cluster[0].b0:end]...)
+	m.recordConflict(cluster, end)
+}
+
+// identicalCluster reports whether every edit in the cluster is the
+// same base range carrying the same lines.
+func identicalCluster(cluster []seg) bool {
+	for _, s := range cluster[1:] {
+		if s.b0 != cluster[0].b0 || s.b1 != cluster[0].b1 || !equalLines(s.lines, cluster[0].lines) {
+			return false
+		}
+	}
+	return true
+}
+
+// recordConflict keeps the base lines and files the hunk with each
+// side's variant lines.
+func (m *merger) recordConflict(cluster []seg, end int) {
+	var ha, hb []string
+	for _, s := range cluster {
+		if s.fromA {
+			ha = append(ha, s.lines...)
+		} else {
+			hb = append(hb, s.lines...)
+		}
+	}
+	m.hunks = append(m.hunks, lineHunk{
+		field: m.field, b0: cluster[0].b0, b1: end,
+		base: append([]string{}, m.bl[cluster[0].b0:end]...),
+		a:    ha, b: hb, insertLabel: cluster[0].b0 == end,
+	})
 }
 
 func equalLines(a, b []string) bool {
@@ -345,7 +376,21 @@ type opcode struct {
 // diffOpcodes aligns variant lines to base lines with the same LCS
 // approach diffLines uses, grouped into equal/replace/delete/insert
 // runs that partition the base range.
+// diffOpcodes aligns variant lines to base lines with the same LCS
+// approach diffLines uses, grouped into equal/replace/delete/insert
+// runs that partition the base range.
 func diffOpcodes(base, v []string) []opcode {
+	return groupOpcodes(lcsWalk(base, v, lcsTable(base, v)))
+}
+
+// lcsStep is one aligned line: keep, delete (from base) or insert.
+type lcsStep struct {
+	tag  byte // 'e' keep, 'd' delete base, 'i' insert variant
+	b, v int
+}
+
+// lcsTable fills the longest-common-subsequence DP table of base and v.
+func lcsTable(base, v []string) [][]int {
 	n, m := len(base), len(v)
 	lcs := make([][]int, n+1)
 	for i := range lcs {
@@ -362,64 +407,79 @@ func diffOpcodes(base, v []string) []opcode {
 			}
 		}
 	}
-	type step struct {
-		tag  byte // 'e' keep, 'd' delete base, 'i' insert variant
-		b, v int
-	}
-	var steps []step
+	return lcs
+}
+
+// lcsWalk turns the DP table into per-line keep/delete/insert steps.
+func lcsWalk(base, v []string, lcs [][]int) []lcsStep {
+	n, m := len(base), len(v)
+	var steps []lcsStep
 	for i, j := 0, 0; i < n || j < m; {
 		switch {
 		case i < n && j < m && base[i] == v[j]:
-			steps = append(steps, step{'e', i, j})
+			steps = append(steps, lcsStep{'e', i, j})
 			i++
 			j++
 		case j < m && (i >= n || lcs[i][j+1] >= lcs[i+1][j]):
-			steps = append(steps, step{'i', i, j})
+			steps = append(steps, lcsStep{'i', i, j})
 			j++
 		default:
-			steps = append(steps, step{'d', i, j})
+			steps = append(steps, lcsStep{'d', i, j})
 			i++
 		}
 	}
-	var ops []opcode
-	emit := func(tag byte, b0, b1, v0, v1 int) {
-		ops = append(ops, opcode{tag, b0, b1, v0, v1})
-	}
-	for k := 0; k < len(steps); {
-		t := steps[k].tag
-		b0, v0 := steps[k].b, steps[k].v
-		b1, v1 := b0, v0
-		for k < len(steps) && steps[k].tag == t {
-			if t == 'e' || t == 'd' {
-				b1 = steps[k].b + 1
-			} else {
-				b1 = steps[k].b
-			}
-			if t == 'e' || t == 'i' {
-				v1 = steps[k].v + 1
-			} else {
-				v1 = steps[k].v
-			}
-			k++
+	return steps
+}
+
+// extendRun folds the consecutive steps of one tag starting at k into
+// a [b0,b1) x [v0,v1) run and returns the next unconsumed index.
+func extendRun(steps []lcsStep, k int) (tag byte, b0, b1, v0, v1, next int) {
+	tag = steps[k].tag
+	b0, v0 = steps[k].b, steps[k].v
+	b1, v1 = b0, v0
+	for next = k; next < len(steps) && steps[next].tag == tag; next++ {
+		if tag == 'e' || tag == 'd' {
+			b1 = steps[next].b + 1
+		} else {
+			b1 = steps[next].b
 		}
-		// A delete run immediately followed by an insert run (or vice
-		// versa) at the same base point is one replacement.
-		if (t == 'd' || t == 'i') && k < len(steps) && steps[k].tag != 'e' && steps[k].tag != t && steps[k].b == b1 {
-			t2 := steps[k].tag
-			_ = t2
-			b2, v2 := b1, v1
-			for k < len(steps) && steps[k].tag != 'e' && steps[k].b >= b1 {
-				if steps[k].tag == 'd' {
-					b2 = steps[k].b + 1
-				} else {
-					v2 = steps[k].v + 1
-				}
-				k++
-			}
-			emit('r', b0, b2, v0, v2)
+		if tag == 'e' || tag == 'i' {
+			v1 = steps[next].v + 1
+		} else {
+			v1 = steps[next].v
+		}
+	}
+	return
+}
+
+// replaceTail folds a delete+insert pair at one base point into a
+// single replacement run. It returns the run end and the next index.
+func replaceTail(steps []lcsStep, k, b1, v1 int) (b2, v2, next int) {
+	b2, v2 = b1, v1
+	for ; k < len(steps) && steps[k].tag != 'e' && steps[k].b >= b1; k++ {
+		if steps[k].tag == 'd' {
+			b2 = steps[k].b + 1
+		} else {
+			v2 = steps[k].v + 1
+		}
+	}
+	return b2, v2, k
+}
+
+// groupOpcodes folds consecutive same-tag steps into runs; a delete
+// run abutting an insert run at the same base point is one replacement.
+func groupOpcodes(steps []lcsStep) []opcode {
+	var ops []opcode
+	for k := 0; k < len(steps); {
+		t, b0, b1, v0, v1, next := extendRun(steps, k)
+		if (t == 'd' || t == 'i') && next < len(steps) && steps[next].tag != 'e' && steps[next].tag != t && steps[next].b == b1 {
+			b2, v2, after := replaceTail(steps, next, b1, v1)
+			ops = append(ops, opcode{'r', b0, b2, v0, v2})
+			k = after
 			continue
 		}
-		emit(t, b0, b1, v0, v1)
+		ops = append(ops, opcode{t, b0, b1, v0, v1})
+		k = next
 	}
 	return ops
 }
