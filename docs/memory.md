@@ -86,7 +86,8 @@ log instead of a second mutable copy of the data.
 | F1 | `regulus memory note <text>` | append one timestamped session note |
 | F1 | `regulus memory show` | print the session notes (what the compaction hook injects) |
 | F3 | `regulus memory save` | full observation with type validation and provenance |
-| F3 | `regulus memory search [terms] [--topic-key] [--domain] [--dimension inv\|dom]` | deterministic bucket-then-match retrieval with staleness annotations |
+| F3 | `regulus memory search [terms] [--topic-key] [--domain] [--dimension inv\|dom] [--path <f>]` | deterministic bucket-then-match retrieval with staleness annotations |
+| F3 | `regulus memory prune [--older-than-days N] [--type ...] [--yes]` | drop stale non-lesson observations (dry run by default; lessons + pins immune) |
 | F3 | `regulus memory context` | deterministic resume block: open feature document, task list, last notes |
 | F4 | `regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv\|dom] [--confidence] <feature-doc>` | evidence-gated lesson candidate (dimension defaults to unset) |
 | F3 | `regulus memory history <topic-key>` | revision chain of one evolving topic |

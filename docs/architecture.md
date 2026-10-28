@@ -72,14 +72,19 @@ Evolution (Loop 3) edits this surface. Nothing else may.
 │                           the memory substrate — docs/memory.md)
 ├── library/<domain>/
 │     INDEX.md                          lesson index (regenerated from disk)
-│     └── lessons/<id>/LESSON.md        cue / lesson / evidence / confidence
-└── budget.json                        ledger of evolution runs
+│     ├── lessons/<id>/LESSON.md        cue / lesson / evidence / confidence / dimension
+│     └── harnesses/<task-slug>/        adopted snapshot: tree/ + EXPERIENCE.md (why + lesson)
+├── traces/<session>.jsonl            agent-process capture (tool, order, status, file hints)
+├── surface/edits.jsonl               proposed/applied harness-surface edits
+├── memory/pins.jsonl, relations.jsonl pins + relations over observations
+└── budget.json                        ledger of evolution runs (reflect + probe, per-day and per-task caps)
 ```
 
 Committed, never under `.regulus/`:
 
-- `regulus.json` — project config: gates (`name`/`layer`/`command`/`timeout_sec`)
+- `regulus.json` — project config: gates (`name`/`layer`/`command`/`timeout_sec`), evolution caps (`max_per_day`, `max_per_task`)
 - `charts/<feature>.md` — Charts: the committed feature documents
+- `.opencode/discipline.md`, `.opencode/tool-guidance.md` — the editable system prompt and tool descriptions (harness surface; compiled fallbacks in the plugin)
 
 **Single writer:** the core. The plugin and agents never mutate state
 directly; they invoke core subcommands.
