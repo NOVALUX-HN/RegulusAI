@@ -4,6 +4,44 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.6.0] — 2026-10-28 — elite hardening + functional completion
+
+Same branch/PR as v0.4+v0.5; tagged together at merge. Two series:
+
+### Elite (E-series) — the harness's own review caught the gaps
+- `E1`: OpenCode v2.2.0 install verified (`regulus doctor` V2 green).
+- `E3`: plugin domain tests committed (bun:test, run in CI) + CLI
+  smokes in the gauntlet workflow.
+- `E4`: `@regulus-proposer` — the read-only author consuming the
+  evolve evidence pack (closes the authoring half of V5.7).
+- `E5`: `regulus init [--stack go|node|smoke]` — fresh-repo scaffold.
+- `E6`: skill trigger suggestions in the context hook (conservative
+  2-word match, DATA-framed).
+- `E7`: per-task evolution caps (`max_per_task`, default half daily).
+- `E8`: `memory prune` (dry-run default, --yes executes; lessons +
+  pins immune).
+- `E9`: `trace sessions` / `trace prune` rotation.
+- `E10`: docs swept to the v0.4/v0.5 reality; stamped version
+  verified through `build.bash`.
+
+### Functional (F-series) — found by the gauntlet itself (CI red)
+- `F1`: compose.go CRAP hotspots split (34.53/32.07 → max 26.68);
+  full local gauntlet 8/8 — the verification step CI charged for.
+- `F3`: discipline + SKILL teach the new surface (PROBE section now
+  the real flow; stale budget-record routing removed).
+- `F4`: `evolve_propose`, `probe_contrast`, `trace_show`,
+  `skills_list` plugin tools (13 total) + guidance-sync guard test.
+- `F5`: `TestV06Functional` — the deterministic end-to-end journey
+  (init → gauntlet → traces → contrast → reflect → admit → evolve →
+  status).
+- `F7`: `@opencode/plugin` 2.1.4 → 2.2.0 (matches installed runtime).
+- `F9`: `init --harness-from <repo>` bootstraps the .opencode config
+  (config only, never node_modules/lockfiles).
+
+### Pending (owner)
+- `F8`/`E2`: live OpenCode session proof (checklist in the feature
+  doc). npm publish (token pending), merge + `v0.6.0` tags.
+
 ## [0.5.0] — 2026-10-27 — vanguard (harness² mechanisms, personal use)
 
 Branch: `feat/v0.4-evolution` (v0.4 + v0.5 ship together; tags cut on main at merge).

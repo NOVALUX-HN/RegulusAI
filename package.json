@@ -1,6 +1,6 @@
 {
   "name": "regulus-ai",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "The Regulus AI core CLI — the compiled owner of gauntlet evidence, the Almanac memory and the evolution ledger (the Sextant harness for OpenCode V2).",
   "license": "MIT",
   "repository": {
