@@ -41,6 +41,73 @@ export function extractPaths(text: string): string[] {
   return out
 }
 
+// Skill is one trigger entry: the skill name plus its one-line
+// trigger (the SKILL.md frontmatter description).
+export interface Skill {
+  name: string;
+  description: string;
+}
+
+// loadSkills reads the repo's skill registry from SKILL.md frontmatter.
+// Missing skills dir or unreadable files yield an empty registry — the
+// hook simply suggests nothing.
+export async function loadSkills(dir: string): Promise<Skill[]> {
+  const out: Skill[] = [];
+  try {
+    for (const path of Array.from(new Bun.Glob("skills/*/SKILL.md").scanSync({ cwd: `${dir}/.opencode` }))) {
+      try {
+        const text = await Bun.file(`${dir}/.opencode/${path}`).text();
+        const head = text.split("##", 1)[0];
+        let name = "";
+        let description = "";
+        for (const line of head.split("\n")) {
+          const t = line.trim();
+          if (t.startsWith("name:")) name = t.slice(5).trim();
+          else if (t.startsWith("description:")) description = t.slice(12).trim();
+        }
+        if (name === "") name = path.split("/")[1] ?? path;
+        out.push({ name, description });
+      } catch {
+        // unreadable skill — skip it, keep the rest
+      }
+    }
+  } catch {
+    // no skills dir — no suggestions
+  }
+  out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return out;
+}
+
+const SKILL_STOPWORDS = new Set([
+  "about", "after", "before", "with", "from", "that", "this", "with", "your", "when", "whenever",
+  "which", "their", "them", "they", "then", "than", "there", "these", "those", "through",
+]);
+
+// distinctiveWords lowercases text into length>=5 non-stopword tokens.
+export function distinctiveWords(text: string): string[] {
+  const out: string[] = [];
+  for (const w of text.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (w.length >= 5 && !SKILL_STOPWORDS.has(w) && !out.includes(w)) out.push(w);
+  }
+  return out;
+}
+
+// suggestSkills matches recent message words against each skill's
+// name+description. A skill scores one point per shared distinctive
+// word; only skills with >=2 points are suggested, best first, at most
+// two. Conservative by design: a wrong suggestion costs context.
+export function suggestSkills(skills: Skill[], messagesText: string): Skill[] {
+  const hay = new Set(distinctiveWords(messagesText));
+  if (hay.size === 0) return [];
+  const scored = skills
+    .map((s) => ({
+      skill: s,
+      score: distinctiveWords(`${s.name} ${s.description}`).filter((w) => hay.has(w)).length,
+    }))
+    .filter((e) => e.score >= 2)
+    .sort((a, b) => b.score - a.score || (a.skill.name < b.skill.name ? -1 : 1));
+  return scored.slice(0, 2).map((e) => e.skill);
+}
 // RunBin runs the regulus binary; injected so tests can fake it.
 export type RunBin = (args: string[]) => Promise<{ exitCode: number; output: string }>
 

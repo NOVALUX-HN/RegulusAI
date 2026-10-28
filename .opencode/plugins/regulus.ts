@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { extractPaths, resolveDomain } from "./domain"
+import { extractPaths, loadSkills, resolveDomain, suggestSkills } from "./domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -398,6 +398,18 @@ export default Plugin.define({
       const lessons = await run(bin, args)
       if (lessons.exitCode === 0 && lessons.output !== "" && !lessons.output.startsWith("no matching")) {
         event.system.push({ type: "text", text: dataBlock("regulus_admitted_lessons", lessons.output) })
+      }
+      // Skill suggestions (E6): match recent message words against
+      // skill triggers; conservative (2+ shared words, max 2), DATA.
+      try {
+        const skills = await loadSkills(dir)
+        const suggested = suggestSkills(skills, recent)
+        if (suggested.length > 0) {
+          const lines = suggested.map((s) => (s.description !== "" ? `- ${s.name}: ${s.description}` : `- ${s.name}`))
+          event.system.push({ type: "text", text: dataBlock("regulus_suggested_skills", lines.join("\n")) })
+        }
+      } catch {
+        // suggestions are best-effort; never break context assembly
       }
     })
 

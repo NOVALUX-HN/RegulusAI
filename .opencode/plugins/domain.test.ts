@@ -3,10 +3,12 @@
 // needed: domain.ts has zero host imports by design.
 import { describe, expect, test } from "bun:test";
 import {
+  distinctiveWords,
   extractPaths,
   findChartRefs,
   findDomainInChart,
   resolveDomain,
+  suggestSkills,
   type RunBin,
 } from "./domain";
 
@@ -129,3 +131,31 @@ async function mkTmpCharts(files: Record<string, string>): Promise<string> {
 async function rmTmp(dir: string): Promise<void> {
   await Bun.$`rm -rf ${dir}`.quiet();
 }
+
+describe("suggestSkills", () => {
+  const skills = [
+    { name: "regulus-workflow", description: "The Sextant evidence-first workflow: authorize, chart, build, prove, learn" },
+    { name: "other", description: "Unrelated gardening notes about roses" },
+  ];
+  test("matches on shared distinctive words", () => {
+    const got = suggestSkills(skills, "run the evidence-first workflow and prove the chart");
+    expect(got.map((s) => s.name)).toEqual(["regulus-workflow"]);
+  });
+  test("needs two shared words", () => {
+    expect(suggestSkills(skills, "workflow stuff")).toEqual([]);
+  });
+  test("caps at two and sorts by score", () => {
+    const many = [
+      { name: "a-one", description: "evidence workflow chart prove learn authorize build" },
+      { name: "b-two", description: "evidence workflow chart" },
+      { name: "c-three", description: "evidence workflow chart prove learn" },
+    ];
+    expect(suggestSkills(many, "evidence workflow chart prove learn authorize").map((s) => s.name)).toEqual([
+      "a-one",
+      "c-three",
+    ]);
+  });
+  test("distinctiveWords filters short and stop words", () => {
+    expect(distinctiveWords("Run the charts when ready")).toEqual(["charts", "ready"]);
+  });
+});
