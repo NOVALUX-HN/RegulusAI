@@ -58,3 +58,15 @@ Print a session's tool-execution fingerprint (sequence, tool, status) — the di
 ## skills_list
 
 List the registered skills with their one-line triggers.
+
+## trace_sessions
+
+List the session ids with tool-execution traces on disk, oldest first.
+
+## trace_files
+
+List the distinct touched paths of one session trace, in call order.
+
+## probe_compose
+
+Run one gate three times (base plus two variants) and merge non-conflicting changes, flagging conflicts — behavioral contrast as evidence.

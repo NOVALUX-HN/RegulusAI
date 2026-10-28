@@ -58,6 +58,10 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
   trace_show:
     "Print a session's tool-execution fingerprint (sequence, tool, status) — the diffable process trace.",
   skills_list: "List the registered skills with their one-line triggers.",
+  trace_sessions: "List the session ids with tool-execution traces on disk, oldest first.",
+  trace_files: "List the distinct touched paths of one session trace, in call order.",
+  probe_compose:
+    "Run one gate three times (base plus two variants) and merge non-conflicting changes, flagging conflicts — behavioral contrast as evidence.",
 }
 
 // parseToolGuidance reads "## <name>" sections; each body collapses to
@@ -284,10 +288,15 @@ export default Plugin.define({
         input: {
           type: "object",
           properties: {
-            terms: { type: "string", description: "space-separated search terms (all must match)" },
+            terms: { type: "string", description: "space-separated search terms" },
             topic_key: { type: "string", description: "optional bucket: topic key" },
             domain: { type: "string", description: "optional bucket: domain" },
             dimension: { type: "string", description: "optional bucket: lesson dimension (inv | dom)" },
+            path: { type: "string", description: "optional bucket: provenance path (exact match)" },
+            limit: { type: "string", description: "optional: keep the first N results (0: all; default 20)" },
+            any: { type: "string", description: "optional: any term may match (default: all must) — pass 'true'" },
+            latest: { type: "string", description: "optional: collapse each topic chain to its best hit — pass 'true'" },
+            include_superseded: { type: "string", description: "optional: show observations a supersedes relation hides — pass 'true'" },
             type: { type: "string", description: "optional bucket: observation type" },
           },
           required: ["terms"],
@@ -295,11 +304,16 @@ export default Plugin.define({
         },
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
-          const { terms, topic_key, domain, dimension, type } = input as Record<string, string>
+          const { terms, topic_key, domain, dimension, path, limit, any, latest, include_superseded, type } = input as Record<string, string>
           const args = ["memory", "search"]
           if (topic_key) args.push("--topic-key", topic_key)
           if (domain) args.push("--domain", domain)
           if (dimension) args.push("--dimension", dimension)
+          if (path) args.push("--path", path)
+          if (limit) args.push("--limit", limit)
+          if (any === "true") args.push("--any")
+          if (latest === "true") args.push("--latest")
+          if (include_superseded === "true") args.push("--include-superseded")
           if (type) args.push("--type", type)
           for (const term of (terms ?? "").split(/\s+/).filter((t) => t !== "")) {
             args.push(term)
@@ -392,6 +406,63 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
           const res = await run(bin, ["skills", "list"], context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "trace_sessions",
+        description: guidance["trace_sessions"],
+        input: { type: "object", properties: {}, additionalProperties: false },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (_input, context) => {
+          const res = await run(bin, ["trace", "sessions"], context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "trace_files",
+        description: guidance["trace_files"],
+        input: {
+          type: "object",
+          properties: {
+            session: { type: "string", description: "the session id whose touched paths to list" },
+          },
+          required: ["session"],
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { session } = input as Record<string, string>
+          const res = await run(bin, ["trace", "files", "--session", session], context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "probe_compose",
+        description: guidance["probe_compose"],
+        input: {
+          type: "object",
+          properties: {
+            task: { type: "string", description: "task id for the evidence receipts" },
+            gate: { type: "string", description: "configured gate to run three times" },
+            base: { type: "string", description: "baseline command variant" },
+            a: { type: "string", description: "first command variant" },
+            b: { type: "string", description: "second command variant" },
+          },
+          required: ["task", "gate", "base", "a", "b"],
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { task, gate, base, a, b } = input as Record<string, string>
+          const res = await run(
+            bin,
+            ["probe", "compose", "--task", task, "--gate", gate, "--base", base, "--a", a, "--b", b],
+            context.signal,
+          )
           return { content: res.output }
         },
       })

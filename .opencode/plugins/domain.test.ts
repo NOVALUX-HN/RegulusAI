@@ -1,7 +1,7 @@
 // Committed checks for the plugin's pure domain logic (G1.4, V5.2).
 // Run with `bun test` from .opencode/ (also in CI). No OpenCode host
 // needed: domain.ts has zero host imports by design.
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import {
   distinctiveWords,
   extractPaths,
@@ -179,6 +179,93 @@ describe("tool guidance sync", () => {
     }
     for (const name of Object.keys(defaults)) {
       expect(sections.find(([n]) => n === name)).toBeDefined();
+    }
+  });
+});
+
+describe("tool param sync", () => {
+  const src = { text: "" as string };
+  beforeAll(async () => {
+    const root = import.meta.dir + "/../..";
+    src.text = await Bun.file(`${root}/.opencode/plugins/regulus.ts`).text();
+  });
+
+  function toolBlocks(): { name: string; body: string }[] {
+    const starts: number[] = [];
+    let i = 0;
+    for (;;) {
+      const k = src.text.indexOf("editor.add({", i);
+      if (k < 0) break;
+      starts.push(k);
+      i = k + 1;
+    }
+    const out: { name: string; body: string }[] = [];
+    for (let n = 0; n < starts.length; n++) {
+      const body = src.text.slice(starts[n], n + 1 < starts.length ? starts[n + 1] : src.text.length);
+      if (!body.includes('namespace: "regulus"')) continue;
+      const m = body.match(/name: "([^"]+)"/);
+      if (m) out.push({ name: m[1], body });
+    }
+    return out;
+  }
+
+  // Brace-match the properties object: regex-to-indentation leaks
+  // sibling keys (required, additionalProperties) into the set.
+  // The opening `properties: {` line itself is not a prop.
+  function declaredProps(body: string): Set<string> {
+    const start = body.indexOf("properties: {");
+    if (start < 0) return new Set();
+    let depth = 0;
+    for (let k = start; k < body.length; k++) {
+      if (body[k] === "{") depth++;
+      if (body[k] === "}") {
+        depth--;
+        if (depth === 0) {
+          const inner = body.slice(start, k);
+          return new Set(
+            [...inner.matchAll(/^\s*(\w+)\s*:\s*\{/gm)]
+              .map((m) => m[1])
+              .filter((p) => p !== "properties"),
+          );
+        }
+      }
+    }
+    return new Set();
+  }
+
+  // Pre-existing CLI convention: memory_save's comma-joined inputs keep
+  // singular --flags for plural props. Documented per-tool so the
+  // check stays honest instead of fuzzy-matching names.
+  const FLAG_EXCEPTIONS: Record<string, string> = {
+    "memory_save::--path": "paths",
+    "memory_save::--receipt": "receipts",
+  };
+  const kebab = (p: string) => "--" + p.replace(/_/g, "-");
+  const propOf = (tool: string, f: string) =>
+    FLAG_EXCEPTIONS[`${tool}::${f}`] ?? f.slice(2).replace(/-/g, "_");
+
+  test("every tool wires its declared params to CLI flags", () => {
+    const blocks = toolBlocks();
+    expect(blocks.length).toBeGreaterThan(10);
+    for (const { name, body } of blocks) {
+      const props = declaredProps(body);
+      const reqM = body.match(/required: \[([^\]]*)\]/);
+      const required: string[] = reqM ? [...reqM[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
+      const flags = new Set([...body.matchAll(/"(--[a-z][\w-]*)"/g)].map((m) => m[1]));
+      const destM = body.match(/const \{([^}]*)\} = input/);
+      const destructured = new Set(
+        destM ? [...destM[1].split(",")].map((s) => s.trim()).filter((s) => s !== "") : [],
+      );
+      for (const r of required) {
+        expect(props.has(r)).toBe(true);
+        expect(destructured.has(r) || flags.has(kebab(r))).toBe(true);
+      }
+      for (const p of props) {
+        expect(destructured.has(p) || flags.has(kebab(p))).toBe(true);
+      }
+      for (const f of flags) {
+        expect(props.has(propOf(name, f))).toBe(true);
+      }
     }
   });
 });
