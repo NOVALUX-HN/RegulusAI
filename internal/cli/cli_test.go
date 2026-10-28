@@ -181,8 +181,25 @@ func TestDoctorSupportedOutputLine(t *testing.T) {
 	if code := c.Run([]string{"doctor"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if got, want := out.String(), "opencode 2.1.0 — supported (V2)\n"; got != want {
-		t.Fatalf("output = %q, want %q (the runtime's own version line, not doubled)", got, want)
+	if got, want := out.String(), "version:    test (no package.json — nothing to compare)\nopencode 2.1.0 — supported (V2)\n"; got != want {
+		t.Fatalf("output = %q, want %q (version line, then the runtime's own version line)", got, want)
+	}
+}
+
+func TestDoctorWarnsOnVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.WriteFile("package.json", []byte(`{"version":"9.9.9"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(func() doctor.Result {
+		return doctor.Result{Detected: "opencode 2.1.0", Major: 2, Supported: true}
+	})
+	if code := c.Run([]string{"doctor"}); code != 0 {
+		t.Fatalf("a version warning must not fail doctor, exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "WARNING — binary says test but package.json says 9.9.9") {
+		t.Fatalf("output = %q", out.String())
 	}
 }
 

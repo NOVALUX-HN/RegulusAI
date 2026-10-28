@@ -103,6 +103,7 @@ func (c CLI) Run(args []string) int {
 
 func (c CLI) doctor() int {
 	res := c.Probe()
+	fmt.Fprintln(c.Stdout, doctor.VersionLine(".", c.Version))
 	if res.Supported {
 		fmt.Fprintf(c.Stdout, "%s — supported (V2)\n", res.Detected)
 		return 0
