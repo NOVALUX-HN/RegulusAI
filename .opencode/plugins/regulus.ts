@@ -476,7 +476,7 @@ export default Plugin.define({
     await ctx.session.hook("context", async (event) => {
       const recent = JSON.stringify(event.messages ?? []).slice(-20000)
       const domain = await resolveDomain(dir, (args) => run(bin, args), recent, event.sessionID)
-      const args = ["memory", "search", "--type", "lesson"]
+      const args = ["memory", "search", "--type", "lesson", "--limit", "3"]
       if (domain !== "") args.push("--domain", domain)
       const lessons = await run(bin, args)
       if (lessons.exitCode === 0 && lessons.output !== "" && !lessons.output.startsWith("no matching")) {

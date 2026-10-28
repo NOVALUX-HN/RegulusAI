@@ -4,6 +4,20 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.7.0] — 2026-10-28 — almanac-level memory (personal use)
+
+Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
+
+- `memory search`: `--latest` (opt-in chain collapse, pinned wins), `--any`, default `--limit 20` (hook injects top 3); confidence-ranked lessons; superseded hidden with `--include-superseded` escape + conflict marking.
+- `memory doctor`: health report (counts, oldest/newest, malformed lines, orphan pins/relations).
+- `memory import <file>`: restore export bundles, idempotent by id, validated per line.
+- `memory prune`: dry-run default, `--yes` executes; lessons + pins immune.
+- Per-task evolution caps (`max_per_task`, default half the daily cap); `trace sessions`/`trace prune`.
+- Probe evidence separated under `evidence/<task>/probe/`; evolve pack carries a distinct Probe section.
+- `regulus doctor` warns on stale/unstamped binaries vs package.json.
+- `regulus init [--stack][--harness-from]` + `skills list` + chart `Domain:` template.
+- `@regulus-proposer` + guidance/domain sync bun tests, all in CI.
+
 ## [0.6.0] — 2026-10-28 — elite hardening + functional completion
 
 Same branch/PR as v0.4+v0.5; tagged together at merge. Two series:

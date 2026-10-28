@@ -2,7 +2,7 @@
 
 **An OpenCode-native, self-improving engineering harness: a guardian gauntlet over the code, the Sextant workflow over the work, and evidence-driven evolution of the harness itself.**
 
-> Status: v0.6.0 — Gauntlet · Discipline · self-editing Evolution, now with the full functional loop (init onboarding, traces, probe contrast/compose, evolve evidence packs, per-task caps, prune/rotation) — proven by the suite and the v0.6 functional journey on this very repository.
+> Status: v0.7.0 — Gauntlet · Discipline · self-improving Evolution, now with an Almanac-level memory (supersede/conflicts honored, prune/import/doctor, per-task caps) and the full functional loop — proven by the suite, the gauntlet and the live OpenCode 2.2 boundary on this very repository.
 
 Regulus AI fuses four proven ideas into one harness for [OpenCode](https://opencode.ai) V2:
 
