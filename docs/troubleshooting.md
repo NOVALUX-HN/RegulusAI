@@ -60,3 +60,41 @@ changed.
 Surface edits can only target: `.opencode/skills/`, `.opencode/agents/`,
 `.opencode/plugins/`, and `docs/`. Code, configs and everything else are
 outside the harness surface by design.
+
+## Surface edits are refused with "is a reserved harness file"
+
+`scripts/build.bash` sits inside the whitelist but is reserved: release
+infrastructure changes by hand (a human decision), never as a side
+effect of an adopted lesson. Edit it directly; no flag overrides this.
+
+## `regulus reflect` or `probe contrast` says "evolution cap reached"
+
+Two caps gate evolution: per day (`max_per_day`, default 10) and per
+task (`max_per_task`, default half the daily cap). A refusal names which
+one (`cap N reached` vs `task cap N reached`) and is recorded but free.
+Wait for the next day, or raise the cap in `regulus.json`.
+
+## `regulus memory prune` lists entries but removes nothing
+
+That's the design: without `--yes` it's a dry run. Re-run the exact
+same command with `--yes` appended to execute. Lessons and pinned
+observations are immune and never listed.
+
+## `regulus memory import` says "line N: ..." and imports nothing
+
+The import is atomic: the first invalid line aborts the whole file so
+a half-imported log is impossible. Fix the cited line (missing id,
+unknown type, lesson without evidence) and re-run — already-imported
+ids are skipped, so re-running is safe.
+
+## `regulus evolve propose` says "no evidence"
+
+Proposing needs receipts: run the gauntlet for the task first
+(`regulus gate run <task>`), then propose. An evidence gate with no
+evidence refuses instead of inventing a lesson.
+
+## New charts lack the `Domain:` line
+
+`regulus chart init` scaffolds `Domain: <name>` at the top — set it to
+the lesson domain (e.g. `go`, `docs`) so the context hook injects
+that domain's lessons instead of the newest of all domains.
