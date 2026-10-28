@@ -1863,3 +1863,58 @@ func TestInitKeepsExistingGitignoreEntry(t *testing.T) {
 		t.Fatalf("must not duplicate the entry, got:\n%s", gi)
 	}
 }
+
+func TestMemoryPruneDryRunByDefault(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	old := time.Now().UTC().Add(-100 * 24 * time.Hour)
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "stale", Content: "c"}, old); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "prune"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "stale") || !strings.Contains(out.String(), "dry run") {
+		t.Fatalf("dry run must list and refuse: %q", out.String())
+	}
+	all, _ := almanac.All(".")
+	if len(all) != 1 {
+		t.Fatal("dry run must not remove anything")
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "prune", "--yes"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "pruned 1 observation(s)") {
+		t.Fatalf("output = %q", out2.String())
+	}
+	all, _ = almanac.All(".")
+	if len(all) != 0 {
+		t.Fatalf("after --yes, log = %+v", all)
+	}
+}
+
+func TestMemoryPruneKeepsLessonsAndPinned(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	old := time.Now().UTC().Add(-100 * 24 * time.Hour)
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeLesson, Title: "old lesson", Content: "c",
+		Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low"}}, old); err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "keep me", Content: "c"}, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := almanac.Pin(".", pinned.ID, true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "prune", "--yes"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "nothing to prune") {
+		t.Fatalf("lessons+pinned must be immune, got %q", out.String())
+	}
+}

@@ -181,11 +181,12 @@ func validTaskID(s string) bool {
 
 // memoryCmd implements the Almanac surface (docs/memory.md):
 // note|show (session notes), save|search|history (the full substrate),
-// context (the deterministic resume block) — dispatched per subcommand.
+// context (the deterministic resume block), prune (staleness pruning
+// with human confirmation) — dispatched per subcommand.
 // Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune")
 		return 2
 	}
 	switch args[0] {
@@ -209,11 +210,69 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryExportCmd(args[1:])
 	case "context":
 		return c.memoryContextCmd(args[1:])
+	case "prune":
+		return c.memoryPruneCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune")
 		return 2
 	}
+}
+
+// memoryPruneCmd implements `regulus memory prune [--older-than-days N]
+// [--type t1,t2] [--yes]`: drop stale non-lesson observations.
+// Lessons and pinned observations are never pruned (safety
+// invariants in almanac.Prune). Without --yes it is a dry run: lists
+// what WOULD be removed and removes nothing — the human confirmation
+// is the explicit flag.
+func (c CLI) memoryPruneCmd(args []string) int {
+	fs := flag.NewFlagSet("memory prune", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	olderThan := fs.Int("older-than-days", 90, "prune observations older than N days")
+	types := fs.String("type", "", "only these observation types, comma-separated (lessons are never pruned)")
+	yes := fs.Bool("yes", false, "execute the prune (default is a dry run)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 || *olderThan < 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory prune [--older-than-days N] [--type t1,t2] [--yes]")
+		return 2
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -*olderThan)
+	var filter map[string]bool
+	if *types != "" {
+		filter = map[string]bool{}
+		for _, t := range splitList(*types) {
+			filter[t] = true
+		}
+	}
+	removed, err := almanac.Prune(".", func(o almanac.Observation) bool {
+		if filter != nil && !filter[o.Type] {
+			return true
+		}
+		return !o.SavedAt.Before(cutoff)
+	})
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory prune: %v\n", err)
+		return 1
+	}
+	if len(removed) == 0 {
+		fmt.Fprintln(c.Stdout, "nothing to prune")
+		return 0
+	}
+	for _, o := range removed {
+		fmt.Fprintf(c.Stdout, "%s %s %s\n", o.ID, o.Type, o.Title)
+	}
+	if !*yes {
+		fmt.Fprintln(c.Stdout, "dry run: re-run with --yes to remove the above")
+		return 0
+	}
+	if err := almanac.ApplyPrune(".", removed); err != nil {
+		fmt.Fprintf(c.Stderr, "memory prune: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "pruned %d observation(s)\n", len(removed))
+	return 0
 }
 
 // memoryNoteCmd implements `regulus memory note <text>`.

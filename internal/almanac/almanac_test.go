@@ -451,3 +451,54 @@ func TestProvenancePathBucket(t *testing.T) {
 		t.Fatalf("path miss = %+v (%v)", none, err)
 	}
 }
+
+func TestPruneSelectsOldUnpinnedNonLessons(t *testing.T) {
+	root := t.TempDir()
+	old := t0.Add(-30 * 24 * time.Hour)
+	recent := t0
+	save := func(o *Observation, at time.Time) Observation {
+		t.Helper()
+		saved, err := Save(root, o, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	// NOTE: ids derive from SavedAt, so every save needs a distinct
+	// timestamp or ids collide.
+	oldNote := save(&Observation{Type: TypeDecision, Title: "old", Content: "c"}, old)
+	_ = save(&Observation{Type: TypeDecision, Title: "new", Content: "c"}, recent)
+	_ = save(&Observation{Type: TypeLesson, Title: "old lesson", Content: "c",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low"}}, old.Add(time.Second))
+	pinnedOld := save(&Observation{Type: TypeDecision, Title: "pinned", Content: "c"}, old.Add(2*time.Second))
+	if err := Pin(root, pinnedOld.ID, true, recent); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := t0.Add(-7 * 24 * time.Hour)
+	got, err := Prune(root, func(o Observation) bool { return !o.SavedAt.Before(cutoff) })
+	if err != nil || len(got) != 1 || got[0].ID != oldNote.ID {
+		t.Fatalf("prune selection = %+v (%v)", got, err)
+	}
+	// ApplyPrune drops exactly the selected ones.
+	if err := ApplyPrune(root, got); err != nil {
+		t.Fatal(err)
+	}
+	all, err := All(root)
+	if err != nil || len(all) != 3 {
+		t.Fatalf("after prune = %+v (%v)", all, err)
+	}
+	for _, o := range all {
+		if o.ID == oldNote.ID {
+			t.Fatal("pruned observation must be gone")
+		}
+	}
+	// Empty selection is a no-op (log byte-identical).
+	before, _ := os.ReadFile(File(root))
+	if err := ApplyPrune(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(File(root))
+	if string(before) != string(after) {
+		t.Fatal("empty ApplyPrune must not touch the log")
+	}
+}
