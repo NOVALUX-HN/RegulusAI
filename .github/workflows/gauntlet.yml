@@ -30,6 +30,20 @@ jobs:
           bun install
           bunx tsc --noEmit
 
+      - name: Test the plugin domain logic
+        working-directory: .opencode
+        run: bun test ./plugins/domain.test.ts
+
+      - name: Smoke the new CLI surface
+        run: |
+          go build -o bin/regulus ./cmd/regulus
+          tmp=$(mktemp -d)
+          cd "$tmp"
+          "$OLDPWD/bin/regulus" evolve propose --task demo/T1 --domain go 2>&1 | grep -q "no evidence" || (echo "evolve refusal smoke failed"; exit 1)
+          "$OLDPWD/bin/regulus" skills list
+          "$OLDPWD/bin/regulus" trace files --session nobody | grep -q "no trace" || (echo "trace files smoke failed"; exit 1)
+          "$OLDPWD/bin/regulus" probe contrast --task demo/T1 --gate missing 2>&1 | grep -q . || (echo "probe usage smoke failed"; exit 1)
+
       - name: Run the gauntlet (8 layers, receipts)
         run: |
           go build -o bin/regulus ./cmd/regulus
