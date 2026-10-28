@@ -531,11 +531,19 @@ type Query struct {
 	Type      string
 	Dimension string // bucket: lesson dimension (inv | dom)
 	Path      string // bucket: provenance path (exact match)
+	Limit     int    // keep the first N results after sorting (<= 0: all)
+	Any       bool   // OR the terms instead of ANDing them
+	Latest    bool   // collapse each topic chain to its best hit (default: all coexist)
 }
 
-// Search returns the observations that match every term (case-insensitive
-// substring over title and content) inside the requested bucket, pinned
-// first, then newest, ties by id.
+// Search returns the observations that match the terms (case-insensitive
+// substring over title and content; every term by default, any term with
+// q.Any) inside the requested bucket. A topic key is a coexisting group
+// of facts, not a revision chain — every hit is returned by default;
+// q.Latest collapses each chain to one hit (the newest revision, unless an
+// older one is pinned). Order: pinned first; among lessons of the same
+// pinned status, confidence (high > medium > low) before recency; ties
+// by id. q.Limit keeps the first N after sorting.
 func Search(root string, q Query) ([]Observation, error) {
 	all, err := All(root)
 	if err != nil {
@@ -546,6 +554,17 @@ func Search(root string, q Query) ([]Observation, error) {
 		return nil, err
 	}
 	var hits []Observation
+	collapsed := map[string]Observation{}
+	better := func(cur, cand Observation) bool {
+		pc, pn := pins[cur.ID], pins[cand.ID]
+		if pc != pn {
+			return pn // a pinned revision beats a newer unpinned one
+		}
+		if !cur.SavedAt.Equal(cand.SavedAt) {
+			return cand.SavedAt.After(cur.SavedAt)
+		}
+		return cand.ID > cur.ID
+	}
 	for _, o := range all {
 		if q.TopicKey != "" && o.TopicKey != q.TopicKey {
 			continue
@@ -574,29 +593,69 @@ func Search(root string, q Query) ([]Observation, error) {
 			}
 		}
 		hay := strings.ToLower(o.Title + "\n" + o.Content)
-		ok := true
+		ok := q.Any
+		if !q.Any {
+			ok = true
+		}
 		for _, term := range q.Terms {
 			if term == "" {
 				continue
 			}
-			if !strings.Contains(hay, strings.ToLower(term)) {
+			if strings.Contains(hay, strings.ToLower(term)) {
+				if q.Any {
+					ok = true
+					break
+				}
+			} else if !q.Any {
 				ok = false
 				break
 			}
 		}
-		if ok {
-			hits = append(hits, o)
+		if !ok {
+			continue
+		}
+		// Opt-in chain collapse (q.Latest): one hit per topic.
+		if o.TopicKey != "" && q.Latest {
+			if cur, seen := collapsed[o.TopicKey]; seen {
+				if better(cur, o) {
+					collapsed[o.TopicKey] = o
+				}
+			} else {
+				collapsed[o.TopicKey] = o
+			}
+			continue
+		}
+		hits = append(hits, o)
+	}
+	for _, o := range collapsed {
+		hits = append(hits, o)
+	}
+	confidenceRank := func(o Observation) int {
+		switch o.Lesson.Confidence {
+		case "high":
+			return 0
+		case "medium":
+			return 1
+		default:
+			return 2
 		}
 	}
 	sort.Slice(hits, func(i, j int) bool {
 		if pins[hits[i].ID] != pins[hits[j].ID] {
 			return pins[hits[i].ID]
 		}
+		li, lj := hits[i].Lesson != nil, hits[j].Lesson != nil
+		if li && lj && confidenceRank(hits[i]) != confidenceRank(hits[j]) {
+			return confidenceRank(hits[i]) < confidenceRank(hits[j])
+		}
 		if !hits[i].SavedAt.Equal(hits[j].SavedAt) {
 			return hits[i].SavedAt.After(hits[j].SavedAt)
 		}
 		return hits[i].ID > hits[j].ID
 	})
+	if q.Limit > 0 && len(hits) > q.Limit {
+		hits = hits[:q.Limit]
+	}
 	return hits, nil
 }
 

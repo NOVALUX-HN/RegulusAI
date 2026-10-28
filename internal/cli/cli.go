@@ -367,10 +367,13 @@ func (c CLI) memorySearchCmd(args []string) int {
 	typ := fs.String("type", "", "bucket: observation type")
 	dimension := fs.String("dimension", "", "bucket: lesson dimension (inv | dom)")
 	path := fs.String("path", "", "bucket: provenance path (exact match)")
+	limit := fs.Int("limit", 20, "keep the first N results (0: all)")
+	any := fs.Bool("any", false, "any term may match (default: all must)")
+	latest := fs.Bool("latest", false, "collapse each topic chain to its best hit (default: all coexist)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path})
+	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, Limit: *limit, Any: *any, Latest: *latest})
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1

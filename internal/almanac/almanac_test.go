@@ -502,3 +502,77 @@ func TestPruneSelectsOldUnpinnedNonLessons(t *testing.T) {
 		t.Fatal("empty ApplyPrune must not touch the log")
 	}
 }
+
+func TestSearchLatestCollapsesTopicChains(t *testing.T) {
+	root := t.TempDir()
+	save := func(title string, at time.Time) Observation {
+		t.Helper()
+		s, err := Save(root, &Observation{Type: TypeDecision, Title: title, Content: "rev", TopicKey: "db"}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	mid := save("v2-the-middle", t0.Add(time.Minute))
+	_ = mid
+	save("v1-the-oldest", t0)
+	save("v3-the-latest", t0.Add(2*time.Minute))
+	// Default: a topic key is a coexisting group — every hit returns.
+	all, err := Search(root, Query{})
+	if err != nil || len(all) != 3 {
+		t.Fatalf("default must return the whole group, got %d (%v)", len(all), err)
+	}
+	// --latest collapses the chain to the newest revision.
+	hits, err := Search(root, Query{Latest: true})
+	if err != nil || len(hits) != 1 || hits[0].Title != "v3-the-latest" {
+		t.Fatalf("--latest must collapse to the newest, got %+v (%v)", hits, err)
+	}
+	// A pinned older revision overrides recency under --latest.
+	if err := Pin(root, mid.ID, true, t0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err = Search(root, Query{Latest: true})
+	if err != nil || len(hits) != 1 || hits[0].Title != "v2-the-middle" {
+		t.Fatalf("a pinned revision must win the chain, got %+v (%v)", hits, err)
+	}
+}
+
+func TestSearchAnyMode(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Save(root, &Observation{Type: TypeDiscovery, Title: "postgres chosen", Content: "db"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(root, &Observation{Type: TypeDiscovery, Title: "redis cache", Content: "kv"}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	anded, err := Search(root, Query{Terms: []string{"postgres", "redis"}})
+	if err != nil || len(anded) != 0 {
+		t.Fatalf("AND must find nothing, got %+v (%v)", anded, err)
+	}
+	any, err := Search(root, Query{Terms: []string{"postgres", "redis"}, Any: true})
+	if err != nil || len(any) != 2 {
+		t.Fatalf("--any must find both, got %+v (%v)", any, err)
+	}
+}
+
+func TestSearchLimitAndConfidenceRank(t *testing.T) {
+	root := t.TempDir()
+	older, err := Save(root, &Observation{Type: TypeLesson, Title: "high older", Content: "x",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "high"}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = older
+	if _, err := Save(root, &Observation{Type: TypeLesson, Title: "low newer", Content: "x",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low"}}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Type: TypeLesson})
+	if err != nil || len(hits) != 2 || hits[0].Title != "high older" {
+		t.Fatalf("confidence must outrank recency among lessons, got %+v (%v)", hits, err)
+	}
+	limited, err := Search(root, Query{Type: TypeLesson, Limit: 1})
+	if err != nil || len(limited) != 1 || limited[0].Title != "high older" {
+		t.Fatalf("limit must keep the top hit, got %+v (%v)", limited, err)
+	}
+}
