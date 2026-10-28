@@ -99,3 +99,33 @@ func TestAssembleRejectsEmptyTaskOrDomain(t *testing.T) {
 		t.Fatal("want domain refusal")
 	}
 }
+
+func TestAssembleSeparatesGateAndProbeEvidence(t *testing.T) {
+	dir := t.TempDir()
+	writeReceipt(t, dir, "demo/T2", "typecheck", "pass", 10)
+	// a probe receipt lives in the probe subdirectory
+	probedir := filepath.Join(dir, ".regulus", "evidence", "demo__T2", "probe")
+	if err := os.MkdirAll(probedir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(probedir, "typecheck-9.json"),
+		[]byte(`{"id":"rec_probe","task":"demo/T2","gate":"typecheck","layer":1,"command":"echo a","exit_code":1,"verdict":"fail","started_at":"2026-10-26T08:00:00Z","duration_ms":3}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pack, err := Assemble(dir, "demo/T2", "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := strings.Index(pack, "## Task receipts")
+	probe := strings.Index(pack, "## Probe evidence")
+	dom := strings.Index(pack, "## Domain INDEX")
+	if gate < 0 || probe < 0 || dom < 0 || !(gate < probe && probe < dom) {
+		t.Fatalf("pack must order gate, probe, domain sections, got:\n%s", pack)
+	}
+	if strings.Contains(pack[strings.Index(pack, "## Task receipts"):probe], "rec_probe") {
+		t.Fatal("probe receipts must not leak into the gate section")
+	}
+	if !strings.Contains(pack[probe:], "rec_probe") {
+		t.Fatalf("probe section must carry probe receipts, got:\n%s", pack)
+	}
+}

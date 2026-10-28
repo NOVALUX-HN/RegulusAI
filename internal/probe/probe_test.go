@@ -77,10 +77,15 @@ func TestContrastIdenticalCommandsEmptyDiff(t *testing.T) {
 	if e.Task != "demo/T1" || !strings.Contains(e.Detail, "sha256") {
 		t.Fatalf("entry must carry the task and the diff digest, got %+v", e)
 	}
-	// both runs wrote real receipts under the task slug dir
-	found, _ := filepath.Glob(filepath.Join(dir, ".regulus", "evidence", "demo__T1", "*.json"))
+	// both runs wrote real receipts under the task slug's probe dir
+	found, _ := filepath.Glob(filepath.Join(dir, ".regulus", "evidence", "demo__T1", "probe", "*.json"))
 	if len(found) != 2 {
-		t.Fatalf("want 2 real receipts, got %v", found)
+		t.Fatalf("want 2 real probe receipts, got %v", found)
+	}
+	// gate verdicts stay pure: no probe receipt leaks into the gate dir
+	leaked, _ := filepath.Glob(filepath.Join(dir, ".regulus", "evidence", "demo__T1", "*.json"))
+	if len(leaked) != 0 {
+		t.Fatalf("probe runs must not write gate-level receipts, got %v", leaked)
 	}
 }
 

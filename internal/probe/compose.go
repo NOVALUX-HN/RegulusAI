@@ -107,7 +107,11 @@ func ComposeWithRunner(root, task, gate, base, cmdA, cmdB string, now time.Time,
 	}
 
 	head := gates.GitHead(context.Background(), r)
-	evidenceDir := filepath.Join(root, ".regulus", "evidence", receipts.Slug(task))
+	// Probe runs land in their own subdirectory: gate evidence stays
+	// pure (reflect's evidence gate, gate-centric audits), and consumers
+	// (evolve pack, human inspection) can tell behavioral contrasts
+	// apart from gate verdicts at a glance.
+	evidenceDir := filepath.Join(root, ".regulus", "evidence", receipts.Slug(task), "probe")
 	run := func(cmd string) (receipts.Receipt, error) {
 		return runProbeReceipt("probe compose", *orig, evidenceDir, task, head, cmd, r)
 	}

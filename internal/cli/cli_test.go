@@ -1448,9 +1448,9 @@ func TestProbeContrastCycle(t *testing.T) {
 			t.Fatalf("contrast output must contain %q, got:\n%s", want, out.String())
 		}
 	}
-	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "*.json"))
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "probe", "*.json"))
 	if len(found) != 2 {
-		t.Fatalf("want 2 real receipts under the task slug dir, got %v", found)
+		t.Fatalf("want 2 real probe receipts under the probe dir, got %v", found)
 	}
 	c2, out2, _ := newCLI(nil)
 	if code := c2.Run([]string{"budget", "show"}); code != 0 {
@@ -1561,9 +1561,13 @@ func TestProbeComposeCycle(t *testing.T) {
 			t.Fatalf("compose output must contain %q, got:\n%s", want, out.String())
 		}
 	}
-	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "*.json"))
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "probe", "*.json"))
 	if len(found) != 3 {
-		t.Fatalf("want 3 real receipts under the task slug dir, got %v", found)
+		t.Fatalf("want 3 real probe receipts under the probe dir, got %v", found)
+	}
+	leaked, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "*.json"))
+	if len(leaked) != 0 {
+		t.Fatalf("compose must not write gate-level receipts, got %v", leaked)
 	}
 	c2, out2, _ := newCLI(nil)
 	if code := c2.Run([]string{"budget", "show"}); code != 0 {

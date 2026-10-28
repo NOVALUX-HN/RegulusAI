@@ -94,6 +94,18 @@ func Assemble(root, task, domain string) (string, error) {
 		fmt.Fprintf(&b, "- %s gate %s: %s (exit %d, %dms)\n", r.ID, r.Gate, r.Verdict, r.ExitCode, r.DurationMS)
 	}
 	b.WriteString(truncated)
+	b.WriteString("\n## Probe evidence (behavioral contrasts, probe/ subdirectory)\n\n")
+	probes, err := probeReceipts(root, task)
+	if err != nil {
+		return "", err
+	}
+	if len(probes) == 0 {
+		b.WriteString("(none — no contrast or compose runs for this task)\n")
+	} else {
+		for _, r := range probes {
+			fmt.Fprintf(&b, "- %s gate %s: %s (exit %d, %dms)\n", r.ID, r.Gate, r.Verdict, r.ExitCode, r.DurationMS)
+		}
+	}
 	b.WriteString("\n## Domain INDEX\n\n")
 	index, err := os.ReadFile(library.IndexFile(root, domain))
 	if err != nil || len(strings.TrimSpace(string(index))) == 0 {
@@ -132,6 +144,26 @@ func taskReceipts(root, task string) ([]receipts.Receipt, error) {
 		r, err := receipts.ReadFile(p)
 		if err != nil {
 			return nil, fmt.Errorf("evolve propose: unreadable receipt %s: %v", p, err)
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// probeReceipts reads the task's behavioral-contrast receipts from the
+// probe subdirectory. The *.json glob does not recurse, so the gate
+// section above never mixes gate verdicts with probe contrasts.
+func probeReceipts(root, task string) ([]receipts.Receipt, error) {
+	paths, err := filepath.Glob(filepath.Join(root, ".regulus", "evidence", receipts.Slug(task), "probe", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	var out []receipts.Receipt
+	for _, p := range paths {
+		r, err := receipts.ReadFile(p)
+		if err != nil {
+			return nil, fmt.Errorf("evolve propose: unreadable probe receipt %s: %v", p, err)
 		}
 		out = append(out, r)
 	}
