@@ -633,6 +633,72 @@ func SupersededIDs(root string) (map[string]bool, error) {
 	return out, nil
 }
 
+// queryMatcher holds the bucket state for one Search call.
+type queryMatcher struct {
+	q          Query
+	superseded map[string]bool
+}
+
+// keeps reports whether one observation passes every bucket and term
+// filter (superseded, topic, domain, type, dimension, path, terms).
+func (m queryMatcher) keeps(o Observation) bool {
+	if m.superseded[o.ID] {
+		return false
+	}
+	if m.q.TopicKey != "" && o.TopicKey != m.q.TopicKey {
+		return false
+	}
+	if m.q.Domain != "" && o.Domain != m.q.Domain {
+		return false
+	}
+	if m.q.Type != "" && o.Type != m.q.Type {
+		return false
+	}
+	if m.q.Dimension != "" && (o.Lesson == nil || o.Lesson.Dimension != m.q.Dimension) {
+		return false
+	}
+	if m.q.Path != "" && !hasProvenancePath(o, m.q.Path) {
+		return false
+	}
+	return matchTerms(o, m.q.Terms, m.q.Any)
+}
+
+// hasProvenancePath reports whether the observation cites path.
+func hasProvenancePath(o Observation, path string) bool {
+	if o.Provenance == nil {
+		return false
+	}
+	for _, p := range o.Provenance.Paths {
+		if p == path {
+			return true
+		}
+	}
+	return false
+}
+
+// matchTerms is the AND/OR term match over title and content
+// (case-insensitive, empty terms ignored).
+func matchTerms(o Observation, terms []string, any bool) bool {
+	hay := strings.ToLower(o.Title + "\n" + o.Content)
+	ok := any
+	if !any {
+		ok = true
+	}
+	for _, term := range terms {
+		if term == "" {
+			continue
+		}
+		if strings.Contains(hay, strings.ToLower(term)) {
+			if any {
+				return true
+			}
+		} else if !any {
+			return false
+		}
+	}
+	return ok
+}
+
 // Search returns the observations that match the terms (case-insensitive
 // substring over title and content; every term by default, any term with
 // q.Any) inside the requested bucket. A topic key is a coexisting group
@@ -659,72 +725,15 @@ func Search(root string, q Query) ([]Observation, error) {
 	}
 	var hits []Observation
 	collapsed := map[string]Observation{}
-	better := func(cur, cand Observation) bool {
-		pc, pn := pins[cur.ID], pins[cand.ID]
-		if pc != pn {
-			return pn // a pinned revision beats a newer unpinned one
-		}
-		if !cur.SavedAt.Equal(cand.SavedAt) {
-			return cand.SavedAt.After(cur.SavedAt)
-		}
-		return cand.ID > cur.ID
-	}
+	matcher := queryMatcher{q: q, superseded: superseded}
 	for _, o := range all {
-		if superseded[o.ID] {
-			continue
-		}
-		if q.TopicKey != "" && o.TopicKey != q.TopicKey {
-			continue
-		}
-		if q.Domain != "" && o.Domain != q.Domain {
-			continue
-		}
-		if q.Type != "" && o.Type != q.Type {
-			continue
-		}
-		if q.Dimension != "" && (o.Lesson == nil || o.Lesson.Dimension != q.Dimension) {
-			continue
-		}
-		if q.Path != "" {
-			found := false
-			if o.Provenance != nil {
-				for _, p := range o.Provenance.Paths {
-					if p == q.Path {
-						found = true
-						break
-					}
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		hay := strings.ToLower(o.Title + "\n" + o.Content)
-		ok := q.Any
-		if !q.Any {
-			ok = true
-		}
-		for _, term := range q.Terms {
-			if term == "" {
-				continue
-			}
-			if strings.Contains(hay, strings.ToLower(term)) {
-				if q.Any {
-					ok = true
-					break
-				}
-			} else if !q.Any {
-				ok = false
-				break
-			}
-		}
-		if !ok {
+		if !matcher.keeps(o) {
 			continue
 		}
 		// Opt-in chain collapse (q.Latest): one hit per topic.
 		if o.TopicKey != "" && q.Latest {
 			if cur, seen := collapsed[o.TopicKey]; seen {
-				if better(cur, o) {
+				if betterHit(pins, cur, o) {
 					collapsed[o.TopicKey] = o
 				}
 			} else {
@@ -737,16 +746,41 @@ func Search(root string, q Query) ([]Observation, error) {
 	for _, o := range collapsed {
 		hits = append(hits, o)
 	}
-	confidenceRank := func(o Observation) int {
-		switch o.Lesson.Confidence {
-		case "high":
-			return 0
-		case "medium":
-			return 1
-		default:
-			return 2
-		}
+	sortHits(pins, hits)
+	if q.Limit > 0 && len(hits) > q.Limit {
+		hits = hits[:q.Limit]
 	}
+	return hits, nil
+}
+
+// betterHit decides whether a candidate replaces the current best of
+// one topic chain: a pinned revision beats an unpinned one (pins
+// override recency), then recency, then id.
+func betterHit(pins map[string]bool, cur, cand Observation) bool {
+	if pc, pn := pins[cur.ID], pins[cand.ID]; pc != pn {
+		return pn
+	}
+	if !cur.SavedAt.Equal(cand.SavedAt) {
+		return cand.SavedAt.After(cur.SavedAt)
+	}
+	return cand.ID > cur.ID
+}
+
+// confidenceRank orders lesson confidence for same-pinned hits.
+func confidenceRank(o Observation) int {
+	switch o.Lesson.Confidence {
+	case "high":
+		return 0
+	case "medium":
+		return 1
+	default:
+		return 2
+	}
+}
+
+// sortHits orders hits pinned-first, then by lesson confidence among
+// same-pinned lessons, then newest, ties by id.
+func sortHits(pins map[string]bool, hits []Observation) {
 	sort.Slice(hits, func(i, j int) bool {
 		if pins[hits[i].ID] != pins[hits[j].ID] {
 			return pins[hits[i].ID]
@@ -760,10 +794,6 @@ func Search(root string, q Query) ([]Observation, error) {
 		}
 		return hits[i].ID > hits[j].ID
 	})
-	if q.Limit > 0 && len(hits) > q.Limit {
-		hits = hits[:q.Limit]
-	}
-	return hits, nil
 }
 
 // Notes returns the session notes, oldest first — the compaction view.
