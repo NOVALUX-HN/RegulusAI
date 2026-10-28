@@ -18,6 +18,7 @@ import (
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/receipts"
+	"regulus-ai/internal/trace"
 )
 
 func newCLI(probe func() doctor.Result) (CLI, *bytes.Buffer, *bytes.Buffer) {
@@ -1916,5 +1917,38 @@ func TestMemoryPruneKeepsLessonsAndPinned(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "nothing to prune") {
 		t.Fatalf("lessons+pinned must be immune, got %q", out.String())
+	}
+}
+
+func TestTraceSessionsAndPruneCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	rec := func(s string) {
+		t.Helper()
+		c, _, _ := newCLI(nil)
+		if code := c.Run([]string{"trace", "record", "--session", s, "--message", "m", "--call", "c", "--tool", "t", "--status", "completed"}); code != 0 {
+			t.Fatalf("record exit = %d", code)
+		}
+	}
+	rec("s-a")
+	rec("s-b")
+	rec("s-b")
+	cs, sout, _ := newCLI(nil)
+	if code := cs.Run([]string{"trace", "sessions"}); code != 0 {
+		t.Fatalf("sessions exit = %d", code)
+	}
+	if sout.String() != "s-a\ns-b\n" {
+		t.Fatalf("sessions = %q", sout.String())
+	}
+	cp, pout, _ := newCLI(nil)
+	if code := cp.Run([]string{"trace", "prune", "--session", "s-b", "--keep", "1"}); code != 0 {
+		t.Fatalf("prune exit = %d", code)
+	}
+	if !strings.Contains(pout.String(), "1 entr(y/ies) kept") {
+		t.Fatalf("output = %q", pout.String())
+	}
+	entries, err := trace.List(".", "s-b")
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("after prune = %+v (%v)", entries, err)
 	}
 }

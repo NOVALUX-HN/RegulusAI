@@ -1,6 +1,8 @@
 package trace
 
 import (
+	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -135,5 +137,58 @@ func TestRecordRefusesBadFiles(t *testing.T) {
 		if err == nil {
 			t.Fatalf("want files refusal for %q", files)
 		}
+	}
+}
+
+func TestSessionsListsSorted(t *testing.T) {
+	root := t.TempDir()
+	now := time.Unix(1700000000, 0).UTC()
+	for _, s := range []string{"zeta", "alpha"} {
+		if _, err := Record(root, Entry{Session: s, Message: "m", Call: "c", Tool: "t", Status: StatusCompleted}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessions, err := Sessions(root)
+	if err != nil || len(sessions) != 2 || sessions[0] != "alpha" || sessions[1] != "zeta" {
+		t.Fatalf("sessions = %+v (%v)", sessions, err)
+	}
+	empty, err := Sessions(t.TempDir())
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("missing traces dir = %+v (%v)", empty, err)
+	}
+}
+
+func TestPruneKeepsLastN(t *testing.T) {
+	root := t.TempDir()
+	now := time.Unix(1700000000, 0).UTC()
+	for i := 0; i < 5; i++ {
+		if _, err := Record(root, Entry{Session: "s", Message: "m", Call: "c", Tool: "tool-" + fmt.Sprint(i), Status: StatusCompleted}, now.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kept, err := Prune(root, "s", 2)
+	if err != nil || kept != 2 {
+		t.Fatalf("kept = %d (%v)", kept, err)
+	}
+	entries, err := List(root, "s")
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("after prune = %+v (%v)", entries, err)
+	}
+	fp := Fingerprint(entries)
+	if len(fp) != 2 || fp[0] != "1 tool-3 completed" || fp[1] != "2 tool-4 completed" {
+		t.Fatalf("prune must keep call order tail, got %v", fp)
+	}
+	// keep >= len is a no-op (file untouched).
+	before, _ := os.ReadFile(File(root, "s"))
+	if kept, err := Prune(root, "s", 10); err != nil || kept != 2 {
+		t.Fatalf("no-op prune = %d (%v)", kept, err)
+	}
+	after, _ := os.ReadFile(File(root, "s"))
+	if string(before) != string(after) {
+		t.Fatal("no-op prune must not touch the file")
+	}
+	// unknown session is a no-op success.
+	if kept, err := Prune(root, "nobody", 2); err != nil || kept != 0 {
+		t.Fatalf("unknown = %d (%v)", kept, err)
 	}
 }

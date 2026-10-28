@@ -642,14 +642,16 @@ func (c CLI) skillsCmd(args []string) int {
 	return 0
 }
 
-// traceCmd implements `regulus trace record|show|files`: minimal
-// agent-process capture (G2.6). `record` appends one tool execution to
-// the session trace; `show` prints the diffable fingerprint (sequence,
-// tool, status) for probe-with-contrast (G2.7); `files` prints the
-// distinct touched paths in call order.
+// traceCmd implements `regulus trace record|show|files|sessions|prune`:
+// minimal agent-process capture (G2.6). `record` appends one tool
+// execution to the session trace; `show` prints the diffable
+// fingerprint (sequence, tool, status) for probe-with-contrast
+// (G2.7); `files` prints the distinct touched paths in call order;
+// `sessions` lists sessions with traces; `prune` rotates a session
+// trace keeping the last N entries.
 func (c CLI) traceCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s>")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N]")
 		return 2
 	}
 	switch args[0] {
@@ -659,9 +661,13 @@ func (c CLI) traceCmd(args []string) int {
 		return c.traceShowCmd(args[1:])
 	case "files":
 		return c.traceFilesCmd(args[1:])
+	case "sessions":
+		return c.traceSessionsCmd(args[1:])
+	case "prune":
+		return c.tracePruneCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s>")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N]")
 		return 2
 	}
 }
@@ -693,6 +699,52 @@ func (c CLI) traceRecordCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintln(c.Stdout, "trace recorded")
+	return 0
+}
+
+// traceSessionsCmd implements `regulus trace sessions`: lists session
+// ids with trace logs on disk, oldest filename first (sorted).
+func (c CLI) traceSessionsCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace sessions")
+		return 2
+	}
+	sessions, err := trace.Sessions(".")
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace sessions: %v\n", err)
+		return 1
+	}
+	if len(sessions) == 0 {
+		fmt.Fprintln(c.Stdout, "(no sessions traced)")
+		return 0
+	}
+	for _, s := range sessions {
+		fmt.Fprintln(c.Stdout, s)
+	}
+	return 0
+}
+
+// tracePruneCmd implements `regulus trace prune --session <s> [--keep N]`:
+// rotation for unbounded sessions — rewrites the trace keeping only
+// the last N entries (default 200). Unknown sessions are a no-op.
+func (c CLI) tracePruneCmd(args []string) int {
+	fs := flag.NewFlagSet("trace prune", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	session := fs.String("session", "", "the session id (required)")
+	keep := fs.Int("keep", 200, "keep the last N entries")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *session == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace prune --session <s> [--keep N]")
+		return 2
+	}
+	n, err := trace.Prune(".", *session, *keep)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace prune: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "trace %s: %d entr(y/ies) kept\n", *session, n)
 	return 0
 }
 
@@ -1685,7 +1737,7 @@ Commands:
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   skills list        trigger registry: skills with their one-line triggers
-  trace record|show|files   capture and inspect per-session tool traces (regulus trace --help)
+  trace record|show|files|sessions|prune   capture and inspect per-session tool traces (regulus trace --help)
   spec check <file>  validate the acceptance contract of a feature document
   status             one look at the project: runtime, gauntlet, evolution, receipts
   --version          print the regulus version

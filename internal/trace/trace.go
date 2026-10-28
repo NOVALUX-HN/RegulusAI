@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -145,6 +146,64 @@ func List(root, session string) ([]Entry, error) {
 		out = append(out, e)
 	}
 	return out, sc.Err()
+}
+
+// Sessions lists the session ids with trace logs on disk, sorted.
+func Sessions(root string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(root, ".regulus", "traces", "*.jsonl"))
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, p := range paths {
+		out = append(out, strings.TrimSuffix(filepath.Base(p), ".jsonl"))
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// Prune rewrites a session trace keeping only the last keep entries
+// (rotation for unbounded sessions). keep <= 0 keeps everything;
+// unknown sessions are a no-op. It returns the kept entry count.
+func Prune(root, session string, keep int) (int, error) {
+	entries, err := List(root, session)
+	if err != nil {
+		return 0, err
+	}
+	if keep <= 0 || len(entries) <= keep {
+		return len(entries), nil
+	}
+	entries = entries[len(entries)-keep:]
+	var lines []string
+	for _, e := range entries {
+		raw, err := json.Marshal(e)
+		if err != nil {
+			return 0, err
+		}
+		lines = append(lines, string(raw))
+	}
+	if err := os.MkdirAll(filepath.Dir(File(root, session)), 0o755); err != nil {
+		return 0, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(File(root, session)), "trace-*.jsonl")
+	if err != nil {
+		return 0, err
+	}
+	tmpName := tmp.Name()
+	body := strings.Join(lines, "\n") + "\n"
+	if _, err := tmp.WriteString(body); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return 0, err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return 0, err
+	}
+	if err := os.Rename(tmpName, File(root, session)); err != nil {
+		return 0, err
+	}
+	return len(entries), nil
 }
 
 // Fingerprint reduces a session trace to its diffable shape: sequence
