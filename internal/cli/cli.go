@@ -106,9 +106,11 @@ func (c CLI) doctor() int {
 	fmt.Fprintln(c.Stdout, doctor.VersionLine(".", c.Version))
 	if res.Supported {
 		fmt.Fprintf(c.Stdout, "%s — supported (V2)\n", res.Detected)
+		fmt.Fprintln(c.Stdout, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
 		return 0
 	}
 	fmt.Fprintf(c.Stderr, "doctor: %s\n", res.Reason)
+	fmt.Fprintln(c.Stdout, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
 	return 1
 }
 
@@ -1565,11 +1567,11 @@ func (c CLI) initCmd(args []string) int {
 			return 1
 		}
 		fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore, .opencode copied from %s\n", *harnessFrom)
-		fmt.Fprintln(c.Stdout, "next: run regulus doctor, install the plugin deps, open your first Chart")
+		fmt.Fprintln(c.Stdout, "next: run bun install in .opencode/, run regulus doctor, open your first Chart")
 		return 0
 	}
 	fmt.Fprintln(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)")
-	fmt.Fprintln(c.Stdout, "next: copy the .opencode/ harness config in (or re-run with --harness-from <repo>), run regulus doctor, open your first Chart")
+	fmt.Fprintln(c.Stdout, "next: copy the .opencode/ harness config in (or re-run with --harness-from <repo>), run bun install in .opencode/, run regulus doctor, open your first Chart")
 	return 0
 }
 

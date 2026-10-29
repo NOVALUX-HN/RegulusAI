@@ -181,7 +181,7 @@ func TestDoctorSupportedOutputLine(t *testing.T) {
 	if code := c.Run([]string{"doctor"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if got, want := out.String(), "version:    test (no package.json — nothing to compare)\nopencode 2.1.0 — supported (V2)\n"; got != want {
+	if got, want := out.String(), "version:    test (no package.json — nothing to compare)\nopencode 2.1.0 — supported (V2)\nplugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts\n"; got != want {
 		t.Fatalf("output = %q, want %q (version line, then the runtime's own version line)", got, want)
 	}
 }
