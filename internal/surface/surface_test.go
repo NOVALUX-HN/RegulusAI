@@ -93,6 +93,62 @@ func TestApplyAppendsMarkerAndRecordsGuardian(t *testing.T) {
 	}
 }
 
+func TestApplyRefusesUnknownGuardian(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "a.md"), []byte("# Base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, err := Propose(root, "docs/a.md", "more", "lesson X", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(root, e.ID, "not-a-guardian", t0.Add(time.Minute)); err == nil || !strings.Contains(err.Error(), "guardian") {
+		t.Fatalf("want guardian-allowlist refusal, got %v", err)
+	}
+}
+
+func TestApplyRefusesToCreateNewFiles(t *testing.T) {
+	root := t.TempDir()
+	e, err := Propose(root, "docs/new.md", "brand new", "lesson X", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(root, e.ID, "regulus-reviewer", t0.Add(time.Minute)); err == nil || !strings.Contains(err.Error(), "already exist") {
+		t.Fatalf("want no-create refusal, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "docs", "new.md")); !os.IsNotExist(err) {
+		t.Fatal("apply must not create new files")
+	}
+}
+
+func TestApplyUsesTsMarkers(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".opencode", "plugins"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, ".opencode", "plugins", "p.ts")
+	if err := os.WriteFile(target, []byte("export const x = 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, err := Propose(root, ".opencode/plugins/p.ts", "export const y = 2;", "lesson X", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(root, e.ID, "regulus-reviewer", t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(target)
+	if strings.Contains(string(data), "<!-- regulus:surface-edit") {
+		t.Fatalf("TS targets must not get HTML markers, got:\n%s", data)
+	}
+	if !strings.Contains(string(data), "regulus:surface-edit "+e.ID) {
+		t.Fatalf("TS edit must be marker-delimited, got:\n%s", data)
+	}
+}
+
 func TestSurfaceBudgetCapAndRecording(t *testing.T) {
 	root := t.TempDir()
 	// set cap to 1
@@ -103,6 +159,12 @@ func TestSurfaceBudgetCapAndRecording(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "a.md"), []byte("# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	// first propose: fits inside the cap
 	e1, err := Propose(root, "docs/a.md", "first", "r1", now)
 	if err != nil {
@@ -145,6 +207,14 @@ func TestSurfaceBudgetCapAndRecording(t *testing.T) {
 
 func TestListReturnsEverythingOldestFirst(t *testing.T) {
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"a.md", "b.md"} {
+		if err := os.WriteFile(filepath.Join(root, "docs", f), []byte("# "+f+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	a, _ := Propose(root, "docs/a.md", "one", "r", t0)
 	b, _ := Propose(root, "docs/b.md", "two", "r", t0.Add(time.Second))
 	if _, err := Apply(root, b.ID, "regulus-gate-verifier", t0.Add(time.Minute)); err != nil {
