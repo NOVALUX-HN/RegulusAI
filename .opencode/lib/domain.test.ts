@@ -1,6 +1,6 @@
 // Committed checks for the plugin's pure domain logic (G1.4, V5.2).
 // Run with `bun test` from .opencode/ (also in CI). No OpenCode host
-// needed: domain.ts has zero host imports by design.
+// needed: lib/domain.ts has zero host imports by design.
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
   clearDomainsCache,

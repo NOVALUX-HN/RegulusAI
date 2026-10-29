@@ -32,7 +32,7 @@ jobs:
 
       - name: Test the plugin domain logic
         working-directory: .opencode
-        run: bun test ./plugins/domain.test.ts
+        run: bun test ./lib/domain.test.ts
 
       - name: Smoke the new CLI surface
         run: |

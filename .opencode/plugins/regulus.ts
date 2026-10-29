@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { extractPaths, loadSkills, resolveDomain, suggestSkills } from "./domain"
+import { extractPaths, loadSkills, resolveDomain, suggestSkills } from "../lib/domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
