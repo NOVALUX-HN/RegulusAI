@@ -54,6 +54,8 @@ func (c CLI) Run(args []string) int {
 		return c.evidenceCmd(args[1:])
 	case "gate":
 		return c.gateCmd(args[1:])
+	case "mcp":
+		return c.mcpCmd(args[1:])
 	case "memory":
 		return c.memoryCmd(args[1:])
 	case "budget":
@@ -70,6 +72,8 @@ func (c CLI) Run(args []string) int {
 		return c.probeCmd(args[1:])
 	case "trace":
 		return c.traceCmd(args[1:])
+	case "yolo":
+		return c.yoloCmd(args[1:])
 	case "crap":
 		return c.crapCmd(args[1:])
 	default:
@@ -132,6 +136,7 @@ Commands:
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   library forget --domain <d> --task <t>  drop one task snapshot
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
+  mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
   memory note|show|save|search|history|context|prune|doctor|import|pin|unpin|relate|export|library   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
@@ -140,6 +145,7 @@ Commands:
   trace record|show|files|sessions|prune   capture and inspect per-session tool traces (regulus trace --help)
   spec check <file>  validate the acceptance contract of a feature document
   status             one look at the project: runtime, gauntlet, evolution, receipts
+  yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)
   --version          print the regulus version
 
 Exit codes:
