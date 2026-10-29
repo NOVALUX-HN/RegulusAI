@@ -398,18 +398,29 @@ func (c CLI) memoryPinCmd(pin bool, args []string) int {
 	return 0
 }
 
-// memoryRelateCmd implements `regulus memory relate --id --relation --to`.
+// memoryRelateCmd implements `regulus memory relate --id --relation --to`
+// plus candidate suggestion via `regulus memory relate --suggest <id>`: the
+// vector-channel top-k above the floor, printed one per line
+// `id cosine title`; suggestion writes nothing.
 func (c CLI) memoryRelateCmd(args []string) int {
 	fs := flag.NewFlagSet("memory relate", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	from := fs.String("id", "", "the observation (required)")
 	relation := fs.String("relation", "", "supersedes | conflicts_with | related (required)")
 	to := fs.String("to", "", "the other observation (required)")
+	suggest := fs.String("suggest", "", "suggest relation candidates for this observation id (top-5 above similarity 0.5, writes nothing)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if *suggest != "" {
+		if *from != "" || *relation != "" || *to != "" || fs.NArg() != 0 {
+			fmt.Fprintln(c.Stderr, "usage: regulus memory relate --suggest <id>")
+			return 2
+		}
+		return c.memoryRelateSuggest(*suggest)
+	}
 	if *from == "" || *relation == "" || *to == "" || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory relate --id <a> --relation <r> --to <b>")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory relate --id <a> --relation <r> --to <b> | --suggest <id>")
 		return 2
 	}
 	if err := almanac.Relate(".", *from, *relation, *to, time.Now().UTC()); err != nil {
@@ -417,6 +428,27 @@ func (c CLI) memoryRelateCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "recorded: %s %s %s\n", *from, *relation, *to)
+	return 0
+}
+
+// memoryRelateSuggest prints the vector-channel candidates for id, one per
+// line `id cosine title`. Unlike search there is no lexical fallback here:
+// suggestions are defined as vector similarities, so a missing or stale
+// index refuses with a reindex pointer instead of presenting keyword hits
+// as similarities.
+func (c CLI) memoryRelateSuggest(id string) int {
+	sugs, err := almanac.SuggestRelated(".", id)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory relate: %v\n", err)
+		return 1
+	}
+	if len(sugs) == 0 {
+		fmt.Fprintln(c.Stdout, "no suggestions above threshold")
+		return 0
+	}
+	for _, s := range sugs {
+		fmt.Fprintf(c.Stdout, "%s %.4f %s\n", s.ID, s.Cosine, s.Title)
+	}
 	return 0
 }
 
