@@ -4,6 +4,16 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.8.0] — 2026-10-29 — tool-surface parity (personal use)
+
+Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
+
+- Plugin↔CLI parity: `memory_search` gains path/limit/any/latest/include-superseded; new `trace_sessions`, `trace_files`, `probe_compose` (16 tools); guidance-sync test extended to required input params.
+- `TestV07Functional`: deterministic end-to-end of the v0.7 memory surface (collapse/latest, any, limit, supersede-hide, doctor, import round-trip, prune protection, per-task cap refusal, trace sessions/prune).
+- Troubleshooting +6 entries (reserved build.bash, per-day/per-task caps, prune dry-run, import atomicity, evolve no-evidence, Domain template).
+- Hook spawn cut: `library domains` memoized per project dir (trace files and searches uncached); counting test proves 2 hooks = 1 domains spawn.
+- `init` names `bun install in .opencode/` explicitly; `doctor` notes the plugin side can't be verified from outside OpenCode (exit codes unchanged).
+
 ## [0.7.0] — 2026-10-28 — almanac-level memory (personal use)
 
 Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
