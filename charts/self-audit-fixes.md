@@ -138,4 +138,12 @@ given 2026-10-28. Read down to `## Log` before working.
   HEAD/tree both 6 scenarios for regulus-ai-v1.md (the "9" was this
   chart's own count — naming collision, nothing uncommitted).
   Chart ACCEPTED: S1–S10 all hold. Delivery (commit) awaits the human.
+- **L11**: **DELIVERY** — human authorized ("sube los cambios") 2026-10-28.
+  package.json bumped 0.8.1; 6 platform binaries rebuilt at 0.8.1;
+  release gauntlet `self-audit-fixes/release` **9/9 pass**. Committed
+  32 files (+2,950/−2,338) as 365ba38 and pushed
+  `bbfe3f5..365ba38 → origin/feat/v0.4-evolution`. Working tree clean.
+  Tag v0.8.1 intentionally not cut here (repo convention: tags cut on
+  main at merge). CI runs on push; docs/EVIDENCE.md materializes at
+  merge to main (S8's step is main-only).
   Pending independent live reproduction → U6 verifier.
