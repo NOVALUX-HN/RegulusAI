@@ -83,6 +83,27 @@ func TestRunRefusesWithoutEvidence(t *testing.T) {
 	}
 }
 
+func TestRunRefusesWithoutPassReceipt(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	dir := filepath.Join(root, ".regulus", "evidence", receipts.Slug("feature/T1"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := os.WriteFile(filepath.Join(dir, "gate-"+strconv.Itoa(i)+".json"), []byte(`{"verdict":"fail","exit_code":1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := Run(root, Input{
+		FeatureDoc: doc, Domain: "go", Task: "feature/T1",
+		Cue: "c", Lesson: "l", Now: now,
+	}, "abc")
+	if err == nil || !strings.Contains(err.Error(), "no passing") {
+		t.Fatalf("want no-passing-receipt refusal, got %v", err)
+	}
+}
+
 func TestRunRefusesEmptyCue(t *testing.T) {
 	root := t.TempDir()
 	doc := writeFeatureDoc(t, root)

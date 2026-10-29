@@ -68,6 +68,12 @@ func Run(root string, in Input, gitHead string) (library.Lesson, error) {
 	if len(evidence) == 0 {
 		return library.Lesson{}, errors.New("no evidence: run the gauntlet (regulus gate run) before reflecting")
 	}
+	if pass, err := hasPassReceipt(evidence); err != nil || !pass {
+		if err != nil {
+			return library.Lesson{}, err
+		}
+		return library.Lesson{}, errors.New("no passing evidence: at least one receipt with verdict pass is required before reflecting")
+	}
 	if in.Now.IsZero() {
 		in.Now = time.Now().UTC()
 	}
@@ -225,4 +231,20 @@ func taskReceipts(root, task string) ([]string, error) {
 	}
 	sort.Strings(paths)
 	return paths, nil
+}
+
+// hasPassReceipt requires at least one receipt with verdict pass: a red
+// gauntlet alone cannot propose a lesson.
+func hasPassReceipt(paths []string) (bool, error) {
+	for _, p := range paths {
+		rec, err := receipts.ReadFile(p)
+		if err != nil {
+			// Corrupt receipts are not evidence; keep looking for a pass.
+			continue
+		}
+		if rec.Verdict == receipts.VerdictPass {
+			return true, nil
+		}
+	}
+	return false, nil
 }
