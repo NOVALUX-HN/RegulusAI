@@ -16,7 +16,7 @@ Read down to `## Log`.
 
 - [x] D1 (S2,S4) — `regulus mcp` stdio server + 12 tools + protocol tests — route: worker — commit: 21e32a2
 - [x] D2 (S2,S3) — `.devin/` pack (regulus-workflow skill, worker+scout agents, mcp_config, permission snippet doc) + pack validation tests — route: worker — commit: 376edad
-- [x] D3 (S1,S3) — docs/devin.md (Windows blueprint copy-paste, CLI/Desktop/Cloud recipe, limits) + full verification + reviewable commits — route: inline — commit: this unit
+- [x] D3 (S1,S3) — docs/devin.md (Windows blueprint copy-paste, CLI/Desktop/Cloud recipe, limits) + full verification + reviewable commits — route: inline — commit: 65e8c99
 - L2 (D3 verification): full `go test ./...` green (incl. journey), bun 38/38, tsc/vet/gofmt clean, `go list -m all` = stdlib only; blueprint YAML parses (`runs-on: windows`, 2 init steps); `.devin/mcp_config.json` wires `regulus mcp`; local bins restamped 0.8.1 with the mcp subcommand.
 
 ## Log
