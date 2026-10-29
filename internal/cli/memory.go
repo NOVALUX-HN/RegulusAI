@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"sort"
@@ -20,7 +21,7 @@ import (
 // Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor|reindex")
 		return 2
 	}
 	switch args[0] {
@@ -50,9 +51,11 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryPruneCmd(args[1:])
 	case "doctor":
 		return c.memoryDoctorCmd(args[1:])
+	case "reindex":
+		return c.memoryReindexCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor|reindex")
 		return 2
 	}
 }
@@ -111,6 +114,26 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 			fmt.Fprintf(c.Stdout, "orphan relations: %s %s %s\n", r.From, r.Relation, r.To)
 		}
 	}
+	return 0
+}
+
+// memoryReindexCmd implements `regulus memory reindex`: rebuild the
+// derived retrieval.bin as a pure function of observations.jsonl.
+func (c CLI) memoryReindexCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory reindex")
+		return 2
+	}
+	count, sha, err := almanac.Reindex(".")
+	if errors.Is(err, almanac.ErrNoLog) {
+		fmt.Fprintln(c.Stderr, "memory reindex: no observations log yet — save an observation first")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory reindex: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "reindexed: %d observation(s)\nsha256: %s\n", count, sha)
 	return 0
 }
 
