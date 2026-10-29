@@ -252,9 +252,10 @@ type queryMatcher struct {
 	superseded map[string]bool
 }
 
-// keeps reports whether one observation passes every bucket and term
-// filter (superseded, topic, domain, type, dimension, path, terms).
-func (m queryMatcher) keeps(o Observation) bool {
+// keepsBuckets reports whether one observation passes every bucket filter
+// (superseded, topic, domain, type, dimension, path) — the shared decider
+// the vector channel reuses; terms are a ranking signal there, not a filter.
+func (m queryMatcher) keepsBuckets(o Observation) bool {
 	if m.superseded[o.ID] {
 		return false
 	}
@@ -273,7 +274,13 @@ func (m queryMatcher) keeps(o Observation) bool {
 	if m.q.Path != "" && !hasProvenancePath(o, m.q.Path) {
 		return false
 	}
-	return matchTerms(o, m.q.Terms, m.q.Any)
+	return true
+}
+
+// keeps reports whether one observation passes every bucket and term
+// filter (superseded, topic, domain, type, dimension, path, terms).
+func (m queryMatcher) keeps(o Observation) bool {
+	return m.keepsBuckets(o) && matchTerms(o, m.q.Terms, m.q.Any)
 }
 
 // hasProvenancePath reports whether the observation cites path.

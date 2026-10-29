@@ -275,7 +275,8 @@ func (c CLI) memorySaveCmd(args []string) int {
 }
 
 // memorySearchCmd implements `regulus memory search [terms]` with
-// bucket flags.
+// bucket flags. Hybrid semantic ranking runs when retrieval.bin is fresh;
+// --lexical forces the old path.
 func (c CLI) memorySearchCmd(args []string) int {
 	fs := flag.NewFlagSet("memory search", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -288,10 +289,22 @@ func (c CLI) memorySearchCmd(args []string) int {
 	any := fs.Bool("any", false, "any term may match (default: all must)")
 	latest := fs.Bool("latest", false, "collapse each topic chain to its best hit (default: all coexist)")
 	includeSuperseded := fs.Bool("include-superseded", false, "show observations a supersedes relation hides")
+	lexical := fs.Bool("lexical", false, "force lexical-only search (skip hybrid semantic ranking)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	hits, err := almanac.Search(".", almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, Limit: *limit, Any: *any, Latest: *latest, IncludeSuperseded: *includeSuperseded})
+	q := almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, Limit: *limit, Any: *any, Latest: *latest, IncludeSuperseded: *includeSuperseded}
+	var hits []almanac.Observation
+	var err error
+	if *lexical {
+		hits, err = almanac.Search(".", q)
+	} else {
+		var degraded bool
+		hits, degraded, err = almanac.HybridSearch(".", q)
+		if err == nil && degraded {
+			fmt.Fprintln(c.Stderr, "warning: semantic index stale or missing — lexical only")
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1
