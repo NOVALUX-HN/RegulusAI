@@ -1,8 +1,9 @@
 # Almanac v2 — semantic retrieval for the Almanac (investigation + spec)
 
-Status: design candidate (2026-10-28, chart `self-audit-fixes.md` S10) ·
-Author: lead session, from live upstream research · Implementation NOT
-started here — this document is the Chart for the memory-v2 spike.
+Status: implemented — v2.0 spike landed 2026-10-29 (T1–T4, see §7) ·
+Origin: design candidate (2026-10-28, chart `self-audit-fixes.md` S10) ·
+Author: lead session, from live upstream research · v2.1 ONNX stays
+deferred per S8.
 
 ## 1. Where Engram is today (verified 2026-10-28)
 
@@ -110,3 +111,42 @@ retrieval interface.
 - **v2.1** — pluggable embedder, local ONNX MiniLM.
 - **v2.2** — sqlite-vec/usearch only past the §3 trigger; interface move,
   no schema rewrite (JSONL truth unchanged forever).
+
+## 7. v2.0 as built (2026-10-29)
+
+The spike landed as specced, unreleased (no release bump per the feature
+order). What shipped:
+
+- **T1** — hash char-ngram embedder (384 dims, int8, `hash-ngram-v1`) +
+  `retrieval.bin` + `memory reindex` (pure function of the JSONL,
+  byte-identical rebuilds, sha-pinned receipt) + determinism/header tests.
+- **T2** — hybrid search: RRF fusion (k=60) + per-type decay (notes 14d,
+  decisions 60d, lessons never) + domain-scope-first + stale/missing index
+  degrades to lexical with a warning + `--lexical` escape +
+  no-regression tests (hybrid never ranks below lexical-only).
+- **T3** — save-time dedup promotion: `CheckDuplicate` enforced at the CLI
+  save/note boundary (not inside `Save`, so `memory import` round-trips
+  stay intact), 0.92 bar, topic-key revision bypass, supersede-hiding
+  composition + eval fixture tests.
+- **T4** — `memory relate --suggest <id>`: top-5 vector candidates above
+  the 0.5 floor, suggestion-only (writes nothing), refuses on a
+  missing/stale index with a reindex pointer.
+
+Measured at landing (2026-10-29 sandbox, `internal/almanac/perf_test.go`,
+10k synthetic obs, fixed seed 42):
+
+- reindex ≈ 180ms — inside the §5 < 2s budget with 10x headroom.
+- hybrid p95 ≈ 39–44ms (p50 ≈ 30–31ms, max ≈ 41–53ms over 4 runs) —
+  inside the §5 50ms budget after the T5-followup single-load
+  optimization (one HybridSearch parses the JSONL once and reads
+  pins/relations once, shared by both rank paths; before: p95 ≈ 55–60ms,
+  p50 ≈ 47–49ms). The perf test asserts the 50ms budget directly.
+- dedup 0.92 bar margins (eval fixture,
+  `TestDedupThresholdMatchesFixture`): weakest dup typo/pooling 0.9350
+  (+0.015 above the bar), nearest clean unrelated/pool-vs-runtime 0.2565
+  (−0.66 below the bar). Paraphrases sit at 0.9503–0.9603; the other
+  clean pair at 0.1193.
+
+Deferred per S8: v2.1 pluggable ONNX MiniLM waits for live miss-rate
+evidence. `go.mod` gain after v2.0: zero require directives
+(`TestZeroDepsGoMod` pins the S9 invariant).

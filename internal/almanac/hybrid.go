@@ -67,26 +67,76 @@ func degradedLexical(root string, q Query) ([]Observation, bool, error) {
 	return hits, true, nil
 }
 
-// hybridFresh fuses both channels; domain queries rank scoped hits before
-// the global fallback, deduped by ID, then Latest/Limit apply.
-func hybridFresh(root string, q Query, entries []IndexEntry, now time.Time) ([]Observation, error) {
-	if q.Domain != "" {
-		scoped, err := fusedRanked(root, q, entries, now)
-		if err != nil {
-			return nil, err
-		}
-		globalQ := q
-		globalQ.Domain = ""
-		global, err := fusedRanked(root, globalQ, entries, now)
-		if err != nil {
-			return nil, err
-		}
-		return applyLatestLimit(mergeDomainFirst(scoped, global), q), nil
+// hybridCorpus is the once-per-HybridSearch shared read: the parsed log
+// plus pins and the supersede-hidden set. Loaded once in hybridFresh and
+// shared by the lexical-rank and vector-rank paths (and by both domain
+// scopes) so one HybridSearch parses the JSONL once, not twice, and reads
+// pins/relations once.
+type hybridCorpus struct {
+	all    []Observation
+	pins   map[string]bool
+	hidden map[string]bool // full supersede-hidden set; nil when no relations (matches SupersededIDs)
+}
+
+// loadHybridCorpus reads the log, pins and relations once. The hidden set
+// mirrors SupersededIDs exactly (nil with no relations, otherwise the
+// superseder-exists-guarded set) but reuses the already-loaded log
+// instead of parsing it a second time inside SupersededIDs.
+func loadHybridCorpus(root string) (hybridCorpus, error) {
+	all, err := All(root)
+	if err != nil {
+		return hybridCorpus{}, err
 	}
-	ranked, err := fusedRanked(root, q, entries, now)
+	pins, err := PinnedIDs(root)
+	if err != nil {
+		return hybridCorpus{}, err
+	}
+	rels, err := Relations(root)
+	if err != nil {
+		return hybridCorpus{}, err
+	}
+	var hidden map[string]bool
+	if len(rels) > 0 {
+		exists := make(map[string]bool, len(all))
+		for _, o := range all {
+			exists[o.ID] = true
+		}
+		hidden = make(map[string]bool)
+		for _, r := range rels {
+			if r.Relation == RelationSupersedes && exists[r.From] && exists[r.To] {
+				hidden[r.To] = true
+			}
+		}
+	}
+	return hybridCorpus{all: all, pins: pins, hidden: hidden}, nil
+}
+
+// supersededFor selects the hidden set for one query scope: empty when
+// IncludeSuperseded (matches Search), otherwise the shared hidden set
+// (nil with no relations, matching SupersededIDs).
+func (c hybridCorpus) supersededFor(q Query) map[string]bool {
+	if q.IncludeSuperseded {
+		return map[string]bool{}
+	}
+	return c.hidden
+}
+
+// hybridFresh fuses both channels; domain queries rank scoped hits before
+// the global fallback, deduped by ID, then Latest/Limit apply. The corpus
+// loads once here and is shared by every rank path below.
+func hybridFresh(root string, q Query, entries []IndexEntry, now time.Time) ([]Observation, error) {
+	corpus, err := loadHybridCorpus(root)
 	if err != nil {
 		return nil, err
 	}
+	if q.Domain != "" {
+		scoped := fusedRankedWith(corpus, q, entries, now)
+		globalQ := q
+		globalQ.Domain = ""
+		global := fusedRankedWith(corpus, globalQ, entries, now)
+		return applyLatestLimit(mergeDomainFirst(scoped, global), q), nil
+	}
+	ranked := fusedRankedWith(corpus, q, entries, now)
 	return applyLatestLimit(ranked, q), nil
 }
 
@@ -140,52 +190,43 @@ type scoredObs struct {
 	score float64
 }
 
-// fusedRanked returns the fused order for one domain scope, without
+// fusedRankedWith returns the fused order for one domain scope, without
 // Latest/Limit: pinned first, fused score, then confidence/recency/id.
-func fusedRanked(root string, q Query, entries []IndexEntry, now time.Time) ([]Observation, error) {
-	lexRank, err := lexicalRanks(root, q)
-	if err != nil {
-		return nil, err
-	}
-	all, err := All(root)
-	if err != nil {
-		return nil, err
-	}
-	pins, err := PinnedIDs(root)
-	if err != nil {
-		return nil, err
-	}
-	superseded := map[string]bool{}
-	if !q.IncludeSuperseded {
-		superseded, err = SupersededIDs(root)
-		if err != nil {
-			return nil, err
-		}
-	}
-	vecRank, byID := vectorRanks(q, all, entries, superseded)
+// Pure function over the shared corpus — no I/O.
+func fusedRankedWith(corpus hybridCorpus, q Query, entries []IndexEntry, now time.Time) []Observation {
+	lexRank := lexicalRanksWith(corpus, q)
+	superseded := corpus.supersededFor(q)
+	vecRank, byID := vectorRanks(q, corpus.all, entries, superseded)
 	scored := scoreCandidates(byID, lexRank, vecRank, now)
-	sortScored(pins, scored)
+	sortScored(corpus.pins, scored)
 	out := make([]Observation, 0, len(scored))
 	for _, s := range scored {
 		out = append(out, s.obs)
 	}
-	return out, nil
+	return out
 }
 
-// lexicalRanks runs the existing Search untruncated for RRF ranks.
-func lexicalRanks(root string, q Query) (map[string]int, error) {
+// lexicalRanksWith ranks the shared log with the exact Search order
+// (same matcher.keeps buckets+terms, same sortHits pin/confidence/
+// recency/id) untruncated for RRF ranks — no second log parse, no Search call.
+func lexicalRanksWith(corpus hybridCorpus, q Query) map[string]int {
 	qLex := q
 	qLex.Limit = 0
 	qLex.Latest = false
-	hits, err := Search(root, qLex)
-	if err != nil {
-		return nil, err
+	matcher := queryMatcher{q: qLex, superseded: corpus.supersededFor(qLex)}
+	var hits []Observation
+	for _, o := range corpus.all {
+		if !matcher.keeps(o) {
+			continue
+		}
+		hits = append(hits, o)
 	}
+	sortHits(corpus.pins, hits)
 	ranks := make(map[string]int, len(hits))
 	for i, h := range hits {
 		ranks[h.ID] = i + 1
 	}
-	return ranks, nil
+	return ranks
 }
 
 // vectorRanks scans the index for bucket-passing candidates above zero

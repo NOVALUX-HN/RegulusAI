@@ -108,3 +108,67 @@ evidence refuses instead of inventing a lesson.
 `regulus chart init` scaffolds `Domain: <name>` at the top — set it to
 the lesson domain (e.g. `go`, `docs`) so the context hook injects
 that domain's lessons instead of the newest of all domains.
+
+## `regulus memory reindex` — when and why
+
+Semantic search needs the derived vector index
+(`.regulus/almanac/retrieval.bin`), built from your observation log:
+
+```bash
+regulus memory reindex
+```
+
+Run it once after upgrading to v2.0, and again whenever search or
+`suggest` complains the index is stale — any save after the last
+reindex makes it stale (the index pins the log's sha256, so staleness
+is exact, not heuristic). Reindexing is a pure function of the log:
+twice on the same log yields a byte-identical file, and stdout prints
+the pinned sha. On an empty log it refuses ("no observations log yet")
+— save an observation first.
+
+## `regulus memory search` warns "semantic index stale or missing — lexical only"
+
+That is the designed degrade path, not an error: the index is missing,
+stale (the log changed since the last reindex), or corrupt, so search
+ran lexical-only and told you on stderr. Results are still correct,
+just without vector recall. Fix it with `regulus memory reindex`. To
+force the old path on purpose (no warning), pass `--lexical`:
+
+```bash
+regulus memory search --lexical <terms>
+```
+
+Fresh index + no flag = hybrid ranking, silently. Fresh index + flag =
+lexical, silently. Stale/missing index without the flag = lexical +
+warning on stderr (stdout matches the `--lexical` output exactly).
+
+## `regulus memory save` refuses with "near-duplicate save (matches ... similarity ..."
+
+Saves scoring above 0.92 cosine against a live observation are refused
+instead of stored as silent near-duplicates. The message names the
+matching observation id and its similarity. Two cases:
+
+- It really is a new revision of the same thought: re-save with
+  `--topic-key <existing-key>` to append it to that chain instead.
+- It is a different thought the hash embedder confuses: reword the
+  title/content until the similarity drops (unrelated observations in
+  the eval fixture score 0.26 or lower, far below the bar).
+
+Refused saves exit non-zero and leave the log untouched. `memory import`
+is exempt (re-importing identical content must succeed), and
+observations hidden by a `supersedes` relation are excluded from the
+comparison.
+
+## `regulus memory relate --suggest <id>` says "requires a fresh semantic index"
+
+Suggestions ARE the vector channel — there is no lexical fallback, so a
+missing or stale index refuses (with a `reindex` pointer) instead of
+presenting keyword hits as similarities. Run `regulus memory reindex`
+first. Notes on the output:
+
+- One line per candidate: `<id> <cosine> <title>`, top-5 above 0.5.
+- Suggestion-only: nothing is written. Confirm with a plain relate:
+  `regulus memory relate --id <a> --relation related --to <b>`.
+- The source itself and `supersedes`-hidden observations never appear.
+  No candidates ("no suggestions above threshold") means nothing cleared
+  the 0.5 floor, not an error.
