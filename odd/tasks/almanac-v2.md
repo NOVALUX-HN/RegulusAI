@@ -19,7 +19,7 @@ to `## Log`.
 
 ## Tasks
 
-- [x] T1 (S9) — hash embedder + retrieval.bin + `memory reindex` + determinism/header tests — route: inline — commit: this unit
+- [x] T1 (S9) — hash embedder + retrieval.bin + `memory reindex` + determinism/header tests — route: inline — commit: b8911be
 - [ ] T2 (S3,S4,S6,S7,S9) — hybrid search (RRF + type decay + domain scope + stale degrade + `--lexical`) + no-regression tests — route: inline — commit: —
 - [ ] T3 (S2,S5) — save-time dedup promotion + composition tests + eval fixture — route: inline — commit: —
 - [ ] T4 (S9) — `relate` vector candidates + tests — route: inline — commit: —
