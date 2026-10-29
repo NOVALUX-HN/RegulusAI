@@ -1,5 +1,12 @@
 # Troubleshooting
 
+## `/regulus-yolo` (or editing opencode.json) doesn't take effect immediately
+
+Opencode reads its config once at startup: flipping YOLO (or any
+permission) needs a refresh. Run `/reload` in the TUI (no full
+restart), or restart opencode. The `regulus yolo` command always
+prints this reminder after `on`/`off`.
+
 ## Terminal windows flash open and shut on Windows whenever regulus runs
 
 The opencode background server has no console on Windows, so every

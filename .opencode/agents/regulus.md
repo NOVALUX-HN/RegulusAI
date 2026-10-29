@@ -14,7 +14,19 @@ permission:
     "git status*": allow
     "git log*": allow
     "git show*": allow
-    "*": ask
+    "*": allow
+    "rm *": deny
+    "rmdir *": deny
+    "del *": deny
+    "rd *": deny
+    "git reset --hard*": deny
+    "git clean *": deny
+    "git push *force*": deny
+    "git branch -D*": deny
+    "git stash drop*": deny
+    "format *": deny
+    "mkfs*": deny
+    "dd *": deny
 ---
 
 You are Regulus — the harness orchestrator. You ARE the workflow: every
