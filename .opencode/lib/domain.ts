@@ -111,6 +111,33 @@ export function suggestSkills(skills: Skill[], messagesText: string): Skill[] {
 // RunBin runs the regulus binary; injected so tests can fake it.
 export type RunBin = (args: string[]) => Promise<{ exitCode: number; output: string }>
 
+// REGULUS_CONTRACT is the plugin<->core protocol version this backend
+// build speaks. Mirrors the Go core's internal/contract.Version: the
+// CLI prints it for `regulus contract`, and the plugin refuses the
+// session's regulus tools unless the core speaks exactly this value.
+export const REGULUS_CONTRACT = "regulus.contract/v1";
+
+// checkContract turns the result of `regulus contract` into a refusal
+// message, or "" when the core speaks exactly the required version.
+// Fail-closed: an older binary without the contract command cannot
+// prove the contract — the docs' promise is the contract — so it is
+// refused with guidance naming the required version.
+export function checkContract(result: { exitCode: number; output: string }): string {
+  const spoken = result.output.trim();
+  if (result.exitCode === 0 && spoken === REGULUS_CONTRACT) return "";
+  if (result.exitCode !== 0) {
+    return (
+      `regulus: contract mismatch — this binary does not answer the contract check (exit ${result.exitCode}), ` +
+      `an older core cannot prove ${REGULUS_CONTRACT}. ` +
+      `The plugin refuses an unverifiable core: update the regulus binary (rebuild ./cmd/regulus or refresh bin/ plus binaries/).`
+    );
+  }
+  return (
+    `regulus: contract mismatch — the core speaks "${spoken}", the plugin requires ${REGULUS_CONTRACT}. ` +
+    `Update the regulus binary so core and plugin speak the same contract version.`
+  );
+}
+
 async function readDomain(path: string): Promise<string> {
   try {
     return findDomainInChart(await Bun.file(path).text())

@@ -13,11 +13,14 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 
 ## Quickstart
 
-**Prerequisites**: [OpenCode V2](https://opencode.ai) (the only supported runtime — the doctor refuses V1), Node.js 18+.
+**Prerequisites**: [OpenCode V2](https://opencode.ai) (the only supported runtime — the doctor refuses V1), Node.js 18+ and Go (the core build).
 
 ```bash
-# 1. Install the core (builds the platform binary through the launcher)
-npm install -g regulus-ai
+# 1. Build the core from source (no npm distribution yet — `regulus-ai`
+#    is not published; the quickstart is build-from-repo)
+git clone https://github.com/andragon31/RegulusAI && cd RegulusAI
+npm run build          # = bash scripts/build.bash → binaries/regulus-<os>-<arch>
+# then put the binary for your platform on your PATH as `regulus`
 
 # 2. Verify the runtime — this is the only install check you need
 regulus doctor      # opencode v2.x — supported (V2)

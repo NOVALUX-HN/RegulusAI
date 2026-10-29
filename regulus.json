@@ -7,6 +7,7 @@
     { "name": "coverage-floor", "layer": 5, "command": "go tool cover -func=.regulus/coverage.out | tail -n1", "metric": { "extract": "last-line-percent", "threshold": 80, "operator": ">=" } },
     { "name": "mutation", "layer": 6, "command": "tmp=$(mktemp -d); git archive HEAD | tar -x -C \"$tmp\" && cd \"$tmp\" && \"$HOME/go/bin/gremlins\" unleash ./internal/receipts --threshold-efficacy=70; rc=$?; rm -rf \"$tmp\"; exit $rc", "timeout_sec": 600 },
     { "name": "crap", "layer": 7, "command": "bin/regulus crap --profile .regulus/coverage.out --max 30 --top 5" },
-    { "name": "vulncheck", "layer": 8, "command": "\"$HOME/go/bin/govulncheck\" ./... 2>/dev/null || echo 'govulncheck not installed — skipped'", "timeout_sec": 120 }
+    { "name": "vulncheck", "layer": 8, "command": "\"$HOME/go/bin/govulncheck\" ./... 2>/dev/null || echo 'govulncheck not installed — skipped'", "timeout_sec": 120 },
+    { "name": "spec", "layer": 9, "command": "go run ./cmd/regulus spec check charts/regulus-ai-v1.md" }
   ]
 }

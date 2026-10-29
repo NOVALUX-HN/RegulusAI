@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { extractPaths, loadSkills, resolveDomain, suggestSkills } from "../lib/domain"
+import { checkContract, extractPaths, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills } from "../lib/domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -51,6 +51,8 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
     "Search the Almanac deterministically: optional buckets (topic key, domain, type) then exact term matching — every term must match; newest first with age annotations.",
   memory_context:
     "The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.",
+  memory_history:
+    "List every observation sharing a topic key, in saved order — the revision chain of an evolving topic.",
   evolve_propose:
     "Assemble the evidence pack for a task (session traces, receipts, domain INDEX, decisions) plus the candidate template — the input for @regulus-proposer.",
   probe_contrast:
@@ -108,13 +110,17 @@ interface RunResult {
   output: string
 }
 
-async function run(bin: string, args: string[], signal?: AbortSignal): Promise<RunResult> {
+// run spawns the regulus binary. cwd (S1/S2) is the PROJECT ROOT —
+// every child (gate, spec, memory, trace, probe, evolve) must resolve
+// relative paths (`charts/…`) and regulus.json against the project,
+// never against the OpenCode server process's own cwd.
+async function run(bin: string, args: string[], cwd?: string, signal?: AbortSignal): Promise<RunResult> {
   // windowsHide: the opencode server has no console on Windows, and every
   // spawn of the regulus binary (each tool call, each trace record, each
   // context hook) flashed a terminal window open and shut without it.
   const proc = signal
-    ? Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", signal, windowsHide: true })
-    : Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", windowsHide: true })
+    ? Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", signal, windowsHide: true, cwd })
+    : Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", windowsHide: true, cwd })
   const stdoutP = new Response(proc.stdout).text()
   const stderrP = new Response(proc.stderr).text()
   const exitCode = await proc.exited
@@ -141,22 +147,29 @@ function candidates(dir: string): string[] {
 }
 
 // resolveRegulus finds a regulus binary whose doctor accepts THIS OpenCode
-// runtime — the plugin fails fast at setup when no pair works.
+// runtime AND whose `contract` answers the exact version this plugin
+// speaks (S3) — the plugin fails fast at setup when no pair works, so
+// a mismatched core can never execute a regulus tool in the session.
 async function resolveRegulus(dir: string): Promise<string> {
   const failures: string[] = []
   for (const bin of candidates(dir)) {
     let res: RunResult
     try {
-      res = await run(bin, ["doctor"])
+      res = await run(bin, ["doctor"], dir)
     } catch (err) {
       failures.push(`${bin}: ${(err as Error).message}`)
       continue
     }
-    if (res.exitCode === 0) return bin
-    failures.push(`${bin}: ${res.output}`)
+    if (res.exitCode !== 0) {
+      failures.push(`${bin}: ${res.output}`)
+      continue
+    }
+    const refusal = checkContract(await run(bin, ["contract"], dir))
+    if (refusal === "") return bin
+    failures.push(`${bin}: ${refusal}`)
   }
   throw new Error(
-    `regulus: no working regulus binary with a supported OpenCode V2 runtime.\n${failures.join("\n")}`,
+    `regulus: no working regulus binary — a supported OpenCode V2 runtime speaking contract ${REGULUS_CONTRACT} is required.\n${failures.join("\n")}`,
   )
 }
 
@@ -187,7 +200,7 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { task } = input as { task: string }
-          const res = await run(bin, ["gate", "run", task], context.signal)
+          const res = await run(bin, ["gate", "run", task], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -206,7 +219,7 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { file } = input as { file: string }
-          const res = await run(bin, ["spec", "check", file], context.signal)
+          const res = await run(bin, ["spec", "check", file], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -217,7 +230,7 @@ export default Plugin.define({
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
-          const res = await run(bin, ["doctor"], context.signal)
+          const res = await run(bin, ["doctor"], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -236,7 +249,7 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { text } = input as { text: string }
-          const res = await run(bin, ["memory", "note", text], context.signal)
+          const res = await run(bin, ["memory", "note", text], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -247,7 +260,7 @@ export default Plugin.define({
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
-          const res = await run(bin, ["memory", "show"], context.signal)
+          const res = await run(bin, ["memory", "show"], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -280,7 +293,7 @@ export default Plugin.define({
           if (paths) args.push("--path", paths)
           if (receipts) args.push("--receipt", receipts)
           args.push(content)
-          const res = await run(bin, args, context.signal)
+          const res = await run(bin, args, dir, context.signal)
           return { content: res.output }
         },
       })
@@ -321,7 +334,7 @@ export default Plugin.define({
           for (const term of (terms ?? "").split(/\s+/).filter((t) => t !== "")) {
             args.push(term)
           }
-          const res = await run(bin, args, context.signal)
+          const res = await run(bin, args, dir, context.signal)
           return { content: res.output }
         },
       })
@@ -332,7 +345,26 @@ export default Plugin.define({
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
-          const res = await run(bin, ["memory", "context"], context.signal)
+          const res = await run(bin, ["memory", "context"], dir, context.signal)
+          return { content: res.output }
+        },
+      })
+
+      editor.add({
+        name: "memory_history",
+        description: guidance["memory_history"],
+        input: {
+          type: "object",
+          properties: {
+            topic_key: { type: "string", description: "the revision chain to list (required)" },
+          },
+          required: ["topic_key"],
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { topic_key } = input as { topic_key: string }
+          const res = await run(bin, ["memory", "history", "--topic-key", topic_key], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -352,7 +384,7 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { task, domain } = input as Record<string, string>
-          const res = await run(bin, ["evolve", "propose", "--task", task, "--domain", domain], context.signal)
+          const res = await run(bin, ["evolve", "propose", "--task", task, "--domain", domain], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -377,6 +409,7 @@ export default Plugin.define({
           const res = await run(
             bin,
             ["probe", "contrast", "--task", task, "--gate", gate, "--a", a, "--b", b],
+            dir,
             context.signal,
           )
           return { content: res.output }
@@ -397,7 +430,7 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { session } = input as Record<string, string>
-          const res = await run(bin, ["trace", "show", "--session", session], context.signal)
+          const res = await run(bin, ["trace", "show", "--session", session], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -408,7 +441,7 @@ export default Plugin.define({
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
-          const res = await run(bin, ["skills", "list"], context.signal)
+          const res = await run(bin, ["skills", "list"], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -419,7 +452,7 @@ export default Plugin.define({
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
-          const res = await run(bin, ["trace", "sessions"], context.signal)
+          const res = await run(bin, ["trace", "sessions"], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -438,7 +471,7 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { session } = input as Record<string, string>
-          const res = await run(bin, ["trace", "files", "--session", session], context.signal)
+          const res = await run(bin, ["trace", "files", "--session", session], dir, context.signal)
           return { content: res.output }
         },
       })
@@ -464,6 +497,7 @@ export default Plugin.define({
           const res = await run(
             bin,
             ["probe", "compose", "--task", task, "--gate", gate, "--base", base, "--a", a, "--b", b],
+            dir,
             context.signal,
           )
           return { content: res.output }
@@ -533,7 +567,7 @@ export default Plugin.define({
         ]
         const files = extractPaths(JSON.stringify((event as { input?: unknown }).input ?? ""))
         if (files.length > 0) args.push("--files", files.join(","))
-        await run(bin, args)
+        await run(bin, args, dir)
       } catch {
         // hook failures never break tool execution
       }
@@ -549,10 +583,10 @@ export default Plugin.define({
     // otherwise.
     await ctx.session.hook("context", async (event) => {
       const recent = JSON.stringify(event.messages ?? []).slice(-20000)
-      const domain = await resolveDomain(dir, (args) => run(bin, args), recent, event.sessionID)
+      const domain = await resolveDomain(dir, (args) => run(bin, args, dir), recent, event.sessionID)
       const args = ["memory", "search", "--type", "lesson", "--limit", "3"]
       if (domain !== "") args.push("--domain", domain)
-      const lessons = await run(bin, args)
+      const lessons = await run(bin, args, dir)
       if (lessons.exitCode === 0 && lessons.output !== "" && !lessons.output.startsWith("no matching")) {
         event.system.push({ type: "text", text: dataBlock("regulus_admitted_lessons", lessons.output) })
       }
@@ -571,7 +605,7 @@ export default Plugin.define({
     })
 
     await ctx.session.hook("compaction", async (event) => {
-      const context_ = await run(bin, ["memory", "context"])
+      const context_ = await run(bin, ["memory", "context"], dir)
       if (context_.exitCode === 0 && context_.output !== "") {
         event.system.push({ type: "text", text: dataBlock("regulus_almanac_context", context_.output) })
       }

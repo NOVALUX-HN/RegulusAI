@@ -3,11 +3,13 @@
 // needed: lib/domain.ts has zero host imports by design.
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
+  checkContract,
   clearDomainsCache,
   distinctiveWords,
   extractPaths,
   findChartRefs,
   findDomainInChart,
+  REGULUS_CONTRACT,
   resolveDomain,
   suggestSkills,
   type RunBin,
@@ -185,6 +187,25 @@ describe("suggestSkills", () => {
   });
 });
 
+describe("checkContract (S3)", () => {
+  test("the core speaking the required version passes", () => {
+    expect(checkContract({ exitCode: 0, output: "regulus.contract/v1" })).toBe("");
+  });
+  test("the CLI's trailing newline (fmt.Fprintln) does not upset the match", () => {
+    expect(checkContract({ exitCode: 0, output: `regulus.contract/v1\n` })).toBe("");
+  });
+  test("a mismatched core is refused, naming the required version", () => {
+    const refusal = checkContract({ exitCode: 0, output: "regulus.contract/v2" });
+    expect(refusal).toContain(`"regulus.contract/v2"`);
+    expect(refusal).toContain(REGULUS_CONTRACT);
+    expect(refusal).toContain("Update the regulus binary");
+  });
+  test("an older binary without the contract command fails closed (guidance, not trust)", () => {
+    const refusal = checkContract({ exitCode: 2, output: `regulus: unknown command "contract"` });
+    expect(refusal).toContain(REGULUS_CONTRACT);
+    expect(refusal).toContain("contract check");
+  });
+});
 describe("tool guidance sync", () => {
   test("tool-guidance.md sections match the compiled defaults", async () => {
     const root = import.meta.dir + "/../..";
@@ -269,9 +290,38 @@ describe("tool param sync", () => {
   const propOf = (tool: string, f: string) =>
     FLAG_EXCEPTIONS[`${tool}::${f}`] ?? f.slice(2).replace(/-/g, "_");
 
+  // Surface parity pinned at 16 (self-audit U1): the CLI's memory
+  // surface is fully exposed — the last missing tool was memory_history.
+  // Exact count and exact names; a new CLI command means a test edit,
+  // not a silent drift.
+  const TOOL_NAMES = [
+    "gate_run",
+    "spec_check",
+    "doctor",
+    "memory_note",
+    "memory_show",
+    "memory_save",
+    "memory_search",
+    "memory_context",
+    "memory_history",
+    "evolve_propose",
+    "probe_contrast",
+    "trace_show",
+    "skills_list",
+    "trace_sessions",
+    "trace_files",
+    "probe_compose",
+  ];
+
+  test("the tool surface is exactly 16 named tools", () => {
+    const blocks = toolBlocks();
+    expect(blocks.map((b) => b.name).sort()).toEqual([...TOOL_NAMES].sort());
+    expect(blocks.length).toBe(16);
+  });
+
   test("every tool wires its declared params to CLI flags", () => {
     const blocks = toolBlocks();
-    expect(blocks.length).toBeGreaterThan(10);
+    expect(blocks.length).toBe(16);
     for (const { name, body } of blocks) {
       const props = declaredProps(body);
       const reqM = body.match(/required: \[([^\]]*)\]/);
@@ -292,5 +342,26 @@ describe("tool param sync", () => {
         expect(props.has(propOf(name, f))).toBe(true);
       }
     }
+  });
+
+  test("memory_history's one param reaches --topic-key (S4 flag parity)", () => {
+    const block = toolBlocks().find((b) => b.name === "memory_history");
+    expect(block).toBeDefined();
+    const body = block!.body;
+    expect(body).toContain(`"memory", "history", "--topic-key", topic_key`);
+    expect(declaredProps(body)).toEqual(new Set(["topic_key"]));
+    expect(body).toContain(`required: ["topic_key"]`);
+  });
+});
+
+describe("contract enforcement wiring (S3)", () => {
+  test("resolveRegulus probes `regulus contract` and refuses on mismatch", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const resolveBlock = src.slice(src.indexOf("function resolveRegulus"), src.indexOf("export default"));
+    expect(resolveBlock).toContain(`["contract"]`);
+    expect(resolveBlock).toContain("checkContract");
+    expect(resolveBlock).toContain("REGULUS_CONTRACT");
+    // the refusal message carries the required version, per the Chart
+    expect(resolveBlock).toMatch(/contract \$\{REGULUS_CONTRACT\}/);
   });
 });

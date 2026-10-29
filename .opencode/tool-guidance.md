@@ -43,6 +43,10 @@ Search the Almanac deterministically: optional buckets (topic key, domain, type)
 
 The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.
 
+## memory_history
+
+List every observation sharing a topic key, in saved order — the revision chain of an evolving topic.
+
 ## evolve_propose
 
 Assemble the evidence pack for a task (session traces, receipts, domain INDEX, decisions) plus the candidate template — the input for @regulus-proposer.

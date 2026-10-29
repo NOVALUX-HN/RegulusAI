@@ -4,12 +4,38 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
-## [0.8.0] — 2026-10-29 — tool-surface parity (personal use)
+## [0.8.1] — 2026-10-28 — self-audit fixes (personal use)
+
+Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
+
+Resolves the Oct 28 self-audit (live probing + scout report):
+
+- Plugin cwd fix: the CLI child process spawns with the project root as
+  its working directory, so relative paths resolve from a live session;
+  `resolveRegulus` refuses a mismatched core contract before any regulus
+  tool executes.
+- Tool-surface parity closed at 16: `memory_history` registered as a
+  plugin tool; the sync guard asserts the exact tool count of 16 and each
+  tool's declared params against its CLI flags.
+- Docs truth sync: the `docs/agents.md` table raised to the full 16
+  tools; `docs/architecture.md` lists the implemented hooks
+  (`tool.execute.after`, 2× `session.context`, `session.compaction`); the
+  README quickstart builds from source (`scripts/build.bash`) instead of
+  advertising the unpublished npm package; the v0.8.0 journey entry names
+  the test that exists (`TestV07MemoryLevels`).
+- CI evidence visibility: the gauntlet workflow renders
+  `regulus evidence list` into `docs/EVIDENCE.md` and commits it with
+  `[skip ci]`.
+- God-file split: `internal/cli/cli.go` (1,931 lines) and
+  `internal/almanac/almanac.go` (931) moved into same-package sibling
+  files — move-only, no behavior change.
+
+## [0.8.0] — 2026-10-28 — tool-surface parity (personal use)
 
 Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
 
 - Plugin↔CLI parity: `memory_search` gains path/limit/any/latest/include-superseded; new `trace_sessions`, `trace_files`, `probe_compose` (16 tools); guidance-sync test extended to required input params.
-- `TestV07Functional`: deterministic end-to-end of the v0.7 memory surface (collapse/latest, any, limit, supersede-hide, doctor, import round-trip, prune protection, per-task cap refusal, trace sessions/prune).
+- `TestV07MemoryLevels`: deterministic end-to-end of the v0.7 memory surface (collapse/latest, any, limit, supersede-hide, doctor, import round-trip, prune protection, per-task cap refusal, trace sessions/prune).
 - Troubleshooting +6 entries (reserved build.bash, per-day/per-task caps, prune dry-run, import atomicity, evolve no-evidence, Domain template).
 - Hook spawn cut: `library domains` memoized per project dir (trace files and searches uncached); counting test proves 2 hooks = 1 domains spawn.
 - `init` names `bun install in .opencode/` explicitly; `doctor` notes the plugin side can't be verified from outside OpenCode (exit codes unchanged).

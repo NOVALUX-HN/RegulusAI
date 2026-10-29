@@ -53,3 +53,11 @@ back with receipts.
 | `memory_save` | Saves a typed observation with provenance |
 | `memory_search` | Deterministic retrieval with age + git-distance annotations |
 | `memory_context` | The deterministic resume block |
+| `evolve_propose` | Assembles a task's evidence pack (traces, receipts, INDEX, decisions) for @regulus-proposer |
+| `probe_contrast` | Runs one gate twice with two command variants; the receipt diff is the evidence |
+| `trace_show` | Prints a session's tool-execution fingerprint (order, tool, status) |
+| `skills_list` | Lists the registered skills with their one-line triggers |
+| `trace_sessions` | Lists the session ids with traces on disk, oldest first |
+| `trace_files` | Lists the distinct touched paths of one session trace, in call order |
+| `probe_compose` | Runs one gate three times (base + two variants); merges non-conflicting changes, flags conflicts |
+| `memory_history` | The revision chain of one evolving topic (append-only) |

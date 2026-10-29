@@ -24,8 +24,8 @@ speaks only the **Regulus-owned contract**, versioned by us.
 ```
 OpenCode (host, TS/Bun runtime)
 ├── Plugin TS (boundary, version-gated)
-│     hooks: tool.execute.before/after, session.diff, file.edited,
-│            lsp.client.diagnostics, experimental.session.compacting
+│     hooks: tool.execute.after (trace capture), 2× session.context
+│            (discipline + domain lessons/skills), session.compaction (resume)
 │     duty: translate OpenCode events → Regulus contract; expose regulus tools
 ├── Guardian agents (.opencode/agents/*.md, read-only permissions)
 │     spec-keeper, gate-verifier (others later)
