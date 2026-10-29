@@ -205,10 +205,15 @@ func (c CLI) memoryNoteCmd(args []string) int {
 		title = string(runes[:60])
 	}
 	head := gates.GitHead(context.Background(), c.runner())
-	if _, err := almanac.Save(".", &almanac.Observation{
+	obs := &almanac.Observation{
 		Type: almanac.TypeSessionNote, Title: title, Content: text,
 		Provenance: &almanac.Provenance{GitHead: head},
-	}, time.Now().UTC()); err != nil {
+	}
+	if err := almanac.CheckDuplicate(".", obs); err != nil {
+		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
+		return 1
+	}
+	if _, err := almanac.Save(".", obs, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
 		return 1
 	}
@@ -262,11 +267,16 @@ func (c CLI) memorySaveCmd(args []string) int {
 		return 1
 	}
 	head := gates.GitHead(context.Background(), c.runner())
-	if _, err := almanac.Save(".", &almanac.Observation{
+	obs := &almanac.Observation{
 		Type: *typ, Title: *title, Content: content,
 		TopicKey: *topicKey, Domain: *domain,
 		Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: splitList(*paths), Receipts: splitList(*receiptsFlag)},
-	}, time.Now().UTC()); err != nil {
+	}
+	if err := almanac.CheckDuplicate(".", obs); err != nil {
+		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
+		return 1
+	}
+	if _, err := almanac.Save(".", obs, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 1
 	}

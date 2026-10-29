@@ -21,7 +21,8 @@ to `## Log`.
 
 - [x] T1 (S9) — hash embedder + retrieval.bin + `memory reindex` + determinism/header tests — route: inline — commit: b8911be
 - [x] T2 (S3,S4,S6,S7,S9) — hybrid search (RRF + type decay + domain scope + stale degrade + `--lexical`) + no-regression tests — route: inline — commit: 9f00896
-- [ ] T3 (S2,S5) — save-time dedup promotion + composition tests + eval fixture — route: inline — commit: —
+- [x] T3 (S2,S5) — save-time dedup promotion + composition tests + eval fixture — route: inline — commit: this unit
+- L2 (decision, T3 wiring): CheckDuplicate enforced at the CLI save/note boundary, NOT inside almanac.Save. Save-level refusal would break `memory import` round-trips (re-importing identical content must succeed) and every programmatic caller; the decider is exported and shared so future callers (e.g. reflect admission) opt in deliberately. T2 fixtures saving identical texts stay valid as-is.
 - [ ] T4 (S9) — `relate` vector candidates + tests — route: inline — commit: —
 - [ ] T5 (S8,S9) — perf budget test + zero-deps check + docs (memory-v2 status, troubleshooting) — route: inline — commit: —
 - [ ] T6 (S1) — full verification (go + bun + tsc + vet + gofmt) + reviewable commits — route: inline — commit: —
