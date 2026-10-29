@@ -15,6 +15,10 @@ const DENIES = [
   "git push *force*",
   "git branch -D*",
   "git stash drop*",
+  "git rm*",
+  "git checkout --*",
+  "git restore*",
+  "git rebase*",
   "format *",
   "mkfs*",
   "dd *",
@@ -47,6 +51,12 @@ describe("yolo permissions", () => {
       expect(at).toBeGreaterThan(allowAt);
     }
     expect(json?.permission?.doom_loop).toBe("ask");
+    const edit = json?.permission?.edit;
+    expect(typeof edit).toBe("object");
+    expect(edit["*"]).toBe("allow");
+    expect(edit["*.env"]).toBe("ask");
+    expect(edit["*.env.*"]).toBe("ask");
+    expect(edit["*.env.example"]).toBe("allow");
   });
 
   test("regulus agent mirrors the guardrails and stays primary", async () => {
@@ -55,6 +65,10 @@ describe("yolo permissions", () => {
     const bash = fm?.permission?.bash;
     expect(bash?.["*"]).toBe("allow");
     for (const d of DENIES) expect(bash?.[d]).toBe("deny");
+    const edit = fm?.permission?.edit;
+    expect(typeof edit).toBe("object");
+    expect(edit?.["*"]).toBe("allow");
+    expect(edit?.["*.env"]).toBe("ask");
     const head = text.slice(0, text.indexOf("---", 3));
     const allowAt = head.indexOf('"*": allow');
     expect(allowAt).toBeGreaterThan(-1);

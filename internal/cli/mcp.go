@@ -5,6 +5,11 @@ package cli
 // beyond the standard library. Every tool reuses the CLI's own code
 // paths (buffers in, buffers out) — never shell-outs — so MCP semantics
 // match CLI stderr semantics exactly.
+//
+// Trust boundary: the server enforces no OpenCode permission layer.
+// Clients (Devin project permissions) are the enforcement point.
+// Provenance fields (memory_save paths/receipts) are stored metadata
+// only — never read or written — and must stay repo-relative.
 
 import (
 	"bufio"

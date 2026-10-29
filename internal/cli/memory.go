@@ -266,11 +266,21 @@ func (c CLI) memorySaveCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "memory save: lessons enter through regulus reflect (evidence-gated)")
 		return 1
 	}
+	provenancePaths := splitList(*paths)
+	provenanceReceipts := splitList(*receiptsFlag)
+	if err := checkProvenancePaths(provenancePaths, "--path"); err != nil {
+		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
+		return 2
+	}
+	if err := checkProvenancePaths(provenanceReceipts, "--receipt"); err != nil {
+		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
+		return 2
+	}
 	head := gates.GitHead(context.Background(), c.runner())
 	obs := &almanac.Observation{
 		Type: *typ, Title: *title, Content: content,
 		TopicKey: *topicKey, Domain: *domain,
-		Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: splitList(*paths), Receipts: splitList(*receiptsFlag)},
+		Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: provenancePaths, Receipts: provenanceReceipts},
 	}
 	if err := almanac.CheckDuplicate(".", obs); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)

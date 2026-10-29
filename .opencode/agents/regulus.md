@@ -3,7 +3,11 @@ description: Regulus harness orchestrator — run the full Sextant workflow (aut
 mode: primary
 temperature: 0.2
 permission:
-  edit: allow
+  edit:
+    "*": allow
+    "*.env": ask
+    "*.env.*": ask
+    "*.env.example": allow
   task: allow
   webfetch: deny
   bash:
@@ -24,6 +28,10 @@ permission:
     "git push *force*": deny
     "git branch -D*": deny
     "git stash drop*": deny
+    "git rm*": deny
+    "git checkout --*": deny
+    "git restore*": deny
+    "git rebase*": deny
     "format *": deny
     "mkfs*": deny
     "dd *": deny

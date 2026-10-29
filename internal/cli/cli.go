@@ -100,6 +100,31 @@ func (c CLI) runner() gates.CmdRunner {
 	return gates.ShRunner{}
 }
 
+// checkProvenancePaths keeps Almanac provenance repo-relative: no absolute
+// paths, no drive letters, no ".." segments, no empty entries. Provenance
+// is metadata, not file access — the MCP trust boundary documents that the
+// server never reads or writes these paths, it only stores them.
+func checkProvenancePaths(values []string, flag string) error {
+	for _, v := range values {
+		p := strings.TrimSpace(v)
+		if p == "" {
+			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+		}
+		if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\") {
+			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+		}
+		if len(p) >= 2 && ((p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') && p[1] == ':') {
+			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+		}
+		for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+			if seg == ".." {
+				return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+			}
+		}
+	}
+	return nil
+}
+
 // splitList splits a comma-separated flag value, trimming spaces.
 func splitList(s string) []string {
 	if strings.TrimSpace(s) == "" {

@@ -12,11 +12,20 @@
       "git push *force*": "deny",
       "git branch -D*": "deny",
       "git stash drop*": "deny",
+      "git rm*": "deny",
+      "git checkout --*": "deny",
+      "git restore*": "deny",
+      "git rebase*": "deny",
       "format *": "deny",
       "mkfs*": "deny",
       "dd *": "deny"
     },
-    "edit": "allow",
+    "edit": {
+      "*": "allow",
+      "*.env": "ask",
+      "*.env.*": "ask",
+      "*.env.example": "allow"
+    },
     "doom_loop": "ask"
   }
 }

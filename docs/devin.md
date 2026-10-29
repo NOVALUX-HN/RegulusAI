@@ -78,6 +78,17 @@ The `.devin/mcp_config.json` in this repo already points at
 `regulus mcp` over stdio; it assumes `regulus` is on PATH (or edit the
 `command` to an absolute path). `devin mcp list` confirms registration.
 
+## MCP trust boundary (read this before exposing regulus mcp)
+
+`regulus mcp` has no permission layer: OpenCode `permission` blocks do not
+apply over MCP. Treat every MCP client as untrusted input — Devin project
+permissions (`allow: ["Exec(regulus *)"]`, `ask: ["Write(**/.env*)"]`) are
+the enforcement point, not the server. Provenance fields (`memory_save
+--path/--receipt`) are metadata only: the server never reads or writes
+those paths, stores repo-relative values only, and refuses absolute paths
+and `..` traversal. Never point `regulus mcp` at a privileged shell or
+mount secrets where a prompt could name them.
+
 ## Devin Desktop — notes
 
 Install the native app (Releases page has macOS/Windows/Linux builds).

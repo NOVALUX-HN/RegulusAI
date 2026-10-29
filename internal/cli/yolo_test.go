@@ -113,6 +113,62 @@ func TestYoloRefusals(t *testing.T) {
 	_ = errb
 }
 
+func TestYoloTemplateDeniesDestructiveGitAndEnvAsk(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"yolo", "on"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	data, _ := os.ReadFile("opencode.json")
+	text := string(data)
+	for _, deny := range []string{`"git rm*": "deny"`, `"git checkout --*": "deny"`, `"git restore*": "deny"`, `"git rebase*": "deny"`} {
+		if !strings.Contains(text, deny) {
+			t.Fatalf("template must deny %s, got:\n%s", deny, text)
+		}
+	}
+	if !strings.Contains(text, `"*.env"`) {
+		t.Fatalf("template must ask for .env edits, got:\n%s", text)
+	}
+}
+
+func TestYoloOffFlipsEditToAskAndStatusReportsEdit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeOpencodeJSON(t, `{"permission":{"bash":{"*":"allow"},"edit":"allow"}}`)
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"yolo", "off"}); code != 0 {
+		t.Fatalf("off exit = %d", code)
+	}
+	data, _ := os.ReadFile("opencode.json")
+	if strings.Contains(string(data), `"edit": "allow"`) {
+		t.Fatalf("off must not leave edits auto-approved, got:\n%s", data)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"yolo", "status"}); code != 0 {
+		t.Fatalf("status exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "edit") {
+		t.Fatalf("status must report edit mode, got %q", out2.String())
+	}
+}
+
+func TestMemorySaveRejectsAbsoluteAndTraversalProvenance(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "t", "--path", "/etc/passwd", "body"}); code == 0 {
+		t.Fatal("absolute --path must be refused")
+	}
+	if !strings.Contains(errb.String(), "provenance") {
+		t.Fatalf("stderr = %q, want provenance guidance", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"memory", "save", "--type", "decision", "--title", "t", "--receipt", "../outside.json", "body"}); code == 0 {
+		t.Fatal("traversal --receipt must be refused")
+	}
+	if !strings.Contains(errb2.String(), "provenance") {
+		t.Fatalf("stderr = %q, want provenance guidance", errb2.String())
+	}
+}
+
 func TestYoloHelpListsCommand(t *testing.T) {
 	c, out, _ := newCLI(nil)
 	if code := c.Run([]string{"help"}); code != 0 {
