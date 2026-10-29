@@ -90,6 +90,23 @@ func ComposeWithRunner(root, task, gate, base, cmdA, cmdB string, now time.Time,
 		}
 		return fail(fmt.Errorf("probe compose: evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, cap))
 	}
+	tcap := reflect.TaskCap(root)
+	tcount, err := budget.TaskEvolutionCount(root, task, now)
+	if err != nil {
+		return fail(err)
+	}
+	if tcount >= tcap {
+		if err := budget.Record(root, budget.Entry{
+			Kind:      budget.KindProbe,
+			Timestamp: now.UTC(),
+			Task:      task,
+			Outcome:   budget.OutcomeRefusedCap,
+			Detail:    fmt.Sprintf("task cap %d reached", tcap),
+		}); err != nil {
+			return fail(err)
+		}
+		return fail(fmt.Errorf("probe compose: task evolution cap reached: task %q has %d run(s) today, task cap %d (regulus.json evolution.max_per_task)", task, tcount, tcap))
+	}
 
 	cfg, err := gates.Load(filepath.Join(root, "regulus.json"))
 	if err != nil {
