@@ -13,19 +13,19 @@ Regulus AI harness: gauntlet gates, spec contract, doctor, session memory
 
 ## gate_run
 
-Run the layered quality gauntlet for a task: gates in ascending layer order, stop at first failure, one append-only receipt per executed gate. Returns per-layer verdicts and the summary.
+Run the gauntlet for a task: layered gates, stop at first failure, one receipt per gate. Returns per-layer verdicts.
 
 ## spec_check
 
-Validate the acceptance-criteria contract of a feature document (## Acceptance section: scenarios need Given/When/Then). Returns 'spec OK: N scenario(s)' or every violation with line numbers.
+Validate a feature document's acceptance contract (Given/When/Then scenarios). Returns 'spec OK: N' or violations with line numbers.
 
 ## doctor
 
-Verify the OpenCode runtime and the regulus install (V2-only version gate).
+Verify the OpenCode V2 runtime and the regulus install.
 
 ## memory_note
 
-Append one durable session note (survives restarts and compaction).
+Append one durable session note (survives restarts).
 
 ## memory_show
 
@@ -33,44 +33,44 @@ List the session notes, oldest first.
 
 ## memory_save
 
-Save a typed observation to the Almanac (decision, discovery or preference) with provenance. Lessons are refused here: they enter through regulus reflect (evidence-gated).
+Save a typed observation (decision, discovery, preference) with provenance. Lessons are refused: they enter via regulus reflect.
 
 ## memory_search
 
-Search the Almanac deterministically: optional buckets (topic key, domain, type) then exact term matching — every term must match; newest first with age annotations.
+Search the Almanac: optional buckets (topic, domain, type), exact term matching, newest first with age annotations.
 
 ## memory_context
 
-The deterministic Almanac resume block: charts present, latest session notes, admitted lessons. The starting point after any restart.
+Resume block: charts present, latest notes, admitted lessons. Start here after any restart.
 
 ## memory_history
 
-List every observation sharing a topic key, in saved order — the revision chain of an evolving topic.
+List one topic key's observations in saved order — its revision chain.
 
 ## evolve_propose
 
-Assemble the evidence pack for a task (session traces, receipts, domain INDEX, decisions) plus the candidate template — the input for @regulus-proposer.
+Assemble a task's evidence pack (traces, receipts, INDEX, decisions) plus candidate template for @regulus-proposer.
 
 ## probe_contrast
 
-Run one gate twice with two command variants and return the receipt diff as evidence (cap-enforced; both runs executed is success).
+Run one gate twice with two variants; return the receipt diff (cap-enforced).
 
 ## trace_show
 
-Print a session's tool-execution fingerprint (sequence, tool, status) — the diffable process trace.
+Print a session's tool-execution fingerprint: sequence, tool, status.
 
 ## skills_list
 
-List the registered skills with their one-line triggers.
+List registered skills with one-line triggers.
 
 ## trace_sessions
 
-List the session ids with tool-execution traces on disk, oldest first.
+List session ids with tool traces, oldest first.
 
 ## trace_files
 
-List the distinct touched paths of one session trace, in call order.
+List one session trace's distinct touched paths, in order.
 
 ## probe_compose
 
-Run one gate three times (base plus two variants) and merge non-conflicting changes, flagging conflicts — behavioral contrast as evidence.
+Run one gate three times (base + two variants); merge cleanly or flag conflicts.
