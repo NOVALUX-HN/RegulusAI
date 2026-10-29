@@ -3,6 +3,7 @@
 // needed: domain.ts has zero host imports by design.
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
+  clearDomainsCache,
   distinctiveWords,
   extractPaths,
   findChartRefs,
@@ -117,6 +118,30 @@ describe("resolveDomain", () => {
       await expect(resolveDomain(dir, fake(["go"], {}), JSON.stringify([{ t: "hello" }]))).resolves.toBe("go");
     } finally {
       await rmTmp(dir);
+    }
+  });
+
+  test("caches library domains across hooks (T4)", async () => {
+    clearDomainsCache();
+    const dir = await mkTmpCharts({});
+    let domainSpawns = 0;
+    const counting: RunBin = async (a) => {
+      if (a[0] === "library" && a[1] === "domains") domainSpawns++;
+      return fake(["go", "ts"], {})(a);
+    };
+    try {
+      await expect(
+        resolveDomain(dir, counting, JSON.stringify([{ t: "hello" }]), "sess-cache"),
+      ).resolves.toBe("");
+      await expect(
+        resolveDomain(dir, counting, JSON.stringify([{ t: "hello" }]), "sess-cache"),
+      ).resolves.toBe("");
+      // Two hooks, one domains spawn: trace files + searches re-run,
+      // the domains list does not (it only changes on admit).
+      expect(domainSpawns).toBe(1);
+    } finally {
+      await rmTmp(dir);
+      clearDomainsCache();
     }
   });
 });

@@ -125,18 +125,36 @@ async function readDomain(path: string): Promise<string> {
 // one, (3) the lone library domain. "" means unfiltered (the old
 // newest-first behavior). Every step is defensive: any failure falls
 // through to the next, never throwing into the hook.
+// domainsCache memoizes `library domains` per project dir for the life
+// of the OpenCode process (T4 measurement: `library domains` is one
+// ~50ms binary spawn per context assembly; the list only changes when
+// a new domain is admitted, so re-spawning every hook is waste).
+// Trace files are NOT cached — they grow with every tool call.
+const domainsCache = new Map<string, string[]>()
+
+export function clearDomainsCache(): void {
+  domainsCache.clear()
+}
+
+async function getDomains(dir: string, runBin: RunBin): Promise<string[] | null> {
+  const hit = domainsCache.get(dir)
+  if (hit !== undefined) return hit
+  const res = await runBin(["library", "domains"])
+  if (res.exitCode !== 0) return null
+  const domains = res.output.split("\n").map((d) => d.trim()).filter((d) => d !== "")
+  domainsCache.set(dir, domains)
+  return domains
+}
+
 // domainFromFiles matches session trace files against lesson
 // provenance paths: the first (file, domain) pair with a lesson hit
 // wins. Bounded (3 files) and fully defensive.
-async function domainFromFiles(runBin: RunBin, sessionID: string): Promise<string> {
+async function domainFromFiles(runBin: RunBin, sessionID: string, domains: string[]): Promise<string> {
   if (sessionID === "") return ""
   const tf = await runBin(["trace", "files", "--session", sessionID])
   if (tf.exitCode !== 0) return ""
   const files = tf.output.split("\n").map((f) => f.trim()).filter((f) => f !== "" && !f.startsWith("(")).slice(0, 3)
   if (files.length === 0) return ""
-  const dl = await runBin(["library", "domains"])
-  if (dl.exitCode !== 0) return ""
-  const domains = dl.output.split("\n").map((d) => d.trim()).filter((d) => d !== "")
   for (const f of files) {
     for (const d of domains) {
       const hit = await runBin(["memory", "search", "--type", "lesson", "--domain", d, "--path", f])
@@ -161,15 +179,14 @@ export async function resolveDomain(dir: string, runBin: RunBin, messagesText: s
     } catch {
       // no charts or unreadable dir — fall through
     }
-    try {
-      const fromFiles = await domainFromFiles(runBin, sessionID)
-      if (fromFiles !== "") return fromFiles
-    } catch {
-      // trace lookup failed — fall through to the library signal
-    }
-    const res = await runBin(["library", "domains"])
-    if (res.exitCode === 0) {
-      const domains = res.output.split("\n").map((d) => d.trim()).filter((d) => d !== "")
+    const domains = await getDomains(dir, runBin)
+    if (domains !== null) {
+      try {
+        const fromFiles = await domainFromFiles(runBin, sessionID, domains)
+        if (fromFiles !== "") return fromFiles
+      } catch {
+        // trace lookup failed — fall through to the library signal
+      }
       if (domains.length === 1) return domains[0]
     }
   } catch {
