@@ -15,7 +15,7 @@ Read down to `## Log`.
 ## Tasks
 
 - [x] D1 (S2,S4) — `regulus mcp` stdio server + 12 tools + protocol tests — route: worker — commit: 21e32a2
-- [ ] D2 (S2,S3) — `.devin/` pack (regulus-workflow skill, worker+scout agents, mcp_config, permission snippet doc) + pack validation tests — route: worker — commit: —
+- [x] D2 (S2,S3) — `.devin/` pack (regulus-workflow skill, worker+scout agents, mcp_config, permission snippet doc) + pack validation tests — route: worker — commit: this unit
 - [ ] D3 (S1,S3) — docs/devin.md (Windows blueprint copy-paste, CLI/Desktop/Cloud recipe, limits) + full verification + reviewable commits — route: inline — commit: —
 
 ## Log
