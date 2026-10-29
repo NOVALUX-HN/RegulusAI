@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/executil"
 )
 
 // SupportedMajor is the only OpenCode major version Regulus supports.
@@ -33,7 +35,9 @@ type Runner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	executil.HideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/executil"
 	"regulus-ai/internal/receipts"
 )
 
@@ -84,6 +85,7 @@ type ShRunner struct{}
 
 func (ShRunner) Run(ctx context.Context, command string) (string, string, int, error) {
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	executil.HideWindow(cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()

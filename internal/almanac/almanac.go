@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/executil"
 )
 
 // Observation types.
@@ -248,7 +250,9 @@ func NormalizeProjectName(remoteURL, dirName string) string {
 // ProjectName resolves the project name from its git remote origin,
 // falling back to the directory name.
 func ProjectName(root string) string {
-	out, err := exec.Command("git", "-C", root, "config", "--get", "remote.origin.url").Output()
+	cmd := exec.Command("git", "-C", root, "config", "--get", "remote.origin.url")
+	executil.HideWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return strings.ToLower(filepath.Base(root))
 	}

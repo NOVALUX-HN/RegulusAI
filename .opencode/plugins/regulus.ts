@@ -109,9 +109,12 @@ interface RunResult {
 }
 
 async function run(bin: string, args: string[], signal?: AbortSignal): Promise<RunResult> {
+  // windowsHide: the opencode server has no console on Windows, and every
+  // spawn of the regulus binary (each tool call, each trace record, each
+  // context hook) flashed a terminal window open and shut without it.
   const proc = signal
-    ? Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", signal })
-    : Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe" })
+    ? Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", signal, windowsHide: true })
+    : Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", windowsHide: true })
   const stdoutP = new Response(proc.stdout).text()
   const stderrP = new Response(proc.stderr).text()
   const exitCode = await proc.exited

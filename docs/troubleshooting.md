@@ -1,5 +1,15 @@
 # Troubleshooting
 
+## Terminal windows flash open and shut on Windows whenever regulus runs
+
+The opencode background server has no console on Windows, so every
+spawn of the regulus binary (each tool call, each trace record, each
+context hook) used to pop a visible terminal window. Fixed in two
+places: the plugin spawns with `windowsHide: true`, and the Go code
+marks its children via `internal/executil.HideWindow` (doctor probe,
+gate runner, project-name lookup). If flashes return, a spawn site is
+missing the marking — grep for `exec.Command` and route it through
+`executil`.
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
