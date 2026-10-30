@@ -28,7 +28,8 @@ OpenCode (host, TS/Bun runtime)
 │            (discipline + domain lessons/skills), session.compaction (resume)
 │     duty: translate OpenCode events → Regulus contract; expose regulus tools
 ├── Guardian agents (.opencode/agents/*.md, read-only permissions)
-│     spec-keeper, gate-verifier (others later)
+│     spec-keeper, gate-verifier, mutation-auditor, crap-analyst,
+│     evidence-auditor, reviewer (plus crew verifier for high-risk claims)
 ├── Workflow skills (.opencode/skills/*/SKILL.md)
 │     regulus-gauntlet, regulus-reflect, regulus-workflow (the Sextant)
 └── regulus CLI (Go binary, spawned by plugin via $ / humans directly)

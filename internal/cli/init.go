@@ -20,11 +20,12 @@ func (c CLI) initCmd(args []string) int {
 	fs.SetOutput(c.Stderr)
 	stack := fs.String("stack", "smoke", "go | node | smoke")
 	harnessFrom := fs.String("harness-from", "", "repo root whose .opencode harness config to copy")
+	devin := fs.Bool("devin", false, "also scaffold .devin/mcp_config.json for Devin CLI/Desktop")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus init [--stack go|node|smoke] [--harness-from <repo>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus init [--stack go|node|smoke] [--harness-from <repo>] [--devin]")
 		return 2
 	}
 	if _, err := os.Stat("regulus.json"); err == nil {
@@ -69,9 +70,47 @@ func (c CLI) initCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "next: run bun install in .opencode/, run regulus doctor, open your first Chart")
 		return 0
 	}
-	fmt.Fprintln(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)")
+	devinNote := ""
+	if *devin {
+		if err := scaffoldDevinMcpConfig(); err != nil {
+			fmt.Fprintf(c.Stderr, "init: %v\n", err)
+			return 1
+		}
+		devinNote = ", .devin/mcp_config.json"
+	}
+	fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)%s\n", devinNote)
 	fmt.Fprintln(c.Stdout, "next: copy the .opencode/ harness config in (or re-run with --harness-from <repo>), run bun install in .opencode/, run regulus doctor, open your first Chart")
 	return 0
+}
+
+// devinMcpConfig is the `.devin/mcp_config.json` scaffold written by
+// `regulus init --devin`: it wires the regulus stdio MCP server the same
+// way this repo's own .devin/ pack does (command on PATH, `mcp` argv).
+// Devin project permissions stay the enforcement point (see docs/devin.md
+// MCP trust boundary) — this file only registers the server.
+const devinMcpConfig = `{
+  "mcpServers": {
+    "regulus": {
+      "command": "regulus",
+      "args": ["mcp"],
+      "env": {}
+    }
+  }
+}
+`
+
+// scaffoldDevinMcpConfig writes the Devin MCP server registration for a
+// fresh repo. It never overwrites: an existing .devin/mcp_config.json is
+// a project-owned file and stays untouched.
+func scaffoldDevinMcpConfig() error {
+	dst := filepath.Join(".devin", "mcp_config.json")
+	if _, err := os.Stat(dst); err == nil {
+		return errors.New(".devin/mcp_config.json already exists — refusing to overwrite")
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, []byte(devinMcpConfig), 0o644)
 }
 
 // copyHarnessConfig copies the harness configuration (discipline.md,

@@ -75,8 +75,14 @@ changed.
 ## Surface edits are refused with "outside the harness surface whitelist"
 
 Surface edits can only target: `.opencode/skills/`, `.opencode/agents/`,
-`.opencode/plugins/`, and `docs/`. Code, configs and everything else are
-outside the harness surface by design.
+`.opencode/plugins/`, `.opencode/discipline.md`,
+`.opencode/tool-guidance.md`, `docs/`, and `scripts/` (except reserved
+files below). Code, configs and everything else are outside the harness
+surface by design.
+
+Apply additionally requires a named guardian validator, appends
+per-extension markers (`//` for TS, `<!-- -->` for Markdown, `#`
+elsewhere), and never creates files: the target must already exist.
 
 ## Surface edits are refused with "is a reserved harness file"
 

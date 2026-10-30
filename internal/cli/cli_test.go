@@ -1864,6 +1864,45 @@ func TestInitScaffoldsFreshRepo(t *testing.T) {
 	}
 }
 
+func TestInitDevinScaffoldsMcpConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"init", "--stack", "smoke", "--devin"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	raw, err := os.ReadFile(filepath.Join(".devin", "mcp_config.json"))
+	if err != nil {
+		t.Fatalf("mcp_config.json: %v", err)
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("mcp_config.json must be JSON: %v", err)
+	}
+	srv, ok := cfg.Servers["regulus"]
+	if !ok || srv.Command != "regulus" {
+		t.Fatalf("mcp_config.json must wire the regulus server, got:\n%s", raw)
+	}
+	foundMcp := false
+	for _, a := range srv.Args {
+		if a == "mcp" {
+			foundMcp = true
+		}
+	}
+	if !foundMcp {
+		t.Fatalf("regulus server must run `regulus mcp`, got:\n%s", raw)
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"init", "--stack", "smoke", "--devin"}); code == 0 {
+		t.Fatal("second --devin init must refuse (regulus.json exists)")
+	}
+	_ = errb
+}
+
 func TestInitRefusesOverwriteAndBadStack(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
