@@ -11,3 +11,14 @@ dist/
 # Tool cache directories
 .atl/
 binaries/
+
+# Local tool output (regenerable diagrams, reviews)
+.archify/
+
+# Generated evidence view (retired from tracking; regenerate locally via
+# `regulus evidence list --task <t>` when needed)
+docs/EVIDENCE.md
+
+# OS noise (open source contributors)
+.DS_Store
+Thumbs.db
