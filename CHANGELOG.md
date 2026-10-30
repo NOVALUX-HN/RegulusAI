@@ -4,6 +4,40 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.9.0] — 2026-10-30 — twelve gates + memory depth + doctor V2 (personal use)
+
+Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
+
+Batch delivered since 0.8.1 (HEAD `c599145`):
+
+- Health gaps: gauntlet at 12 gates (spec, ts-typecheck, ts-unit-tests,
+  gofmt added); deterministic CI (cache off without go.sum, perf
+  verdict, receipts artifact).
+- Live-plus gaps + polish gaps: live OpenCode proof surface and
+  polish items closed.
+- Almanac robustez + g1-g4: retrieval depth (hybrid, relate, vindex,
+  embed, miss-rate evidence) and memory CLI coverage.
+- Doctor V2 refusals: doctor refuses V1 with guidance, warns on
+  stale/unstamped binaries vs package.json.
+
+Release gauntlet `bin/regulus gate run release-0-9-0/V1`: 12/12 pass
+(receipts below, append-only).
+
+| Layer | Gate | Receipt |
+|---|---|---|
+| 1 | typecheck | `rec_18e3623a05ee8890` |
+| 2 | lint | `rec_18e3623a47723438` |
+| 3 | build | `rec_18e3623a666c2128` |
+| 4 | unit-tests | `rec_18e3623aab0f9e54` |
+| 5 | coverage-floor (83.90 >= 80.00) | `rec_18e362416e9583b0` |
+| 6 | mutation | `rec_18e3624196fd2efc` |
+| 7 | crap | `rec_18e3624c410e0d08` |
+| 8 | vulncheck | `rec_18e3624c575ba610` |
+| 9 | spec | `rec_18e3624d049dc394` |
+| 10 | ts-typecheck | `rec_18e3624d19c83254` |
+| 11 | ts-unit-tests | `rec_18e3624d339fab44` |
+| 12 | gofmt | `rec_18e3624dcb8b2474` |
+
 ## [0.8.1] — 2026-10-28 — self-audit fixes (personal use)
 
 Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
