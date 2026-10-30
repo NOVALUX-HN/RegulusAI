@@ -12,7 +12,7 @@ const MCP_CONFIG = `${ROOT}/.devin/mcp_config.json`;
 
 async function frontmatter(path: string): Promise<{ text: string; fm: any; body: string }> {
   const text = await Bun.file(path).text();
-  const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!m) throw new Error(`${path} has no frontmatter`);
   return { text, fm: Bun.YAML.parse(m[1]) as any, body: text.slice(m[0].length) };
 }

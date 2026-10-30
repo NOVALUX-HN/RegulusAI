@@ -412,7 +412,8 @@ describe("plugin defaults codegen", () => {
     const md = await Bun.file(`${root}/.opencode/discipline.md`).text();
     const ts = await Bun.file(`${root}/.opencode/plugins/regulus.ts`).text();
     const start = ts.indexOf("const DEFAULT_DISCIPLINE = `") + "const DEFAULT_DISCIPLINE = `".length;
-    const end = ts.indexOf("`\n\n// loadDiscipline", start);
+    let end = ts.indexOf("`\n\n// loadDiscipline", start);
+    if (end < 0) end = ts.indexOf("`\r\n\r\n// loadDiscipline", start);
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     expect(renderDisciplineDefault(md)).toBe(ts.slice(start, end));

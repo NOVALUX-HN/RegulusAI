@@ -56,7 +56,9 @@ export function extractDisciplineLiteral(ts: string): string {
   const marker = "const DEFAULT_DISCIPLINE = `";
   const start = ts.indexOf(marker);
   if (start < 0) throw new Error("sync-plugin-defaults: DEFAULT_DISCIPLINE block not found")
-  const end = ts.indexOf("`\n\n// loadDiscipline", start + marker.length);
+  const endLf = ts.indexOf("`\n\n// loadDiscipline", start + marker.length);
+  const endCrlf = ts.indexOf("`\r\n\r\n// loadDiscipline", start + marker.length);
+  const end = endLf >= 0 ? endLf : endCrlf;
   if (end < 0) throw new Error("sync-plugin-defaults: DEFAULT_DISCIPLINE terminator not found")
   return ts.slice(start + marker.length, end)
 }

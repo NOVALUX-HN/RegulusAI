@@ -36,7 +36,7 @@ async function projectConfig(): Promise<{ text: string; json: any }> {
 
 async function regulusAgent(): Promise<{ text: string; fm: any }> {
   const text = await Bun.file(`${import.meta.dir}/../agents/regulus.md`).text();
-  const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!m) throw new Error("regulus.md has no frontmatter");
   return { text, fm: Bun.YAML.parse(m[1]) as any };
 }
@@ -91,7 +91,7 @@ describe("yolo permissions", () => {
     const globalStar = global?.permission?.bash?.["*"];
     for (const file of files) {
       const text = await Bun.file(`${dir}/${file}`).text();
-      const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+      const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
       expect(m).not.toBeNull();
       const fm = Bun.YAML.parse(m![1]) as any;
       const bash = fm?.permission?.bash;
