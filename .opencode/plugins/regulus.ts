@@ -307,10 +307,10 @@ export default Plugin.define({
             domain: { type: "string", description: "domain bucket" },
             dimension: { type: "string", description: "lesson dimension bucket (inv | dom)" },
             path: { type: "string", description: "provenance path bucket (exact match)" },
-            limit: { type: "string", description: "keep first N results (0: all; default 20)" },
-            any: { type: "string", description: "any term may match (default: all must) — pass 'true'" },
-            latest: { type: "string", description: "collapse each topic chain to its best hit — pass 'true'" },
-            include_superseded: { type: "string", description: "show observations a supersedes relation hides — pass 'true'" },
+            limit: { type: "integer", description: "keep first N results (0: all; default 20)" },
+            any: { type: "boolean", description: "any term may match (default: all must)" },
+            latest: { type: "boolean", description: "collapse each topic chain to its best hit" },
+            include_superseded: { type: "boolean", description: "show observations a supersedes relation hides" },
             type: { type: "string", description: "observation type bucket" },
           },
           required: ["terms"],
@@ -318,18 +318,20 @@ export default Plugin.define({
         },
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
-          const { terms, topic_key, domain, dimension, path, limit, any, latest, include_superseded, type } = input as Record<string, string>
+          const { terms, topic_key, domain, dimension, path, limit, any, latest, include_superseded, type } = input as Record<string, string | number | boolean>
           const args = ["memory", "search"]
-          if (topic_key) args.push("--topic-key", topic_key)
-          if (domain) args.push("--domain", domain)
-          if (dimension) args.push("--dimension", dimension)
-          if (path) args.push("--path", path)
-          if (limit) args.push("--limit", limit)
-          if (any === "true") args.push("--any")
-          if (latest === "true") args.push("--latest")
-          if (include_superseded === "true") args.push("--include-superseded")
-          if (type) args.push("--type", type)
-          for (const term of (terms ?? "").split(/\s+/).filter((t) => t !== "")) {
+          if (topic_key) args.push("--topic-key", String(topic_key))
+          if (domain) args.push("--domain", String(domain))
+          if (dimension) args.push("--dimension", String(dimension))
+          if (path) args.push("--path", String(path))
+          if (limit !== undefined && limit !== "" && Number(limit) !== 0) args.push("--limit", String(Number(limit)))
+          else if (String(limit) === "0") args.push("--limit", "0")
+          const truthy = (v: unknown) => v === true || v === "true"
+          if (truthy(any)) args.push("--any")
+          if (truthy(latest)) args.push("--latest")
+          if (truthy(include_superseded)) args.push("--include-superseded")
+          if (type) args.push("--type", String(type))
+          for (const term of String(terms ?? "").split(/\s+/).filter((t) => t !== "")) {
             args.push(term)
           }
           const res = await run(bin, args, dir, context.signal)

@@ -1124,6 +1124,13 @@ func TestSurfaceProposeListApplyUsage(t *testing.T) {
 
 func TestSurfaceApplyRoundTrip(t *testing.T) {
 	t.Chdir(t.TempDir())
+	// Apply never creates files: the target must already exist.
+	if err := os.MkdirAll("docs", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("docs", "learned.md"), []byte("# Learned\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	c, out, _ := newCLI(nil)
 	if code := c.Run([]string{"surface", "propose", "--target", "docs/learned.md", "--content", "## Learned: surface edits work", "--reason", "V2 proved it"}); code != 0 {
 		t.Fatalf("propose: exit = %d", code)

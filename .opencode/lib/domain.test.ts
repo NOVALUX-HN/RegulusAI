@@ -290,10 +290,11 @@ describe("tool param sync", () => {
   const propOf = (tool: string, f: string) =>
     FLAG_EXCEPTIONS[`${tool}::${f}`] ?? f.slice(2).replace(/-/g, "_");
 
-  // Surface parity pinned at 16 (self-audit U1): the CLI's memory
-  // surface is fully exposed — the last missing tool was memory_history.
-  // Exact count and exact names; a new CLI command means a test edit,
-  // not a silent drift.
+  // Agent surface pinned at 16 (self-audit U1): the OpenCode agent
+  // surface carries 16 named tools — not full CLI parity (the CLI has
+  // ~20 commands; surface/reflect/library/budget/crap/status/evidence
+  // stay CLI-only by design). Exact count and exact names; a new agent
+  // tool means a test edit, not a silent drift.
   const TOOL_NAMES = [
     "gate_run",
     "spec_check",
@@ -342,6 +343,16 @@ describe("tool param sync", () => {
         expect(props.has(propOf(name, f))).toBe(true);
       }
     }
+  });
+
+  test("memory_search schema matches MCP coercion (integer limit, boolean flags)", () => {
+    const block = toolBlocks().find((b) => b.name === "memory_search");
+    expect(block).toBeDefined();
+    const body = block!.body;
+    expect(body).toContain('limit: { type: "integer"');
+    expect(body).toContain('any: { type: "boolean"');
+    expect(body).toContain('latest: { type: "boolean"');
+    expect(body).toContain('include_superseded: { type: "boolean"');
   });
 
   test("memory_history's one param reaches --topic-key (S4 flag parity)", () => {

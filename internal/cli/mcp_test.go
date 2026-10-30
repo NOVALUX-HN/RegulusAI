@@ -161,6 +161,44 @@ func TestMCPToolsListNames(t *testing.T) {
 	}
 }
 
+func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
+	// The OpenCode agent surface is 16 tools; MCP deliberately exposes
+	// 12. The 4-gap (evolve_propose, probe_contrast, probe_compose,
+	// skills_list) is a Devin-side policy decision, not drift: evolving
+	// this list means updating docs/devin.md too.
+	plugin := []string{
+		"gate_run", "spec_check", "doctor", "memory_note",
+		"memory_show", "memory_save", "memory_search", "memory_context",
+		"memory_history", "evolve_propose", "probe_contrast", "trace_show",
+		"skills_list", "trace_sessions", "trace_files", "probe_compose",
+	}
+	mcp := map[string]bool{}
+	for _, tool := range mcpTools() {
+		mcp[tool.name] = true
+	}
+	if len(mcp) != 12 {
+		t.Fatalf("MCP tools = %d, want 12", len(mcp))
+	}
+	var gap []string
+	for _, name := range plugin {
+		if !mcp[name] {
+			gap = append(gap, name)
+		}
+	}
+	want := map[string]bool{
+		"evolve_propose": true, "probe_contrast": true,
+		"probe_compose": true, "skills_list": true,
+	}
+	if len(gap) != len(want) {
+		t.Fatalf("plugin-MCP gap = %v, want %v", gap, want)
+	}
+	for _, name := range gap {
+		if !want[name] {
+			t.Fatalf("plugin-MCP gap = %v, want %v", gap, want)
+		}
+	}
+}
+
 func TestMCPMemoryLifecycle(t *testing.T) {
 	t.Chdir(t.TempDir())
 	c := mcpTestCLI()
