@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/andragon31/RegulusAI"
+    "url": "https://github.com/NOVALUX-HN/RegulusAI"
   },
   "bin": {
     "regulus": "./bin/regulus.js"

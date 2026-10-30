@@ -18,7 +18,7 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 ```bash
 # 1. Build the core from source (no npm distribution yet — `regulus-ai`
 #    is not published; the quickstart is build-from-repo)
-git clone https://github.com/andragon31/RegulusAI && cd RegulusAI
+git clone https://github.com/NOVALUX-HN/RegulusAI && cd RegulusAI
 npm run build          # = bash scripts/build.bash → binaries/regulus-<os>-<arch> + stamped local bin/regulus
 # then put the binary for your platform on your PATH as `regulus`
 
