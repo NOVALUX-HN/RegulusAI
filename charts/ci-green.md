@@ -39,3 +39,6 @@ User authorization: CI log 2026-10-30 (gauntlet en `main`): `Restore cache faile
 ## Log
 
 - **L1**: Chart opened 2026-10-30 desde el log CI pegado por el usuario. WSL Ubuntu disponible local con Go 1.27 instalándose para repro honesto (sin adivinar).
+- **L2**: C1 CLOSED inline — `cache: false` en `setup-go` (cero-deps sin go.sum por invariante).
+- **L3**: C2 CLOSED + PROVE — causa: `TestPerfHybridP95Budget10k` gate duro 50ms no-determinístico en runners compartidos (p95 124ms con código sano en tortura pinned 1-CPU). Fix: log p95 vs 50ms design budget cada run, veredicto duro a 5x (250ms) + docs §5/§7. WSL suite 19 ok + `gate run ci/push` 9/9 (rec_18e339cd…); Windows suite 19 ok + `gate run ci-green/C2` 9/9; perf local ok.
+- **L4**: C3 CLOSED — step final `Upload gate receipts` (`upload-artifact@v4`, `if: always()`, retention 7d, `warn` sin ficheros). Chart CERRADO.

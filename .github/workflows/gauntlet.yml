@@ -84,3 +84,17 @@ jobs:
             git commit -m "docs(ci): regenerate EVIDENCE receipts trail [skip ci]"
             git push
           fi
+
+      # S4: un gate rojo deja evidencia — sube los receipts siempre,
+      # incluso en fallo, para diagnóstico sin adivinar. v4 coherente
+      # con checkout@v4 (majors vendor intencionales, ver nota S4 arriba);
+      # v5 no verificado como major vigente, no se adopta.
+      # warn (no error) si no hay ficheros: capas tempranas pueden no
+      # dejar receipts del task si falla typecheck.
+      - name: Upload gate receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          path: .regulus/evidence/ci__push/
+          retention-days: 7
+          if-no-files-found: warn
