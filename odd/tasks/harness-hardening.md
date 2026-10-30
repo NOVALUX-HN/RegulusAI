@@ -18,17 +18,21 @@ Read until `## Log` before edits.
 
 ## Tasks
 
-- [x] T1 (S2) — YOLO + MCP security — route: inline — status: done — commit: 411d03c — RED: new yolo/provenance tests failed (template denies, edit flip, absolute/traversal); GREEN: go test ./internal/cli + go test ./... + bun lib 38 pass, vet/gofmt clean
-- [ ] T2 (S3) — probe compose task-cap — route: inline — status: in_progress — commit: —
-- [ ] T3 (S4) — reflect/evolve pass-receipt gate — route: inline — status: pending — commit: —
-- [ ] T4 (S5) — surface Apply hardening — route: inline — status: pending — commit: —
-- [ ] T5 (S6) — parity drift + schema unify — route: inline — status: pending — commit: —
-- [ ] T6 (S7) — MCP handshake contract — route: inline — status: pending — commit: —
-- [ ] T7 (S8) — testing gaps — route: inline — status: pending — commit: —
-- [ ] T8 (S9) — docs refresh — route: inline — status: pending — commit: —
-- [ ] T9 (S10) — tokens/latency dedup — route: inline — status: pending — commit: —
+- [x] T1 (S2) — YOLO + MCP security — route: inline — status: done — commit: df26091 — RED: new yolo/provenance tests failed (template denies, edit flip, absolute/traversal); GREEN: go test ./internal/cli + go test ./... + bun lib 38 pass, vet/gofmt clean
+- [x] T2 (S3) — probe compose task-cap — route: inline — status: done — commit: 3c615c1 — RED: TestComposeEnforcesTaskCap failed (second same-task compose ran); GREEN: probe suite pass
+- [x] T3 (S4) — reflect/evolve pass-receipt gate — route: inline — status: done — commit: ea6edc2 — RED: TestRunRefusesWithoutPassReceipt got nil; GREEN: reflect suite pass
+- [x] T4 (S5) — surface Apply hardening — route: inline — status: done — commit: e02ddef — RED: 3 new Apply tests failed (guardian/no-create/TS marker); GREEN: surface/probe/reflect suites pass
+- [x] T5 (S6) — parity drift + schema unify — route: inline — status: done — commit: 1813bb4 — RED: new memory_search schema test failed (string vs integer/boolean); GREEN: cli suite + bun 39 pass, vet/fmt clean
+- [x] T6 (S7) — MCP handshake contract — route: inline — status: done — commit: 6992c0e — RED: TestMCPInitializeExposesContract got nil contract; GREEN: cli MCP tests pass
+- [x] T7 (S8) — testing gaps — route: delegated (context backstop) — status: done — commit: 387061e — RED: efficacy test failed on echo-skipped vulncheck + naive all-agents loop failed; GREEN: journeys S8 + go test ./... + bun 40 pass (verified inline)
+- [x] T8 (S9) — docs refresh — route: inline — status: done — commit: bf342e8 — RED: TestInitDevinScaffoldsMcpConfig exit 2 (unknown flag); GREEN: cli suite + gofmt + stale-string grep clean
+- [x] T9 (S10) — tokens/latency dedup — route: inline — status: done — commit: 22ea3a4 — RED: withTimeout/TtlCache/codegen imports missing; GREEN: bun 47 pass, tsc clean, --check in sync, --write idempotent
 
 ## Log
 
 - L1: "repara todo en el orden recomendado hasta finalizar cada punto con evidencia"
-- L2 (T1 done 411d03c): YOLO denies + .env ask + off/status edit mode + provenance validation + MCP boundary docs; evidence: RED 3 new tests failed, GREEN cli/full/bun/vet-fmt. Branch slice already >400 from history; feature running count 282 (T1 alone).
+- L2 (T1 done df26091; T2 done 3c615c1; T3 done ea6edc2; T4 done e02ddef) — T2 RED second compose ran, GREEN probe ok; T3 RED nil error, GREEN reflect ok; T4 RED guardian/no-create/marker, GREEN surface ok (+2 fixture updates for no-create).
+- L3 (T5 done 1813bb4) — RED schema test failed, GREEN cli+bun; fixed TestSurfaceApplyRoundTrip fixture for T4 no-create rule.
+- L4 (T6 done 6992c0e; T7 done 387061e) — T6 RED nil contract, GREEN MCP tests; T7 worker S8 journeys + vulncheck fail-closed + 11-agent pins, verified inline (journeys, full go, bun 40).
+- L5 (T8 done bf342e8) — RED unknown --devin flag, GREEN cli+gofmt+grep; docs-only parts verified structurally (no stale strings).
+- L6 (T9 done 22ea3a4) — RED missing helpers/script; GREEN bun 47 + tsc + full go ./... + --check/--write idempotent. Preamble factoring decided-no: agent files are independent prompts with no include mechanism (shortening already landed in tokens refactor); reopen only if OpenCode gains shared includes. All 9 points closed with evidence.
