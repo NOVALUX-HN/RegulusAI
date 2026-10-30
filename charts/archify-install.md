@@ -27,8 +27,13 @@ User authorization: "instala esto en opencode y en gentle-shell: https://github.
 | ID | Spec | Work | Route |
 |---|---|---|---|
 | I1 | S1–S3 | run sanctioned installer global + verify both surfaces (SKILL.md, renderer --help, opencode skills dir, gentle-shell registry refresh note) | @regulus-worker |
+| I2 | S1–S3 | repair incomplete skill install (doctor 0 missing, finalize runnable) | @regulus-worker |
+| I3 | S1–S2 | regenerate candidate.json to schema (label/focus, no extra meta) + finalize+check green → validated HTML | @regulus-worker |
 
 ## Log
 
 - **L1**: Chart opened 2026-10-30. Evidence: API `tt-a1i/archify` v3.2.0; README install table (`~/.config/opencode/skills/`, `.agents/skills/`); local `~/.agents/skills/` exists (orca-cli, orchestration); gentle-shell registry scans shared paths.
 - **L2**: I1 CLOSED + PROVE (post-restart resume) — installer already landed `~/.agents/skills/archify/` (SKILL.md `name: archify`, renderers, v3.2); `node bin/archify.mjs --help` exit 0; repo tree free of archify files. Refresh: opencode `/reload`, gentle-shell `/skill-registry:refresh`.
+- **L3**: I2 opened 2026-10-30 — `archify doctor` reporta instal incompleta (faltan los 10 renderers + validators + safety runtimes; `finalize/validate/check` exit 1). Reparar con pack completo y correr `finalize+check` sobre `candidate.json` de `.archify/architecture-regulus-20261029-233046/`.
+- **L4**: I2 CLOSED — install auto-completada (doctor 28/28 ok); `validate` FAIL por deriva del candidate (`meta` extra + views con `title/visible_nodes` en vez de `label/focus`); `finalize`/`check` no pasan por el candidate, no por la instalación. I3: regenerar candidate al schema + finalize+check verde.
+- **L5**: I3 CLOSED + PROVE — candidate al schema (`label/focus`, sin props extra, 1 fix de evidencia `bin/regulus.js`→`package.json:1`); `validate`/`finalize`/`check` exit 0 (`single_svg:true`, `provenance:current`, browser-check pass). HTML validado: `.archify/architecture-regulus-20261030-001244/regulus-architecture.html` (880KB). Chart archify-install CERRADO.
