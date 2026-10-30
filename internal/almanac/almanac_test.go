@@ -1,6 +1,7 @@
 package almanac
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,7 +90,7 @@ func TestSaveLessonWithEvidencePersistsBlock(t *testing.T) {
 	}
 }
 
-func TestAllMissingIsEmptyAndMalformedRefused(t *testing.T) {
+func TestAllMissingIsEmptyAndMalformedSkipped(t *testing.T) {
 	if all, err := All(t.TempDir()); err != nil || len(all) != 0 {
 		t.Fatalf("want an empty Almanac, got %+v, %v", all, err)
 	}
@@ -100,8 +101,77 @@ func TestAllMissingIsEmptyAndMalformedRefused(t *testing.T) {
 	if err := os.WriteFile(File(root), []byte("not json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := All(root); err == nil || !strings.Contains(err.Error(), "malformed observation") {
-		t.Fatalf("want malformed refusal, got %v", err)
+	if all, err := All(root); err != nil || len(all) != 0 {
+		t.Fatalf("want a corrupt line skipped without aborting, got %+v, %v", all, err)
+	}
+}
+
+func TestAllTolerantSkipsCorruptBetweenValids(t *testing.T) {
+	root := t.TempDir()
+	first, err := Save(root, &Observation{Type: TypeSessionNote, TopicKey: "db-driver", Title: "v1 postgres", Content: "use postgres pool"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Save(root, &Observation{Type: TypeSessionNote, TopicKey: "db-driver", Title: "v2 sqlite", Content: "switched to sqlite pool"}, t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(File(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(valid)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 valid lines, got %d", len(lines))
+	}
+	rewritten := lines[0] + "\n{not json}\n" + lines[1] + "\n"
+	if err := os.WriteFile(File(root), []byte(rewritten), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// All skips the corrupt line without aborting.
+	all, err := All(root)
+	if err != nil {
+		t.Fatalf("All must not fail on 1 corrupt line: %v", err)
+	}
+	if len(all) != 2 || all[0].ID != first.ID || all[1].ID != second.ID {
+		t.Fatalf("want both valid observations around the corrupt line, got %+v", all)
+	}
+	// Search works on the rest.
+	hits, err := Search(root, Query{Terms: []string{"pool"}})
+	if err != nil {
+		t.Fatalf("Search must not fail on 1 corrupt line: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("want 2 search hits past the corrupt line, got %+v", hits)
+	}
+	// Context renders the rest.
+	ctx, err := Context(root, t2)
+	if err != nil {
+		t.Fatalf("Context must not fail on 1 corrupt line: %v", err)
+	}
+	for _, want := range []string{"use postgres pool", "switched to sqlite pool"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("context must contain %q, got:\n%s", want, ctx)
+		}
+	}
+	// History chains the rest.
+	chain, err := History(root, "db-driver")
+	if err != nil {
+		t.Fatalf("History must not fail on 1 corrupt line: %v", err)
+	}
+	if len(chain) != 2 || chain[0].Title != "v1 postgres" || chain[1].Title != "v2 sqlite" {
+		t.Fatalf("history must keep both revisions, got %+v", chain)
+	}
+	// Doctor still reports the malformed line.
+	h, err := Doctor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.MalformedLines) != 1 || h.MalformedLines[0] != 2 {
+		t.Fatalf("doctor must report malformed line 2, got %+v", h.MalformedLines)
+	}
+	if h.Total != 2 {
+		t.Fatalf("doctor must count the 2 valid observations, got %+v", h)
 	}
 }
 
@@ -394,5 +464,417 @@ func TestExportWritesBundle(t *testing.T) {
 		if !strings.Contains(idx, want) {
 			t.Fatalf("INDEX must contain %q, got:\n%s", want, idx)
 		}
+	}
+}
+
+func TestLessonDimensionRoundTripAndBucket(t *testing.T) {
+	root := t.TempDir()
+	inv := &Observation{Type: TypeLesson, Title: "inv lesson", Content: "how to run gates",
+		Domain: "go", Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low", Dimension: "inv"}}
+	dom := &Observation{Type: TypeLesson, Title: "dom lesson", Content: "how to structure",
+		Domain: "go", Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low", Dimension: "dom"}}
+	if _, err := Save(root, inv, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(root, dom, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Dimension: "inv"})
+	if err != nil || len(hits) != 1 || hits[0].Title != "inv lesson" {
+		t.Fatalf("dimension bucket = %+v (%v)", hits, err)
+	}
+	if hits[0].Lesson == nil || hits[0].Lesson.Dimension != "inv" {
+		t.Fatalf("dimension must survive the round-trip, got %+v", hits[0].Lesson)
+	}
+	all, err := Search(root, Query{})
+	if err != nil || len(all) != 2 {
+		t.Fatalf("unfiltered search = %+v (%v)", all, err)
+	}
+}
+
+func TestLessonDimensionValidation(t *testing.T) {
+	bad := &Observation{Type: TypeLesson, Title: "t", Content: "c",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low", Dimension: "sideways"}}
+	if _, err := Save(t.TempDir(), bad, t0); err == nil || !strings.Contains(err.Error(), "dimension") {
+		t.Fatalf("want dimension refusal, got %v", err)
+	}
+}
+
+func TestProvenancePathBucket(t *testing.T) {
+	root := t.TempDir()
+	a := &Observation{Type: TypeDecision, Title: "chose x", Content: "why x",
+		Provenance: &Provenance{Task: "T1", Paths: []string{"internal/cli/cli.go"}}}
+	b := &Observation{Type: TypeDecision, Title: "chose y", Content: "why y",
+		Provenance: &Provenance{Task: "T1", Paths: []string{"other/file.go"}}}
+	if _, err := Save(root, a, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(root, b, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Path: "internal/cli/cli.go"})
+	if err != nil || len(hits) != 1 || hits[0].Title != "chose x" {
+		t.Fatalf("path bucket = %+v (%v)", hits, err)
+	}
+	none, err := Search(root, Query{Path: "missing/file.go"})
+	if err != nil || len(none) != 0 {
+		t.Fatalf("path miss = %+v (%v)", none, err)
+	}
+}
+
+func TestPruneSelectsOldUnpinnedNonLessons(t *testing.T) {
+	root := t.TempDir()
+	old := t0.Add(-30 * 24 * time.Hour)
+	recent := t0
+	save := func(o *Observation, at time.Time) Observation {
+		t.Helper()
+		saved, err := Save(root, o, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	// NOTE: ids derive from SavedAt, so every save needs a distinct
+	// timestamp or ids collide.
+	oldNote := save(&Observation{Type: TypeDecision, Title: "old", Content: "c"}, old)
+	_ = save(&Observation{Type: TypeDecision, Title: "new", Content: "c"}, recent)
+	_ = save(&Observation{Type: TypeLesson, Title: "old lesson", Content: "c",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low"}}, old.Add(time.Second))
+	pinnedOld := save(&Observation{Type: TypeDecision, Title: "pinned", Content: "c"}, old.Add(2*time.Second))
+	if err := Pin(root, pinnedOld.ID, true, recent); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := t0.Add(-7 * 24 * time.Hour)
+	got, err := Prune(root, func(o Observation) bool { return !o.SavedAt.Before(cutoff) })
+	if err != nil || len(got) != 1 || got[0].ID != oldNote.ID {
+		t.Fatalf("prune selection = %+v (%v)", got, err)
+	}
+	// ApplyPrune drops exactly the selected ones.
+	if err := ApplyPrune(root, got); err != nil {
+		t.Fatal(err)
+	}
+	all, err := All(root)
+	if err != nil || len(all) != 3 {
+		t.Fatalf("after prune = %+v (%v)", all, err)
+	}
+	for _, o := range all {
+		if o.ID == oldNote.ID {
+			t.Fatal("pruned observation must be gone")
+		}
+	}
+	// Empty selection is a no-op (log byte-identical).
+	before, _ := os.ReadFile(File(root))
+	if err := ApplyPrune(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(File(root))
+	if string(before) != string(after) {
+		t.Fatal("empty ApplyPrune must not touch the log")
+	}
+}
+
+func TestSearchLatestCollapsesTopicChains(t *testing.T) {
+	root := t.TempDir()
+	save := func(title string, at time.Time) Observation {
+		t.Helper()
+		s, err := Save(root, &Observation{Type: TypeDecision, Title: title, Content: "rev", TopicKey: "db"}, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	mid := save("v2-the-middle", t0.Add(time.Minute))
+	_ = mid
+	save("v1-the-oldest", t0)
+	save("v3-the-latest", t0.Add(2*time.Minute))
+	// Default: a topic key is a coexisting group — every hit returns.
+	all, err := Search(root, Query{})
+	if err != nil || len(all) != 3 {
+		t.Fatalf("default must return the whole group, got %d (%v)", len(all), err)
+	}
+	// --latest collapses the chain to the newest revision.
+	hits, err := Search(root, Query{Latest: true})
+	if err != nil || len(hits) != 1 || hits[0].Title != "v3-the-latest" {
+		t.Fatalf("--latest must collapse to the newest, got %+v (%v)", hits, err)
+	}
+	// A pinned older revision overrides recency under --latest.
+	if err := Pin(root, mid.ID, true, t0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err = Search(root, Query{Latest: true})
+	if err != nil || len(hits) != 1 || hits[0].Title != "v2-the-middle" {
+		t.Fatalf("a pinned revision must win the chain, got %+v (%v)", hits, err)
+	}
+}
+
+func TestSearchAnyMode(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Save(root, &Observation{Type: TypeDiscovery, Title: "postgres chosen", Content: "db"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(root, &Observation{Type: TypeDiscovery, Title: "redis cache", Content: "kv"}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	anded, err := Search(root, Query{Terms: []string{"postgres", "redis"}})
+	if err != nil || len(anded) != 0 {
+		t.Fatalf("AND must find nothing, got %+v (%v)", anded, err)
+	}
+	any, err := Search(root, Query{Terms: []string{"postgres", "redis"}, Any: true})
+	if err != nil || len(any) != 2 {
+		t.Fatalf("--any must find both, got %+v (%v)", any, err)
+	}
+}
+
+func TestSearchLimitAndConfidenceRank(t *testing.T) {
+	root := t.TempDir()
+	older, err := Save(root, &Observation{Type: TypeLesson, Title: "high older", Content: "x",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "high"}}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = older
+	if _, err := Save(root, &Observation{Type: TypeLesson, Title: "low newer", Content: "x",
+		Lesson: &Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low"}}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{Type: TypeLesson})
+	if err != nil || len(hits) != 2 || hits[0].Title != "high older" {
+		t.Fatalf("confidence must outrank recency among lessons, got %+v (%v)", hits, err)
+	}
+	limited, err := Search(root, Query{Type: TypeLesson, Limit: 1})
+	if err != nil || len(limited) != 1 || limited[0].Title != "high older" {
+		t.Fatalf("limit must keep the top hit, got %+v (%v)", limited, err)
+	}
+}
+
+func TestSearchHidesSuperseded(t *testing.T) {
+	root := t.TempDir()
+	old, err := Save(root, &Observation{Type: TypeDecision, Title: "old choice", Content: "x"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	new, err := Save(root, &Observation{Type: TypeDecision, Title: "new choice", Content: "x"}, t0.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Relate(root, new.ID, RelationSupersedes, old.ID, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Search(root, Query{})
+	if err != nil || len(hits) != 1 || hits[0].ID != new.ID {
+		t.Fatalf("superseded must hide by default, got %+v (%v)", hits, err)
+	}
+	shown, err := Search(root, Query{IncludeSuperseded: true})
+	if err != nil || len(shown) != 2 {
+		t.Fatalf("--include-superseded must show both, got %+v (%v)", shown, err)
+	}
+	// A pruned superseder releases the target: swap roles by pruning
+	// the superseder (a non-lesson, unpinned) through the prune door.
+	if err := Pin(root, old.ID, false, t0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := Prune(root, func(o Observation) bool { return o.ID != new.ID })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyPrune(root, removed); err != nil {
+		t.Fatal(err)
+	}
+	hits, err = Search(root, Query{})
+	if err != nil || len(hits) != 1 || hits[0].ID != old.ID {
+		t.Fatalf("a pruned superseder must release its target, got %+v (%v)", hits, err)
+	}
+}
+
+func TestDoctorReportsHealth(t *testing.T) {
+	root := t.TempDir()
+	a, err := Save(root, &Observation{Type: TypeDecision, Title: "a", Content: "c"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Save(root, &Observation{Type: TypeDiscovery, Title: "b", Content: "c"}, t0.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Orphans are born when content is pruned away: pin + relate A,
+	// then remove A through the prune door (ApplyPrune keeps no
+	// provenance, by design).
+	if err := Pin(root, a.ID, true, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relate(root, b.ID, RelationConflictsWith, a.ID, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyPrune(root, []Observation{a}); err != nil {
+		t.Fatal(err)
+	}
+	// A malformed line the tolerant scan must report, not fail on.
+	f, err := os.OpenFile(File(root), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{not json}\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	h, err := Doctor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Total != 1 || h.ByType[TypeDecision] != 0 || h.ByType[TypeDiscovery] != 1 {
+		t.Fatalf("counts = %+v", h)
+	}
+	if len(h.MalformedLines) != 1 || h.MalformedLines[0] != 2 {
+		t.Fatalf("malformed = %v", h.MalformedLines)
+	}
+	if len(h.OrphanPins) != 1 || h.OrphanPins[0] != a.ID {
+		t.Fatalf("orphan pins = %v", h.OrphanPins)
+	}
+	if len(h.OrphanRelations) != 1 || h.OrphanRelations[0].To != a.ID {
+		t.Fatalf("orphan relations = %+v", h.OrphanRelations)
+	}
+	// An empty Almanac is healthy.
+	empty, err := Doctor(t.TempDir())
+	if err != nil || empty.Total != 0 || len(empty.MalformedLines) != 0 {
+		t.Fatalf("empty = %+v (%v)", empty, err)
+	}
+}
+
+func TestImportRoundTripIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	a, err := Save(root, &Observation{Type: TypeDecision, Title: "keep", Content: "c"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(t.TempDir(), "bundle.jsonl")
+	rawA, _ := json.Marshal(a)
+	other := `{"id":"obs_imported1","type":"discovery","title":"new","content":"c","saved_at":"2026-10-26T08:00:00Z"}`
+	if err := os.WriteFile(bundle, []byte(string(rawA)+"\n"+other+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, skipped, err := Import(root, bundle)
+	if err != nil || got != 1 || skipped != 1 {
+		t.Fatalf("import = %d/%d (%v)", got, skipped, err)
+	}
+	all, _ := All(root)
+	if len(all) != 2 {
+		t.Fatalf("log must grow by exactly one, got %d", len(all))
+	}
+	got, skipped, err = Import(root, bundle)
+	if err != nil || got != 0 || skipped != 2 {
+		t.Fatalf("re-import must be a no-op, got %d/%d (%v)", got, skipped, err)
+	}
+}
+
+func TestImportRejectsInvalidLines(t *testing.T) {
+	root := t.TempDir()
+	bad := filepath.Join(t.TempDir(), "bad.jsonl")
+	if err := os.WriteFile(bad, []byte("{\"id\":\"x\",\"type\":\"nope\",\"title\":\"t\",\"content\":\"c\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Import(root, bad); err == nil {
+		t.Fatal("invalid type must be refused with its line number")
+	}
+	all, _ := All(root)
+	if len(all) != 0 {
+		t.Fatal("a refused import must not write anything")
+	}
+	if _, _, err := Import(root, filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
+		t.Fatal("missing file must be an error")
+	}
+}
+
+func TestContextShowsFullResumeWithIdentity(t *testing.T) {
+	root := t.TempDir()
+	at := t0
+	for _, txt := range []string{"resume-note-1", "resume-note-2", "resume-note-3", "resume-note-4", "resume-note-5", "resume-note-6", "resume-note-7"} {
+		if _, err := Save(root, &Observation{Type: TypeSessionNote, Title: txt, Content: txt}, at); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	if _, err := Save(root, &Observation{Type: TypeDecision, Title: "chose sqlite", Content: "simpler ops for v1"}, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if _, err := Save(root, &Observation{Type: TypeDiscovery, Title: "pool leak found", Content: "postgres pool under load"}, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if _, err := Save(root, &Observation{Type: TypePreference, Title: "dark mode", Content: "prefers dark diffs"}, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if _, err := Save(root, &Observation{
+		Type: TypeLesson, Title: "cache tuning", Content: "retrieval cache sizing", Domain: "go",
+		Lesson: &Lesson{Cue: "when retrieval slows", Lesson: "size the cache first", Evidence: []string{"r.json"}, Confidence: "high"},
+	}, at); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := Context(root, at.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Identity: the project name heads the resume block.
+	if want := ProjectName(root); !strings.Contains(ctx, want) {
+		t.Fatalf("context must carry the project identity %q, got:\n%s", want, ctx)
+	}
+	// More than 5 notes: every one of the 7 is visible by default.
+	for _, txt := range []string{"resume-note-1", "resume-note-2", "resume-note-3", "resume-note-4", "resume-note-5", "resume-note-6", "resume-note-7"} {
+		if !strings.Contains(ctx, txt) {
+			t.Fatalf("context must show note %q, got:\n%s", txt, ctx)
+		}
+	}
+	// Lessons carry cue AND content, not just a count.
+	for _, want := range []string{"when retrieval slows", "size the cache first"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("context must show lesson content %q, got:\n%s", want, ctx)
+		}
+	}
+	// Decisions, discoveries and preferences are visible.
+	for _, want := range []string{"chose sqlite", "simpler ops for v1", "pool leak found", "postgres pool under load", "dark mode", "prefers dark diffs"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("context must show working state %q, got:\n%s", want, ctx)
+		}
+	}
+}
+
+func TestContextLimitPaginatesNotesExplicitly(t *testing.T) {
+	root := t.TempDir()
+	at := t0
+	for _, txt := range []string{"page-note-1", "page-note-2", "page-note-3", "page-note-4", "page-note-5", "page-note-6", "page-note-7"} {
+		if _, err := Save(root, &Observation{Type: TypeSessionNote, Title: txt, Content: txt}, at); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	paged, err := ContextWithLimit(root, at, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, txt := range []string{"page-note-1", "page-note-2"} {
+		if strings.Contains(paged, txt) {
+			t.Fatalf("paged context must hide note %q, got:\n%s", txt, paged)
+		}
+	}
+	for _, txt := range []string{"page-note-3", "page-note-4", "page-note-5", "page-note-6", "page-note-7"} {
+		if !strings.Contains(paged, txt) {
+			t.Fatalf("paged context must show note %q, got:\n%s", txt, paged)
+		}
+	}
+	if !strings.Contains(paged, "showing latest 5 of 7") {
+		t.Fatalf("paged context must name the truncation explicitly, got:\n%s", paged)
+	}
+	full, err := Context(root, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, txt := range []string{"page-note-1", "page-note-2", "page-note-7"} {
+		if !strings.Contains(full, txt) {
+			t.Fatalf("full context must show every note (%q), got:\n%s", txt, full)
+		}
+	}
+	if strings.Contains(full, "showing latest") {
+		t.Fatalf("full context must not claim truncation, got:\n%s", full)
 	}
 }

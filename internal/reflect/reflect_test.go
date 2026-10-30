@@ -83,6 +83,27 @@ func TestRunRefusesWithoutEvidence(t *testing.T) {
 	}
 }
 
+func TestRunRefusesWithoutPassReceipt(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	dir := filepath.Join(root, ".regulus", "evidence", receipts.Slug("feature/T1"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := os.WriteFile(filepath.Join(dir, "gate-"+strconv.Itoa(i)+".json"), []byte(`{"verdict":"fail","exit_code":1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := Run(root, Input{
+		FeatureDoc: doc, Domain: "go", Task: "feature/T1",
+		Cue: "c", Lesson: "l", Now: now,
+	}, "abc")
+	if err == nil || !strings.Contains(err.Error(), "no passing") {
+		t.Fatalf("want no-passing-receipt refusal, got %v", err)
+	}
+}
+
 func TestRunRefusesEmptyCue(t *testing.T) {
 	root := t.TempDir()
 	doc := writeFeatureDoc(t, root)
@@ -140,8 +161,8 @@ func TestAdmitCompletesTheFlow(t *testing.T) {
 		t.Fatalf("library = %+v (%v)", lessons, err)
 	}
 	index, err := os.ReadFile(library.IndexFile(root, "go"))
-	if err != nil || !strings.Contains(string(index), l.ID) {
-		t.Fatalf("INDEX must list the admitted lesson: %v\n%s", err, string(index))
+	if err != nil || !strings.Contains(string(index), "harnesses/feature__T1/") || !strings.Contains(string(index), "when the gauntlet passes") {
+		t.Fatalf("INDEX must list the admitted task snapshot and cue: %v\n%s", err, string(index))
 	}
 	if _, err := os.Stat(filepath.Join(library.CandidateDir(root, "go"), l.ID, "LESSON.md")); !os.IsNotExist(err) {
 		t.Fatal("the candidate must be removed after admission")
@@ -198,5 +219,76 @@ func TestRunRefusesWhenCapReached(t *testing.T) {
 	cands, _ := library.Candidates(root, "go")
 	if len(cands) != 1 {
 		t.Fatalf("nothing may be proposed over the cap, got %+v", cands)
+	}
+}
+
+func TestRunAndAdmitCarryDimension(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	writeReceipts(t, root, "feature/T1", 1)
+	l, err := Run(root, Input{
+		FeatureDoc: doc, Domain: "go", Dimension: "dom", Task: "feature/T1",
+		Cue: "c", Lesson: "l", Now: now,
+	}, "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Dimension != "dom" {
+		t.Fatalf("candidate dimension = %q, want dom", l.Dimension)
+	}
+	if _, err := Admit(root, "go", l.ID, "regulus-gate-verifier", "abc123", now); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := almanac.Search(root, almanac.Query{Dimension: "dom"})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("admitted dimension bucket = %+v (%v)", hits, err)
+	}
+}
+
+func TestRunRefusesBadDimension(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	writeReceipts(t, root, "feature/T1", 1)
+	_, err := Run(root, Input{
+		FeatureDoc: doc, Domain: "go", Dimension: "sideways", Task: "feature/T1",
+		Cue: "c", Lesson: "l", Now: now,
+	}, "abc123")
+	if err == nil || !strings.Contains(err.Error(), "dimension") {
+		t.Fatalf("want dimension refusal, got %v", err)
+	}
+}
+
+func TestRunEnforcesTaskCap(t *testing.T) {
+	root := t.TempDir()
+	doc := writeFeatureDoc(t, root)
+	writeReceipts(t, root, "feature/T9", 1)
+	writeReceipts(t, root, "feature/T8", 1)
+	cfg := `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}],"evolution":{"max_per_day":10,"max_per_task":1}}`
+	if err := os.WriteFile(filepath.Join(root, "regulus.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(root, Input{FeatureDoc: doc, Domain: "go", Task: "feature/T9", Cue: "c1", Lesson: "l1", Now: now}, "abc"); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	_, err := Run(root, Input{FeatureDoc: doc, Domain: "go", Task: "feature/T9", Cue: "c2", Lesson: "l2", Now: now.Add(time.Minute)}, "abc")
+	if err == nil || !strings.Contains(err.Error(), "task evolution cap") {
+		t.Fatalf("want task-cap refusal, got %v", err)
+	}
+	// another task is unaffected
+	if _, err := Run(root, Input{FeatureDoc: doc, Domain: "go", Task: "feature/T8", Cue: "c3", Lesson: "l3", Now: now.Add(2 * time.Minute)}, "abc"); err != nil {
+		t.Fatalf("other task must pass, got %v", err)
+	}
+}
+
+func TestTaskCapDefaultsToHalfDaily(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "regulus.json"), []byte(`{"gates":[{"name":"g","layer":1,"command":"true"}],"evolution":{"max_per_day":6}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := TaskCap(root); got != 3 {
+		t.Fatalf("TaskCap = %d, want 3 (half of 6)", got)
+	}
+	if got := TaskCap(t.TempDir()); got != 5 {
+		t.Fatalf("default TaskCap = %d, want 5 (half of default 10)", got)
 	}
 }

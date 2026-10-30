@@ -6,12 +6,15 @@ package library
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/receipts"
 )
 
 // Confidences.
@@ -21,6 +24,16 @@ const (
 	ConfidenceHigh   = "high"
 )
 
+// Lesson dimensions (harness² INV/DOM separation): INV lessons are
+// about how the agent works (procedure, tool use, completion); DOM
+// lessons are about what a practitioner knows (analytic moves,
+// audience, structure, consistency). Empty means unset (legacy
+// lessons admitted before dimensions existed).
+const (
+	DimensionINV = "inv"
+	DimensionDOM = "dom"
+)
+
 // Lesson is one lesson candidate or admitted lesson. Evidence cites
 // receipt paths — a lesson without evidence is refused (PRD R-E2,
 // docs/memory.md §2.7). Status is candidate until a guardian validates
@@ -28,6 +41,7 @@ const (
 type Lesson struct {
 	ID         string
 	Domain     string
+	Dimension  string // "" (unset, legacy) | "inv" | "dom"
 	Task       string
 	Cue        string
 	Lesson     string
@@ -62,6 +76,9 @@ func validate(l Lesson) error {
 	if strings.TrimSpace(l.Domain) == "" {
 		return errors.New("domain must not be empty")
 	}
+	if err := ValidateDimension(l.Dimension); err != nil {
+		return err
+	}
 	if strings.TrimSpace(l.Cue) == "" {
 		return errors.New("cue must not be empty")
 	}
@@ -79,7 +96,22 @@ func validate(l Lesson) error {
 	return nil
 }
 
+// ValidateDimension accepts the unset legacy value and the two
+// harness² dimensions, and refuses everything else.
+func ValidateDimension(d string) error {
+	switch d {
+	case "", DimensionINV, DimensionDOM:
+		return nil
+	default:
+		return fmt.Errorf("dimension must be %q or %q, got %q", DimensionINV, DimensionDOM, d)
+	}
+}
+
 func (l Lesson) render() string {
+	dimension := ""
+	if l.Dimension != "" {
+		dimension = "- **dimension**: " + l.Dimension + "\n"
+	}
 	guardian := ""
 	if l.Guardian != "" {
 		guardian = "- **guardian**: " + l.Guardian + "\n"
@@ -92,6 +124,7 @@ func (l Lesson) render() string {
 		"# " + l.ID,
 		"",
 		"- **domain**: " + l.Domain,
+		dimension,
 		"- **task**: " + l.Task,
 		"- **cue**: " + l.Cue,
 		"- **lesson**: " + l.Lesson,
@@ -149,7 +182,8 @@ func Candidates(root, domain string) ([]Lesson, error) {
 }
 
 // Admit validates and writes one guardian-validated lesson, then
-// rebuilds the domain INDEX.
+// snapshots the executable harness surface plus an EXPERIENCE.md note
+// under harnesses/<task-slug>/ and rebuilds the domain INDEX.
 func Admit(root string, l Lesson, guardian string) error {
 	if err := validate(l); err != nil {
 		return err
@@ -168,7 +202,138 @@ func Admit(root string, l Lesson, guardian string) error {
 	if err := os.WriteFile(lessonFile(root, l.Domain, l.ID), []byte(l.render()), 0o644); err != nil {
 		return err
 	}
+	if err := snapshotHarness(root, l.Domain, l.Task); err != nil {
+		return err
+	}
+	if err := writeExperience(root, l, guardian); err != nil {
+		return err
+	}
 	return RebuildIndex(root, l.Domain)
+}
+
+// harnessDir returns the snapshot directory for one task inside a
+// domain library: <domain>/harnesses/<task-slug>/. The slug reuses the
+// receipts convention ("/" becomes "__") so evidence paths and
+// harness snapshots name a task the same way.
+func harnessDir(root, domain, task string) string {
+	return filepath.Join(Dir(root, domain), "harnesses", receipts.Slug(task))
+}
+
+// experienceFile returns the EXPERIENCE.md path for one task snapshot.
+func experienceFile(root, domain, task string) string {
+	return filepath.Join(harnessDir(root, domain, task), "EXPERIENCE.md")
+}
+
+// writeExperience records why the harness snapshot was adopted: the
+// guardian who validated it, the cue that triggered the lesson, and the
+// transferable lesson with its evidence and confidence.
+func writeExperience(root string, l Lesson, guardian string) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n", l.Task)
+	fmt.Fprintf(&b, "- adopted: %s\n", guardian)
+	fmt.Fprintf(&b, "- domain: %s\n", l.Domain)
+	fmt.Fprintf(&b, "- task: %s\n", l.Task)
+	fmt.Fprintf(&b, "- confidence: %s\n", l.Confidence)
+	fmt.Fprintf(&b, "- git_head: %s\n", l.GitHead)
+	fmt.Fprintf(&b, "- created_at: %s\n", l.CreatedAt.Format(time.RFC3339))
+	b.WriteString("\n## Why this was chosen\n\n")
+	b.WriteString(l.Cue + "\n")
+	b.WriteString("\n## Transferable lesson\n\n")
+	b.WriteString(l.Lesson + "\n")
+	b.WriteString("\n- evidence: " + strings.Join(l.Evidence, ", ") + "\n")
+	fmt.Fprintf(&b, "- confidence: %s\n", l.Confidence)
+	if err := os.MkdirAll(harnessDir(root, l.Domain, l.Task), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(experienceFile(root, l.Domain, l.Task), []byte(b.String()), 0o644)
+}
+
+// snapshotHarness copies the executable harness surface at admit time
+// into harnesses/<task-slug>/tree/, mirroring repo-relative paths:
+// .opencode/agents, skills and plugins (*.md), .opencode/discipline.md,
+// .opencode/tool-guidance.md, and scripts/* — each only when present.
+// Scoping rule: docs/ is NEVER copied — prose, large, and versioned
+// elsewhere; the tree holds only the executable surface an adopted
+// lesson ran against.
+func snapshotHarness(root, domain, task string) error {
+	tree := filepath.Join(harnessDir(root, domain, task), "tree")
+	var rels []string
+	for _, dir := range []string{
+		filepath.Join(".opencode", "agents"),
+		filepath.Join(".opencode", "skills"),
+		filepath.Join(".opencode", "plugins"),
+	} {
+		matches, err := filepath.Glob(filepath.Join(root, dir, "*.md"))
+		if err != nil {
+			return err
+		}
+		for _, m := range matches {
+			if rel, err := filepath.Rel(root, m); err == nil {
+				rels = append(rels, rel)
+			}
+		}
+	}
+	for _, f := range []string{
+		filepath.Join(".opencode", "discipline.md"),
+		filepath.Join(".opencode", "tool-guidance.md"),
+	} {
+		if st, err := os.Stat(filepath.Join(root, f)); err == nil && !st.IsDir() {
+			rels = append(rels, f)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "scripts"))
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			rels = append(rels, filepath.Join("scripts", e.Name()))
+		}
+	}
+	if len(rels) == 0 {
+		return nil
+	}
+	for _, rel := range rels {
+		src := filepath.Join(root, rel)
+		dst := filepath.Join(tree, rel)
+		if err := copyFile(src, dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// treeFileCount counts the regular files under a snapshot tree.
+// A missing tree (lessons admitted before snapshots existed) is 0 files.
+func treeFileCount(tree string) int {
+	n := 0
+	_ = filepath.Walk(tree, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			n++
+		}
+		return nil
+	})
+	return n
 }
 
 // RemoveCandidate deletes a candidate after admission.
@@ -215,6 +380,8 @@ func parseLesson(path string) (Lesson, error) {
 		switch key {
 		case "domain":
 			l.Domain = val
+		case "dimension":
+			l.Dimension = val
 		case "task":
 			l.Task = val
 		case "cue":
@@ -250,6 +417,14 @@ func parseLesson(path string) (Lesson, error) {
 }
 
 // RebuildIndex regenerates the domain INDEX.md from the lessons on disk.
+// Each lesson becomes a snapshot block pointing at its adopted harness
+// tree and its EXPERIENCE.md note:
+//
+//	## harnesses/<slug>/
+//
+//	- harness: harnesses/<slug>/tree/ (<N> files)
+//	- why: harnesses/<slug>/EXPERIENCE.md
+//	- cue: ...
 func RebuildIndex(root, domain string) error {
 	lessons, err := List(root, domain)
 	if err != nil {
@@ -262,14 +437,64 @@ func RebuildIndex(root, domain string) error {
 		b.WriteString("_(empty — no lessons admitted yet)_\n")
 	} else {
 		for _, l := range lessons {
-			fmt.Fprintf(&b, "- `%s` — %s (confidence: %s, evidence: %d receipt(s), task: %s)\n",
-				l.ID, l.Cue, l.Confidence, len(l.Evidence), l.Task)
+			slug := receipts.Slug(l.Task)
+			n := treeFileCount(filepath.Join(harnessDir(root, domain, l.Task), "tree"))
+			fmt.Fprintf(&b, "## harnesses/%s/\n", slug)
+			fmt.Fprintf(&b, "- harness: harnesses/%s/tree/ (%d files)\n", slug, n)
+			fmt.Fprintf(&b, "- why: harnesses/%s/EXPERIENCE.md\n", slug)
+			if strings.TrimSpace(l.Cue) != "" {
+				fmt.Fprintf(&b, "- cue: %s\n", l.Cue)
+			}
+			b.WriteString("\n")
 		}
 	}
 	if err := os.MkdirAll(Dir(root, domain), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(IndexFile(root, domain), []byte(b.String()), 0o644)
+}
+
+// Forget drops one task snapshot: its harnesses/<slug>/ tree and note
+// are removed and the INDEX is rebuilt. Forgetting an unknown task is a
+// no-op success. Admitted lessons are left untouched — Forget prunes
+// snapshots, not lessons.
+func Forget(root, domain, task string) error {
+	if strings.TrimSpace(domain) == "" || strings.TrimSpace(task) == "" {
+		return errors.New("forget requires a domain and a task")
+	}
+	if _, err := os.Stat(harnessDir(root, domain, task)); os.IsNotExist(err) {
+		return nil
+	}
+	if err := os.RemoveAll(harnessDir(root, domain, task)); err != nil {
+		return err
+	}
+	return RebuildIndex(root, domain)
+}
+
+// Retain keeps only the lessons whose task sorts strictly before <task>
+// (Go string ordering on the raw task id, applied uniformly so retain
+// is deterministic across machines) and drops <task> and everything
+// after it: their lesson entries and their harnesses/<slug>/ snapshots.
+// The INDEX is rebuilt afterwards.
+func Retain(root, domain, task string) error {
+	if strings.TrimSpace(domain) == "" || strings.TrimSpace(task) == "" {
+		return errors.New("retain requires a domain and a task")
+	}
+	lessons, err := List(root, domain)
+	if err != nil {
+		return err
+	}
+	for _, l := range lessons {
+		if l.Task >= task {
+			if err := os.RemoveAll(filepath.Dir(lessonFile(root, domain, l.ID))); err != nil {
+				return err
+			}
+			if err := os.RemoveAll(harnessDir(root, domain, l.Task)); err != nil {
+				return err
+			}
+		}
+	}
+	return RebuildIndex(root, domain)
 }
 
 // Domains lists the domains that have libraries on disk, sorted.

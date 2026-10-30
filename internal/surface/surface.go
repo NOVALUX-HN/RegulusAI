@@ -36,7 +36,10 @@ var Whitelist = []string{
 	".opencode/skills/",
 	".opencode/agents/",
 	".opencode/plugins/",
+	".opencode/discipline.md",
+	".opencode/tool-guidance.md",
 	"docs/",
+	"scripts/",
 }
 
 func File(root string) string {
@@ -93,6 +96,65 @@ func appendEdit(root string, e Edit) error {
 	return err
 }
 
+// Guardians are the only Apply validators: the six read-only guardians
+// from .opencode/agents (gate-verifier, spec-keeper, mutation-auditor,
+// crap-analyst, evidence-auditor, reviewer) plus the crew verifier that
+// independently reproduces high-risk claims. Anything else is refused.
+var Guardians = []string{
+	"regulus-gate-verifier",
+	"regulus-spec-keeper",
+	"regulus-mutation-auditor",
+	"regulus-crap-analyst",
+	"regulus-evidence-auditor",
+	"regulus-reviewer",
+	"regulus-verifier",
+}
+
+func validGuardian(g string) bool {
+	g = strings.TrimSpace(strings.TrimPrefix(g, "@"))
+	for _, want := range Guardians {
+		if g == want {
+			return true
+		}
+	}
+	return false
+}
+
+// surfaceMarker renders the marker-delimited block per file extension:
+// TypeScript/JavaScript get // comments (HTML comments break the
+// compiler), Markdown/HTML keep <!-- -->, everything else uses #.
+func surfaceMarker(id, guardian, content, target string) string {
+	ext := strings.ToLower(filepath.Ext(target))
+	switch ext {
+	case ".ts", ".js", ".tsx", ".jsx", ".mts", ".cts":
+		return fmt.Sprintf("\n// regulus:surface-edit %s (%s)\n%s\n// /regulus:surface-edit\n", id, guardian, content)
+	case ".md", ".mdx", ".html", ".htm":
+		return fmt.Sprintf("\n<!-- regulus:surface-edit %s (%s) -->\n%s\n<!-- /regulus:surface-edit -->\n", id, guardian, content)
+	default:
+		return fmt.Sprintf("\n# regulus:surface-edit %s (%s)\n%s\n# /regulus:surface-edit\n", id, guardian, content)
+	}
+}
+
+// Reserved lists harness files the surface gate never edits, even
+// though they sit inside the whitelist: release and delivery
+// infrastructure changes by hand (human decision), never as a
+// side effect of an adopted lesson.
+var Reserved = []string{
+	"scripts/build.bash",
+}
+
+// IsReserved reports whether a whitelisted target is reserved from
+// surface edits (release/delivery infrastructure).
+func IsReserved(target string) bool {
+	normalized := filepath.ToSlash(filepath.Clean(target))
+	for _, r := range Reserved {
+		if normalized == r {
+			return true
+		}
+	}
+	return false
+}
+
 // Propose records a surface edit proposal. The target must be inside
 // the whitelist; the content and reason must be non-empty; the daily
 // evolution cap must not be reached. The proposal is recorded in the
@@ -100,6 +162,9 @@ func appendEdit(root string, e Edit) error {
 func Propose(root, target, content, reason string, now time.Time) (Edit, error) {
 	if err := validateTarget(root, target); err != nil {
 		return Edit{}, err
+	}
+	if IsReserved(target) {
+		return Edit{}, fmt.Errorf("%q is a reserved harness file (release infrastructure): edit it by hand, not through surface edits", target)
 	}
 	if strings.TrimSpace(content) == "" {
 		return Edit{}, errors.New("content must not be empty")
@@ -168,20 +233,23 @@ func Apply(root, id, guardian string, now time.Time) (Edit, error) {
 	if found == nil {
 		return Edit{}, fmt.Errorf("no proposed surface edit %q", id)
 	}
-	if strings.TrimSpace(guardian) == "" {
-		return Edit{}, errors.New("guardian must not be empty: only a guardian-validated edit is applied")
+	if !validGuardian(guardian) {
+		return Edit{}, fmt.Errorf("guardian %q is not a surface validator (want one of %s)", guardian, strings.Join(Guardians, ", "))
 	}
-	// execute: append to the target, marker-delimited (creating parent dirs
-	// so a surface edit can add a new file)
-	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, filepath.FromSlash(found.Target))), 0o755); err != nil {
-		return Edit{}, fmt.Errorf("creating target dir: %w", err)
+	// execute: append to an existing whitelisted target only. Surface
+	// edits never create files or directories: new skills or agents
+	// land through explicit human scaffolding, not adopted lessons.
+	targetPath := filepath.Join(root, filepath.FromSlash(found.Target))
+	info, err := os.Stat(targetPath)
+	if err != nil || info.IsDir() {
+		return Edit{}, fmt.Errorf("surface target %q must already exist as a file: create it by hand, not through surface edits", found.Target)
 	}
-	f, err := os.OpenFile(filepath.Join(root, filepath.FromSlash(found.Target)), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(targetPath, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return Edit{}, fmt.Errorf("opening target: %w", err)
 	}
 	defer f.Close()
-	block := fmt.Sprintf("\n<!-- regulus:surface-edit %s (%s) -->\n%s\n<!-- /regulus:surface-edit -->\n", found.ID, guardian, found.Content)
+	block := surfaceMarker(found.ID, strings.TrimSpace(strings.TrimPrefix(guardian, "@")), found.Content, found.Target)
 	if _, err := f.WriteString(block); err != nil {
 		return Edit{}, err
 	}

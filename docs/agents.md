@@ -31,6 +31,7 @@ back with receipts.
 | `@regulus-scout` | Read-only exploration with `file:line` evidence; reports what was NOT explored | Before writing, when you need a map |
 | `@regulus-worker` | One bounded unit against a Chart; edits, runs the gauntlet, returns receipts | When a unit is parallelizable or context must stay thin |
 | `@regulus-verifier` | Independent reproduction: reproduces the failure, then verifies the fix removes exactly that | High-risk changes; when a mistake would be hard to detect |
+| `@regulus-proposer` | Read-only author: assembles the evolve pack and authors ONE structured candidate (dimension/component/edit/rationale) for guardian validation | When the harness itself should improve from evidence, not intuition |
 
 ## Plugin commands
 
@@ -52,3 +53,11 @@ back with receipts.
 | `memory_save` | Saves a typed observation with provenance |
 | `memory_search` | Deterministic retrieval with age + git-distance annotations |
 | `memory_context` | The deterministic resume block |
+| `evolve_propose` | Assembles a task's evidence pack (traces, receipts, INDEX, decisions) for @regulus-proposer |
+| `probe_contrast` | Runs one gate twice with two command variants; the receipt diff is the evidence |
+| `trace_show` | Prints a session's tool-execution fingerprint (order, tool, status) |
+| `skills_list` | Lists the registered skills with their one-line triggers |
+| `trace_sessions` | Lists the session ids with traces on disk, oldest first |
+| `trace_files` | Lists the distinct touched paths of one session trace, in call order |
+| `probe_compose` | Runs one gate three times (base + two variants); merges non-conflicting changes, flags conflicts |
+| `memory_history` | The revision chain of one evolving topic (append-only) |

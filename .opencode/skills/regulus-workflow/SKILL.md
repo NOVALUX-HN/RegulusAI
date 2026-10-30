@@ -23,7 +23,8 @@ skill needed for those.
 2. **CHART** — the feature's Chart (the committed feature document
    under `charts/`) declares its acceptance scenarios (Given/When/Then)
    in `## Acceptance` BEFORE implementation; validate with the
-   `spec_check` tool.
+   `spec_check` tool. A `Domain: <name>` line (optional) tells the
+   context hook which lesson domain to inject.
 3. **BUILD** — keep changes reviewable; the Necessity Ladder decides
    what gets written (adapted from Ponytail, MIT): does it need to
    exist? → already in this codebase? → stdlib or platform? → installed
@@ -38,7 +39,11 @@ skill needed for those.
    it before anything else.
 5. **LEARN** — report verdicts, receipt ids and the next step; save a
    durable session note with `memory_note`; when the feature
-   closes, admit its lesson with `reflect`.
+   closes, admit its lesson with `reflect`. GENERALIZE, don't
+   memorize: anchor verified workspace facts ("in this workspace, X
+   maps to Y"), write procedure transferable to the next project, and
+   prefer a named component (skill, script, subagent) over always-on
+   prose — prose is paid for on every run and travels badly.
 
 ## Rules of evidence
 
@@ -59,6 +64,8 @@ Delegate by reason, never by size:
   parallelizes or the context must stay thin.
 - **@regulus-verifier** — independent reproduction when a mistake
   would be hard to detect or undo.
+- **@regulus-proposer** — authors ONE structured candidate from the
+  `evolve propose` pack for guardian validation; never edits code.
 - **Guardians** — read-only proof at the end; never ask them to edit.
 
 ## PROBE (opt-in, budget-gated)
@@ -66,11 +73,20 @@ Delegate by reason, never by size:
 When the user explicitly asks to improve the harness itself — one
 Propose–Probe–Compose step (k=1):
 
-1. **Propose** one candidate edit to the harness surface (a skill, a
-   gate threshold, a prompt line), grounded in what just happened.
-2. **Probe** it on the current task; observe the evidence.
-3. **Compose** the verdict — adopt or discard — and record the run:
-   `regulus budget record --kind probe --detail "<what and why>"`.
+1. **Propose** via `@regulus-proposer`: it runs
+   `regulus evolve propose --task <t> --domain <d>` and authors ONE
+   structured candidate (dimension/component/edit/rationale) from
+   the evidence pack; a guardian validates it. KEEP_BASE is a valid
+   answer — adaptation the evidence does not argue for is a
+   regression.
+2. **Probe** with `regulus probe contrast --task <t> --gate <g> --a
+   "<cmdA>" --b "<cmdB>"` — two real gate runs, receipt diff as
+   evidence; `regulus probe compose --base ... --a ... --b ...`
+   merges base+A+B non-conflicting changes and flags conflicts.
+   Every tool execution lands in the session trace
+   (`regulus trace show|files --session <s>`).
+3. **Compose** the verdict — adopt or discard; adopted surface edits
+   go through `regulus surface propose` (guardian + budget).
 
-The ledger caps probe runs per day like reflect runs; a refusal is
-recorded. Never probe unasked.
+Caps bound reflect AND probe per day and per task; refusals are
+recorded and free. Never probe unasked.

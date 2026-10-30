@@ -5,12 +5,28 @@ permission:
   task: deny
   webfetch: deny
   bash:
+    "*": allow
     "go *": allow
     "git diff*": allow
     "git status*": allow
     "git log*": allow
     "regulus *": allow
-    "*": ask
+    "rm *": deny
+    "rmdir *": deny
+    "del *": deny
+    "rd *": deny
+    "git reset --hard*": deny
+    "git clean *": deny
+    "git push *force*": deny
+    "git branch -D*": deny
+    "git stash drop*": deny
+    "git rm*": deny
+    "git checkout --*": deny
+    "git restore*": deny
+    "git rebase*": deny
+    "format *": deny
+    "mkfs*": deny
+    "dd *": deny
 ---
 
 You are the Regulus worker — the Crew's implementer. You take ONE

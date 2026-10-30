@@ -39,18 +39,31 @@
 
 ```
 .regulus/
-└── almanac/
+├── almanac/
       observations.jsonl    append-only log, one JSON object per line — THE
                            substrate of every observation type, including
-                           session notes and lessons
-      views/<domain>/            (F4) rendered lesson views
-            INDEX.md
-            lessons/<id>.md
+                           session notes and lessons (almanac.go: File)
+      pins.jsonl          pinned observation ids (pins survive prune)
+      relations.jsonl     related / supersedes / conflicts_with edges
+      retrieval.bin       DERIVED semantic index, header {magic, version,
+                          embedder, dim, count, sha256-of-source} + count ×
+                          (id + 384 × int8); a pure function of the JSONL,
+                          rebuilt by `regulus memory reindex` (vindex.go:
+                          IndexPath) — never edited by hand, never trusted
+                          on header mismatch (reindex, never read)
+└── library/<domain>/    (F4) rendered lesson views (library.go: Dir)
+            INDEX.md            domain digest, rebuilt by RebuildIndex
+            lessons/<id>/LESSON.md     admitted lessons (evidence-gated)
+            candidates/<id>/LESSON.md  proposed, awaiting guardian validation
+            harnesses/<task-slug>/tree/ + EXPERIENCE.md
+                          adopted harness snapshot + why-note
 ```
 
 Team sharing (F3): `regulus memory export` renders a committed bundle from
 the log — Engram's `sync` pattern, but as rendered views of one append-only
-log instead of a second mutable copy of the data.
+log instead of a second mutable copy of the data: `.regulus-export/
+almanac.jsonl` (verbatim copy of the log) + `.regulus-export/INDEX.md`
+(a rendered digest grouped by type, with pinned and relations sections).
 
 ## 4. Observation schema (F3)
 
@@ -66,7 +79,8 @@ log instead of a second mutable copy of the data.
     "cue": "when this pattern appears",
     "lesson": "what to do",
     "evidence": [".regulus/evidence/<task>/<receipt>.json"],
-    "confidence": "low | medium | high"
+    "confidence": "low | medium | high",
+    "dimension": "inv (how the agent works) | dom (what a practitioner knows); optional, unset for legacy lessons"
   },
   "provenance": {
     "task": "regulus-ai-v1/T2",
@@ -85,10 +99,17 @@ log instead of a second mutable copy of the data.
 | F1 | `regulus memory note <text>` | append one timestamped session note |
 | F1 | `regulus memory show` | print the session notes (what the compaction hook injects) |
 | F3 | `regulus memory save` | full observation with type validation and provenance |
-| F3 | `regulus memory search [terms] [--topic-key] [--domain]` | deterministic bucket-then-match retrieval with staleness annotations |
-| F3 | `regulus memory context` | deterministic resume block: open feature document, task list, last notes |
-| F3 | `regulus memory history <topic-key>` | revision chain of one evolving topic |
-| F3 | `regulus memory export` | render the committed team bundle from the log |
+| F3 | `regulus memory search [terms] [--topic-key] [--domain] [--dimension inv\|dom] [--path <f>] [--limit N] [--any] [--latest] [--include-superseded] [--lexical] [--embedder <id>]` | hybrid retrieval: deterministic bucket-then-match (lexical channel) fused with the vector channel via RRF (k=60) + recency decay + confidence boost; stale/missing index degrades to lexical with a warning, `--lexical` forces it; `--embedder` selects the encoder (default `hash-ngram-v1`) |
+| F3 | `regulus memory prune [--older-than-days N] [--type ...] [--yes]` | drop stale non-lesson observations (dry run by default; lessons + pins immune) |
+| F3 | `regulus memory context [--limit N]` | deterministic resume block: project identity, charts, session notes (all, or latest N with `--limit`), lessons with cue+content, decisions/discoveries/preferences |
+| F4 | `regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv\|dom] [--confidence] <feature-doc>` | evidence-gated lesson candidate (dimension defaults to unset) |
+| F3 | `regulus memory history --topic-key <key>` | revision chain of one evolving topic |
+| F3 | `regulus memory export` | render the committed team bundle from the log (`.regulus-export/almanac.jsonl` + `INDEX.md`) |
+| F3 | `regulus memory import <file>` | restore observations from an export bundle (idempotent by id) |
+| F3 | `regulus memory pin|unpin <id>` | pin an observation (pins survive prune, win chain collapse) |
+| F3 | `regulus memory relate --id <a> --relation <r> --to <b>` / `--suggest <id>` | record a relation edge; `--suggest` prints top-5 vector candidates above the 0.5 floor (writes nothing, self-heals a stale index) |
+| F3 | `regulus memory doctor` | health report: counts, age, malformed lines, orphan pins/relations, index freshness (`fresh` = hybrid active, else reindex) |
+| v2 | `regulus memory reindex [--embedder <id>]` | rebuild the derived `retrieval.bin` as a pure function of the JSONL; header pins `{embedder, dim, version}`, stdout names the encoder |
 
 ## 6. Plugin integration (OpenCode V2)
 
@@ -97,5 +118,10 @@ log instead of a second mutable copy of the data.
   instructions.
 - The `context` session hook points the agent at the Almanac resume block
   when a feature document is open.
+- Lesson injection is domain-scoped: the hook resolves one domain (the
+  `Domain:` line of a chart cited in recent messages, else the lone
+  chart's line, else the lone library domain) and injects that domain's
+  lessons via `memory search --type lesson --domain`; with no signal it
+  keeps the newest-first behavior.
 - Agents write via the CLI — single writer, like every piece of Regulus
   state. Nothing but `regulus` mutates `.regulus/`.

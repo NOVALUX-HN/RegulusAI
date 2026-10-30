@@ -87,8 +87,16 @@ func TestAdmitWritesLessonAndIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(index), l.ID) || !strings.Contains(string(index), l.Cue) {
-		t.Fatalf("INDEX.md must list the lesson, got:\n%s", string(index))
+	// The INDEX is a snapshot block per lesson, not a copy of LESSON.md.
+	for _, want := range []string{
+		"## harnesses/feature__T1/",
+		"- harness: harnesses/feature__T1/tree/",
+		"- why: harnesses/feature__T1/EXPERIENCE.md",
+		"- cue: " + l.Cue,
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("INDEX.md must contain %q, got:\n%s", want, string(index))
+		}
 	}
 }
 
@@ -217,5 +225,270 @@ func TestRemoveCandidate(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(CandidateDir(root, "go"), l.ID, "LESSON.md")); !os.IsNotExist(err) {
 		t.Fatal("RemoveCandidate must delete the candidate")
+	}
+}
+
+func TestDimensionRoundTripThroughAdmitAndCandidates(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	l.Dimension = DimensionINV
+	if err := Admit(root, l, "regulus-gate-verifier"); err != nil {
+		t.Fatal(err)
+	}
+	lessons, err := List(root, "go")
+	if err != nil || len(lessons) != 1 || lessons[0].Dimension != DimensionINV {
+		t.Fatalf("admitted round-trip = %+v (%v)", lessons, err)
+	}
+	data, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "## harnesses/feature__T1/") {
+		t.Fatalf("INDEX must carry the snapshot block, got:\n%s", data)
+	}
+	c := validLesson()
+	c.ID = NewID(t0.Add(time.Hour))
+	c.Dimension = DimensionDOM
+	if err := Propose(root, c); err != nil {
+		t.Fatal(err)
+	}
+	cands, err := Candidates(root, "go")
+	if err != nil || len(cands) != 1 || cands[0].Dimension != DimensionDOM {
+		t.Fatalf("candidate round-trip = %+v (%v)", cands, err)
+	}
+}
+
+func TestDimensionValidation(t *testing.T) {
+	l := validLesson()
+	l.Dimension = "sideways"
+	if err := Admit(t.TempDir(), l, "regulus-gate-verifier"); err == nil || !strings.Contains(err.Error(), "dimension") {
+		t.Fatalf("want dimension refusal, got %v", err)
+	}
+	legacy := validLesson()
+	legacy.Dimension = ""
+	if err := Admit(t.TempDir(), legacy, "regulus-gate-verifier"); err != nil {
+		t.Fatalf("unset dimension (legacy) must stay valid, got %v", err)
+	}
+}
+
+func TestLegacyLessonWithoutDimensionLineParses(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(Dir(root, "go"), "lessons", "les_legacy")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "# les_legacy\n\n- **domain**: go\n- **task**: feature/T1\n- **cue**: c\n- **lesson**: l\n- **evidence**: rec_1.json\n- **confidence**: low\n- **git_head**: abc\n- **created_at**: 2026-10-26T08:00:00Z\n"
+	if err := os.WriteFile(filepath.Join(dir, "LESSON.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lessons, err := List(root, "go")
+	if err != nil || len(lessons) != 1 {
+		t.Fatalf("legacy list = %+v (%v)", lessons, err)
+	}
+	if lessons[0].Dimension != "" {
+		t.Fatalf("legacy lesson dimension = %q, want unset", lessons[0].Dimension)
+	}
+}
+
+func admitIn(t *testing.T, root string, l Lesson, guardian string) Lesson {
+	t.Helper()
+	if l.ID == "" {
+		l.ID = NewID(l.CreatedAt)
+	}
+	if err := Admit(root, l, guardian); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func TestAdmitWritesExperienceNote(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	if err := Admit(root, l, "regulus-gate-verifier"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(Dir(root, "go"), "harnesses", "feature__T1", "EXPERIENCE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"# feature/T1",
+		"- adopted: regulus-gate-verifier",
+		"## Why this was chosen",
+		l.Cue,
+		"## Transferable lesson",
+		l.Lesson,
+		l.Evidence[0],
+		l.Confidence,
+		l.GitHead,
+		l.CreatedAt.Format(time.RFC3339),
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("EXPERIENCE.md must contain %q, got:\n%s", want, content)
+		}
+	}
+}
+
+func TestAdmitSnapshotsTreeAndSkipsDocs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".opencode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".opencode", "discipline.md"), []byte("discipline"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "big.md"), []byte("prose"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l := validLesson()
+	l.ID = NewID(t0)
+	if err := Admit(root, l, "regulus-gate-verifier"); err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(Dir(root, "go"), "harnesses", "feature__T1", "tree")
+	if _, err := os.Stat(filepath.Join(tree, ".opencode", "discipline.md")); err != nil {
+		t.Fatalf("tree must snapshot discipline.md: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tree, "docs", "big.md")); !os.IsNotExist(err) {
+		t.Fatal("tree must NEVER copy docs/")
+	}
+	index, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(index), "- harness: harnesses/feature__T1/tree/ (1 files)") {
+		t.Fatalf("INDEX must count the snapped files, got:\n%s", string(index))
+	}
+}
+
+func TestAdmitWithoutHarnessSurfaceStillAdmits(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	if err := Admit(root, l, "regulus-gate-verifier"); err != nil {
+		t.Fatal(err)
+	}
+	index, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(index), "- harness: harnesses/feature__T1/tree/ (0 files)") {
+		t.Fatalf("missing surface means an empty tree, got:\n%s", string(index))
+	}
+}
+
+func TestRebuildIndexEmptyCaseUnchanged(t *testing.T) {
+	root := t.TempDir()
+	if err := RebuildIndex(root, "go"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Library — go\n\nLessons admitted with evidence. Each entry cites its receipts.\n\n_(empty — no lessons admitted yet)_\n"
+	if string(data) != want {
+		t.Fatalf("empty INDEX changed:\ngot:\n%s\nwant:\n%s", string(data), want)
+	}
+}
+
+func TestForgetUnknownTaskIsNoOp(t *testing.T) {
+	root := t.TempDir()
+	l := validLesson()
+	l.ID = NewID(t0)
+	admitIn(t, root, l, "regulus-gate-verifier")
+	before, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Forget(root, "go", "nothing/HERE"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("unknown forget must not touch the INDEX:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	if _, err := os.Stat(filepath.Join(Dir(root, "go"), "harnesses", "feature__T1")); err != nil {
+		t.Fatalf("known snapshot must survive: %v", err)
+	}
+}
+
+func TestForgetRemovesSnapshotAndUpdatesIndex(t *testing.T) {
+	root := t.TempDir()
+	l1 := validLesson()
+	l1.ID = NewID(t0)
+	admitIn(t, root, l1, "regulus-gate-verifier")
+	l2 := validLesson()
+	l2.ID = NewID(t0.Add(time.Second))
+	l2.Task = "feature/T2"
+	admitIn(t, root, l2, "regulus-gate-verifier")
+	if err := Forget(root, "go", "feature/T1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(Dir(root, "go"), "harnesses", "feature__T1")); !os.IsNotExist(err) {
+		t.Fatal("Forget must remove the task snapshot")
+	}
+	if _, err := os.Stat(filepath.Join(Dir(root, "go"), "harnesses", "feature__T2")); err != nil {
+		t.Fatalf("other snapshots must survive: %v", err)
+	}
+	lessons, err := List(root, "go")
+	if err != nil || len(lessons) != 2 {
+		t.Fatalf("Forget prunes snapshots, not lessons: %+v (%v)", lessons, err)
+	}
+	index, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Forget prunes snapshots, not lessons: the T1 block stays but points
+	// at an emptied tree, while the T2 survivor is untouched.
+	if !strings.Contains(string(index), "- harness: harnesses/feature__T1/tree/ (0 files)") {
+		t.Fatalf("INDEX must show the emptied T1 tree, got:\n%s", string(index))
+	}
+	if !strings.Contains(string(index), "## harnesses/feature__T2/") {
+		t.Fatalf("INDEX must keep the survivor, got:\n%s", string(index))
+	}
+}
+
+func TestRetainKeepsStrictlyBefore(t *testing.T) {
+	root := t.TempDir()
+	for i, task := range []string{"a/1", "b/2", "c/3"} {
+		l := validLesson()
+		l.ID = NewID(t0.Add(time.Duration(i) * time.Second))
+		l.Task = task
+		admitIn(t, root, l, "regulus-gate-verifier")
+	}
+	if err := Retain(root, "go", "b/2"); err != nil {
+		t.Fatal(err)
+	}
+	lessons, err := List(root, "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lessons) != 1 || lessons[0].Task != "a/1" {
+		t.Fatalf("Retain keeps tasks strictly before the bound, got %+v", lessons)
+	}
+	for _, slug := range []string{"b__2", "c__3"} {
+		if _, err := os.Stat(filepath.Join(Dir(root, "go"), "harnesses", slug)); !os.IsNotExist(err) {
+			t.Fatalf("snapshot %s must be pruned", slug)
+		}
+	}
+	index, err := os.ReadFile(IndexFile(root, "go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(index), "harnesses/b__2/") || strings.Contains(string(index), "harnesses/c__3/") {
+		t.Fatalf("INDEX must drop pruned snapshots, got:\n%s", string(index))
+	}
+	if !strings.Contains(string(index), "## harnesses/a__1/") {
+		t.Fatalf("INDEX must keep the retained snapshot, got:\n%s", string(index))
 	}
 }

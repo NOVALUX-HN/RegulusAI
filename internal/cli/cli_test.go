@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -15,7 +16,10 @@ import (
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
+	"regulus-ai/internal/gates"
+	"regulus-ai/internal/library"
 	"regulus-ai/internal/receipts"
+	"regulus-ai/internal/trace"
 )
 
 func newCLI(probe func() doctor.Result) (CLI, *bytes.Buffer, *bytes.Buffer) {
@@ -128,6 +132,44 @@ func TestSpecCheckViolationsListed(t *testing.T) {
 	}
 }
 
+func TestSpecCheckDirValidatesAllFiles(t *testing.T) {
+	c, out, errb := newCLI(nil)
+	dir := t.TempDir()
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n- When regulus spec check runs\n- Then the exit code is 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := c.Run([]string{"spec", "check", dir}); code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr: %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "in 2 file(s)") {
+		t.Fatalf("output must summarize both files, got %q", out.String())
+	}
+}
+
+func TestSpecCheckDirNamesBrokenFile(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	dir := t.TempDir()
+	okDoc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n- When regulus spec check runs\n- Then the exit code is 0\n"
+	badDoc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n\n## Log\n"
+	if err := os.WriteFile(filepath.Join(dir, "ok.md"), []byte(okDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	broken := filepath.Join(dir, "broken.md")
+	if err := os.WriteFile(broken, []byte(badDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := c.Run([]string{"spec", "check", dir}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "broken.md") {
+		t.Fatalf("stderr must name the broken chart, got %q", errb.String())
+	}
+}
+
 func TestSpecCheckMissingFile(t *testing.T) {
 	c, _, errb := newCLI(nil)
 	if code := c.Run([]string{"spec", "check", "does-not-exist.md"}); code != 1 {
@@ -177,8 +219,25 @@ func TestDoctorSupportedOutputLine(t *testing.T) {
 	if code := c.Run([]string{"doctor"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if got, want := out.String(), "opencode 2.1.0 — supported (V2)\n"; got != want {
-		t.Fatalf("output = %q, want %q (the runtime's own version line, not doubled)", got, want)
+	if got, want := out.String(), "version:    test (no package.json — nothing to compare)\nopencode 2.1.0 — supported (V2)\nplugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts\n"; got != want {
+		t.Fatalf("output = %q, want %q (version line, then the runtime's own version line)", got, want)
+	}
+}
+
+func TestDoctorWarnsOnVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.WriteFile("package.json", []byte(`{"version":"9.9.9"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(func() doctor.Result {
+		return doctor.Result{Detected: "opencode 2.1.0", Major: 2, Supported: true}
+	})
+	if code := c.Run([]string{"doctor"}); code != 0 {
+		t.Fatalf("a version warning must not fail doctor, exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "WARNING — binary says test but package.json says 9.9.9") {
+		t.Fatalf("output = %q", out.String())
 	}
 }
 
@@ -736,6 +795,100 @@ func TestStatusReportsMissingPiecesHonestly(t *testing.T) {
 	}
 }
 
+func TestLibraryForgetRetainCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	now := time.Now().UTC()
+	for i, task := range []string{"tiny/T1", "tiny/T2"} {
+		l := library.Lesson{
+			ID:         library.NewID(now.Add(time.Duration(i) * time.Second)),
+			Domain:     "go",
+			Task:       task,
+			Cue:        "cue for " + task,
+			Lesson:     "lesson for " + task,
+			Evidence:   []string{".regulus/evidence/tiny__T1/typecheck-1.json"},
+			Confidence: library.ConfidenceLow,
+			GitHead:    "abc123",
+			CreatedAt:  now.Add(time.Duration(i) * time.Second),
+		}
+		if err := library.Admit(".", l, "regulus-gate-verifier"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// forget drops the snapshot, not the lesson
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"library", "forget", "--domain", "go", "--task", "tiny/T1"}); code != 0 {
+		t.Fatalf("forget exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "forgotten: harnesses/tiny__T1/") {
+		t.Fatalf("forget output = %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(".regulus", "library", "go", "harnesses", "tiny__T1")); !os.IsNotExist(err) {
+		t.Fatal("forget must remove the task snapshot")
+	}
+	// unknown task is a no-op success
+	cU, outU, errbU := newCLI(nil)
+	if code := cU.Run([]string{"library", "forget", "--domain", "go", "--task", "tiny/NONE"}); code != 0 {
+		t.Fatalf("unknown forget exit = %d, stderr %q", code, errbU.String())
+	}
+	if !strings.Contains(outU.String(), "forgotten: harnesses/tiny__NONE/") {
+		t.Fatalf("unknown forget output = %q", outU.String())
+	}
+	// retain keeps strictly-before tasks and drops the bound and later
+	cR, outR, errbR := newCLI(nil)
+	if code := cR.Run([]string{"library", "retain", "--domain", "go", "--task", "tiny/T2"}); code != 0 {
+		t.Fatalf("retain exit = %d, stderr %q", code, errbR.String())
+	}
+	if !strings.Contains(outR.String(), "retained: tiny/T1 (domain go)") {
+		t.Fatalf("retain output = %q", outR.String())
+	}
+	lessons, err := library.List(".", "go")
+	if err != nil || len(lessons) != 1 || lessons[0].Task != "tiny/T1" {
+		t.Fatalf("retain must drop tiny/T2 and later, got %+v (%v)", lessons, err)
+	}
+	// retaining before everything empties the domain
+	cR2, outR2, errbR2 := newCLI(nil)
+	if code := cR2.Run([]string{"library", "retain", "--domain", "go", "--task", "a"}); code != 0 {
+		t.Fatalf("retain-all exit = %d, stderr %q", code, errbR2.String())
+	}
+	if !strings.Contains(outR2.String(), "no tasks before a") {
+		t.Fatalf("retain-all output = %q", outR2.String())
+	}
+}
+
+func TestLibraryForgetRetainUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{
+		{"library", "forget"},
+		{"library", "forget", "--domain", "go"},
+		{"library", "forget", "--task", "tiny/T1"},
+		{"library", "forget", "--domain", "go", "--task", "tiny/T1", "extra"},
+		{"library", "retain"},
+		{"library", "retain", "--domain", "go"},
+		{"library", "retain", "--task", "tiny/T1"},
+		{"library", "retain", "--domain", "go", "--task", "tiny/T1", "extra"},
+	} {
+		c, _, errb := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("args %v: exit = %d, want 2", args, code)
+		}
+		want := "usage: regulus library " + args[1]
+		if !strings.Contains(errb.String(), want) {
+			t.Fatalf("args %v: stderr must print %q, got %q", args, want, errb.String())
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"library", "forget", "--domain"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"library", "frobnicate"}); code != 2 {
+		t.Fatalf("unknown subcommand: exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "forget|retain") {
+		t.Fatalf("unknown subcommand usage must name the new subcommands, got %q", errb2.String())
+	}
+}
+
 func TestLibraryListDomainEmpty(t *testing.T) {
 	c, out, _ := newCLI(nil)
 	t.Chdir(t.TempDir())
@@ -838,6 +991,48 @@ func TestMemorySaveSearchHistoryContext(t *testing.T) {
 	}
 	if !strings.Contains(out5.String(), "f3 in flight") {
 		t.Fatalf("context must surface the latest note, got:\n%s", out5.String())
+	}
+}
+
+func TestMemoryContextLimitAndIdentity(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, txt := range []string{"resume-note-1", "resume-note-2", "resume-note-3", "resume-note-4", "resume-note-5", "resume-note-6", "resume-note-7"} {
+		c, _, _ := newCLI(nil)
+		if code := c.Run([]string{"memory", "note", txt}); code != 0 {
+			t.Fatalf("note %q: exit = %d", txt, code)
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "chose sqlite", "simpler ops"}); code != 0 {
+		t.Fatalf("save: exit = %d", code)
+	}
+	cFull, outFull, _ := newCLI(nil)
+	if code := cFull.Run([]string{"memory", "context"}); code != 0 {
+		t.Fatalf("context: exit = %d", code)
+	}
+	full := outFull.String()
+	for _, want := range []string{"resume-note-1", "resume-note-7", "chose sqlite", "simpler ops", almanac.ProjectName(".")} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("context must show %q, got:\n%s", want, full)
+		}
+	}
+	cPaged, outPaged, _ := newCLI(nil)
+	if code := cPaged.Run([]string{"memory", "context", "--limit", "5"}); code != 0 {
+		t.Fatalf("context --limit: exit = %d", code)
+	}
+	paged := outPaged.String()
+	for _, txt := range []string{"resume-note-1", "resume-note-2"} {
+		if strings.Contains(paged, txt) {
+			t.Fatalf("paged context must hide %q, got:\n%s", txt, paged)
+		}
+	}
+	for _, txt := range []string{"resume-note-3", "resume-note-7"} {
+		if !strings.Contains(paged, txt) {
+			t.Fatalf("paged context must show %q, got:\n%s", txt, paged)
+		}
+	}
+	if !strings.Contains(paged, "showing latest 5 of 7") {
+		t.Fatalf("paged context must name the truncation, got:\n%s", paged)
 	}
 }
 
@@ -1009,6 +1204,13 @@ func TestSurfaceProposeListApplyUsage(t *testing.T) {
 
 func TestSurfaceApplyRoundTrip(t *testing.T) {
 	t.Chdir(t.TempDir())
+	// Apply never creates files: the target must already exist.
+	if err := os.MkdirAll("docs", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("docs", "learned.md"), []byte("# Learned\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	c, out, _ := newCLI(nil)
 	if code := c.Run([]string{"surface", "propose", "--target", "docs/learned.md", "--content", "## Learned: surface edits work", "--reason", "V2 proved it"}); code != 0 {
 		t.Fatalf("propose: exit = %d", code)
@@ -1082,6 +1284,14 @@ func TestChartInitAndList(t *testing.T) {
 	if !strings.Contains(out.String(), slashPath) {
 		t.Fatalf("init output = %q", out.String())
 	}
+	// the scaffold carries the Domain template line
+	data, err := os.ReadFile(slashPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Domain: <name>") {
+		t.Fatalf("scaffold must carry the Domain template line, got:\n%s", data)
+	}
 	// the scaffold passes spec check
 	cS, outS, _ := newCLI(nil)
 	if code := cS.Run([]string{"spec", "check", "charts/my-feature.md"}); code != 0 {
@@ -1129,5 +1339,944 @@ func TestChartListEmpty(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "(no charts)") {
 		t.Fatalf("list output = %q", out.String())
+	}
+}
+
+func TestLibraryDomainsEmpty(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"library", "domains"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if out.String() != "" {
+		t.Fatalf("output = %q, want empty", out.String())
+	}
+}
+
+func TestLibraryDomainsListsSorted(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	root := t.TempDir()
+	t.Chdir(root)
+	for _, d := range []string{"ts", "go"} {
+		if err := os.MkdirAll(filepath.Join(root, ".regulus", "library", d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code := c.Run([]string{"library", "domains"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if out.String() != "go\nts\n" {
+		t.Fatalf("output = %q, want sorted domains", out.String())
+	}
+}
+
+func TestLibraryDomainsRejectsExtraArgs(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"library", "domains", "extra"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus library domains") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestTraceUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace record") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"trace", "frobnicate"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), `unknown subcommand "frobnicate"`) {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestTraceRecordShowCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "record", "--session", "ses1", "--message", "msg1", "--call", "call1", "--tool", "read", "--status", "completed"}); code != 0 {
+		t.Fatalf("record exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "trace recorded") {
+		t.Fatalf("record output = %q", out.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"trace", "record", "--session", "ses1", "--message", "msg2", "--call", "call2", "--tool", "write", "--status", "error"}); code != 0 {
+		t.Fatalf("record 2 exit = %d, stderr %q", code, errb2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"trace", "show", "--session", "ses1"}); code != 0 {
+		t.Fatalf("show exit = %d", code)
+	}
+	if got, want := out3.String(), "1 read completed\n2 write error\n"; got != want {
+		t.Fatalf("show output = %q, want %q", got, want)
+	}
+}
+
+func TestTraceRecordUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "record"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace record") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	if code := c2.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c", "--tool", "t"}); code != 2 {
+		t.Fatalf("missing status: exit = %d, want 2", code)
+	}
+	c3, _, _ := newCLI(nil)
+	if code := c3.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c", "--tool", "t", "--status", "completed", "extra"}); code != 2 {
+		t.Fatalf("stray positional: exit = %d, want 2", code)
+	}
+}
+
+func TestTraceRecordBadStatusRefused(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c", "--tool", "t", "--status", "done"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "completed or error") {
+		t.Fatalf("stderr must name the valid statuses, got %q", errb.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"trace", "show", "--session", "s"}); code != 0 {
+		t.Fatalf("show exit = %d, want 0", code)
+	}
+	if !strings.Contains(out2.String(), "(no trace for session s)") {
+		t.Fatalf("refused record must leave the trace empty, got %q", out2.String())
+	}
+}
+
+func TestTraceShowEmptySession(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"trace", "show", "--session", "ghost"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if got, want := out.String(), "(no trace for session ghost)\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestTraceShowUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"trace", "show"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace show") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c2.Run([]string{"trace", "show", "--session", "s", "extra"}); code != 2 {
+		t.Fatalf("stray positional: exit = %d, want 2", code)
+	}
+}
+
+func TestProbeUsage(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"probe"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus probe contrast") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"probe", "frobnicate"}); code != 2 {
+		t.Fatalf("unknown subcommand: exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), `unknown subcommand "frobnicate"`) {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestProbeContrastUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cases := [][]string{
+		{"probe", "contrast"},
+		{"probe", "contrast", "--task", "demo/T1"},
+		{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi"},
+		{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye", "extra"},
+		{"probe", "contrast", "--task", "../evil", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye"},
+	}
+	for _, args := range cases {
+		c, _, errb := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("args %v: exit = %d, want 2", args, code)
+		}
+		if !strings.Contains(errb.String(), "usage: regulus probe contrast") && !strings.Contains(errb.String(), "invalid task id") {
+			t.Fatalf("args %v: stderr must carry usage, got %q", args, errb.String())
+		}
+	}
+	// a bare flag parse error is also a usage error (flag defaults go to
+	// stderr, as with the other commands)
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"probe", "contrast", "--task"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+}
+
+func TestProbeContrastCycle(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo hi":                     {stdout: "hi\n"},
+		"echo bye":                    {stdout: "bye\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye"}); code != 0 {
+		t.Fatalf("contrast exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"echo hi", "echo bye", "hi", "bye", "- A:", "+ B:"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("contrast output must contain %q, got:\n%s", want, out.String())
+		}
+	}
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "probe", "*.json"))
+	if len(found) != 2 {
+		t.Fatalf("want 2 real probe receipts under the probe dir, got %v", found)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") || !strings.Contains(out2.String(), "sha256") {
+		t.Fatalf("contrast must record one probe-run entry with the diff digest, got:\n%s", out2.String())
+	}
+}
+
+func TestProbeContrastIdentical(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo same"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo same":                   {stdout: "same\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo same", "--b", "echo same"}); code != 0 {
+		t.Fatalf("identical contrast exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "no differences") {
+		t.Fatalf("identical receipts must be reported, got %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") {
+		t.Fatalf("identical runs still record the probe, got:\n%s", out2.String())
+	}
+}
+
+func TestProbeContrastRefusalRecordsNothing(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, _, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "nope", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("unknown gate: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), `unknown gate "nope"`) {
+		t.Fatalf("stderr must name the unknown gate, got %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	c2.Runner = r
+	t.Chdir(t.TempDir())
+	if code := c2.Run([]string{"probe", "contrast", "--task", "demo/T1", "--gate", "typecheck", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("missing regulus.json: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb2.String(), "no regulus.json") {
+		t.Fatalf("stderr must name the missing config, got %q", errb2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out3.String(), "(no budget entries)") {
+		t.Fatalf("refused probes must leave no probe entry, got:\n%s", out3.String())
+	}
+	_ = dir
+}
+
+func TestProbeComposeUsage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cases := [][]string{
+		{"probe", "compose"},
+		{"probe", "compose", "--task", "demo/T1"},
+		{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi"},
+		{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye", "extra"},
+		{"probe", "compose", "--task", "../evil", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"},
+	}
+	for _, args := range cases {
+		c, _, errb := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("args %v: exit = %d, want 2", args, code)
+		}
+		if !strings.Contains(errb.String(), "usage: regulus probe compose") && !strings.Contains(errb.String(), "invalid task id") {
+			t.Fatalf("args %v: stderr must carry usage, got %q", args, errb.String())
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"probe", "compose", "--task"}); code != 2 {
+		t.Fatalf("missing flag value: exit = %d, want 2", code)
+	}
+}
+
+func TestProbeComposeCycle(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo base":                   {stdout: "l1\nl2\nl3\n"},
+		"echo hi":                     {stdout: "A1\nl2\nl3\n"},
+		"echo bye":                    {stdout: "l1\nl2\nB3\n"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 0 {
+		t.Fatalf("compose exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"## Composed stdout", "A1\nl2\nB3", "(no conflicts)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("compose output must contain %q, got:\n%s", want, out.String())
+		}
+	}
+	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "probe", "*.json"))
+	if len(found) != 3 {
+		t.Fatalf("want 3 real probe receipts under the probe dir, got %v", found)
+	}
+	leaked, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "demo__T1", "*.json"))
+	if len(leaked) != 0 {
+		t.Fatalf("compose must not write gate-level receipts, got %v", leaked)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "probe-run") || !strings.Contains(out2.String(), "sha256") {
+		t.Fatalf("compose must record one probe-run entry with the report digest, got:\n%s", out2.String())
+	}
+}
+
+func TestProbeComposeConflictIsEvidence(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"echo base":                   {stdout: "out-base\n", code: 0},
+		"echo hi":                     {stdout: "out-a\n", code: 1},
+		"echo bye":                    {stdout: "out-b\n", code: 2},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, out, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 0 {
+		t.Fatalf("conflicted compose exit = %d (conflicts are evidence, not failure), stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"## Conflicts", "- exit_code: base 0, A 1, B 2", "out-a", "out-b", "## Composed exit_code\n0\n"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("compose output must contain %q, got:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestProbeComposeRefusalRecordsNothing(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"typecheck","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	c, _, errb := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "nope", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("unknown gate: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), `unknown gate "nope"`) {
+		t.Fatalf("stderr must name the unknown gate, got %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	c2.Runner = r
+	t.Chdir(t.TempDir())
+	if code := c2.Run([]string{"probe", "compose", "--task", "demo/T1", "--gate", "typecheck", "--base", "echo base", "--a", "echo hi", "--b", "echo bye"}); code != 1 {
+		t.Fatalf("missing regulus.json: exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb2.String(), "no regulus.json") {
+		t.Fatalf("stderr must name the missing config, got %q", errb2.String())
+	}
+	c3, out3, _ := newCLI(nil)
+	if code := c3.Run([]string{"budget", "show"}); code != 0 {
+		t.Fatalf("budget show exit = %d", code)
+	}
+	if !strings.Contains(out3.String(), "(no budget entries)") {
+		t.Fatalf("refused composes must leave no probe entry, got:\n%s", out3.String())
+	}
+	_ = dir
+}
+
+func TestTraceRecordFilesAndFilesCmd(t *testing.T) {
+	c, _, _ := newCLI(nil)
+	root := t.TempDir()
+	t.Chdir(root)
+	if code := c.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c1", "--tool", "gate_run", "--status", "completed", "--files", "a.go,b.go"}); code != 0 {
+		t.Fatalf("record exit = %d", code)
+	}
+	c2, _, _ := newCLI(nil)
+	_ = c2
+	if code := c.Run([]string{"trace", "record", "--session", "s", "--message", "m", "--call", "c2", "--tool", "memory_search", "--status", "error", "--files", "b.go,c.go"}); code != 0 {
+		t.Fatalf("record exit = %d", code)
+	}
+	cf, fout, _ := newCLI(nil)
+	if code := cf.Run([]string{"trace", "files", "--session", "s"}); code != 0 {
+		t.Fatalf("files exit = %d", code)
+	}
+	if fout.String() != "a.go\nb.go\nc.go\n" {
+		t.Fatalf("files = %q, want distinct in call order", fout.String())
+	}
+	show, sout, _ := newCLI(nil)
+	if code := show.Run([]string{"trace", "show", "--session", "s"}); code != 0 {
+		t.Fatalf("show exit = %d", code)
+	}
+	if sout.String() != "1 gate_run completed\n2 memory_search error\n" {
+		t.Fatalf("fingerprint changed with files, got %q", sout.String())
+	}
+}
+
+func TestTraceFilesEmptyAndUsage(t *testing.T) {
+	c, out, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := c.Run([]string{"trace", "files", "--session", "nobody"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "(no trace for session nobody)") {
+		t.Fatalf("output = %q", out.String())
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"trace", "files"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus trace files") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestMemorySearchPathBucket(t *testing.T) {
+	c, _, _ := newCLI(nil)
+	root := t.TempDir()
+	t.Chdir(root)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "picked x", "--path", "internal/cli/cli.go", "why x"}); code != 0 {
+		t.Fatalf("save exit = %d", code)
+	}
+	cs, out, _ := newCLI(nil)
+	if code := cs.Run([]string{"memory", "search", "--path", "internal/cli/cli.go", "picked"}); code != 0 {
+		t.Fatalf("search exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "picked x") {
+		t.Fatalf("path bucket missed, got %q", out.String())
+	}
+	cm, outm, _ := newCLI(nil)
+	if code := cm.Run([]string{"memory", "search", "--path", "elsewhere.go", "picked"}); code != 0 {
+		t.Fatalf("search exit = %d", code)
+	}
+	if !strings.Contains(outm.String(), "no matching observations") {
+		t.Fatalf("path miss should be empty, got %q", outm.String())
+	}
+}
+
+func TestStatusReportsTimePerTask(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"typecheck","layer":1,"command":"echo ok"}],"evolution":{"max_per_day":3}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	write := func(task, slug string, ms int64) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(".regulus", "evidence", slug), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := receipts.Write(filepath.Join(".regulus", "evidence", slug), receipts.Receipt{
+			Task: task, Gate: "typecheck", Layer: 1, Command: "c",
+			ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: ms,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("t/1", "t__1", 500)
+	write("t/1", "t__1", 1500)
+	write("t/2", "t__2", 125000)
+	c, out, _ := newCLI(func() doctor.Result {
+		return doctor.Result{Detected: "opencode 2.1.4", Major: 2, Supported: true}
+	})
+	c.Runner = &fakeGateRunner{}
+	if code := c.Run([]string{"status"}); code != 0 {
+		t.Fatalf("status exit = %d", code)
+	}
+	for _, want := range []string{"time:       t/1 2s (2 receipt(s))", "time:       t/2 2m5s (1 receipt(s))"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status must report %q, got:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestSkillsListCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll(filepath.Join(".opencode", "skills", "wf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: wf-flow\ndescription: Fires when work starts.\n---\n\n## What I do\nThings.\n"
+	if err := os.WriteFile(filepath.Join(".opencode", "skills", "wf", "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"skills", "list"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "wf-flow — Fires when work starts.") {
+		t.Fatalf("output = %q", out.String())
+	}
+	empty, _, _ := newCLI(nil)
+	t.Chdir(t.TempDir())
+	if code := empty.Run([]string{"skills", "list"}); code != 0 {
+		t.Fatalf("empty exit = %d", code)
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"skills", "bogus"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus skills list") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestEvolveProposeCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.MkdirAll(filepath.Join(".regulus", "evidence", "demo__T1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	if _, err := receipts.Write(filepath.Join(".regulus", "evidence", "demo__T1"), receipts.Receipt{
+		Task: "demo/T1", Gate: "typecheck", Layer: 1, Command: "echo ok",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"evolve", "propose", "--task", "demo/T1", "--domain", "go"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	for _, want := range []string{
+		"# Evidence pack — task demo/T1, domain go",
+		"## Task receipts",
+		"## Candidate template",
+		"dimension:",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("pack must contain %q, got:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestEvolveProposeRefusals(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"evolve", "propose", "--task", "demo/T9", "--domain", "go"}); code != 1 {
+		t.Fatalf("no-evidence exit = %d, want 1", code)
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"evolve", "propose", "--task", "demo/T1"}); code != 2 {
+		t.Fatalf("usage exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "usage: regulus evolve propose") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	c3, _, errb3 := newCLI(nil)
+	if code := c3.Run([]string{"evolve", "bogus"}); code != 2 {
+		t.Fatalf("unknown subcommand exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb3.String(), "unknown subcommand") {
+		t.Fatalf("stderr = %q", errb3.String())
+	}
+}
+
+func TestInitScaffoldsFreshRepo(t *testing.T) {
+	for _, stack := range []string{"go", "node", "smoke"} {
+		root := t.TempDir()
+		t.Chdir(root)
+		c, out, _ := newCLI(nil)
+		if code := c.Run([]string{"init", "--stack", stack}); code != 0 {
+			t.Fatalf("[%s] exit = %d", stack, code)
+		}
+		data, err := os.ReadFile("regulus.json")
+		if err != nil {
+			t.Fatalf("[%s] regulus.json: %v", stack, err)
+		}
+		cfg, err := gates.Load("regulus.json")
+		if err != nil || len(cfg.Gates) == 0 {
+			t.Fatalf("[%s] config must validate with gates: %+v (%v)", stack, cfg, err)
+		}
+		_ = data
+		if st, err := os.Stat("charts"); err != nil || !st.IsDir() {
+			t.Fatalf("[%s] charts/ missing", stack)
+		}
+		gi, err := os.ReadFile(".gitignore")
+		if err != nil || !strings.Contains(string(gi), ".regulus/") {
+			t.Fatalf("[%s] .gitignore must ignore .regulus/: %q (%v)", stack, gi, err)
+		}
+		if !strings.Contains(out.String(), "initialized:") {
+			t.Fatalf("[%s] output = %q", stack, out.String())
+		}
+	}
+}
+
+func TestInitDevinScaffoldsMcpConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"init", "--stack", "smoke", "--devin"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	raw, err := os.ReadFile(filepath.Join(".devin", "mcp_config.json"))
+	if err != nil {
+		t.Fatalf("mcp_config.json: %v", err)
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("mcp_config.json must be JSON: %v", err)
+	}
+	srv, ok := cfg.Servers["regulus"]
+	if !ok || srv.Command != "regulus" {
+		t.Fatalf("mcp_config.json must wire the regulus server, got:\n%s", raw)
+	}
+	foundMcp := false
+	for _, a := range srv.Args {
+		if a == "mcp" {
+			foundMcp = true
+		}
+	}
+	if !foundMcp {
+		t.Fatalf("regulus server must run `regulus mcp`, got:\n%s", raw)
+	}
+	c2, _, errb := newCLI(nil)
+	if code := c2.Run([]string{"init", "--stack", "smoke", "--devin"}); code == 0 {
+		t.Fatal("second --devin init must refuse (regulus.json exists)")
+	}
+	_ = errb
+}
+
+func TestInitRefusesOverwriteAndBadStack(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"g","layer":1,"command":"true"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"init"}); code != 1 {
+		t.Fatalf("overwrite exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "already exists") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	t.Chdir(t.TempDir())
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"init", "--stack", "cobol"}); code != 2 {
+		t.Fatalf("bad stack exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "unknown stack") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestInitKeepsExistingGitignoreEntry(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(".gitignore", []byte("node_modules/\n.regulus/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"init", "--stack", "smoke"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	gi, _ := os.ReadFile(".gitignore")
+	if strings.Count(string(gi), ".regulus/") != 1 {
+		t.Fatalf("must not duplicate the entry, got:\n%s", gi)
+	}
+}
+
+func TestMemoryPruneDryRunByDefault(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	old := time.Now().UTC().Add(-100 * 24 * time.Hour)
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "stale", Content: "c"}, old); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "prune"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "stale") || !strings.Contains(out.String(), "dry run") {
+		t.Fatalf("dry run must list and refuse: %q", out.String())
+	}
+	all, _ := almanac.All(".")
+	if len(all) != 1 {
+		t.Fatal("dry run must not remove anything")
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "prune", "--yes"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "pruned 1 observation(s)") {
+		t.Fatalf("output = %q", out2.String())
+	}
+	all, _ = almanac.All(".")
+	if len(all) != 0 {
+		t.Fatalf("after --yes, log = %+v", all)
+	}
+}
+
+func TestMemoryPruneKeepsLessonsAndPinned(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	old := time.Now().UTC().Add(-100 * 24 * time.Hour)
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeLesson, Title: "old lesson", Content: "c",
+		Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"r"}, Confidence: "low"}}, old); err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "keep me", Content: "c"}, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := almanac.Pin(".", pinned.ID, true, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "prune", "--yes"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "nothing to prune") {
+		t.Fatalf("lessons+pinned must be immune, got %q", out.String())
+	}
+}
+
+func TestTraceSessionsAndPruneCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	rec := func(s string) {
+		t.Helper()
+		c, _, _ := newCLI(nil)
+		if code := c.Run([]string{"trace", "record", "--session", s, "--message", "m", "--call", "c", "--tool", "t", "--status", "completed"}); code != 0 {
+			t.Fatalf("record exit = %d", code)
+		}
+	}
+	rec("s-a")
+	rec("s-b")
+	rec("s-b")
+	cs, sout, _ := newCLI(nil)
+	if code := cs.Run([]string{"trace", "sessions"}); code != 0 {
+		t.Fatalf("sessions exit = %d", code)
+	}
+	if sout.String() != "s-a\ns-b\n" {
+		t.Fatalf("sessions = %q", sout.String())
+	}
+	cp, pout, _ := newCLI(nil)
+	if code := cp.Run([]string{"trace", "prune", "--session", "s-b", "--keep", "1"}); code != 0 {
+		t.Fatalf("prune exit = %d", code)
+	}
+	if !strings.Contains(pout.String(), "1 entr(y/ies) kept") {
+		t.Fatalf("output = %q", pout.String())
+	}
+	entries, err := trace.List(".", "s-b")
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("after prune = %+v (%v)", entries, err)
+	}
+}
+
+func TestInitHarnessFromCopiesConfigNotEnvironment(t *testing.T) {
+	src := t.TempDir()
+	oc := filepath.Join(src, ".opencode")
+	for _, p := range []string{
+		filepath.Join(oc, "discipline.md"),
+		filepath.Join(oc, "tool-guidance.md"),
+		filepath.Join(oc, "agents", "regulus-proposer.md"),
+		filepath.Join(oc, "skills", "regulus-workflow", "SKILL.md"),
+		filepath.Join(oc, "plugins", "regulus.ts"),
+		filepath.Join(oc, "node_modules", "junk.js"),
+		filepath.Join(oc, "package.json"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"init", "--harness-from", src}); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), ".opencode copied from") {
+		t.Fatalf("output = %q", out.String())
+	}
+	for _, p := range []string{
+		filepath.Join(".opencode", "discipline.md"),
+		filepath.Join(".opencode", "tool-guidance.md"),
+		filepath.Join(".opencode", "agents", "regulus-proposer.md"),
+		filepath.Join(".opencode", "skills", "regulus-workflow", "SKILL.md"),
+		filepath.Join(".opencode", "plugins", "regulus.ts"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("config %s must be copied: %v", p, err)
+		}
+	}
+	for _, p := range []string{
+		filepath.Join(".opencode", "node_modules"),
+		filepath.Join(".opencode", "package.json"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			t.Fatalf("environment %s must NOT be copied", p)
+		}
+	}
+}
+
+func TestInitHarnessFromRefusals(t *testing.T) {
+	// missing .opencode in the source
+	empty := t.TempDir()
+	t.Chdir(t.TempDir())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"init", "--harness-from", empty}); code != 1 {
+		t.Fatalf("missing source exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "no .opencode directory") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+	// target already has .opencode
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, ".opencode", "skills", "s"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, ".opencode", "skills", "s", "SKILL.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(".opencode", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"init", "--harness-from", src}); code != 1 {
+		t.Fatalf("overwrite exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb2.String(), "refusing to overwrite") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestMemorySearchMarksRelations(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	a, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "old choice", Content: "x"}, time.Unix(1700000000, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "new choice", Content: "x"}, time.Unix(1700000060, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := almanac.Relate(".", b.ID, almanac.RelationSupersedes, a.ID, time.Unix(1700000120, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := almanac.Relate(".", a.ID, almanac.RelationConflictsWith, b.ID, time.Unix(1700000130, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "search", "choice"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if strings.Contains(out.String(), "old choice") || !strings.Contains(out.String(), b.ID) {
+		t.Fatalf("superseded must hide by default (its line, not its id-as-conflict-partner), got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "[conflicts: "+a.ID+"]") {
+		t.Fatalf("conflict must be marked on the visible side, got %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "search", "--include-superseded", "choice"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "[superseded by "+b.ID+"]") || !strings.Contains(out2.String(), "[conflicts: "+b.ID+"]") {
+		t.Fatalf("include-superseded must mark both sides, got %q", out2.String())
+	}
+}
+
+func TestMemoryDoctorCycle(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "a", Content: "c"}, time.Unix(1700000000, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"memory", "doctor"}); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errb.String())
+	}
+	for _, want := range []string{"observations: 1", "decision: 1", "malformed:  none", "orphan pins: none", "orphan relations: none"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor must report %q, got:\n%s", want, out.String())
+		}
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"memory", "doctor", "extra"}); code != 2 {
+		t.Fatalf("usage exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb2.String(), "usage: regulus memory doctor") {
+		t.Fatalf("stderr = %q", errb2.String())
+	}
+}
+
+func TestMemoryImportCycle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "mine", Content: "c"}, time.Unix(1700000000, 0).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	bundle := "bundle.jsonl"
+	obs, _ := almanac.All(".")
+	raw, _ := json.Marshal(obs[0])
+	other := `{"id":"obs_cli1","type":"discovery","title":"theirs","content":"c","saved_at":"2026-10-26T08:00:00Z"}`
+	if err := os.WriteFile(bundle, []byte(string(raw)+"\n"+other+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "import", bundle}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "imported 1, skipped 1") {
+		t.Fatalf("output = %q", out.String())
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "import", bundle}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out2.String(), "imported 0, skipped 2") {
+		t.Fatalf("re-import output = %q", out2.String())
+	}
+	c3, _, _ := newCLI(nil)
+	if code := c3.Run([]string{"memory", "import"}); code != 2 {
+		t.Fatalf("usage exit = %d, want 2", code)
 	}
 }

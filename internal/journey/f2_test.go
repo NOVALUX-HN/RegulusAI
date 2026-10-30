@@ -3,7 +3,6 @@ package journey
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -149,10 +148,10 @@ func main() {
 		{Name: "typecheck", Layer: 1, Command: "go build ./..."},
 		{Name: "lint", Layer: 2, Command: "go vet ./..."},
 		{Name: "build", Layer: 3, Command: "go build -o bin/fixture.exe ./cmd/fixture"},
-		{Name: "unit-tests", Layer: 4, Command: "go test ./..."},
-		{Name: "coverage-floor", Layer: 5, Command: "go test ./... -coverprofile=.regulus/coverage.out >/dev/null && go tool cover -func=.regulus/coverage.out | tail -n1", Metric: &gates.Metric{Extract: gates.ExtractLastLinePercent, Threshold: 80, Operator: gates.OpAtLeast}},
-		{Name: "mutation", Layer: 6, Command: fmt.Sprintf(`tmp=$(mktemp -d); git archive HEAD | tar -x -C "$tmp" && cd "$tmp" && %q unleash ./pkg/calc --threshold-efficacy=70; rc=$?; rm -rf "$tmp"; exit $rc`, gremlinsBin), TimeoutSec: 600},
-		{Name: "crap", Layer: 7, Command: fmt.Sprintf(`%q crap --profile .regulus/coverage.out --max 30 --top 5`, regulusBin)},
+		{Name: "unit-tests", Layer: 4, Command: "go test ./... -coverprofile .regulus/coverage.out"},
+		{Name: "coverage-floor", Layer: 5, Command: "go tool cover -func .regulus/coverage.out", Metric: &gates.Metric{Extract: gates.ExtractLastLinePercent, Threshold: 80, Operator: gates.OpAtLeast}},
+		{Name: "mutation", Layer: 6, Command: "gremlins unleash ./pkg/calc --threshold-efficacy 70", TimeoutSec: 600},
+		{Name: "crap", Layer: 7, Command: "./regulus.exe crap --profile .regulus/coverage.out --max 30 --top 5"},
 	}}
 	cfgData, err := json.Marshal(cfg)
 	if err != nil {

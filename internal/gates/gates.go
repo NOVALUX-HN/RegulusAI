@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/executil"
 	"regulus-ai/internal/receipts"
 )
 
@@ -53,9 +54,12 @@ const (
 
 // EvolutionConfig caps the evolution loop (PRD R-E4): reflect and probe
 // runs per calendar day. The ledger records every run, refused ones
-// included.
+// included. MaxPerTask optionally bounds one task's share of the daily
+// budget (a glottonous task must not eat the whole day); when unset or
+// non-positive it defaults to half the daily cap (minimum 1).
 type EvolutionConfig struct {
-	MaxPerDay int `json:"max_per_day,omitempty"`
+	MaxPerDay  int `json:"max_per_day,omitempty"`
+	MaxPerTask int `json:"max_per_task,omitempty"`
 }
 
 // Config is the project's regulus.json.
@@ -68,19 +72,66 @@ type Config struct {
 const DefaultTimeoutSec = 600
 
 // CmdRunner executes one shell command. The real one goes through a POSIX
-// sh; tests substitute fakes.
+// sh with a PowerShell/cmd fallback; tests substitute fakes.
 type CmdRunner interface {
 	Run(ctx context.Context, command string) (stdout, stderr string, exitCode int, err error)
 }
 
-// ShRunner executes commands via `sh -c` so configured gates may use shell
-// syntax. err is nil for any completed run (including non-zero exits); it
-// is non-nil only when no verdict could be produced (spawn failure, kill,
-// timeout).
+// ShRunner executes commands via `sh -c` when sh is on PATH, falling back
+// to PowerShell (`pwsh`/`powershell -Command`) or `cmd /C` on machines
+// without a POSIX shell (Windows without Git-bash on PATH). err is nil
+// for any completed run (including non-zero exits); it is non-nil only
+// when no verdict could be produced (spawn failure, kill, timeout).
 type ShRunner struct{}
 
 func (ShRunner) Run(ctx context.Context, command string) (string, string, int, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	if _, err := exec.LookPath("sh"); err == nil {
+		return runShell(ctx, "sh", []string{"-c", command})
+	}
+	if _, err := exec.LookPath("pwsh"); err == nil {
+		return runShellFallback(ctx, "pwsh", []string{"-NoProfile", "-NonInteractive", "-Command", command})
+	}
+	if _, err := exec.LookPath("powershell"); err == nil {
+		return runShellFallback(ctx, "powershell", []string{"-NoProfile", "-NonInteractive", "-Command", command})
+	}
+	return runShellFallback(ctx, "cmd", []string{"/C", command})
+}
+
+// runShellFallback runs one command through a non-POSIX shell and maps the
+// shell's own command-not-found report to the POSIX 127 convention, so a
+// missing binary reads the same on every platform (sh reports 127; cmd
+// reports 1/9009 and PowerShell reports 1 for the same condition).
+func runShellFallback(ctx context.Context, name string, args []string) (string, string, int, error) {
+	stdout, stderr, code, err := runShell(ctx, name, args)
+	if err == nil && code != 0 && isShellNotFound(stdout, stderr) {
+		return stdout, stderr, 127, nil
+	}
+	return stdout, stderr, code, err
+}
+
+// isShellNotFound reports whether the captured output is the shell itself
+// refusing an unknown command (as opposed to the command running and
+// failing). Markers cover cmd and PowerShell in English and Spanish; the
+// PowerShell FullyQualifiedErrorId marker is unambiguous by construction.
+func isShellNotFound(stdout, stderr string) bool {
+	combined := stdout + "\n" + stderr
+	for _, marker := range []string{
+		"CommandNotFoundException",
+		"not recognized as the name of a cmdlet",
+		"no se reconoce como nombre de un cmdlet",
+		"is not recognized as an internal or external command",
+		"no se reconoce como un comando interno o externo",
+	} {
+		if strings.Contains(combined, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func runShell(ctx context.Context, name string, args []string) (string, string, int, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	executil.HideWindow(cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()

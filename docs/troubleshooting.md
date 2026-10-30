@@ -1,5 +1,29 @@
 # Troubleshooting
 
+## `/regulus-yolo` (or editing opencode.json) doesn't take effect immediately
+
+Opencode reads its config once at startup: flipping YOLO (or any
+permission) needs a refresh. Run `/reload` in the TUI (no full
+restart), or restart opencode. The `regulus yolo` command always
+prints this reminder after `on`/`off`.
+
+`regulus yolo on` flips both `opencode.json` and the worker agent's
+`bash "*"` frontmatter (`.opencode/agents/regulus-worker.md`) to
+`allow`, keeping every destructive deny denied; `off` restores both
+to `ask`. Guardians stay read-only (`deny`) and the primary agent is
+never touched — so after `on` + `/reload`, neither primary nor worker
+asks for normal bash/edit, while deletes stay blocked.
+
+## Terminal windows flash open and shut on Windows whenever regulus runs
+
+The opencode background server has no console on Windows, so every
+spawn of the regulus binary (each tool call, each trace record, each
+context hook) used to pop a visible terminal window. Fixed in two
+places: the plugin spawns with `windowsHide: true`, and the Go code
+marks its children via `internal/executil.HideWindow` (doctor probe,
+gate runner, project-name lookup). If flashes return, a spawn site is
+missing the marking — grep for `exec.Command` and route it through
+`executil`.
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
@@ -28,7 +52,7 @@ go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
 ## `regulus status` says "no regulus.json — not configured"
 
 Create a `regulus.json` in your project root. See the README quickstart for
-a full example with all eight gate layers.
+a full example with all twelve gate layers.
 
 ## The gauntlet's mutation gate fails with timeouts
 
@@ -42,11 +66,16 @@ too large.
 
 The plugin searches, in order: `$REGULUS_BIN`, `bin/regulus.exe`,
 `bin/regulus`, `binaries/regulus-<platform>-<arch>`, `~/.regulus/bin`,
-and PATH. If none exists:
+and PATH. If none exists, build the stamped local binary with the
+documented flow:
 
 ```bash
-go build -o bin/regulus ./cmd/regulus
+npm run build   # = scripts/build.bash → binaries/ + stamped bin/regulus[.exe]
 ```
+
+A raw `go build -o bin/regulus ./cmd/regulus` also works but stays
+unstamped by design — `regulus doctor` warns (`WARNING — unstamped dev
+build`) until you rebuild with `npm run build`.
 
 ## `regulus memory search` shows "N commits behind"
 
@@ -58,5 +87,145 @@ changed.
 ## Surface edits are refused with "outside the harness surface whitelist"
 
 Surface edits can only target: `.opencode/skills/`, `.opencode/agents/`,
-`.opencode/plugins/`, and `docs/`. Code, configs and everything else are
-outside the harness surface by design.
+`.opencode/plugins/`, `.opencode/discipline.md`,
+`.opencode/tool-guidance.md`, `docs/`, and `scripts/` (except reserved
+files below). Code, configs and everything else are outside the harness
+surface by design.
+
+Apply additionally requires a named guardian validator, appends
+per-extension markers (`//` for TS, `<!-- -->` for Markdown, `#`
+elsewhere), and never creates files: the target must already exist.
+
+## Surface edits are refused with "is a reserved harness file"
+
+`scripts/build.bash` sits inside the whitelist but is reserved: release
+infrastructure changes by hand (a human decision), never as a side
+effect of an adopted lesson. Edit it directly; no flag overrides this.
+
+## `regulus reflect` or `probe contrast` says "evolution cap reached"
+
+Two caps gate evolution: per day (`max_per_day`, default 10) and per
+task (`max_per_task`, default half the daily cap). A refusal names which
+one (`cap N reached` vs `task cap N reached`) and is recorded but free.
+Wait for the next day, or raise the cap in `regulus.json`.
+
+## `regulus memory prune` lists entries but removes nothing
+
+That's the design: without `--yes` it's a dry run. Re-run the exact
+same command with `--yes` appended to execute. Lessons and pinned
+observations are immune and never listed.
+
+## `regulus memory import` says "line N: ..." and imports nothing
+
+The import is atomic: the first invalid line aborts the whole file so
+a half-imported log is impossible. Fix the cited line (missing id,
+unknown type, lesson without evidence) and re-run — already-imported
+ids are skipped, so re-running is safe.
+
+## `regulus evolve propose` says "no evidence"
+
+Proposing needs receipts: run the gauntlet for the task first
+(`regulus gate run <task>`), then propose. An evidence gate with no
+evidence refuses instead of inventing a lesson.
+
+## New charts lack the `Domain:` line
+
+`regulus chart init` scaffolds `Domain: <name>` at the top — set it to
+the lesson domain (e.g. `go`, `docs`) so the context hook injects
+that domain's lessons instead of the newest of all domains.
+
+## `regulus memory reindex` — when and why
+
+Semantic search needs the derived vector index
+(`.regulus/almanac/retrieval.bin`), built from your observation log:
+
+```bash
+regulus memory reindex
+```
+
+Run it once after upgrading to v2.0, and again whenever search or
+`suggest` complains the index is stale — any save after the last
+reindex makes it stale (the index pins the log's sha256, so staleness
+is exact, not heuristic). You don't have to guess: `regulus status`
+reports a `memory:` line (`fresh`, `stale`, `missing`, or nothing to
+index yet) and `regulus memory doctor` an `index:` line, both naming
+the repairing command. Reindexing is a pure function of the log:
+twice on the same log yields a byte-identical file, and stdout prints
+the pinned sha. On an empty log it refuses ("no observations log yet")
+— save an observation first.
+
+## `regulus memory search` warns "semantic index stale or missing — lexical only"
+
+That is the designed degrade path, not an error: the index is missing,
+stale (the log changed since the last reindex), or corrupt, so search
+ran lexical-only and told you on stderr, with the repairing command.
+Results are still correct,
+just without vector recall. Fix it with `regulus memory reindex`
+(`regulus status` shows the staleness beforehand on its `memory:` line,
+so the warning never surprises). To
+force the old path on purpose (no warning), pass `--lexical`:
+
+```bash
+regulus memory search --lexical <terms>
+```
+
+Fresh index + no flag = hybrid ranking, silently. Fresh index + flag =
+lexical, silently. Stale/missing index without the flag = lexical +
+warning on stderr (stdout matches the `--lexical` output exactly).
+
+## `regulus memory save` refuses with "near-duplicate save (matches ... similarity ..."
+
+Saves scoring above 0.92 cosine against a live observation are refused
+instead of stored as silent near-duplicates. The message names the
+matching observation id and its similarity. Two cases:
+
+- It really is a new revision of the same thought: re-save with
+  `--topic-key <existing-key>` to append it to that chain instead.
+- It is a different thought the hash embedder confuses: reword the
+  title/content until the similarity drops (unrelated observations in
+  the eval fixture score 0.26 or lower, far below the bar).
+
+Refused saves exit non-zero and leave the log untouched. `memory import`
+is exempt (re-importing identical content must succeed), and
+observations hidden by a `supersedes` relation are excluded from the
+comparison.
+
+## `regulus memory relate --suggest <id>` says "requires a fresh semantic index"
+
+Suggestions ARE the vector channel — there is no lexical fallback, so a
+missing or stale index refuses (with a `reindex` pointer) instead of
+presenting keyword hits as similarities. Run `regulus memory reindex`
+first. Notes on the output:
+
+- One line per candidate: `<id> <cosine> <title>`, top-5 above 0.5.
+- Suggestion-only: nothing is written. Confirm with a plain relate:
+  `regulus memory relate --id <a> --relation related --to <b>`.
+- The source itself and `supersedes`-hidden observations never appear.
+  No candidates ("no suggestions above threshold") means nothing cleared
+  the 0.5 floor, not an error.
+
+## `.regulus/traces/` and `.regulus/evidence/` keep growing — retention policy
+
+`.regulus/` is local runtime state, gitignored (`.gitignore`), never
+committed — the committed receipts trail is `docs/EVIDENCE.md`,
+regenerated only on `main` by `.github/workflows/gauntlet.yml:66-77`.
+CI uploads gate receipts as an artifact with `retention-days: 7`
+(`gauntlet.yml:99`); there is no local equivalent because local runs
+are the audit source the CI trail is rendered from.
+
+There is no global `gc`/`prune` command by design — evidence of closed
+tasks must not be deleted without authorization. Prune manually,
+per scope, and only what you own:
+
+```bash
+# traces: per-session prune (--keep N keeps the last N records of that session)
+regulus trace prune --session <session-id> [--keep N]
+
+# evidence: list/show only, no prune subcommand — remove one task dir by hand,
+# never evidence of a closed task without explicit authorization:
+#   Remove-Item -Recurse .regulus/evidence/<task__name>/
+```
+
+Sizes at last review (2026-10-30): 49 trace sessions,
+39 evidence task dirs (~369 receipts). Nothing was deleted for this
+policy — the directories stay until their owners prune them.

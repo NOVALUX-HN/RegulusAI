@@ -2,7 +2,7 @@
 
 **An OpenCode-native, self-improving engineering harness: a guardian gauntlet over the code, the Sextant workflow over the work, and evidence-driven evolution of the harness itself.**
 
-> Status: v0.1.0 — the complete vertical spine is live (Gauntlet · Discipline · Evolution), proven by deterministic journeys on this very repository.
+> Status: v0.9.0 — Gauntlet · Discipline · self-improving Evolution, now with the 12-gate gauntlet (health/live/polish gaps closed), almanac robustez + g1-g4 retrieval, and doctor V2 refusals — proven by the suite (Go + bun) on this very repository.
 
 Regulus AI fuses four proven ideas into one harness for [OpenCode](https://opencode.ai) V2:
 
@@ -13,11 +13,14 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 
 ## Quickstart
 
-**Prerequisites**: [OpenCode V2](https://opencode.ai) (the only supported runtime — the doctor refuses V1), Node.js 18+.
+**Prerequisites**: [OpenCode V2](https://opencode.ai) (the only supported runtime — the doctor refuses V1), Node.js 18+ and Go (the core build).
 
 ```bash
-# 1. Install the core (builds the platform binary through the launcher)
-npm install -g regulus-ai
+# 1. Build the core from source (no npm distribution yet — `regulus-ai`
+#    is not published; the quickstart is build-from-repo)
+git clone https://github.com/andragon31/RegulusAI && cd RegulusAI
+npm run build          # = bash scripts/build.bash → binaries/regulus-<os>-<arch> + stamped local bin/regulus
+# then put the binary for your platform on your PATH as `regulus`
 
 # 2. Verify the runtime — this is the only install check you need
 regulus doctor      # opencode v2.x — supported (V2)
@@ -69,7 +72,13 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus memory save --type <t> --title <t> …` | a typed observation with provenance (decision, discovery, preference) |
 | `regulus memory search [terms]` | deterministic bucket-then-match, age annotations |
 | `regulus memory history --topic-key <k>` | the revision chain of an evolving topic |
-| `regulus memory context` | the deterministic resume block: charts, notes, lessons |
+| `regulus memory context [--limit N]` | the deterministic resume block: project identity, charts, all notes, lessons with content, decisions/discoveries/preferences |
+| `regulus init [--stack go\|node\|smoke] [--devin]` | onboard a fresh repo: regulus.json, charts/, .gitignore, optional `.devin/mcp_config.json` |
+| `regulus mcp` | stdio MCP server for Devin CLI/Desktop/Cloud (12 tools, MCP trust boundary in docs/devin.md) |
+| `regulus yolo [on\|off\|status]` | safe YOLO toggle: flips only the bash/edit catch-alls, destructive denies always stay |
+| `regulus surface propose/apply` | harness-surface edits: guardian allowlist, per-extension markers, never creates files |
+| `regulus probe contrast/compose` | behavioral contrast evidence under the evolution budget (daily + per-task caps) |
+| `regulus trace show/sessions/files` | session tool-execution fingerprints and touched paths |
 | `regulus reflect --domain --task --cue --lesson <doc>` | propose an evidence-gated lesson candidate (nothing admitted without a guardian) |
 | `regulus library candidates` | pending candidates |
 | `regulus library admit --domain --candidate --guardian` | complete the admission: INDEX + Almanac + ledger |
@@ -86,6 +95,9 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | [Memory design](docs/memory.md) | The Almanac: seven improvements over the prior art, storage, CLI surface |
 | [Chart — v1](charts/regulus-ai-v1.md) | Verbatim specs, task list, ship's log of the whole build |
 | [Chart — F5](charts/f5-release.md) | The release phase's own acceptance scenarios |
+| [Devin](docs/devin.md) | Windows blueprint, CLI/Desktop/Cloud recipe, MCP trust boundary, deliberate tool gaps |
+| [Troubleshooting](docs/troubleshooting.md) | YOLO reload, console flashing, whitelist/reserved refusals, cap refusals |
+| [Agents](docs/agents.md) | Crew and guardian roles, permissions, delegation rules |
 
 ## Name
 
