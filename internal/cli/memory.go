@@ -518,7 +518,7 @@ func (c CLI) memoryExportCmd(args []string) int {
 	for _, p := range paths {
 		fmt.Fprintf(c.Stdout, "exported: %s\n", p)
 	}
-	fmt.Fprintln(c.Stdout, "commit .regulus-export/ to share the Almanac with your team")
+	fmt.Fprintln(c.Stdout, "share .regulus-export/ with your team (generated artifact, not committed)")
 	return 0
 }
 

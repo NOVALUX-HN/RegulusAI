@@ -59,11 +59,13 @@
                           adopted harness snapshot + why-note
 ```
 
-Team sharing (F3): `regulus memory export` renders a committed bundle from
+Team sharing (F3): `regulus memory export` renders a shareable bundle from
 the log — Engram's `sync` pattern, but as rendered views of one append-only
 log instead of a second mutable copy of the data: `.regulus-export/
 almanac.jsonl` (verbatim copy of the log) + `.regulus-export/INDEX.md`
 (a rendered digest grouped by type, with pinned and relations sections).
+The bundle is a generated artifact (gitignored) — share it as a CI artifact
+or a release attachment, not as a commit.
 
 ## 4. Observation schema (F3)
 

@@ -15,6 +15,12 @@ binaries/
 # Local tool output (regenerable diagrams, reviews)
 .archify/
 
+# Generated Almanac export bundle (share as artifact, not committed)
+.regulus-export/
+
+# Legacy pre-charts task docs (superseded by charts/, kept locally)
+odd/
+
 # Generated evidence view (retired from tracking; regenerate locally via
 # `regulus evidence list --task <t>` when needed)
 docs/EVIDENCE.md
