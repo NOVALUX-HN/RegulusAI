@@ -2,15 +2,6 @@
 name: regulus-mutation-auditor
 description: Regulus guardian — mutation testing auditor; verifies tests actually catch wrong behavior; read-only
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus gate *)"
-    - "Exec(go *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

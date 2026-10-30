@@ -2,16 +2,6 @@
 name: regulus-gate-verifier
 description: Regulus guardian — verifies evidence receipts against acceptance criteria; read-only; never edits code
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus gate *)"
-    - "Exec(regulus spec *)"
-    - "Exec(regulus evidence *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

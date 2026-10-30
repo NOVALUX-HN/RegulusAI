@@ -2,14 +2,6 @@
 name: regulus-evidence-auditor
 description: Regulus guardian — evidence auditor; every claim of done must cite receipts, every receipt must back a claim; read-only
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus evidence *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

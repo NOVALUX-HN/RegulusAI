@@ -2,17 +2,6 @@
 name: regulus-reviewer
 description: Regulus guardian — the senior read; reviews the code the change touches, not just the diff; findings name what to cut and what never to cut; read-only
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(git diff *)"
-    - "Exec(git show *)"
-    - "Exec(git log *)"
-    - "Exec(go *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

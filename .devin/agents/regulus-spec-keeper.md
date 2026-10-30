@@ -2,14 +2,6 @@
 name: regulus-spec-keeper
 description: Regulus guardian — keeps acceptance criteria anchored on the spec, never on the implementation; read-only
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus spec *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

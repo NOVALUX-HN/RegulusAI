@@ -2,15 +2,6 @@
 name: regulus-crap-analyst
 description: Regulus guardian — CRAP analyst; locates risky functions (complexity x coverage) and names the exact debt; read-only
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus crap *)"
-    - "Exec(go *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

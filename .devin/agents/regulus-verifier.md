@@ -2,18 +2,6 @@
 name: regulus-verifier
 description: The Crew's verifier — independent reproduction and verification of high-risk claims; read-only; never edits
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus *)"
-    - "Exec(go *)"
-    - "Exec(git diff *)"
-    - "Exec(git log *)"
-    - "Exec(git show *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

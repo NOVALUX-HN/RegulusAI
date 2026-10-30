@@ -2,17 +2,6 @@
 name: regulus-proposer
 description: Regulus Crew — proposes the next harness edit from the evolve evidence pack; authors structured candidates for guardian validation; read-only, never edits code
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus evolve *)"
-    - "Exec(regulus gate *)"
-    - "Exec(regulus evidence *)"
-    - "Exec(regulus library *)"
-  ask:
-    - "Write(**)"
-    - "Edit(**)"
-    - "Exec(*)"
 ---
 
 <!-- No model pin: Devin's router default picks the cheaper model, which is what this bounded role wants. -->

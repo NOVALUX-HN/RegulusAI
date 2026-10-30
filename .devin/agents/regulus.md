@@ -2,17 +2,6 @@
 name: regulus
 description: Regulus harness orchestrator — run the full Sextant workflow (authorize, chart, build, prove, learn) with the Crew; select me to drive the work
 allowed-tools: [read, grep, glob, exec]
-permissions:
-  allow:
-    - "Read(**)"
-    - "Exec(regulus *)"
-    - "Exec(go *)"
-    - "Exec(git diff *)"
-    - "Exec(git status *)"
-    - "Exec(git log *)"
-    - "Exec(git show *)"
-  ask:
-    - "Write(**/.env*)"
 ---
 
 <!-- No model pin: Devin router default drives this role; the OpenCode twin pins temperature 0.2, omitted here by pack convention. -->
