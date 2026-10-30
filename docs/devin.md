@@ -55,15 +55,14 @@ Cloud caveats (honest limits, not bugs):
 - `regulus gate run` works (pure Go + shell), but gates that assume
   interactive tools will refuse — read the refusal, don't fight it.
 
-## Devin CLI — quickstart (Windows PowerShell)
+## Devin CLI — quickstart (Windows PowerShell, CLI-only)
+
+CLI path, documented separately — Devin Desktop users skip this section
+and follow `Devin Desktop` below (no `devin` CLI needed there).
 
 ```powershell
-# one-time: build + PATH (or use the absolute path in mcp_config)
-go build -trimpath -o bin/regulus ./cmd/regulus
-$env:Path += ";$PWD\bin"
-
-# register the MCP server (project scope, committed file also works)
-devin mcp add -s project regulus -- regulus mcp
+# one-time: build + PATH + verify (contract + MCP smoke)
+powershell -File scripts/install-devin.ps1
 
 # pre-approve regulus tool calls (CLI permissions, project config)
 # .devin/config.json — YOUR file, not committed by this repo:
@@ -72,6 +71,13 @@ devin mcp add -s project regulus -- regulus mcp
 # use it
 devin
 > /regulus-workflow implement feature/T2 against charts/feature.md
+```
+
+### CLI-only: `devin mcp add` (never needed on Desktop)
+
+```powershell
+# register the MCP server (project scope, committed file also works)
+devin mcp add -s project regulus -- regulus mcp
 ```
 
 The `.devin/mcp_config.json` in this repo already points at
@@ -89,16 +95,26 @@ those paths, stores repo-relative values only, and refuses absolute paths
 and `..` traversal. Never point `regulus mcp` at a privileged shell or
 mount secrets where a prompt could name them.
 
-## Devin Desktop — notes
+## Devin Desktop — setup (no `devin` CLI needed)
 
-Install the native app (Releases page has macOS/Windows/Linux builds).
-Open this repo: the same `.devin/` pack applies (user-level overrides
-live under `%APPDATA%\devin\` on Windows). MCP servers from
-`.devin/mcp_config.json` load like in the CLI; verify in the MCP panel.
-Skills invoke with `/regulus-workflow`; subagents `regulus-worker` and
-`regulus-scout` appear alongside the built-ins (no model pinned, so the
-router picks the cheaper default — pin one only if you need a frontier
-model for writes).
+Desktop ships `devin-desktop`/`devin-desktop.cmd` — there is no `devin`
+CLI on PATH, and none is needed. The committed `.devin/mcp_config.json`
+(`command: regulus`, `args: [mcp]`) loads from the repo itself, so no
+`devin mcp add` step is required at any point.
+
+1. `powershell -File scripts/install-devin.ps1` — builds `bin/regulus.exe`,
+   puts `regulus` on PATH, and verifies `contract` + MCP `initialize`.
+2. Open this repo in Devin Desktop: the same `.devin/` pack applies
+   (user-level overrides live under `%APPDATA%\devin\` on Windows).
+3. Verify in the MCP panel that the `regulus` server is listed and
+   connected — no registration command needed.
+4. Invoke `/regulus-workflow`; subagents `regulus-worker` and
+   `regulus-scout` appear alongside the built-ins (no model pinned, so the
+   router picks the cheaper default — pin one only if you need a frontier
+   model for writes).
+
+If `regulus` does not resolve on PATH, edit `.devin/mcp_config.json` and
+set `command` to the absolute path of `bin/regulus.exe` on your machine.
 
 ## What maps to what (opencode → Devin)
 
