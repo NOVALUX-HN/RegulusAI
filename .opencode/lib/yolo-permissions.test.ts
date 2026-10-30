@@ -3,6 +3,7 @@
 // last match winning. If someone reorders or drops a deny, deletes stop
 // being blocked. Run with `bun test` from .opencode/ (also in CI).
 import { describe, expect, test } from "bun:test";
+import { readdir } from "node:fs/promises";
 
 // Every pattern that must stay denied under YOLO.
 const DENIES = [
@@ -75,6 +76,36 @@ describe("yolo permissions", () => {
     for (const d of DENIES) {
       const at = head.indexOf(`"${d}": deny`);
       expect(at).toBeGreaterThan(allowAt);
+    }
+  });
+
+  test("every agent file honors the guardrails (all 11 agents)", async () => {
+    const dir = `${import.meta.dir}/../agents`;
+    const files = (await readdir(dir)).filter((f) => f.endsWith(".md")).sort();
+    expect(files.length).toBe(11);
+    for (const file of files) {
+      const text = await Bun.file(`${dir}/${file}`).text();
+      const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+      expect(m).not.toBeNull();
+      const fm = Bun.YAML.parse(m![1]) as any;
+      const bash = fm?.permission?.bash;
+      expect(typeof bash).toBe("object");
+      if (file === "regulus.md") {
+        // The primary agent is the only one with safe-YOLO allow: it
+        // must carry every destructive deny (DENIES pattern, extended).
+        expect(fm.mode).toBe("primary");
+        expect(bash["*"]).toBe("allow");
+        for (const d of DENIES) expect(bash[d]).toBe("deny");
+      } else if (file === "regulus-worker.md") {
+        // The worker asks by default: never allow, never allow destruction.
+        expect(bash["*"]).toBe("ask");
+        for (const d of DENIES) expect(bash[d]).not.toBe("allow");
+      } else {
+        // Read-only guardians deny by default and never edit code.
+        expect(bash["*"]).toBe("deny");
+        for (const d of DENIES) expect(bash[d]).not.toBe("allow");
+        expect(fm?.permission?.edit).toBe("deny");
+      }
     }
   });
 });
