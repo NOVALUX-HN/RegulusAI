@@ -163,6 +163,64 @@ export function clearDomainsCache(): void {
   domainsCache.clear()
 }
 
+// withTimeout races promise work against a millisecond budget (and an
+// optional outer AbortSignal): hooks spawn a local binary that must
+// never hang context assembly forever. The timer is always cleared.
+export function withTimeout<T>(work: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("regulus: aborted before start"))
+      return
+    }
+    const timer = setTimeout(() => {
+      reject(new Error(`regulus: binary timed out after ${ms}ms`))
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new Error("regulus: aborted"))
+    }
+    signal?.addEventListener("abort", onAbort, { once: true })
+    work.then(
+      (v) => {
+        clearTimeout(timer)
+        signal?.removeEventListener("abort", onAbort)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        signal?.removeEventListener("abort", onAbort)
+        reject(e)
+      },
+    )
+  })
+}
+
+// TtlCache is a tiny time-bounded memo: hook-frequent, slow-changing
+// reads (admitted lessons per domain) skip the binary spawn while
+// fresh, then refetch. Staleness window is explicit per use.
+export class TtlCache<V> {
+  private readonly ttlMs: number
+  private readonly entries = new Map<string, { at: number; value: V }>()
+  constructor(ttlMs: number) {
+    this.ttlMs = ttlMs
+  }
+  get(key: string): V | undefined {
+    const hit = this.entries.get(key)
+    if (hit === undefined) return undefined
+    if (Date.now() - hit.at > this.ttlMs) {
+      this.entries.delete(key)
+      return undefined
+    }
+    return hit.value
+  }
+  set(key: string, value: V): void {
+    this.entries.set(key, { at: Date.now(), value })
+  }
+  clear(): void {
+    this.entries.clear()
+  }
+}
+
 async function getDomains(dir: string, runBin: RunBin): Promise<string[] | null> {
   const hit = domainsCache.get(dir)
   if (hit !== undefined) return hit

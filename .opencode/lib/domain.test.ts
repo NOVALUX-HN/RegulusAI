@@ -12,8 +12,11 @@ import {
   REGULUS_CONTRACT,
   resolveDomain,
   suggestSkills,
+  TtlCache,
+  withTimeout,
   type RunBin,
 } from "./domain";
+import { renderDisciplineDefault, renderGuidanceDefaults } from "../../scripts/sync-plugin-defaults";
 
 describe("findChartRefs", () => {
   test("order and dedupe", () => {
@@ -362,6 +365,61 @@ describe("tool param sync", () => {
     expect(body).toContain(`"memory", "history", "--topic-key", topic_key`);
     expect(declaredProps(body)).toEqual(new Set(["topic_key"]));
     expect(body).toContain(`required: ["topic_key"]`);
+  });
+});
+
+describe("withTimeout", () => {
+  test("fast work resolves", async () => {
+    await expect(withTimeout(Promise.resolve("ok"), 100)).resolves.toBe("ok");
+  });
+  test("slow work rejects after the budget", async () => {
+    const slow = new Promise<string>((resolve) => setTimeout(() => resolve("late"), 500));
+    await expect(withTimeout(slow, 20)).rejects.toThrow("timed out");
+  });
+  test("outer abort rejects", async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const slow = new Promise<string>((resolve) => setTimeout(() => resolve("late"), 50));
+    await expect(withTimeout(slow, 1000, ctrl.signal)).rejects.toThrow();
+  });
+});
+
+describe("TtlCache", () => {
+  test("serves within TTL, refetches after expiry", async () => {
+    const cache = new TtlCache<string>(15);
+    expect(cache.get("k")).toBeUndefined();
+    cache.set("k", "v");
+    expect(cache.get("k")).toBe("v");
+    await new Promise((r) => setTimeout(r, 40));
+    expect(cache.get("k")).toBeUndefined();
+  });
+  test("clear drops entries", () => {
+    const cache = new TtlCache<string>(60000);
+    cache.set("k", "v");
+    cache.clear();
+    expect(cache.get("k")).toBeUndefined();
+  });
+});
+
+describe("plugin defaults codegen", () => {
+  test("rendered discipline core equals the compiled literal", async () => {
+    const root = import.meta.dir + "/../..";
+    const md = await Bun.file(`${root}/.opencode/discipline.md`).text();
+    const ts = await Bun.file(`${root}/.opencode/plugins/regulus.ts`).text();
+    const start = ts.indexOf("const DEFAULT_DISCIPLINE = `") + "const DEFAULT_DISCIPLINE = `".length;
+    const end = ts.indexOf("`\n\n// loadDiscipline", start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    expect(renderDisciplineDefault(md)).toBe(ts.slice(start, end));
+  });
+  test("rendered guidance equals the compiled defaults", async () => {
+    const root = import.meta.dir + "/../..";
+    const md = await Bun.file(`${root}/.opencode/tool-guidance.md`).text();
+    const ts = await Bun.file(`${root}/.opencode/plugins/regulus.ts`).text();
+    const block = ts.slice(ts.indexOf("const DEFAULT_TOOL_GUIDANCE"), ts.indexOf("// parseToolGuidance"));
+    const defaults: Record<string, string> = {};
+    for (const m of block.matchAll(/(\w+):\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) defaults[m[1]] = m[2];
+    expect(renderGuidanceDefaults(md)).toEqual(defaults);
   });
 });
 

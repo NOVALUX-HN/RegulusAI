@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { checkContract, extractPaths, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills } from "../lib/domain"
+import { checkContract, extractPaths, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -69,7 +69,9 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
 // are dropped so the default survives.
 function parseToolGuidance(text: string): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const part of text.split(/^##\s+/m)) {
+  // slice(1) drops the preamble before the first ## (title + intro) so
+  // it never becomes a junk key shadowing a real default.
+  for (const part of text.split(/^##\s+/m).slice(1)) {
     const nl = part.indexOf("\n")
     if (nl < 0) continue
     const name = part.slice(0, nl).trim()
@@ -112,21 +114,38 @@ interface RunResult {
 // every child (gate, spec, memory, trace, probe, evolve) must resolve
 // relative paths (`charts/…`) and regulus.json against the project,
 // never against the OpenCode server process's own cwd.
-async function run(bin: string, args: string[], cwd?: string, signal?: AbortSignal): Promise<RunResult> {
+async function run(bin: string, args: string[], cwd?: string, signal?: AbortSignal, timeoutMs = 30000): Promise<RunResult> {
   // windowsHide: the opencode server has no console on Windows, and every
   // spawn of the regulus binary (each tool call, each trace record, each
   // context hook) flashed a terminal window open and shut without it.
-  const proc = signal
-    ? Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", signal, windowsHide: true, cwd })
-    : Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", windowsHide: true, cwd })
-  const stdoutP = new Response(proc.stdout).text()
-  const stderrP = new Response(proc.stderr).text()
-  const exitCode = await proc.exited
-  const out = await stdoutP
-  const err = await stderrP
-  const output = (out + (err.trim() !== "" ? (out.trim() !== "" ? "\n" : "") + err : "")).trim()
-  return { exitCode, output }
+  // timeoutMs: a hung binary must never hang a hook forever — aborting
+  // the spawn kills the child (Bun propagates the abort signal).
+  const ctrl = new AbortController()
+  const onAbort = () => ctrl.abort()
+  if (signal) {
+    if (signal.aborted) ctrl.abort()
+    else signal.addEventListener("abort", onAbort, { once: true })
+  }
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const proc = Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe", signal: ctrl.signal, windowsHide: true, cwd })
+    const stdoutP = new Response(proc.stdout).text()
+    const stderrP = new Response(proc.stderr).text()
+    const exitCode = await proc.exited
+    const out = await stdoutP
+    const err = await stderrP
+    const output = (out + (err.trim() !== "" ? (out.trim() !== "" ? "\n" : "") + err : "")).trim()
+    return { exitCode, output }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener("abort", onAbort)
+  }
 }
+
+// lessonsCache skips the `memory search --type lesson` spawn while fresh
+// (60s per project+domain): admitted lessons only change on admit, so
+// re-spawning on every context assembly is pure latency.
+const lessonsCache = new TtlCache<{ exitCode: number; output: string }>(60000)
 
 function candidates(dir: string): string[] {
   const home = process.env.HOME || process.env.USERPROFILE || ""
@@ -584,9 +603,14 @@ export default Plugin.define({
     await ctx.session.hook("context", async (event) => {
       const recent = JSON.stringify(event.messages ?? []).slice(-20000)
       const domain = await resolveDomain(dir, (args) => run(bin, args, dir), recent, event.sessionID)
-      const args = ["memory", "search", "--type", "lesson", "--limit", "3"]
-      if (domain !== "") args.push("--domain", domain)
-      const lessons = await run(bin, args, dir)
+      const cacheKey = `${dir}\n${domain}`
+      let lessons = lessonsCache.get(cacheKey)
+      if (lessons === undefined) {
+        const args = ["memory", "search", "--type", "lesson", "--limit", "3"]
+        if (domain !== "") args.push("--domain", domain)
+        lessons = await run(bin, args, dir)
+        lessonsCache.set(cacheKey, lessons)
+      }
       if (lessons.exitCode === 0 && lessons.output !== "" && !lessons.output.startsWith("no matching")) {
         event.system.push({ type: "text", text: dataBlock("regulus_admitted_lessons", lessons.output) })
       }
