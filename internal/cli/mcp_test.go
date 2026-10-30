@@ -406,3 +406,29 @@ func TestMCPUsageLine(t *testing.T) {
 		t.Fatal("help must mention the mcp command")
 	}
 }
+
+func TestMCPIntCoercion(t *testing.T) {
+	cases := []struct {
+		name   string
+		args   map[string]any
+		want   int
+		wantOK bool
+	}{
+		{"missing", map[string]any{}, 0, false},
+		{"nil", map[string]any{"limit": nil}, 0, false},
+		{"float64", map[string]any{"limit": float64(7)}, 7, true},
+		{"int", map[string]any{"limit": 5}, 5, true},
+		{"numeric string", map[string]any{"limit": "42"}, 42, true},
+		{"padded numeric string", map[string]any{"limit": "  12  "}, 12, true},
+		{"bad string", map[string]any{"limit": "abc"}, 0, false},
+		{"unsupported type", map[string]any{"limit": true}, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := mcpInt(tc.args, "limit")
+			if got != tc.want || ok != tc.wantOK {
+				t.Fatalf("mcpInt(%v) = (%d,%v), want (%d,%v)", tc.args["limit"], got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}

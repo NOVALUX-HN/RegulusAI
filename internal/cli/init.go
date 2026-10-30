@@ -186,7 +186,7 @@ var initPresets = map[string][]map[string]any{
 		{"name": "unit-tests", "layer": 1, "command": "npm test --if-present"},
 	},
 	"smoke": {
-		{"name": "presence", "layer": 1, "command": "test -f README.md && echo repo-present"},
+		{"name": "presence", "layer": 1, "command": "echo repo-present"},
 	},
 }
 

@@ -13,6 +13,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # S4: actions stay on vendor-maintained major tags (checkout v4, setup-go v5
+      # with go 1.27, setup-bun v2) — GitHub/Oven keep these majors
+      # backwards-compatible, so a floating major is intentional here.
+      # Exact pins are required only for the Go tool installs below.
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -22,10 +26,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Install gremlins
-        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
       - name: Typecheck the plugin
         working-directory: .opencode

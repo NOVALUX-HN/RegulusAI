@@ -20,6 +20,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "bash scripts/build.bash"
+    "build": "bash scripts/build.bash || powershell -NoProfile -File scripts/build.ps1",
+    "build:bash": "bash scripts/build.bash",
+    "build:ps1": "powershell -NoProfile -File scripts/build.ps1"
   }
 }
