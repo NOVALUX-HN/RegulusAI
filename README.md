@@ -19,7 +19,7 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 # 1. Build the core from source (no npm distribution yet — `regulus-ai`
 #    is not published; the quickstart is build-from-repo)
 git clone https://github.com/andragon31/RegulusAI && cd RegulusAI
-npm run build          # = bash scripts/build.bash → binaries/regulus-<os>-<arch>
+npm run build          # = bash scripts/build.bash → binaries/regulus-<os>-<arch> + stamped local bin/regulus
 # then put the binary for your platform on your PATH as `regulus`
 
 # 2. Verify the runtime — this is the only install check you need
@@ -72,7 +72,7 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus memory save --type <t> --title <t> …` | a typed observation with provenance (decision, discovery, preference) |
 | `regulus memory search [terms]` | deterministic bucket-then-match, age annotations |
 | `regulus memory history --topic-key <k>` | the revision chain of an evolving topic |
-| `regulus memory context` | the deterministic resume block: charts, notes, lessons |
+| `regulus memory context [--limit N]` | the deterministic resume block: project identity, charts, all notes, lessons with content, decisions/discoveries/preferences |
 | `regulus init [--stack go\|node\|smoke] [--devin]` | onboard a fresh repo: regulus.json, charts/, .gitignore, optional `.devin/mcp_config.json` |
 | `regulus mcp` | stdio MCP server for Devin CLI/Desktop/Cloud (12 tools, MCP trust boundary in docs/devin.md) |
 | `regulus yolo [on\|off\|status]` | safe YOLO toggle: flips only the bash/edit catch-alls, destructive denies always stay |

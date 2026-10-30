@@ -52,3 +52,16 @@ foreach ($target in $targets) {
 
 $count = (Get-ChildItem (Join-Path $root "binaries")).Count
 Write-Host "done: ${count} binaries in binaries/ (version ${Version})"
+
+# H3 (S4): the documented flow also refreshes the local binary, stamped
+# with the same version. A raw `go build` stays unstamped by design
+# (doctor warns); `npm run build` never is. Clear the cross-compile
+# GOOS/GOARCH first so the local binary matches the host.
+Remove-Item Env:\GOOS -ErrorAction SilentlyContinue
+Remove-Item Env:\GOARCH -ErrorAction SilentlyContinue
+Write-Host "building bin/regulus.exe (${Version})"
+& go build -trimpath -ldflags "-s -w -X ${stamp}" -o (Join-Path $root "bin/regulus.exe") ./cmd/regulus
+if ($LASTEXITCODE -ne 0) {
+  throw "go build failed for the local binary (exit ${LASTEXITCODE})"
+}
+Write-Host "local: bin/regulus.exe (version ${Version})"

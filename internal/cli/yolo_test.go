@@ -191,3 +191,124 @@ func TestYoloAlreadyThere(t *testing.T) {
 	}
 	_ = filepath.Separator
 }
+
+func writeWorkerMD(t *testing.T, bashBlock string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(".opencode", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\n" +
+		"description: worker fixture\n" +
+		"mode: subagent\n" +
+		"permission:\n" +
+		"  bash:\n" +
+		bashBlock +
+		"---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(".opencode", "agents", "regulus-worker.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readWorkerMD(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(".opencode", "agents", "regulus-worker.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestYoloOnFlipsWorkerCatchAllAllowKeepsDeniesFirst(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeOpencodeJSON(t, `{"permission":{"bash":{"*":"ask","rm *":"deny"},"edit":"ask"}}`)
+	writeWorkerMD(t, "    \"go *\": allow\n    \"rm *\": deny\n    \"*\": ask\n")
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"yolo", "on"}); code != 0 {
+		t.Fatalf("on exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "yolo: on") {
+		t.Fatalf("output = %q, want on", out.String())
+	}
+	if !strings.Contains(out.String(), "/reload") {
+		t.Fatalf("on must print the /reload reminder, got %q", out.String())
+	}
+	text := readWorkerMD(t)
+	if !strings.Contains(text, `"*": allow`) {
+		t.Fatalf("worker catch-all must flip to allow, got:\n%s", text)
+	}
+	if !strings.Contains(text, `"rm *": deny`) {
+		t.Fatalf("worker must preserve denies, got:\n%s", text)
+	}
+	if strings.Index(text, `"*": allow`) > strings.Index(text, `"rm *": deny`) {
+		t.Fatalf("worker catch-all must come first (last-match-wins), got:\n%s", text)
+	}
+	for _, deny := range []string{`"git rm*": deny`, `"git restore*": deny`, `"git rebase*": deny`} {
+		if !strings.Contains(text, deny) {
+			t.Fatalf("worker on must ensure destructive deny %s, got:\n%s", deny, text)
+		}
+	}
+	if !strings.Contains(text, `"go *": allow`) {
+		t.Fatalf("worker must keep specific allows, got:\n%s", text)
+	}
+}
+
+func TestYoloOffRestoresWorkerAsk(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeOpencodeJSON(t, `{"permission":{"bash":{"*":"allow","rm *":"deny"},"edit":"allow"}}`)
+	writeWorkerMD(t, "    \"*\": allow\n    \"go *\": allow\n    \"rm *\": deny\n")
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"yolo", "off"}); code != 0 {
+		t.Fatalf("off exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "/reload") {
+		t.Fatalf("off must print the /reload reminder, got %q", out.String())
+	}
+	text := readWorkerMD(t)
+	if !strings.Contains(text, `"*": ask`) {
+		t.Fatalf("worker catch-all must restore to ask, got:\n%s", text)
+	}
+	if strings.Contains(text, `"*": allow`) {
+		t.Fatalf("worker must not stay allowed, got:\n%s", text)
+	}
+	if !strings.Contains(text, `"rm *": deny`) {
+		t.Fatalf("worker off must keep denies, got:\n%s", text)
+	}
+}
+
+func TestYoloLeavesPrimaryAndGuardiansAlone(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeOpencodeJSON(t, `{"permission":{"bash":{"*":"ask"},"edit":"ask"}}`)
+	writeWorkerMD(t, "    \"*\": ask\n")
+	primary := "---\ndescription: p\nmode: primary\npermission:\n  bash:\n    \"*\": allow\n    \"rm *\": deny\n---\n\nbody\n"
+	guardian := "---\ndescription: g\nmode: subagent\npermission:\n  edit: deny\n  bash:\n    \"regulus *\": allow\n    \"*\": deny\n---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(".opencode", "agents", "regulus.md"), []byte(primary), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".opencode", "agents", "regulus-gate-verifier.md"), []byte(guardian), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"yolo", "on"}); code != 0 {
+		t.Fatalf("on exit = %d", code)
+	}
+	got, _ := os.ReadFile(filepath.Join(".opencode", "agents", "regulus.md"))
+	if string(got) != primary {
+		t.Fatalf("primary must stay untouched, got:\n%s", got)
+	}
+	got, _ = os.ReadFile(filepath.Join(".opencode", "agents", "regulus-gate-verifier.md"))
+	if string(got) != guardian {
+		t.Fatalf("guardian must stay deny, got:\n%s", got)
+	}
+}
+
+func TestYoloOnWithoutWorkerFileStillSucceeds(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeOpencodeJSON(t, `{"permission":{"bash":{"*":"ask"},"edit":"ask"}}`)
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"yolo", "on"}); code != 0 {
+		t.Fatalf("on exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "yolo: on") {
+		t.Fatalf("output = %q, want on", out.String())
+	}
+}

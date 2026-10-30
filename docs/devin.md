@@ -73,6 +73,9 @@ devin
 > /regulus-workflow implement feature/T2 against charts/feature.md
 ```
 
+Non-Windows shells run the bash mirror instead (same S1+S2):
+`bash scripts/install-devin.bash` (needs Go, node, GNU timeout + grep).
+
 ### CLI-only: `devin mcp add` (never needed on Desktop)
 
 ```powershell

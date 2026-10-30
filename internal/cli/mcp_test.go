@@ -397,6 +397,92 @@ func TestMCPTraceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMCPGateRunPassReportsVerdicts(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[
+		{"name":"typecheck","layer":1,"command":"echo hi"},
+		{"name":"unit-tests","layer":2,"command":"echo ok"}
+	]}`)
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T1"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	if text == "" {
+		t.Fatal("gate_run content must never be empty")
+	}
+	if !strings.Contains(text, "gauntlet: 2/2 gates passed") {
+		t.Fatalf("pass content must carry the verdicts, got %q", text)
+	}
+}
+
+func TestMCPGateRunFailureReportsExitCode(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[
+		{"name":"typecheck","layer":1,"command":"boom"},
+		{"name":"unit-tests","layer":2,"command":"echo ok"}
+	]}`)
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{
+		"boom":                        {code: 1, stderr: "type error"},
+		"git rev-parse --verify HEAD": {stdout: "abc123\n"},
+	}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T1"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// A failing gate is a content reply (not a protocol error) carrying
+	// the non-zero exit code — never an empty string or null.
+	if resps[0].Error != nil {
+		t.Fatalf("gate failure must be a content reply, got error %+v", resps[0].Error)
+	}
+	text := mcpResultText(t, resps[0])
+	if text == "" {
+		t.Fatal("gate_run failure content must never be empty")
+	}
+	if !strings.Contains(text, "exit code: 1") {
+		t.Fatalf("failure content must carry the exit code, got %q", text)
+	}
+	if !strings.Contains(text, "stopped at gate") {
+		t.Fatalf("failure content must carry the stop verdict, got %q", text)
+	}
+}
+
+func TestMCPContentNeverEmpty(t *testing.T) {
+	if got := mcpContent("", "", 0); got == "" {
+		t.Fatal("empty success must not stay empty")
+	}
+	got := mcpContent("", "", 1)
+	if got == "" || !strings.Contains(got, "exit code: 1") {
+		t.Fatalf("empty failure must carry the exit code, got %q", got)
+	}
+	if got := mcpContent("layer 1 typecheck pass (3ms)", "", 0); !strings.Contains(got, "pass") {
+		t.Fatalf("success content must pass through, got %q", got)
+	}
+}
+
+func TestMCPContentBoundsLargeOutputWithSha(t *testing.T) {
+	big := strings.Repeat("x", 20000)
+	got := mcpContent(big, "", 1)
+	if len(got) >= len(big) {
+		t.Fatalf("large output must be bounded, got %d bytes", len(got))
+	}
+	if !strings.Contains(got, "sha256:") {
+		t.Fatalf("bounded output must carry its sha, got %.120q…", got)
+	}
+	if !strings.Contains(got, "exit code: 1") {
+		t.Fatalf("bounded failure must still carry the exit code, got %.120q…", got)
+	}
+}
+
 func TestMCPUsageLine(t *testing.T) {
 	c, out, _ := newCLI(nil)
 	if code := c.Run([]string{"help"}); code != 0 {

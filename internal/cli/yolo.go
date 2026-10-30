@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // yoloTemplate is the safe-YOLO opencode.json created when the project
@@ -119,12 +120,178 @@ func ensureYoloDenies(bash map[string]any) {
 	}
 }
 
+// workerAgentPath is the only agent frontmatter yolo on/off flips: the
+// worker subagent's bash "*" catch-all. Guardians stay deny and the
+// primary agent already allows — yolo never touches them.
+const workerAgentPath = ".opencode/agents/regulus-worker.md"
+
+// flipWorkerYolo sets the worker agent's bash "*" catch-all to want
+// (allow/ask), preserving every specific rule and deny. A missing worker
+// file is a no-op so yolo still works outside a Regulus checkout. The
+// bash block is reordered catch-all-first so the last-match-wins rule
+// keeps the destructive denies winning after the flip.
+func flipWorkerYolo(want string) error {
+	raw, err := os.ReadFile(workerAgentPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	text := string(raw)
+	lines := splitYoloLines(text)
+	if len(lines) < 3 || lines[0] != "---" {
+		return fmt.Errorf("%s has no frontmatter", workerAgentPath)
+	}
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return fmt.Errorf("%s has no frontmatter", workerAgentPath)
+	}
+	bashIdx := -1
+	for i := 1; i < end; i++ {
+		if lines[i] == "  bash:" {
+			bashIdx = i
+			break
+		}
+	}
+	if bashIdx < 0 {
+		return fmt.Errorf("%s has no bash permission block", workerAgentPath)
+	}
+	type entry struct {
+		key    string
+		line   string
+		isDeny bool
+	}
+	var entries []entry
+	j := bashIdx + 1
+	for j < end {
+		key, val, ok := parseYoloPermLine(lines[j])
+		if !ok {
+			break
+		}
+		entries = append(entries, entry{key: key, line: lines[j], isDeny: val == "deny"})
+		j++
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("%s has no bash permission block", workerAgentPath)
+	}
+	have := map[string]bool{}
+	for _, e := range entries {
+		have[e.key] = true
+	}
+	var star entry
+	var rest []entry
+	var denies []entry
+	for _, e := range entries {
+		if e.key == "*" {
+			star = e
+			continue
+		}
+		if e.isDeny {
+			denies = append(denies, e)
+			continue
+		}
+		rest = append(rest, e)
+	}
+	if star.key == "" {
+		star = entry{key: "*"}
+	}
+	star.line = `    "*": ` + want
+	star.isDeny = false
+	for _, d := range yoloSafeBashDenies {
+		if !have[d] {
+			denies = append(denies, entry{key: d, line: `    "` + d + `": deny`, isDeny: true})
+		}
+	}
+	block := []string{star.line}
+	for _, e := range rest {
+		block = append(block, e.line)
+	}
+	for _, e := range denies {
+		block = append(block, e.line)
+	}
+	out := append([]string{}, lines[:bashIdx+1]...)
+	out = append(out, block...)
+	out = append(out, lines[j:]...)
+	joined := joinYoloLines(out, text)
+	if err := os.WriteFile(workerAgentPath, []byte(joined), 0o644); err != nil {
+		return err
+	}
+	return nil
+}
+
+// splitYoloLines splits frontmatter-friendly, keeping no line endings.
+func splitYoloLines(s string) []string {
+	s = stripYoloCR(s)
+	lines := strings.Split(s, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+// joinYoloLines rejoins lines, preserving the file's trailing newline.
+func joinYoloLines(lines []string, orig string) string {
+	s := strings.Join(lines, "\n") + "\n"
+	if !strings.HasSuffix(orig, "\n") {
+		s = strings.TrimSuffix(s, "\n")
+	}
+	return s
+}
+
+func stripYoloCR(s string) string {
+	return strings.ReplaceAll(s, "\r\n", "\n")
+}
+
+// parseYoloPermLine parses an indented `"pattern": value` permission line.
+func parseYoloPermLine(line string) (key, val string, ok bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "    \"") || !strings.HasPrefix(trimmed, "\"") {
+		return "", "", false
+	}
+	first := strings.Index(trimmed, "\"")
+	second := strings.Index(trimmed[first+1:], "\"")
+	if second < 0 {
+		return "", "", false
+	}
+	key = trimmed[first+1 : first+1+second]
+	rest := strings.TrimSpace(trimmed[first+1+second+1:])
+	if !strings.HasPrefix(rest, ":") {
+		return "", "", false
+	}
+	val = strings.TrimSpace(strings.TrimPrefix(rest, ":"))
+	val = strings.Trim(val, `"'`)
+	if idx := strings.Index(val, "#"); idx >= 0 {
+		val = strings.TrimSpace(val[:idx])
+	}
+	if val == "" {
+		return "", "", false
+	}
+	return key, val, true
+}
+
+// warnWorkerYolo surfaces a worker-propagation failure without failing
+// the global flip: opencode.json already flipped, and a hand-edited
+// worker file must never block yolo.
+func warnWorkerYolo(c CLI, err error) {
+	fmt.Fprintf(c.Stderr, "yolo: worker not flipped (%v) — edit %s by hand\n", err, workerAgentPath)
+}
+
 // yoloCmd implements `regulus yolo [on|off|status]`: flip the safe-YOLO
 // switch in the project's opencode.json without leaving the editor.
 // Bare invocation reports status (read-only). on/off rewrites only the
 // bash "*" catch-all and preserves every deny and every other key;
 // Go's sorted-key marshaling also repairs the catch-all-first order the
-// last-match-wins rule requires. Config applies on /reload or restart.
+// last-match-wins rule requires. on/off also flips the worker agent's
+// bash "*" frontmatter (.opencode/agents/regulus-worker.md) so the
+// subagent stops asking too; guardians stay deny and the primary agent
+// is never touched. Config applies on /reload or restart.
 func (c CLI) yoloCmd(args []string) int {
 	mode := "status"
 	if len(args) > 0 {
@@ -145,6 +312,9 @@ func (c CLI) yoloCmd(args []string) int {
 		if err := os.WriteFile("opencode.json", append([]byte(yoloTemplate), '\n'), 0o644); err != nil {
 			fmt.Fprintf(c.Stderr, "yolo: %v\n", err)
 			return 1
+		}
+		if err := flipWorkerYolo("allow"); err != nil {
+			warnWorkerYolo(c, err)
 		}
 		fmt.Fprintln(c.Stdout, "yolo: on (created opencode.json with safe defaults; deletes still denied)")
 		fmt.Fprintln(c.Stdout, "next: run /reload in opencode (or restart) to apply")
@@ -187,7 +357,11 @@ func (c CLI) yoloCmd(args []string) int {
 			fmt.Fprintf(c.Stderr, "yolo: %v\n", err)
 			return 1
 		}
+		if err := flipWorkerYolo(want); err != nil {
+			warnWorkerYolo(c, err)
+		}
 		fmt.Fprintf(c.Stdout, "yolo: already %s (bash %s, edit %s)\n", yoloWord(cur), yoloWord(cur), yoloWord(newEdit))
+		fmt.Fprintln(c.Stdout, "next: run /reload in opencode (or restart) to apply")
 		return 0
 	}
 	bash["*"] = want
@@ -203,6 +377,9 @@ func (c CLI) yoloCmd(args []string) int {
 	if err := os.WriteFile("opencode.json", append(out, '\n'), 0o644); err != nil {
 		fmt.Fprintf(c.Stderr, "yolo: %v\n", err)
 		return 1
+	}
+	if err := flipWorkerYolo(want); err != nil {
+		warnWorkerYolo(c, err)
 	}
 	fmt.Fprintf(c.Stdout, "yolo: %s (bash %s, edit %s; deletes still denied)\n", mode, mode, mode)
 	fmt.Fprintln(c.Stdout, "next: run /reload in opencode (or restart) to apply")

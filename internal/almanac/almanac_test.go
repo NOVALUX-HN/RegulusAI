@@ -90,7 +90,7 @@ func TestSaveLessonWithEvidencePersistsBlock(t *testing.T) {
 	}
 }
 
-func TestAllMissingIsEmptyAndMalformedRefused(t *testing.T) {
+func TestAllMissingIsEmptyAndMalformedSkipped(t *testing.T) {
 	if all, err := All(t.TempDir()); err != nil || len(all) != 0 {
 		t.Fatalf("want an empty Almanac, got %+v, %v", all, err)
 	}
@@ -101,8 +101,77 @@ func TestAllMissingIsEmptyAndMalformedRefused(t *testing.T) {
 	if err := os.WriteFile(File(root), []byte("not json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := All(root); err == nil || !strings.Contains(err.Error(), "malformed observation") {
-		t.Fatalf("want malformed refusal, got %v", err)
+	if all, err := All(root); err != nil || len(all) != 0 {
+		t.Fatalf("want a corrupt line skipped without aborting, got %+v, %v", all, err)
+	}
+}
+
+func TestAllTolerantSkipsCorruptBetweenValids(t *testing.T) {
+	root := t.TempDir()
+	first, err := Save(root, &Observation{Type: TypeSessionNote, TopicKey: "db-driver", Title: "v1 postgres", Content: "use postgres pool"}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Save(root, &Observation{Type: TypeSessionNote, TopicKey: "db-driver", Title: "v2 sqlite", Content: "switched to sqlite pool"}, t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(File(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(valid)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 valid lines, got %d", len(lines))
+	}
+	rewritten := lines[0] + "\n{not json}\n" + lines[1] + "\n"
+	if err := os.WriteFile(File(root), []byte(rewritten), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// All skips the corrupt line without aborting.
+	all, err := All(root)
+	if err != nil {
+		t.Fatalf("All must not fail on 1 corrupt line: %v", err)
+	}
+	if len(all) != 2 || all[0].ID != first.ID || all[1].ID != second.ID {
+		t.Fatalf("want both valid observations around the corrupt line, got %+v", all)
+	}
+	// Search works on the rest.
+	hits, err := Search(root, Query{Terms: []string{"pool"}})
+	if err != nil {
+		t.Fatalf("Search must not fail on 1 corrupt line: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("want 2 search hits past the corrupt line, got %+v", hits)
+	}
+	// Context renders the rest.
+	ctx, err := Context(root, t2)
+	if err != nil {
+		t.Fatalf("Context must not fail on 1 corrupt line: %v", err)
+	}
+	for _, want := range []string{"use postgres pool", "switched to sqlite pool"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("context must contain %q, got:\n%s", want, ctx)
+		}
+	}
+	// History chains the rest.
+	chain, err := History(root, "db-driver")
+	if err != nil {
+		t.Fatalf("History must not fail on 1 corrupt line: %v", err)
+	}
+	if len(chain) != 2 || chain[0].Title != "v1 postgres" || chain[1].Title != "v2 sqlite" {
+		t.Fatalf("history must keep both revisions, got %+v", chain)
+	}
+	// Doctor still reports the malformed line.
+	h, err := Doctor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.MalformedLines) != 1 || h.MalformedLines[0] != 2 {
+		t.Fatalf("doctor must report malformed line 2, got %+v", h.MalformedLines)
+	}
+	if h.Total != 2 {
+		t.Fatalf("doctor must count the 2 valid observations, got %+v", h)
 	}
 }
 
@@ -712,5 +781,100 @@ func TestImportRejectsInvalidLines(t *testing.T) {
 	}
 	if _, _, err := Import(root, filepath.Join(t.TempDir(), "missing.jsonl")); err == nil {
 		t.Fatal("missing file must be an error")
+	}
+}
+
+func TestContextShowsFullResumeWithIdentity(t *testing.T) {
+	root := t.TempDir()
+	at := t0
+	for _, txt := range []string{"resume-note-1", "resume-note-2", "resume-note-3", "resume-note-4", "resume-note-5", "resume-note-6", "resume-note-7"} {
+		if _, err := Save(root, &Observation{Type: TypeSessionNote, Title: txt, Content: txt}, at); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	if _, err := Save(root, &Observation{Type: TypeDecision, Title: "chose sqlite", Content: "simpler ops for v1"}, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if _, err := Save(root, &Observation{Type: TypeDiscovery, Title: "pool leak found", Content: "postgres pool under load"}, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if _, err := Save(root, &Observation{Type: TypePreference, Title: "dark mode", Content: "prefers dark diffs"}, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if _, err := Save(root, &Observation{
+		Type: TypeLesson, Title: "cache tuning", Content: "retrieval cache sizing", Domain: "go",
+		Lesson: &Lesson{Cue: "when retrieval slows", Lesson: "size the cache first", Evidence: []string{"r.json"}, Confidence: "high"},
+	}, at); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := Context(root, at.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Identity: the project name heads the resume block.
+	if want := ProjectName(root); !strings.Contains(ctx, want) {
+		t.Fatalf("context must carry the project identity %q, got:\n%s", want, ctx)
+	}
+	// More than 5 notes: every one of the 7 is visible by default.
+	for _, txt := range []string{"resume-note-1", "resume-note-2", "resume-note-3", "resume-note-4", "resume-note-5", "resume-note-6", "resume-note-7"} {
+		if !strings.Contains(ctx, txt) {
+			t.Fatalf("context must show note %q, got:\n%s", txt, ctx)
+		}
+	}
+	// Lessons carry cue AND content, not just a count.
+	for _, want := range []string{"when retrieval slows", "size the cache first"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("context must show lesson content %q, got:\n%s", want, ctx)
+		}
+	}
+	// Decisions, discoveries and preferences are visible.
+	for _, want := range []string{"chose sqlite", "simpler ops for v1", "pool leak found", "postgres pool under load", "dark mode", "prefers dark diffs"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("context must show working state %q, got:\n%s", want, ctx)
+		}
+	}
+}
+
+func TestContextLimitPaginatesNotesExplicitly(t *testing.T) {
+	root := t.TempDir()
+	at := t0
+	for _, txt := range []string{"page-note-1", "page-note-2", "page-note-3", "page-note-4", "page-note-5", "page-note-6", "page-note-7"} {
+		if _, err := Save(root, &Observation{Type: TypeSessionNote, Title: txt, Content: txt}, at); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	paged, err := ContextWithLimit(root, at, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, txt := range []string{"page-note-1", "page-note-2"} {
+		if strings.Contains(paged, txt) {
+			t.Fatalf("paged context must hide note %q, got:\n%s", txt, paged)
+		}
+	}
+	for _, txt := range []string{"page-note-3", "page-note-4", "page-note-5", "page-note-6", "page-note-7"} {
+		if !strings.Contains(paged, txt) {
+			t.Fatalf("paged context must show note %q, got:\n%s", txt, paged)
+		}
+	}
+	if !strings.Contains(paged, "showing latest 5 of 7") {
+		t.Fatalf("paged context must name the truncation explicitly, got:\n%s", paged)
+	}
+	full, err := Context(root, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, txt := range []string{"page-note-1", "page-note-2", "page-note-7"} {
+		if !strings.Contains(full, txt) {
+			t.Fatalf("full context must show every note (%q), got:\n%s", txt, full)
+		}
+	}
+	if strings.Contains(full, "showing latest") {
+		t.Fatalf("full context must not claim truncation, got:\n%s", full)
 	}
 }

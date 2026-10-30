@@ -168,7 +168,7 @@ Commands:
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   skills list        trigger registry: skills with their one-line triggers
   trace record|show|files|sessions|prune   capture and inspect per-session tool traces (regulus trace --help)
-  spec check <file>  validate the acceptance contract of a feature document
+  spec check <file|dir>  validate the acceptance contract of feature documents
   status             one look at the project: runtime, gauntlet, evolution, receipts
   yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)
   --version          print the regulus version

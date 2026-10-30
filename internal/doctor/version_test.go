@@ -39,3 +39,16 @@ func TestVersionLine(t *testing.T) {
 		})
 	}
 }
+
+// H3 (S4): the unstamped-dev warning must name the documented,
+// stamped-by-default rebuild flow — not just the script path.
+func TestVersionLineDevNamesStampedRebuild(t *testing.T) {
+	dir := t.TempDir()
+	writePkg(t, dir, `{"version":"0.8.1"}`)
+	got := VersionLine(dir, "dev")
+	for _, want := range []string{"WARNING — unstamped dev build", "npm run build"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("dev warning must contain %q, got %q", want, got)
+		}
+	}
+}

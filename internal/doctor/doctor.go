@@ -79,21 +79,21 @@ func Probe(ctx context.Context, r Runner) Result {
 
 	if err != nil {
 		if ctx.Err() != nil {
-			return Result{Reason: "`opencode --version` did not answer within the 15s probe budget"}
+			return Result{Reason: "`opencode --version` did not answer within the 15s probe budget — Regulus requires V2"}
 		}
 		var notFound *exec.Error
 		if errors.As(err, &notFound) && errors.Is(notFound.Err, exec.ErrNotFound) {
 			return Result{Reason: "opencode binary not found on PATH — install OpenCode V2"}
 		}
 		if raw != "" {
-			return Result{Detected: raw, Reason: fmt.Sprintf("`opencode --version` failed: %v; output: %s", err, truncate(raw, 200))}
+			return Result{Detected: raw, Reason: fmt.Sprintf("`opencode --version` failed: %v; output: %s — Regulus requires V2", err, truncate(raw, 200))}
 		}
-		return Result{Reason: fmt.Sprintf("`opencode --version` failed: %v", err)}
+		return Result{Reason: fmt.Sprintf("`opencode --version` failed: %v — Regulus requires V2", err)}
 	}
 
 	major, ok := Classify(raw)
 	if !ok {
-		return Result{Detected: raw, Reason: fmt.Sprintf("could not parse a version from `opencode --version` output: %s", truncate(raw, 200))}
+		return Result{Detected: raw, Reason: fmt.Sprintf("could not parse a version from `opencode --version` output: %s — Regulus requires V2", truncate(raw, 200))}
 	}
 	if major != SupportedMajor {
 		return Result{

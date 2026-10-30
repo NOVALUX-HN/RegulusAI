@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/budget"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/gates"
@@ -82,6 +83,19 @@ func (c CLI) statusCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "receipts:   %d on disk\n", len(found))
+	// H3 (S5): the semantic index goes stale on any save after the last
+	// reindex — status says so with the repairing command instead of
+	// letting search surprise with a lexical-only warning.
+	switch memState, memErr := almanac.IndexState("."); {
+	case memErr != nil:
+		fmt.Fprintf(c.Stdout, "memory:     index unreadable — %v\n", memErr)
+	case memState == "fresh":
+		fmt.Fprintln(c.Stdout, "memory:     semantic index fresh")
+	case memState == "empty":
+		fmt.Fprintln(c.Stdout, "memory:     no observations yet — nothing to index")
+	default: // stale | missing
+		fmt.Fprintf(c.Stdout, "memory:     semantic index %s — run `regulus memory reindex`\n", memState)
+	}
 	// S8: wall-time per task from receipt durations — the evolution
 	// cost that matters (no model spend in the core). Unreadable
 	// receipts are skipped so status stays resilient.

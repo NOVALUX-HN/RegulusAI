@@ -45,3 +45,4 @@ itself. Read down to `## Log` before working.
   implementation (the Sextant's CHART movement, applied to the release
   itself). User authorization: "procede por favor" under the standing
   "continue through the pending phases" instruction.
+- **L2**: P1 CLOSED 2026-10-30 — S1-S4 holds en arbol: S1 `internal/cli/status.go:35-135` (runtime, gauntlet, evolution vs cap, lessons/pending, receipts, memory, mutation); S2 `bin/regulus.js:1-47` + `package.json:10-16` (bin regulus, files binaries/, v0.8.1; `doctor 0.8.1 (matches package.json)` en live-plus-gaps/L2); S3 `README.md:14-47` quickstart + `README.md:49-87` movements/commands; S4 7 capas -> 12 gates `regulus.json:2-14`, `gate run live-plus-gaps/L2` 12/12 (receipts `.regulus/evidence/live-plus-gaps__L2/` citadas en live-plus-gaps L2) y L3 12/12. Decision: CLOSED (evolucion a 12, no SUPERSEDED por live-plus-gaps/health-gaps). `spec_check charts/f5-release.md` OK. Chart CERRADO.

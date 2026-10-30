@@ -54,7 +54,7 @@ jobs:
           "$OLDPWD/bin/regulus" trace files --session nobody | grep -q "no trace" || (echo "trace files smoke failed"; exit 1)
           "$OLDPWD/bin/regulus" probe contrast --task demo/T1 --gate missing 2>&1 | grep -q . || (echo "probe usage smoke failed"; exit 1)
 
-      - name: Run the gauntlet (8 layers, receipts)
+      - name: Run the gauntlet (12 layers, receipts)
         run: |
           go build -o bin/regulus ./cmd/regulus
           bin/regulus gate run ci/push

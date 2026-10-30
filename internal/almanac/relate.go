@@ -39,16 +39,19 @@ type Suggestion struct {
 // only bucket rule is supersede-hiding) and the CheckDuplicate threshold
 // thinking (a floor far below the dedup bar).
 //
-// Freshness is strict: unlike HybridSearch, which degrades to lexical
-// with a warning, suggestions ARE the vector channel — there is no
-// lexical fallback that could silently present keyword hits as vector
-// similarities. A missing, stale (log changed since the reindex),
-// corrupt or header-mismatched retrieval.bin refuses with a reindex
-// pointer instead of lying.
-func SuggestRelated(root, id string) ([]Suggestion, error) {
+// Freshness is self-healing, not a refusal: a missing, stale (log
+// changed since the last reindex), corrupt or header-mismatched
+// retrieval.bin is rebuilt once via Reindex — a pure function of the
+// log, byte-deterministic, cheap and zero-dep — and reported with
+// rebuilt=true so the caller can say so. The vector channel stays honest:
+// suggestions are always cosine similarities over a fresh index, never
+// keyword hits dressed as similarities. An unknown id still refuses
+// before any rebuild, so bad input never triggers a write; a failed
+// rebuild keeps the reindex pointer instead of failing silently.
+func SuggestRelated(root, id string) ([]Suggestion, bool, error) {
 	all, err := All(root)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var src *Observation
 	for i := range all {
@@ -58,23 +61,15 @@ func SuggestRelated(root, id string) ([]Suggestion, error) {
 		}
 	}
 	if src == nil {
-		return nil, fmt.Errorf("no observation %q", id)
+		return nil, false, fmt.Errorf("no observation %q", id)
 	}
-	entries, hdr, err := LoadIndex(root)
+	entries, rebuilt, err := freshEntries(root)
 	if err != nil {
-		return nil, fmt.Errorf("suggestions require a fresh semantic index — run `regulus memory reindex` (%v)", err)
-	}
-	raw, err := os.ReadFile(File(root))
-	if err != nil {
-		return nil, err
-	}
-	sum := sha256.Sum256(raw)
-	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
-		return nil, fmt.Errorf("suggestions require a fresh semantic index — run `regulus memory reindex` (index is stale: the log changed since the last reindex)")
+		return nil, false, err
 	}
 	superseded, err := SupersededIDs(root)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	vecByID := make(map[string][EmbedDim]int8, len(entries))
 	for _, e := range entries {
@@ -85,7 +80,7 @@ func SuggestRelated(root, id string) ([]Suggestion, error) {
 		query = EmbedObservation(*src)
 	}
 	if isZeroVec(query) {
-		return nil, nil
+		return nil, rebuilt, nil
 	}
 	byID := make(map[string]Observation, len(all))
 	for _, o := range all {
@@ -127,5 +122,38 @@ func SuggestRelated(root, id string) ([]Suggestion, error) {
 	for _, c := range cands {
 		out = append(out, Suggestion{ID: c.id, Cosine: c.sim, Title: byID[c.id].Title})
 	}
-	return out, nil
+	return out, rebuilt, nil
+}
+
+// freshEntries returns the vector index when it pins the current log,
+// rebuilding it once via Reindex otherwise. Reindex is a pure function
+// of observations.jsonl (byte-identical rebuilds, cheap, zero-dep), so
+// the repair is deterministic; a failed rebuild keeps the reindex
+// pointer instead of failing silently.
+func freshEntries(root string) ([]IndexEntry, bool, error) {
+	if entries, hdr, err := LoadIndex(root); err == nil && shaPinned(root, hdr) {
+		return entries, false, nil
+	}
+	// Missing, corrupt, header-mismatched or stale: rebuild once.
+	if _, _, err := Reindex(root); err != nil {
+		return nil, false, fmt.Errorf("suggestions require a fresh semantic index — run `regulus memory reindex` (%v)", err)
+	}
+	entries, hdr, err := LoadIndex(root)
+	if err != nil {
+		return nil, false, fmt.Errorf("suggestions require a fresh semantic index — run `regulus memory reindex` (%v)", err)
+	}
+	if !shaPinned(root, hdr) {
+		return nil, false, fmt.Errorf("suggestions require a fresh semantic index — run `regulus memory reindex` (index is stale: the log changed since the last reindex)")
+	}
+	return entries, true, nil
+}
+
+// shaPinned reports whether hdr pins the current observation log.
+func shaPinned(root string, hdr IndexHeader) bool {
+	raw, err := os.ReadFile(File(root))
+	if err != nil {
+		return false
+	}
+	sum := sha256.Sum256(raw)
+	return hdr.SourceSHAHex() == hex.EncodeToString(sum[:])
 }

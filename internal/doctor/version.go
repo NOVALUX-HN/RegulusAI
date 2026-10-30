@@ -27,7 +27,7 @@ func VersionLine(dir, binaryVersion string) string {
 		return fmt.Sprintf("version:    %s (matches package.json)", binaryVersion)
 	}
 	if binaryVersion == "dev" {
-		return fmt.Sprintf("version:    WARNING — unstamped dev build (package.json says %s): rebuild with scripts/build.bash", pkg.Version)
+		return fmt.Sprintf("version:    WARNING — unstamped dev build (package.json says %s): rebuild with npm run build (scripts/build.bash stamps bin/regulus)", pkg.Version)
 	}
-	return fmt.Sprintf("version:    WARNING — binary says %s but package.json says %s: rebuild with scripts/build.bash", binaryVersion, pkg.Version)
+	return fmt.Sprintf("version:    WARNING — binary says %s but package.json says %s: rebuild with npm run build (scripts/build.bash stamps bin/regulus)", binaryVersion, pkg.Version)
 }

@@ -132,8 +132,10 @@ order). What shipped:
   stay intact), 0.92 bar, topic-key revision bypass, supersede-hiding
   composition + eval fixture tests.
 - **T4** — `memory relate --suggest <id>`: top-5 vector candidates above
-  the 0.5 floor, suggestion-only (writes nothing), refuses on a
-  missing/stale index with a reindex pointer.
+  the 0.5 floor, suggestion-only (writes nothing); a missing/stale/corrupt
+  index is rebuilt automatically via `Reindex` (cheap, deterministic) with
+  a stderr note — R2 (almanac-robustez), 2026-10-30. Unknown ids still
+  refuse before any rebuild.
 
 Measured at landing (2026-10-29 sandbox, `internal/almanac/perf_test.go`,
 10k synthetic obs, fixed seed 42):
@@ -156,3 +158,59 @@ Measured at landing (2026-10-29 sandbox, `internal/almanac/perf_test.go`,
 Deferred per S8: v2.1 pluggable ONNX MiniLM waits for live miss-rate
 evidence. `go.mod` gain after v2.0: zero require directives
 (`TestZeroDepsGoMod` pins the S9 invariant).
+
+## M1 addendum (2026-10-30) — miss-rate measured, embedder pluggable
+
+Measurement only: no ONNX dependency, no model binary, `go.mod` still
+zero requires (`TestZeroDepsGoMod` green).
+
+**Miss-rate** (`internal/almanac/missrate_test.go`,
+`TestMissRateParaphraseVsTypo`): 5-doc corpus (distinct fixture a-sides
++ unrelated distractors), queries = the 4 dup b-sides as AND terms.
+
+| query | band | cosine | lexical | vector rank | hybrid top-3 |
+|---|---|---|---|---|---|
+| paraphrase/postgres-pool | paraphrase | 0.9603 | miss | 1 | yes |
+| paraphrase/pool-leak | paraphrase | 0.9503 | miss | 1 | yes |
+| typo/pooling | typo | 0.9350 | miss | 1 | yes |
+| typo/cache-sizing | typo | 0.9419 | miss | 1 | yes |
+
+Paraphrase vector top-3 recall **2/2**, typo vector top-3 recall **2/2**,
+lexical-miss rate **4/4** — every fixture query carries a novel or
+typo'd word the AND lexical channel cannot match, while the vector
+channel ranks the target first and hybrid (fresh index) surfaces it in
+its top 3 end to end.
+
+**ONNX gap** (`TestMissRateTrueParaphraseGap`): a genuine rewording with
+no shared content words ("pgbouncer style multiplexing…") best-scores
+**0.2327** — inside the unrelated band (0.1193–0.2565), far below the
+suggestion floor 0.5 and the dedup bar 0.92. The hash embedder covers
+near-paraphrase + typo; true paraphrase stays blind. v2.1 ONNX stays
+deferred until a real paraphrase eval set exists — this test documents
+the gap without adding ONNX plumbing.
+
+**Pluggable embedder** (S2): `Embedder` interface + `LookupEmbedder`
+registry (`internal/almanac/embed.go`), `ReindexWith` / `LoadIndexWith`
+/ `HybridSearchWith` (`vindex.go`, `hybrid.go`). Header already carried
+`{embedder, dim, version}` — now pinned by `TestHeaderPinsEmbedderDim-
+Version` (`hash-ngram-v1`, 384, 1); foreign headers refuse with
+`ErrHeaderMismatch` (`TestHeaderMismatchForcesReindex`), unknown ids
+refuse before any write. CLI: `memory reindex [--embedder <id>]` and
+`memory search [--embedder <id>]` (default `hash-ngram-v1`); `reindex`
+stdout names the encoder (`embedder: hash-ngram-v1`) so evidence
+receipts pin it. Dedup and `relate --suggest` stay on the default
+encoder (save path carries no flag — same encoder on the fly and on
+disk, no skew).
+
+## M2 verification (2026-10-30) — M1 numbers re-checked, v2.1 still deferred
+
+Coherence check against the code (no M1 content changed): re-ran
+`TestMissRateParaphraseVsTypo` — sims 0.9603 / 0.9503 (paraphrase) and
+0.9350 / 0.9419 (typo), all vecRank 1, hybrid top-3, lexical-miss 4/4 —
+and `TestMissRateTrueParaphraseGap` — best 0.2327, below the 0.5 floor.
+Bars confirmed at their definitions: `DedupThreshold` 0.92
+(`internal/almanac/dedup.go`) and `SuggestFloor` 0.5
+(`internal/almanac/relate.go`). v2.1 ONNX stays deferred: the only
+registered encoder is `hash-ngram-v1` (`LookupEmbedder` refuses unknown
+ids, `TestZeroDepsGoMod` keeps `go.mod` at zero requires), and the index
+header keeps pinning `{hash-ngram-v1, 384, 1}`.

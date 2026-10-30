@@ -34,12 +34,24 @@ const (
 // decider (keepsBuckets) as lexical — one decider, no double-hiding;
 // terms rank vectors instead of filtering them.
 func HybridSearch(root string, q Query) ([]Observation, bool, error) {
-	return hybridAt(root, q, time.Now().UTC())
+	return HybridSearchWith(root, q, "")
 }
 
-// hybridAt is HybridSearch with an injectable now (decay clock).
-func hybridAt(root string, q Query, now time.Time) ([]Observation, bool, error) {
-	entries, hdr, err := LoadIndex(root)
+// HybridSearchWith runs hybrid retrieval with the named embedder (""
+// means the default hash-ngram-v1): the query vector comes from that
+// encoder and the index must pin the same one, or the call degrades to
+// lexical (header mismatch) / refuses (unknown embedder id).
+func HybridSearchWith(root string, q Query, embedderID string) ([]Observation, bool, error) {
+	emb, err := LookupEmbedder(embedderID)
+	if err != nil {
+		return nil, false, err
+	}
+	return hybridAt(root, q, emb, time.Now().UTC())
+}
+
+// hybridAt is HybridSearchWith with an injectable now (decay clock).
+func hybridAt(root string, q Query, emb Embedder, now time.Time) ([]Observation, bool, error) {
+	entries, hdr, err := LoadIndexWith(root, emb.ID())
 	if err != nil {
 		return degradedLexical(root, q)
 	}
@@ -51,7 +63,7 @@ func hybridAt(root string, q Query, now time.Time) ([]Observation, bool, error) 
 	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
 		return degradedLexical(root, q)
 	}
-	ranked, err := hybridFresh(root, q, entries, now)
+	ranked, err := hybridFresh(root, q, entries, emb, now)
 	if err != nil {
 		return nil, false, err
 	}
@@ -124,19 +136,19 @@ func (c hybridCorpus) supersededFor(q Query) map[string]bool {
 // hybridFresh fuses both channels; domain queries rank scoped hits before
 // the global fallback, deduped by ID, then Latest/Limit apply. The corpus
 // loads once here and is shared by every rank path below.
-func hybridFresh(root string, q Query, entries []IndexEntry, now time.Time) ([]Observation, error) {
+func hybridFresh(root string, q Query, entries []IndexEntry, emb Embedder, now time.Time) ([]Observation, error) {
 	corpus, err := loadHybridCorpus(root)
 	if err != nil {
 		return nil, err
 	}
 	if q.Domain != "" {
-		scoped := fusedRankedWith(corpus, q, entries, now)
+		scoped := fusedRankedWith(corpus, q, entries, emb, now)
 		globalQ := q
 		globalQ.Domain = ""
-		global := fusedRankedWith(corpus, globalQ, entries, now)
+		global := fusedRankedWith(corpus, globalQ, entries, emb, now)
 		return applyLatestLimit(mergeDomainFirst(scoped, global), q), nil
 	}
-	ranked := fusedRankedWith(corpus, q, entries, now)
+	ranked := fusedRankedWith(corpus, q, entries, emb, now)
 	return applyLatestLimit(ranked, q), nil
 }
 
@@ -193,10 +205,10 @@ type scoredObs struct {
 // fusedRankedWith returns the fused order for one domain scope, without
 // Latest/Limit: pinned first, fused score, then confidence/recency/id.
 // Pure function over the shared corpus — no I/O.
-func fusedRankedWith(corpus hybridCorpus, q Query, entries []IndexEntry, now time.Time) []Observation {
+func fusedRankedWith(corpus hybridCorpus, q Query, entries []IndexEntry, emb Embedder, now time.Time) []Observation {
 	lexRank := lexicalRanksWith(corpus, q)
 	superseded := corpus.supersededFor(q)
-	vecRank, byID := vectorRanks(q, corpus.all, entries, superseded)
+	vecRank, byID := vectorRanks(q, corpus.all, entries, superseded, emb)
 	scored := scoreCandidates(byID, lexRank, vecRank, now)
 	sortScored(corpus.pins, scored)
 	out := make([]Observation, 0, len(scored))
@@ -231,7 +243,7 @@ func lexicalRanksWith(corpus hybridCorpus, q Query) map[string]int {
 
 // vectorRanks scans the index for bucket-passing candidates above zero
 // cosine, returning 1-indexed ranks plus the observation index.
-func vectorRanks(q Query, all []Observation, entries []IndexEntry, superseded map[string]bool) (map[string]int, map[string]Observation) {
+func vectorRanks(q Query, all []Observation, entries []IndexEntry, superseded map[string]bool, emb Embedder) (map[string]int, map[string]Observation) {
 	byID := make(map[string]Observation, len(all))
 	for _, o := range all {
 		byID[o.ID] = o
@@ -241,7 +253,7 @@ func vectorRanks(q Query, all []Observation, entries []IndexEntry, superseded ma
 		vecByID[e.ID] = e.Vec
 	}
 	matcher := queryMatcher{q: q, superseded: superseded}
-	queryVec := Embed(strings.Join(q.Terms, " "))
+	queryVec := emb.Embed(strings.Join(q.Terms, " "))
 	if isZeroVec(queryVec) {
 		return map[string]int{}, byID
 	}

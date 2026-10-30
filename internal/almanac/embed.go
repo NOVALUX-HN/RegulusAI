@@ -6,6 +6,7 @@
 package almanac
 
 import (
+	"fmt"
 	"hash/fnv"
 	"math"
 	"strings"
@@ -17,6 +18,44 @@ const EmbedDim = 384
 // EmbedderID pins the encoder in the retrieval.bin header; a mismatch
 // forces a rebuild, never a trusted read.
 const EmbedderID = "hash-ngram-v1"
+
+// Embedder is the pluggable encoder interface (docs/memory-v2.md §4,
+// v2.1): v2.0 ships one implementation, hash-ngram-v1. A future ONNX
+// MiniLM registers under its own id; the retrieval.bin header pins
+// which encoder produced it ({embedder, dim, version}), and a mismatch
+// forces a reindex — receipts pin the encoder via `reindex` stdout.
+type Embedder interface {
+	// ID names the encoder in the index header and receipts.
+	ID() string
+	// Embed returns the int8-quantized embedding of text.
+	Embed(text string) [EmbedDim]int8
+	// EmbedObservation embeds the retrieval text of one observation:
+	// title + newline + content.
+	EmbedObservation(o Observation) [EmbedDim]int8
+}
+
+// hashEmbedder is the v2.0 hashed char-ngram encoder: signed hash
+// buckets, L2-normalized, scaled to int8. Pure Go, deterministic.
+type hashEmbedder struct{}
+
+// HashEmbedder is the v2.0 default encoder (EmbedderID).
+func HashEmbedder() Embedder { return hashEmbedder{} }
+
+func (hashEmbedder) ID() string { return EmbedderID }
+
+func (hashEmbedder) Embed(text string) [EmbedDim]int8 { return Embed(text) }
+
+func (hashEmbedder) EmbedObservation(o Observation) [EmbedDim]int8 { return EmbedObservation(o) }
+
+// LookupEmbedder resolves a --embedder id; "" means the default. An
+// unknown id refuses: only hash-ngram-v1 ships (ONNX MiniLM deferred
+// per docs/memory-v2.md §4 — no onnx dependency, no model binary).
+func LookupEmbedder(id string) (Embedder, error) {
+	if id == "" || id == EmbedderID {
+		return hashEmbedder{}, nil
+	}
+	return nil, fmt.Errorf("unknown embedder %q (only %q ships — ONNX MiniLM deferred per docs/memory-v2.md §4)", id, EmbedderID)
+}
 
 // Embed returns the int8-quantized char-ngram embedding of text:
 // signed hash buckets accumulated, L2-normalized, scaled by 127.

@@ -6,6 +6,7 @@ package almanac
 // No relation is written — suggestion only.
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -41,9 +42,12 @@ func TestSuggestRanksParaphraseFirst(t *testing.T) {
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	sugs, err := SuggestRelated(root, src.ID)
+	sugs, rebuilt, err := SuggestRelated(root, src.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if rebuilt {
+		t.Fatal("fresh index must not rebuild")
 	}
 	if len(sugs) == 0 {
 		t.Fatal("paraphrase must be suggested")
@@ -75,7 +79,7 @@ func TestSuggestExcludesSelf(t *testing.T) {
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	sugs, err := SuggestRelated(root, src.ID)
+	sugs, _, err := SuggestRelated(root, src.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +113,7 @@ func TestSuggestExcludesSuperseded(t *testing.T) {
 	}
 	// Sanity: the hidden typo variant clears the floor on its own, so the
 	// test proves hiding rather than filtering.
-	before, err := SuggestRelated(root, src.ID)
+	before, _, err := SuggestRelated(root, src.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +129,7 @@ func TestSuggestExcludesSuperseded(t *testing.T) {
 	if err := Relate(root, live.ID, RelationSupersedes, hidden.ID, base.Add(3*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	after, err := SuggestRelated(root, src.ID)
+	after, _, err := SuggestRelated(root, src.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +165,7 @@ func TestSuggestFloorFiltersUnrelated(t *testing.T) {
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	sugs, err := SuggestRelated(root, src.ID)
+	sugs, _, err := SuggestRelated(root, src.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,51 +174,115 @@ func TestSuggestFloorFiltersUnrelated(t *testing.T) {
 	}
 }
 
-func TestSuggestMissingIndexRefuses(t *testing.T) {
+// R2 (S2): a save with no reindex yet must not refuse — suggest rebuilds
+// the missing index once and answers from the fresh vector channel.
+func TestSuggestMissingIndexAutoRebuilds(t *testing.T) {
 	root := t.TempDir()
 	base := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	src := suggestSeed(t, root, &Observation{
 		Type:    TypeDecision,
-		Title:   "chose postgres",
-		Content: "pooling everywhere",
+		Title:   "chose postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
 	}, base)
-	suggestSeed(t, root, &Observation{
+	para := suggestSeed(t, root, &Observation{
 		Type:    TypeDecision,
-		Title:   "picked postgres",
-		Content: "pooling everywhere",
+		Title:   "picked postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
 	}, base.Add(time.Hour))
-	if _, err := SuggestRelated(root, src.ID); err == nil {
-		t.Fatal("missing index must refuse, got nil")
-	} else if !strings.Contains(strings.ToLower(err.Error()), "reindex") {
-		t.Fatalf("missing-index refusal must point at reindex, got %q", err)
+	sugs, rebuilt, err := SuggestRelated(root, src.ID)
+	if err != nil {
+		t.Fatalf("missing index must rebuild, not refuse: %v", err)
+	}
+	if !rebuilt {
+		t.Fatal("missing index must report rebuilt=true")
+	}
+	if len(sugs) == 0 || sugs[0].ID != para.ID {
+		t.Fatalf("rebuilt index must rank the paraphrase first: %+v", sugs)
+	}
+	if state, err := IndexState(root); err != nil || state != "fresh" {
+		t.Fatalf("rebuild must leave a fresh index: state=%q err=%v", state, err)
 	}
 }
 
-func TestSuggestStaleIndexRefuses(t *testing.T) {
+// R2 (S2): a save past the last reindex must not refuse — suggest rebuilds
+// the stale index once, and the rebuilt index sees the post-reindex save
+// (a stale read would miss it).
+func TestSuggestStaleIndexAutoRebuilds(t *testing.T) {
 	root := t.TempDir()
 	base := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	src := suggestSeed(t, root, &Observation{
 		Type:    TypeDecision,
-		Title:   "chose postgres",
-		Content: "pooling everywhere",
+		Title:   "chose postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
 	}, base)
 	suggestSeed(t, root, &Observation{
 		Type:    TypeDecision,
-		Title:   "picked postgres",
-		Content: "pooling everywhere",
+		Title:   "chose bun runtime for the plugin host",
+		Content: "cold start under fifty milliseconds keeps the picker responsive",
 	}, base.Add(time.Hour))
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	suggestSeed(t, root, &Observation{
+	para := suggestSeed(t, root, &Observation{
 		Type:    TypeDecision,
-		Title:   "second choice",
-		Content: "more content",
+		Title:   "picked postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
 	}, base.Add(2*time.Hour))
-	if _, err := SuggestRelated(root, src.ID); err == nil {
-		t.Fatal("stale index must refuse, got nil")
-	} else if !strings.Contains(strings.ToLower(err.Error()), "reindex") {
-		t.Fatalf("stale-index refusal must point at reindex, got %q", err)
+	sugs, rebuilt, err := SuggestRelated(root, src.ID)
+	if err != nil {
+		t.Fatalf("stale index must rebuild, not refuse: %v", err)
+	}
+	if !rebuilt {
+		t.Fatal("stale index must report rebuilt=true")
+	}
+	seen := false
+	for _, s := range sugs {
+		if s.ID == para.ID {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("rebuilt index must see the post-reindex save: %+v", sugs)
+	}
+}
+
+// R2 (S2): a corrupt index reads as stale and must rebuild too — same
+// repair, same reindex pointer on failure.
+func TestSuggestCorruptIndexAutoRebuilds(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	src := suggestSeed(t, root, &Observation{
+		Type:    TypeDecision,
+		Title:   "chose postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
+	}, base)
+	para := suggestSeed(t, root, &Observation{
+		Type:    TypeDecision,
+		Title:   "picked postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
+	}, base.Add(time.Hour))
+	if _, _, err := Reindex(root); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(IndexPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := make([]byte, len(raw))
+	copy(bad, raw)
+	bad[0] ^= 0xff // magic
+	if err := os.WriteFile(IndexPath(root), bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sugs, rebuilt, err := SuggestRelated(root, src.ID)
+	if err != nil {
+		t.Fatalf("corrupt index must rebuild, not refuse: %v", err)
+	}
+	if !rebuilt {
+		t.Fatal("corrupt index must report rebuilt=true")
+	}
+	if len(sugs) == 0 || sugs[0].ID != para.ID {
+		t.Fatalf("rebuilt index must rank the paraphrase first: %+v", sugs)
 	}
 }
 
@@ -225,10 +293,23 @@ func TestSuggestUnknownIDRefuses(t *testing.T) {
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SuggestRelated(root, "obs_nope"); err == nil {
+	if _, _, err := SuggestRelated(root, "obs_nope"); err == nil {
 		t.Fatal("unknown id must refuse, got nil")
 	} else if !strings.Contains(err.Error(), "no observation") {
 		t.Fatalf("unknown id must report no observation, got %q", err)
+	}
+}
+
+// R2 (S2): an unknown id refuses before any rebuild — bad input never
+// triggers a write.
+func TestSuggestUnknownIDWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	suggestSeed(t, root, &Observation{Type: TypeDecision, Title: "v1", Content: "x"}, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))
+	if _, _, err := SuggestRelated(root, "obs_nope"); err == nil {
+		t.Fatal("unknown id must refuse, got nil")
+	}
+	if _, err := os.Stat(IndexPath(root)); !os.IsNotExist(err) {
+		t.Fatal("unknown id must not build an index")
 	}
 }
 
@@ -251,7 +332,7 @@ func TestSuggestRespectsTopK(t *testing.T) {
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	sugs, err := SuggestRelated(root, src.ID)
+	sugs, _, err := SuggestRelated(root, src.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +357,7 @@ func TestSuggestWritesNoRelation(t *testing.T) {
 	if _, _, err := Reindex(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SuggestRelated(root, src.ID); err != nil {
+	if _, _, err := SuggestRelated(root, src.ID); err != nil {
 		t.Fatal(err)
 	}
 	rels, err := Relations(root)

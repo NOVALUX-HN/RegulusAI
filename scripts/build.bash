@@ -41,3 +41,13 @@ for target in "${targets[@]}"; do
 done
 
 echo "done: $(ls binaries | wc -l) binaries in binaries/ (version ${version})"
+
+# H3 (S4): the documented flow also refreshes the local binary, stamped
+# with the same version. A raw `go build` stays unstamped by design
+# (doctor warns); `npm run build` never is.
+echo "building bin/regulus (${version})"
+go build -trimpath \
+  -ldflags "-s -w -X ${stamp}" \
+  -o "bin/regulus" ./cmd/regulus
+
+echo "local: bin/regulus (version ${version})"

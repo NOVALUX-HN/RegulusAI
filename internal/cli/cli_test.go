@@ -132,6 +132,44 @@ func TestSpecCheckViolationsListed(t *testing.T) {
 	}
 }
 
+func TestSpecCheckDirValidatesAllFiles(t *testing.T) {
+	c, out, errb := newCLI(nil)
+	dir := t.TempDir()
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n- When regulus spec check runs\n- Then the exit code is 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := c.Run([]string{"spec", "check", dir}); code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr: %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "in 2 file(s)") {
+		t.Fatalf("output must summarize both files, got %q", out.String())
+	}
+}
+
+func TestSpecCheckDirNamesBrokenFile(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	dir := t.TempDir()
+	okDoc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n- When regulus spec check runs\n- Then the exit code is 0\n"
+	badDoc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture project\n\n## Log\n"
+	if err := os.WriteFile(filepath.Join(dir, "ok.md"), []byte(okDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	broken := filepath.Join(dir, "broken.md")
+	if err := os.WriteFile(broken, []byte(badDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := c.Run([]string{"spec", "check", dir}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "broken.md") {
+		t.Fatalf("stderr must name the broken chart, got %q", errb.String())
+	}
+}
+
 func TestSpecCheckMissingFile(t *testing.T) {
 	c, _, errb := newCLI(nil)
 	if code := c.Run([]string{"spec", "check", "does-not-exist.md"}); code != 1 {
@@ -953,6 +991,48 @@ func TestMemorySaveSearchHistoryContext(t *testing.T) {
 	}
 	if !strings.Contains(out5.String(), "f3 in flight") {
 		t.Fatalf("context must surface the latest note, got:\n%s", out5.String())
+	}
+}
+
+func TestMemoryContextLimitAndIdentity(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, txt := range []string{"resume-note-1", "resume-note-2", "resume-note-3", "resume-note-4", "resume-note-5", "resume-note-6", "resume-note-7"} {
+		c, _, _ := newCLI(nil)
+		if code := c.Run([]string{"memory", "note", txt}); code != 0 {
+			t.Fatalf("note %q: exit = %d", txt, code)
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "chose sqlite", "simpler ops"}); code != 0 {
+		t.Fatalf("save: exit = %d", code)
+	}
+	cFull, outFull, _ := newCLI(nil)
+	if code := cFull.Run([]string{"memory", "context"}); code != 0 {
+		t.Fatalf("context: exit = %d", code)
+	}
+	full := outFull.String()
+	for _, want := range []string{"resume-note-1", "resume-note-7", "chose sqlite", "simpler ops", almanac.ProjectName(".")} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("context must show %q, got:\n%s", want, full)
+		}
+	}
+	cPaged, outPaged, _ := newCLI(nil)
+	if code := cPaged.Run([]string{"memory", "context", "--limit", "5"}); code != 0 {
+		t.Fatalf("context --limit: exit = %d", code)
+	}
+	paged := outPaged.String()
+	for _, txt := range []string{"resume-note-1", "resume-note-2"} {
+		if strings.Contains(paged, txt) {
+			t.Fatalf("paged context must hide %q, got:\n%s", txt, paged)
+		}
+	}
+	for _, txt := range []string{"resume-note-3", "resume-note-7"} {
+		if !strings.Contains(paged, txt) {
+			t.Fatalf("paged context must show %q, got:\n%s", txt, paged)
+		}
+	}
+	if !strings.Contains(paged, "showing latest 5 of 7") {
+		t.Fatalf("paged context must name the truncation, got:\n%s", paged)
 	}
 }
 

@@ -39,3 +39,4 @@ User authorization: "la idea es que regulus salga como un agente seleccionable e
 
 - **L1**: Chart opened 2026-10-30 from authorized full-port decision. Investigation: MCP expone 12 tools (`internal/cli/mcp.go`), faltan `evolve_propose/probe_contrast/probe_compose/skills_list` → fallback shell `regulus ...` vía `Exec`.
 - **L2**: A1+A2 CLOSED + PROVE — 9 ficheros nuevos en `.devin/agents/` (orchestrator `regulus.md` + verifier + proposer + 6 guardians), `^name:` 11/11, OpenCode-isms 0 (`@regulus-`/`tools.regulus`/`mode:`/`temperature:`). `spec_check` 4 OK (A1+A2+lead). Sin cambios Go (árbol Go idéntico al 9/9 de `win-portability/final`), gauntlet completo no re-corido por markdown-only.
+- **L3**: Chart CERRADO 2026-10-30 vía `polish-gaps/P3` (S4): A1/A2 reverificados — 11 ficheros `.devin/agents/` con `^name:` 11/11, 0 OpenCode-isms (`@regulus-`/`tools.regulus`/`mode:`/`temperature:`). Tasks CLOSED desde L2, nada pendiente. `spec_check` 4 OK.

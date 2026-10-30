@@ -137,3 +137,45 @@ func TestReindexEmptyLogRefused(t *testing.T) {
 		t.Fatalf("empty log must return ErrNoLog, got %v", err)
 	}
 }
+
+// TestIndexStateCycle: H3 (S5) — the freshness token behind `status`
+// and `memory doctor`: empty before any save, missing before the first
+// reindex, fresh right after, stale after any save past the reindex.
+func TestIndexStateCycle(t *testing.T) {
+	root := t.TempDir()
+	if state, err := IndexState(root); err != nil || state != "empty" {
+		t.Fatalf("no log: state = %q, err = %v; want empty, nil", state, err)
+	}
+	if _, err := Save(root, &Observation{Type: TypeDecision, Title: "a", Content: "b"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := IndexState(root); err != nil || state != "missing" {
+		t.Fatalf("unindexed log: state = %q, err = %v; want missing, nil", state, err)
+	}
+	if _, _, err := Reindex(root); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := IndexState(root); err != nil || state != "fresh" {
+		t.Fatalf("just reindexed: state = %q, err = %v; want fresh, nil", state, err)
+	}
+	if _, err := Save(root, &Observation{Type: TypeDecision, Title: "c", Content: "d"}, t1); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := IndexState(root); err != nil || state != "stale" {
+		t.Fatalf("save past reindex: state = %q, err = %v; want stale, nil", state, err)
+	}
+	// A corrupt index refuses trust and reads as stale: same repair.
+	raw, err := os.ReadFile(IndexPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := make([]byte, len(raw))
+	copy(bad, raw)
+	bad[0] ^= 0xff // magic
+	if err := os.WriteFile(IndexPath(root), bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := IndexState(root); err != nil || state != "stale" {
+		t.Fatalf("corrupt index: state = %q, err = %v; want stale, nil", state, err)
+	}
+}

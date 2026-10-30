@@ -1,9 +1,13 @@
 // YOLO guardrails (safe auto-approve): the catch-all MUST come first and
 // the destructive denies after it — opencode evaluates patterns with the
 // last match winning. If someone reorders or drops a deny, deletes stop
-// being blocked. Run with `bun test` from .opencode/ (also in CI).
+// being blocked. `regulus yolo on` flips BOTH the project config and the
+// worker agent frontmatter to allow (denies stay denied); `off` restores
+// ask. Run with `bun test` from .opencode/ (also in CI).
 import { describe, expect, test } from "bun:test";
-import { readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Every pattern that must stay denied under YOLO.
 const DENIES = [
@@ -83,6 +87,8 @@ describe("yolo permissions", () => {
     const dir = `${import.meta.dir}/../agents`;
     const files = (await readdir(dir)).filter((f) => f.endsWith(".md")).sort();
     expect(files.length).toBe(11);
+    const { json: global } = await projectConfig();
+    const globalStar = global?.permission?.bash?.["*"];
     for (const file of files) {
       const text = await Bun.file(`${dir}/${file}`).text();
       const m = text.match(/^---\n([\s\S]*?)\n---\n/);
@@ -97,9 +103,24 @@ describe("yolo permissions", () => {
         expect(bash["*"]).toBe("allow");
         for (const d of DENIES) expect(bash[d]).toBe("deny");
       } else if (file === "regulus-worker.md") {
-        // The worker asks by default: never allow, never allow destruction.
-        expect(bash["*"]).toBe("ask");
-        for (const d of DENIES) expect(bash[d]).not.toBe("allow");
+        // The worker mirrors the global YOLO switch: `regulus yolo on`
+        // flips its catch-all to allow (denies stay denied), `off`
+        // restores ask. It must never drift from opencode.json and
+        // never allow destruction.
+        expect(bash["*"]).toBe(globalStar);
+        const head = text.slice(0, text.indexOf("---", 3));
+        if (globalStar === "allow") {
+          for (const d of DENIES) expect(bash[d]).toBe("deny");
+          const starAt = head.indexOf('"*": allow');
+          expect(starAt).toBeGreaterThan(-1);
+          for (const d of DENIES) {
+            const at = head.indexOf(`"${d}": deny`);
+            expect(at).toBeGreaterThan(starAt);
+          }
+        } else {
+          expect(bash["*"]).toBe("ask");
+          for (const d of DENIES) expect(bash[d]).not.toBe("allow");
+        }
       } else {
         // Read-only guardians deny by default and never edit code.
         expect(bash["*"]).toBe("deny");
@@ -108,4 +129,57 @@ describe("yolo permissions", () => {
       }
     }
   });
+
+  test(
+    "yolo on/off flips the worker frontmatter and reminds /reload",
+    async () => {
+      const repoRoot = join(import.meta.dir, "..", "..").replaceAll("\\", "/");
+      const dir = await mkdtemp(join(tmpdir(), "yolo-worker-"));
+      try {
+        await writeFile(
+          join(dir, "opencode.json"),
+          JSON.stringify({ permission: { bash: { "*": "ask", "rm *": "deny" }, edit: "ask" } }),
+        );
+        const agentDir = join(dir, ".opencode", "agents");
+        await mkdir(agentDir, { recursive: true });
+        const workerPath = join(agentDir, "regulus-worker.md");
+        await writeFile(
+          workerPath,
+          '---\ndescription: w\nmode: subagent\npermission:\n  bash:\n    "go *": allow\n    "rm *": deny\n    "*": ask\n---\n\nbody\n',
+        );
+        // Build first (module context), then run the binary in the
+        // fixture dir: `go run` cannot resolve a module from a cwd
+        // outside one.
+        const binName = `regulus-yolo-test${process.platform === "win32" ? ".exe" : ""}`;
+        const binPath = join(dir, binName);
+        const build = await Bun.$`go build -o ${binPath} ./cmd/regulus`.cwd(repoRoot).quiet().nothrow();
+        if (build.exitCode !== 0) throw new Error(`build failed: ${build.stderr.toString()}`);
+        const on = await Bun.$`${binPath} yolo on`.cwd(dir).quiet().nothrow();
+        if (on.exitCode !== 0) throw new Error(`yolo on failed: ${on.stderr.toString()}`);
+        expect(on.exitCode).toBe(0);
+        const onOut = on.stdout.toString();
+        expect(onOut).toContain("yolo: on");
+        expect(onOut).toContain("/reload");
+        let worker = await Bun.file(workerPath).text();
+        expect(worker).toContain('"*": allow');
+        expect(worker).toContain('"rm *": deny');
+        expect(worker.indexOf('"*": allow')).toBeLessThan(worker.indexOf('"rm *": deny'));
+        expect(worker).toContain('"go *": allow');
+
+        const off = await Bun.$`${binPath} yolo off`.cwd(dir).quiet().nothrow();
+        if (off.exitCode !== 0) throw new Error(`yolo off failed: ${off.stderr.toString()}`);
+        expect(off.exitCode).toBe(0);
+        const offOut = off.stdout.toString();
+        expect(offOut).toContain("yolo: off");
+        expect(offOut).toContain("/reload");
+        worker = await Bun.file(workerPath).text();
+        expect(worker).toContain('"*": ask');
+        expect(worker).not.toContain('"*": allow');
+        expect(worker).toContain('"rm *": deny');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    180000,
+  );
 });

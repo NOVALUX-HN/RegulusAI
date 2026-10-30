@@ -111,6 +111,43 @@ export function suggestSkills(skills: Skill[], messagesText: string): Skill[] {
 // RunBin runs the regulus binary; injected so tests can fake it.
 export type RunBin = (args: string[]) => Promise<{ exitCode: number; output: string }>
 
+// GATE_RUN_TIMEOUT_MS_DEFAULT bounds one plugin gate_run spawn. The
+// gauntlet runs up to 9 gates at up to 600s each, so the old 30s spawn
+// budget aborted every real gauntlet and surfaced as null. One hour
+// covers any realistic gauntlet (observed: minutes); the caller's
+// AbortSignal still cancels earlier. REGULUS_GATE_RUN_TIMEOUT_MS
+// overrides in milliseconds, floored at 600s.
+export const GATE_RUN_TIMEOUT_MS_DEFAULT = 3_600_000;
+export const GATE_RUN_TIMEOUT_MS_FLOOR = 600_000;
+
+// gateRunTimeoutMs resolves the gate_run spawn budget: an explicit
+// finite number clamps to the 600s floor, anything else (missing,
+// blank, non-numeric) falls back to the one-hour default.
+export function gateRunTimeoutMs(env?: string): number {
+  const raw = env ?? process.env.REGULUS_GATE_RUN_TIMEOUT_MS ?? "";
+  if (raw.trim() === "") return GATE_RUN_TIMEOUT_MS_DEFAULT;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return GATE_RUN_TIMEOUT_MS_DEFAULT;
+  return Math.max(GATE_RUN_TIMEOUT_MS_FLOOR, Math.floor(n));
+}
+
+// formatGateResult turns a gate_run spawn outcome into tool content
+// that is never empty and never drops the exit code: empty binary
+// output becomes "(no output)" and a non-zero exit appends its code,
+// so a failing gate can never surface as a bare verdict or null.
+export function formatGateResult(output: string, exitCode: number): string {
+  const body = output === "" ? "(no output)" : output;
+  return exitCode === 0 ? body : `${body}\nexit code: ${exitCode}`;
+}
+
+// formatGateFailure turns a gate_run spawn failure (timeout, abort,
+// missing binary) into tool content instead of a thrown null: one
+// diagnostic line carrying the conventional -1 exit code.
+export function formatGateFailure(message: string): string {
+  const detail = message.trim() === "" ? "gate run: spawn failed" : message.trim();
+  return `${detail}\nexit code: -1`;
+}
+
 // REGULUS_CONTRACT is the plugin<->core protocol version this backend
 // build speaks. Mirrors the Go core's internal/contract.Version: the
 // CLI prints it for `regulus contract`, and the plugin refuses the

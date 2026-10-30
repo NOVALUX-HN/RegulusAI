@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { checkContract, extractPaths, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
+import { checkContract, extractPaths, formatGateFailure, formatGateResult, gateRunTimeoutMs, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -217,8 +217,18 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { task } = input as { task: string }
-          const res = await run(bin, ["gate", "run", task], dir, context.signal)
-          return { content: res.output }
+          // The gauntlet runs minutes (mutation alone budgets 600s);
+          // the generic 30s spawn budget aborted it into a null. The
+          // gate_run budget defaults to one hour (overridable via
+          // REGULUS_GATE_RUN_TIMEOUT_MS, floored at 600s) while the
+          // caller's signal still cancels earlier — and a spawn failure
+          // returns diagnostic content, never a thrown null.
+          try {
+            const res = await run(bin, ["gate", "run", task], dir, context.signal, gateRunTimeoutMs())
+            return { content: formatGateResult(res.output, res.exitCode) }
+          } catch (err) {
+            return { content: formatGateFailure((err as Error).message) }
+          }
         },
       })
 

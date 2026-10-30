@@ -7,6 +7,13 @@ permission) needs a refresh. Run `/reload` in the TUI (no full
 restart), or restart opencode. The `regulus yolo` command always
 prints this reminder after `on`/`off`.
 
+`regulus yolo on` flips both `opencode.json` and the worker agent's
+`bash "*"` frontmatter (`.opencode/agents/regulus-worker.md`) to
+`allow`, keeping every destructive deny denied; `off` restores both
+to `ask`. Guardians stay read-only (`deny`) and the primary agent is
+never touched — so after `on` + `/reload`, neither primary nor worker
+asks for normal bash/edit, while deletes stay blocked.
+
 ## Terminal windows flash open and shut on Windows whenever regulus runs
 
 The opencode background server has no console on Windows, so every
@@ -45,7 +52,7 @@ go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
 ## `regulus status` says "no regulus.json — not configured"
 
 Create a `regulus.json` in your project root. See the README quickstart for
-a full example with all eight gate layers.
+a full example with all twelve gate layers.
 
 ## The gauntlet's mutation gate fails with timeouts
 
@@ -59,11 +66,16 @@ too large.
 
 The plugin searches, in order: `$REGULUS_BIN`, `bin/regulus.exe`,
 `bin/regulus`, `binaries/regulus-<platform>-<arch>`, `~/.regulus/bin`,
-and PATH. If none exists:
+and PATH. If none exists, build the stamped local binary with the
+documented flow:
 
 ```bash
-go build -o bin/regulus ./cmd/regulus
+npm run build   # = scripts/build.bash → binaries/ + stamped bin/regulus[.exe]
 ```
+
+A raw `go build -o bin/regulus ./cmd/regulus` also works but stays
+unstamped by design — `regulus doctor` warns (`WARNING — unstamped dev
+build`) until you rebuild with `npm run build`.
 
 ## `regulus memory search` shows "N commits behind"
 
@@ -134,7 +146,10 @@ regulus memory reindex
 Run it once after upgrading to v2.0, and again whenever search or
 `suggest` complains the index is stale — any save after the last
 reindex makes it stale (the index pins the log's sha256, so staleness
-is exact, not heuristic). Reindexing is a pure function of the log:
+is exact, not heuristic). You don't have to guess: `regulus status`
+reports a `memory:` line (`fresh`, `stale`, `missing`, or nothing to
+index yet) and `regulus memory doctor` an `index:` line, both naming
+the repairing command. Reindexing is a pure function of the log:
 twice on the same log yields a byte-identical file, and stdout prints
 the pinned sha. On an empty log it refuses ("no observations log yet")
 — save an observation first.
@@ -143,8 +158,11 @@ the pinned sha. On an empty log it refuses ("no observations log yet")
 
 That is the designed degrade path, not an error: the index is missing,
 stale (the log changed since the last reindex), or corrupt, so search
-ran lexical-only and told you on stderr. Results are still correct,
-just without vector recall. Fix it with `regulus memory reindex`. To
+ran lexical-only and told you on stderr, with the repairing command.
+Results are still correct,
+just without vector recall. Fix it with `regulus memory reindex`
+(`regulus status` shows the staleness beforehand on its `memory:` line,
+so the warning never surprises). To
 force the old path on purpose (no warning), pass `--lexical`:
 
 ```bash
@@ -185,3 +203,29 @@ first. Notes on the output:
 - The source itself and `supersedes`-hidden observations never appear.
   No candidates ("no suggestions above threshold") means nothing cleared
   the 0.5 floor, not an error.
+
+## `.regulus/traces/` and `.regulus/evidence/` keep growing — retention policy
+
+`.regulus/` is local runtime state, gitignored (`.gitignore`), never
+committed — the committed receipts trail is `docs/EVIDENCE.md`,
+regenerated only on `main` by `.github/workflows/gauntlet.yml:66-77`.
+CI uploads gate receipts as an artifact with `retention-days: 7`
+(`gauntlet.yml:99`); there is no local equivalent because local runs
+are the audit source the CI trail is rendered from.
+
+There is no global `gc`/`prune` command by design — evidence of closed
+tasks must not be deleted without authorization. Prune manually,
+per scope, and only what you own:
+
+```bash
+# traces: per-session prune (--keep N keeps the last N records of that session)
+regulus trace prune --session <session-id> [--keep N]
+
+# evidence: list/show only, no prune subcommand — remove one task dir by hand,
+# never evidence of a closed task without explicit authorization:
+#   Remove-Item -Recurse .regulus/evidence/<task__name>/
+```
+
+Sizes at last review (2026-10-30): 49 trace sessions,
+39 evidence task dirs (~369 receipts). Nothing was deleted for this
+policy — the directories stay until their owners prune them.

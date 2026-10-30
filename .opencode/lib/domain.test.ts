@@ -9,6 +9,11 @@ import {
   extractPaths,
   findChartRefs,
   findDomainInChart,
+  formatGateFailure,
+  formatGateResult,
+  GATE_RUN_TIMEOUT_MS_DEFAULT,
+  GATE_RUN_TIMEOUT_MS_FLOOR,
+  gateRunTimeoutMs,
   REGULUS_CONTRACT,
   resolveDomain,
   suggestSkills,
@@ -432,5 +437,52 @@ describe("contract enforcement wiring (S3)", () => {
     expect(resolveBlock).toContain("REGULUS_CONTRACT");
     // the refusal message carries the required version, per the Chart
     expect(resolveBlock).toMatch(/contract \$\{REGULUS_CONTRACT\}/);
+  });
+});
+
+describe("gate_run timeout (D3)", () => {
+  test("default covers the long gauntlet (>= 600s)", () => {
+    expect(GATE_RUN_TIMEOUT_MS_DEFAULT).toBeGreaterThanOrEqual(600_000);
+    expect(gateRunTimeoutMs("")).toBe(GATE_RUN_TIMEOUT_MS_DEFAULT);
+  });
+  test("explicit value passes through, floored at 600s", () => {
+    expect(gateRunTimeoutMs("3600000")).toBe(3_600_000);
+    expect(gateRunTimeoutMs("600000")).toBe(GATE_RUN_TIMEOUT_MS_FLOOR);
+    expect(gateRunTimeoutMs("1000")).toBe(GATE_RUN_TIMEOUT_MS_FLOOR);
+  });
+  test("blank or non-numeric falls back to the default", () => {
+    expect(gateRunTimeoutMs("   ")).toBe(GATE_RUN_TIMEOUT_MS_DEFAULT);
+    expect(gateRunTimeoutMs("soon")).toBe(GATE_RUN_TIMEOUT_MS_DEFAULT);
+  });
+  test("gate_run execute never uses the 30s spawn budget", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const gateBlock = src.slice(src.indexOf('name: "gate_run"'), src.indexOf('name: "spec_check"'));
+    expect(gateBlock).toContain("gateRunTimeoutMs()");
+    expect(gateBlock).not.toMatch(/timeoutMs\s*=\s*30000/);
+    expect(gateBlock).toContain("formatGateResult");
+    expect(gateBlock).toContain("formatGateFailure");
+  });
+});
+
+describe("gate_run content (D3)", () => {
+  test("success passes output through untouched", () => {
+    expect(formatGateResult("gauntlet: 2/2 gates passed", 0)).toBe("gauntlet: 2/2 gates passed");
+  });
+  test("failure appends the non-zero exit code", () => {
+    const got = formatGateResult("gauntlet: stopped at gate \"x\"", 1);
+    expect(got).toContain("stopped at gate");
+    expect(got).toContain("exit code: 1");
+  });
+  test("empty output never stays empty", () => {
+    expect(formatGateResult("", 0)).toBe("(no output)");
+    const failed = formatGateResult("", 1);
+    expect(failed).toContain("(no output)");
+    expect(failed).toContain("exit code: 1");
+  });
+  test("spawn failure becomes content with exit code -1, never a throw", () => {
+    const got = formatGateFailure("timed out after 3600000ms");
+    expect(got).toContain("timed out");
+    expect(got).toContain("exit code: -1");
+    expect(formatGateFailure("   ")).toContain("exit code: -1");
   });
 });

@@ -3,29 +3,29 @@
   "permission": {
     "bash": {
       "*": "allow",
-      "rm *": "deny",
-      "rmdir *": "deny",
+      "dd *": "deny",
       "del *": "deny",
-      "rd *": "deny",
-      "git reset --hard*": "deny",
+      "format *": "deny",
+      "git branch -D*": "deny",
+      "git checkout --*": "deny",
       "git clean *": "deny",
       "git push *force*": "deny",
-      "git branch -D*": "deny",
-      "git stash drop*": "deny",
-      "git rm*": "deny",
-      "git checkout --*": "deny",
-      "git restore*": "deny",
       "git rebase*": "deny",
-      "format *": "deny",
+      "git reset --hard*": "deny",
+      "git restore*": "deny",
+      "git rm*": "deny",
+      "git stash drop*": "deny",
       "mkfs*": "deny",
-      "dd *": "deny"
+      "rd *": "deny",
+      "rm *": "deny",
+      "rmdir *": "deny"
     },
+    "doom_loop": "ask",
     "edit": {
       "*": "allow",
       "*.env": "ask",
       "*.env.*": "ask",
       "*.env.example": "allow"
-    },
-    "doom_loop": "ask"
+    }
   }
 }

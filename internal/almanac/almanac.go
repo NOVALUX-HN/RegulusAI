@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -158,8 +159,11 @@ func Save(root string, o *Observation, now time.Time) (Observation, error) {
 	return saved, nil
 }
 
-// All returns every observation in file order (oldest first). A missing
-// log is an empty Almanac.
+// All returns every readable observation in file order (oldest first). A
+// missing log is an empty Almanac. Malformed lines are skipped with a
+// warning (log to stderr) instead of aborting, so one corrupt line never
+// hides the rest; `Doctor` remains the source of truth for malformed
+// line numbers.
 func All(root string) ([]Observation, error) {
 	f, err := os.Open(File(root))
 	if os.IsNotExist(err) {
@@ -182,7 +186,8 @@ func All(root string) ([]Observation, error) {
 		}
 		var o Observation
 		if err := json.Unmarshal([]byte(line), &o); err != nil {
-			return nil, fmt.Errorf("malformed observation at line %d: %v", ln, err)
+			log.Printf("almanac: skipping malformed observation at line %d: %v", ln, err)
+			continue
 		}
 		all = append(all, o)
 	}

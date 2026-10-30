@@ -114,17 +114,47 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 			fmt.Fprintf(c.Stdout, "orphan relations: %s %s %s\n", r.From, r.Relation, r.To)
 		}
 	}
+	// H3 (S5): doctor also surfaces index freshness with the repairing
+	// command — a save after the last reindex makes hybrid search fall
+	// back to lexical, and that must never surprise.
+	switch state, err := almanac.IndexState("."); {
+	case err != nil:
+		fmt.Fprintf(c.Stdout, "index:      unreadable — %v\n", err)
+	case state == "fresh":
+		fmt.Fprintln(c.Stdout, "index:      fresh (hybrid ranking active)")
+	case state == "empty":
+		fmt.Fprintln(c.Stdout, "index:      no observations yet — nothing to index")
+	default: // stale | missing
+		fmt.Fprintf(c.Stdout, "index:      %s — run `regulus memory reindex`\n", state)
+	}
 	return 0
 }
 
-// memoryReindexCmd implements `regulus memory reindex`: rebuild the
-// derived retrieval.bin as a pure function of observations.jsonl.
+// memoryReindexCmd implements `regulus memory reindex [--embedder <id>]`:
+// rebuild the derived retrieval.bin as a pure function of
+// observations.jsonl. The header pins {embedder, dim, version} and stdout
+// names the encoder, so evidence receipts pin which encoder produced
+// the retrieval.
 func (c CLI) memoryReindexCmd(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory reindex")
+	fs := flag.NewFlagSet("memory reindex", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	embedder := fs.String("embedder", "", "encoder id (default "+almanac.EmbedderID+"; only it ships — ONNX deferred)")
+	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	count, sha, err := almanac.Reindex(".")
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory reindex [--embedder <id>]")
+		return 2
+	}
+	if _, err := almanac.LookupEmbedder(*embedder); err != nil {
+		fmt.Fprintf(c.Stderr, "memory reindex: %v\nusage: regulus memory reindex [--embedder <id>]\n", err)
+		return 2
+	}
+	id := *embedder
+	if id == "" {
+		id = almanac.EmbedderID
+	}
+	count, sha, err := almanac.ReindexWith(".", *embedder)
 	if errors.Is(err, almanac.ErrNoLog) {
 		fmt.Fprintln(c.Stderr, "memory reindex: no observations log yet — save an observation first")
 		return 1
@@ -133,7 +163,7 @@ func (c CLI) memoryReindexCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory reindex: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(c.Stdout, "reindexed: %d observation(s)\nsha256: %s\n", count, sha)
+	fmt.Fprintf(c.Stdout, "reindexed: %d observation(s)\nembedder: %s\nsha256: %s\n", count, id, sha)
 	return 0
 }
 
@@ -310,7 +340,12 @@ func (c CLI) memorySearchCmd(args []string) int {
 	latest := fs.Bool("latest", false, "collapse each topic chain to its best hit (default: all coexist)")
 	includeSuperseded := fs.Bool("include-superseded", false, "show observations a supersedes relation hides")
 	lexical := fs.Bool("lexical", false, "force lexical-only search (skip hybrid semantic ranking)")
+	embedder := fs.String("embedder", "", "encoder id for the vector channel (default "+almanac.EmbedderID+")")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if _, err := almanac.LookupEmbedder(*embedder); err != nil {
+		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 2
 	}
 	q := almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, Limit: *limit, Any: *any, Latest: *latest, IncludeSuperseded: *includeSuperseded}
@@ -320,9 +355,9 @@ func (c CLI) memorySearchCmd(args []string) int {
 		hits, err = almanac.Search(".", q)
 	} else {
 		var degraded bool
-		hits, degraded, err = almanac.HybridSearch(".", q)
+		hits, degraded, err = almanac.HybridSearchWith(".", q, *embedder)
 		if err == nil && degraded {
-			fmt.Fprintln(c.Stderr, "warning: semantic index stale or missing — lexical only")
+			fmt.Fprintln(c.Stderr, "warning: semantic index stale or missing — lexical only (run `regulus memory reindex` to restore hybrid ranking)")
 		}
 	}
 	if err != nil {
@@ -442,12 +477,19 @@ func (c CLI) memoryRelateCmd(args []string) int {
 }
 
 // memoryRelateSuggest prints the vector-channel candidates for id, one per
-// line `id cosine title`. Unlike search there is no lexical fallback here:
-// suggestions are defined as vector similarities, so a missing or stale
-// index refuses with a reindex pointer instead of presenting keyword hits
-// as similarities.
+// line `id cosine title`. Suggestion writes nothing. A missing, stale or
+// corrupt index is rebuilt automatically (cheap, deterministic) with a
+// note on stderr naming the repair — suggest never refuses a known id in
+// silence.
 func (c CLI) memoryRelateSuggest(id string) int {
-	sugs, err := almanac.SuggestRelated(".", id)
+	sugs, rebuilt, err := almanac.SuggestRelated(".", id)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory relate: %v\n", err)
+		return 1
+	}
+	if rebuilt {
+		fmt.Fprintln(c.Stderr, "note: semantic index was stale or missing — rebuilt automatically (run `regulus memory reindex` to refresh it yourself)")
+	}
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory relate: %v\n", err)
 		return 1
@@ -498,14 +540,22 @@ func (c CLI) memoryImportCmd(args []string) int {
 	return 0
 }
 
-// memoryContextCmd implements `regulus memory context` — the resume
-// block, DATA-framed.
+// memoryContextCmd implements `regulus memory context [--limit N]` — the
+// resume block, DATA-framed. Without --limit every session note is shown;
+// with --limit only the latest N notes are shown with an explicit
+// "showing latest N of M" line.
 func (c CLI) memoryContextCmd(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context")
+	fs := flag.NewFlagSet("memory context", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	limit := fs.Int("limit", 0, "show only the latest N session notes (0: all)")
+	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	ctx, err := almanac.Context(".", time.Now().UTC())
+	if fs.NArg() != 0 || *limit < 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N]")
+		return 2
+	}
+	ctx, err := almanac.ContextWithLimit(".", time.Now().UTC(), *limit)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
 		return 1

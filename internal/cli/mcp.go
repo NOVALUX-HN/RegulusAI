@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"regulus-ai/internal/contract"
+	"regulus-ai/internal/receipts"
 )
 
 // mcpProtocolVersion is the MCP wire version the server speaks.
@@ -145,8 +146,25 @@ func (c CLI) mcpCallTool(id json.RawMessage, name string, args map[string]any) [
 		return mcpErr(id, -32602, msg)
 	}
 	return mcpOK(id, map[string]any{
-		"content": []any{map[string]any{"type": "text", "text": mcpCombine(stdout, stderr)}},
+		"content": []any{map[string]any{"type": "text", "text": mcpContent(stdout, stderr, code)}},
 	})
+}
+
+// mcpContent builds the text block for a tool result: stdout first,
+// then stderr, bounded with its SHA-256 when it exceeds the receipt
+// capture budget, never empty, and always carrying the exit code when
+// the tool did not succeed — so a gate failure (exit 1) can never
+// surface as a bare verdict, an empty string, or null.
+func mcpContent(stdout, stderr string, code int) string {
+	text := mcpCombine(stdout, stderr)
+	if len(text) > receipts.MaxCapture {
+		short, sha := receipts.Capture(text)
+		text = short + "\nsha256: " + sha
+	}
+	if code != 0 {
+		text += fmt.Sprintf("\nexit code: %d", code)
+	}
+	return text
 }
 
 // mcpCombine merges the sub-command buffers the way a terminal shows

@@ -66,6 +66,19 @@ func sha256Hex(b []byte) string {
 // observations.jsonl. It returns the observation count and the hex
 // sha256 of the source log.
 func Reindex(root string) (int, string, error) {
+	return ReindexWith(root, "")
+}
+
+// ReindexWith rebuilds retrieval.bin with the named embedder ("" means
+// the default hash-ngram-v1). An unknown embedder id refuses before any
+// write; the header pins {embedder, dim, version} so a later load with a
+// different encoder refuses with ErrHeaderMismatch instead of reading
+// foreign vectors.
+func ReindexWith(root, embedderID string) (int, string, error) {
+	emb, err := LookupEmbedder(embedderID)
+	if err != nil {
+		return 0, "", err
+	}
 	raw, err := os.ReadFile(File(root))
 	if os.IsNotExist(err) {
 		return 0, "", ErrNoLog
@@ -81,9 +94,9 @@ func Reindex(root string) (int, string, error) {
 		return 0, "", ErrNoLog
 	}
 	sum := sha256.Sum256(raw)
-	buf := newIndexBuffer(len(all), sum)
+	buf := newIndexBuffer(emb.ID(), len(all), sum)
 	for _, o := range all {
-		writeEntry(buf, o)
+		writeEntry(buf, o, emb)
 	}
 	if err := os.MkdirAll(filepath.Dir(IndexPath(root)), 0o755); err != nil {
 		return 0, "", err
@@ -95,12 +108,12 @@ func Reindex(root string) (int, string, error) {
 }
 
 // newIndexBuffer writes the fixed header prefix.
-func newIndexBuffer(count int, sum [32]byte) *bytes.Buffer {
+func newIndexBuffer(embedder string, count int, sum [32]byte) *bytes.Buffer {
 	buf := &bytes.Buffer{}
 	buf.Write(indexMagic[:])
 	writeU32(buf, IndexVersion)
-	writeU16(buf, uint16(len(EmbedderID)))
-	buf.WriteString(EmbedderID)
+	writeU16(buf, uint16(len(embedder)))
+	buf.WriteString(embedder)
 	writeU32(buf, uint32(EmbedDim))
 	writeU32(buf, uint32(count))
 	buf.Write(sum[:])
@@ -108,23 +121,68 @@ func newIndexBuffer(count int, sum [32]byte) *bytes.Buffer {
 }
 
 // writeEntry appends one (id + vector) record.
-func writeEntry(buf *bytes.Buffer, o Observation) {
+func writeEntry(buf *bytes.Buffer, o Observation, emb Embedder) {
 	writeU16(buf, uint16(len(o.ID)))
 	buf.WriteString(o.ID)
-	vec := EmbedObservation(o)
+	vec := emb.EmbedObservation(o)
 	for _, b := range vec {
 		buf.WriteByte(byte(b))
 	}
 }
 
+// IndexState reports the retrieval index freshness for status surfaces:
+// "fresh" (hybrid ranking active), "stale" (the log changed since the
+// last reindex, or the index is corrupt — search degrades to lexical),
+// "missing" (observations exist but retrieval.bin does not — never
+// indexed), "empty" (no observations yet — nothing to index). An error
+// means the log itself is unreadable. Stale, missing and corrupt share
+// one repair: `regulus memory reindex`.
+func IndexState(root string) (string, error) {
+	all, err := All(root)
+	if err != nil {
+		return "", err
+	}
+	if len(all) == 0 {
+		return "empty", nil
+	}
+	_, hdr, err := LoadIndex(root)
+	if os.IsNotExist(err) {
+		return "missing", nil
+	}
+	if err != nil {
+		return "stale", nil
+	}
+	raw, err := os.ReadFile(File(root))
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
+		return "stale", nil
+	}
+	return "fresh", nil
+}
+
 // LoadIndex reads retrieval.bin, refusing untrusted headers with
 // ErrHeaderMismatch. Vector bytes are data, never a trust decision.
 func LoadIndex(root string) ([]IndexEntry, IndexHeader, error) {
+	return LoadIndexWith(root, "")
+}
+
+// LoadIndexWith reads retrieval.bin expecting the named embedder (""
+// means the default hash-ngram-v1). An unknown embedder id refuses; a
+// header naming any other encoder refuses with ErrHeaderMismatch —
+// rebuild with the same --embedder, never read foreign vectors.
+func LoadIndexWith(root, embedderID string) ([]IndexEntry, IndexHeader, error) {
+	emb, err := LookupEmbedder(embedderID)
+	if err != nil {
+		return nil, IndexHeader{}, err
+	}
 	data, err := os.ReadFile(IndexPath(root))
 	if err != nil {
 		return nil, IndexHeader{}, err
 	}
-	hdr, off, err := parseHeader(data)
+	hdr, off, err := parseHeader(data, emb.ID())
 	if err != nil {
 		return nil, IndexHeader{}, err
 	}
@@ -135,8 +193,9 @@ func LoadIndex(root string) ([]IndexEntry, IndexHeader, error) {
 	return entries, hdr, nil
 }
 
-// parseHeader validates magic, version, embedder and dim.
-func parseHeader(data []byte) (IndexHeader, int, error) {
+// parseHeader validates magic, version, embedder and dim against the
+// expected encoder: a foreign embedder name is never trusted.
+func parseHeader(data []byte, wantEmbedder string) (IndexHeader, int, error) {
 	var hdr IndexHeader
 	off := 0
 	magic, err := take(data, &off, 4)
@@ -158,8 +217,8 @@ func parseHeader(data []byte) (IndexHeader, int, error) {
 	if err != nil {
 		return hdr, 0, err
 	}
-	if string(name) != EmbedderID {
-		return hdr, 0, fmt.Errorf("%w: embedder %q != %q", ErrHeaderMismatch, name, EmbedderID)
+	if string(name) != wantEmbedder {
+		return hdr, 0, fmt.Errorf("%w: embedder %q != %q", ErrHeaderMismatch, name, wantEmbedder)
 	}
 	dim, err := readU32(data, &off)
 	if err != nil {

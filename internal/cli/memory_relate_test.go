@@ -2,8 +2,9 @@ package cli
 
 // T4 (S9) `memory relate --suggest <id>`: vector candidates print top-k
 // above the floor, one per line `id cosine title`; nothing is written.
-// Missing/stale index refuses on stderr; the plain relate path is
-// untouched; usage mentions --suggest.
+// R2 (S2): a missing/stale index rebuilds automatically with a stderr
+// note naming the repair; the plain relate path is untouched; usage
+// mentions --suggest.
 
 import (
 	"strconv"
@@ -152,39 +153,66 @@ func TestMemoryRelateSuggestFloorFiltersUnrelated(t *testing.T) {
 	}
 }
 
-func TestMemoryRelateSuggestMissingIndexRefuses(t *testing.T) {
-	t.Chdir(t.TempDir())
-	src := relateSuggestSeed(t, &almanac.Observation{
-		Type: almanac.TypeDecision, Title: "chose postgres", Content: "pooling everywhere",
-	}, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))
-	c, _, errb := newCLI(nil)
-	if code := c.Run([]string{"memory", "relate", "--suggest", src.ID}); code == 0 {
-		t.Fatal("missing index must refuse with a non-zero exit")
-	}
-	if !strings.Contains(strings.ToLower(errb.String()), "reindex") {
-		t.Fatalf("missing-index refusal must point at reindex, got %q", errb.String())
-	}
-}
-
-func TestMemoryRelateSuggestStaleIndexRefuses(t *testing.T) {
+// R2 (S2): save sin reindex previo no rehúsa — repara y responde con
+// aviso en stderr nombrando el reparo.
+func TestMemoryRelateSuggestMissingIndexAutoRebuilds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	base := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	src := relateSuggestSeed(t, &almanac.Observation{
-		Type: almanac.TypeDecision, Title: "chose postgres", Content: "pooling everywhere",
+		Type:    almanac.TypeDecision,
+		Title:   "chose postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
 	}, base)
+	para := relateSuggestSeed(t, &almanac.Observation{
+		Type:    almanac.TypeDecision,
+		Title:   "picked postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
+	}, base.Add(time.Hour))
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"memory", "relate", "--suggest", src.ID}); code != 0 {
+		t.Fatalf("suggest with missing index: exit = %d, stderr = %q", code, errb.String())
+	}
+	if !strings.Contains(strings.ToLower(errb.String()), "reindex") {
+		t.Fatalf("auto-rebuild must name the repair on stderr, got %q", errb.String())
+	}
+	if !strings.Contains(out.String(), para.ID) {
+		t.Fatalf("rebuilt suggest must rank the paraphrase, got %q", out.String())
+	}
+}
+
+// R2 (S2): save tras el último reindex no rehúsa — repara con aviso y el
+// índice reconstruido ve el save posterior (una lectura stale lo perdería).
+func TestMemoryRelateSuggestStaleIndexAutoRebuilds(t *testing.T) {
+	t.Chdir(t.TempDir())
+	base := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	src := relateSuggestSeed(t, &almanac.Observation{
+		Type:    almanac.TypeDecision,
+		Title:   "chose postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
+	}, base)
+	relateSuggestSeed(t, &almanac.Observation{
+		Type:    almanac.TypeDecision,
+		Title:   "chose bun runtime for the plugin host",
+		Content: "cold start under fifty milliseconds keeps the picker responsive",
+	}, base.Add(time.Hour))
 	cR, _, _ := newCLI(nil)
 	if code := cR.Run([]string{"memory", "reindex"}); code != 0 {
 		t.Fatalf("reindex: exit = %d", code)
 	}
-	relateSuggestSeed(t, &almanac.Observation{
-		Type: almanac.TypeDecision, Title: "second choice", Content: "more content",
-	}, base.Add(time.Hour))
-	c, _, errb := newCLI(nil)
-	if code := c.Run([]string{"memory", "relate", "--suggest", src.ID}); code == 0 {
-		t.Fatal("stale index must refuse with a non-zero exit")
+	para := relateSuggestSeed(t, &almanac.Observation{
+		Type:    almanac.TypeDecision,
+		Title:   "picked postgres connection pooling",
+		Content: "pooling keeps p95 latency flat under load; sized the pool to twice the worker count",
+	}, base.Add(2*time.Hour))
+	c, out, errb := newCLI(nil)
+	if code := c.Run([]string{"memory", "relate", "--suggest", src.ID}); code != 0 {
+		t.Fatalf("suggest with stale index: exit = %d, stderr = %q", code, errb.String())
 	}
 	if !strings.Contains(strings.ToLower(errb.String()), "reindex") {
-		t.Fatalf("stale-index refusal must point at reindex, got %q", errb.String())
+		t.Fatalf("auto-rebuild must name the repair on stderr, got %q", errb.String())
+	}
+	if !strings.Contains(out.String(), para.ID) {
+		t.Fatalf("rebuilt suggest must see the post-reindex save, got %q", out.String())
 	}
 }
 

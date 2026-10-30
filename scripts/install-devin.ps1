@@ -19,21 +19,12 @@
 # Pure PowerShell (no bash, no node). Exit 0 on success, 1 with a message
 # on stderr otherwise. Requires Go on PATH.
 #
-# TODO (honest, no bash mirror): there is no scripts/install-devin.bash.
-# A correct mirror is NOT trivial (more than 10 lines): the stdio
-# initialize smoke with a 30s timeout plus .exe/PATH handling needs
-# non-portable helpers (timeout/coproc availability differs between
-# Git-Bash, Cloud and minimal containers), so a thin mirror would lie
-# about covering "Git-Bash/Cloud". Git-Bash on Windows can run this file
-# directly:
+# Bash mirror: scripts/install-devin.bash (same S1+S2: stamped build,
+# ~/.local/bin install, `contract` + MCP initialize smoke). The mirror
+# needs GNU timeout + grep (Git-Bash, Cloud and minimal containers have
+# them; without them it fails loud instead of lying). Git-Bash on Windows
+# can also run this file directly:
 #   powershell.exe -NoProfile -File scripts/install-devin.ps1
-# Linux/Cloud users without PowerShell can reproduce it with:
-#   go build -trimpath -ldflags "-X main.version=$(node -p "require('./package.json').version")"
-#     -o bin/regulus ./cmd/regulus
-#   install -m755 bin/regulus ~/.local/bin/regulus   # ~/.local/bin on PATH
-#   regulus contract          # want: regulus.contract/v1
-#   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-#     | timeout 30 regulus mcp | grep -q regulus.contract/v1
 
 $ErrorActionPreference = "Stop"
 
