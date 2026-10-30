@@ -20,6 +20,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"regulus-ai/internal/contract"
 )
 
 // mcpProtocolVersion is the MCP wire version the server speaks.
@@ -104,7 +106,7 @@ func (c CLI) handleMCPLine(line string) []byte {
 		return mcpOK(req.ID, map[string]any{
 			"protocolVersion": mcpProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "regulus", "version": c.Version},
+			"serverInfo":      map[string]any{"name": "regulus", "version": c.Version, "contract": contract.Version},
 		})
 	case "tools/list":
 		return mcpOK(req.ID, map[string]any{"tools": mcpToolList()})

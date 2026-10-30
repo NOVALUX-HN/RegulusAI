@@ -121,6 +121,21 @@ func TestMCPInitializeHandshake(t *testing.T) {
 	}
 }
 
+func TestMCPInitializeExposesContract(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "initialize", map[string]any{}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	info, ok := resps[0].Result["serverInfo"].(map[string]any)
+	if !ok {
+		t.Fatalf("serverInfo missing: %v", resps[0].Result)
+	}
+	if info["contract"] != contract.Version {
+		t.Fatalf("serverInfo.contract = %v, want %q", info["contract"], contract.Version)
+	}
+}
+
 func TestMCPToolsListNames(t *testing.T) {
 	c := mcpTestCLI()
 	resps := runMCP(c, mcpCall(1, "tools/list", nil))
