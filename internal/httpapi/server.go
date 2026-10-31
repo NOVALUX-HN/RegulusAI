@@ -28,6 +28,11 @@ import (
 	"regulus-ai/internal/mcp"
 )
 
+// DefaultDashboardPort is the fixed visual port (S1 "puerto especial",
+// S2 always-on visibility). Loopback-only by default; override with
+// `regulus serve --port N`.
+const DefaultDashboardPort = 17817
+
 // Server is the read-only HTTP adapter. Version, Probe and Runner mirror
 // cli.CLI's injected dependencies so each request can run a core path
 // with private buffers inheriting the server's configuration.
@@ -86,7 +91,9 @@ func (s Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/version", s.handleVersion)
-	mux.HandleFunc("/", s.handleNotFound)
+	mux.HandleFunc("/v1/metrics", s.handleMetrics)
+	mux.HandleFunc("/v1/almanac/summary", s.handleAlmanacSummary)
+	mux.HandleFunc("/", s.handleDashboard)
 	return mux
 }
 

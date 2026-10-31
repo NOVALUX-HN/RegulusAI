@@ -166,6 +166,7 @@ Commands:
   library forget --domain <d> --task <t>  drop one task snapshot
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
   mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
+  serve [--port N] [--bind ADDR]   serve the read-only dashboard (default 127.0.0.1:17817)
   memory note|show|save|search|history|context|prune|doctor|import|pin|unpin|relate|export|library   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants

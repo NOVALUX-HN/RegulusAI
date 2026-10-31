@@ -1,0 +1,121 @@
+// Dashboard read-only JSON (T1, S1): metrics + almanac summary over
+// EXISTING stores. No producer rewrites. Free-text passes through
+// observability redaction before leaving the process.
+package httpapi
+
+import (
+	"net/http"
+	"time"
+
+	"regulus-ai/internal/almanac"
+	"regulus-ai/internal/budget"
+	"regulus-ai/internal/library"
+	"regulus-ai/internal/observability"
+	"regulus-ai/internal/reflect"
+)
+
+// metricsData is Summarize plus today's evolution against the cap.
+type metricsData struct {
+	Metrics       observability.Metrics `json:"metrics"`
+	EvolutionUsed int                   `json:"evolution_used"`
+	EvolutionCap  int                   `json:"evolution_cap"`
+}
+
+// almanacSummaryData counts what the Almanac holds, by type.
+type almanacSummaryData struct {
+	Total       int            `json:"total"`
+	ByType      map[string]int `json:"by_type"`
+	Lessons     int            `json:"lessons_admitted"`
+	Candidates  int            `json:"candidates_pending"`
+	Oldest      string         `json:"oldest,omitempty"`
+	Newest      string         `json:"newest,omitempty"`
+	IndexStatus string         `json:"index_status"`
+}
+
+func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
+		return
+	}
+	m, err := observability.Summarize(".", "")
+	if err != nil {
+		writeEnvelope(w, http.StatusOK, Internal("metrics: "+err.Error()))
+		return
+	}
+	used, err := budget.TodayEvolutionCount(".", time.Now().UTC())
+	if err != nil {
+		writeEnvelope(w, http.StatusOK, Internal("metrics budget: "+err.Error()))
+		return
+	}
+	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(".")}, "", 0)
+	writeEnvelope(w, status, env)
+}
+
+func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
+		return
+	}
+	all, err := almanac.All(".")
+	if err != nil {
+		writeEnvelope(w, http.StatusOK, Internal("almanac: "+err.Error()))
+		return
+	}
+	byType := map[string]int{}
+	var oldest, newest time.Time
+	for _, o := range all {
+		byType[o.Type]++
+		if oldest.IsZero() || o.SavedAt.Before(oldest) {
+			oldest = o.SavedAt
+		}
+		if newest.IsZero() || o.SavedAt.After(newest) {
+			newest = o.SavedAt
+		}
+	}
+	lessons, candidates := 0, 0
+	if domains, err := library.Domains("."); err == nil {
+		for _, d := range domains {
+			if ls, err := library.List(".", d); err == nil {
+				lessons += len(ls)
+			}
+			if cs, err := library.Candidates(".", d); err == nil {
+				candidates += len(cs)
+			}
+		}
+	}
+	idx, _ := almanac.IndexState(".")
+	oldestS, newestS := "", ""
+	if !oldest.IsZero() {
+		oldestS = oldest.UTC().Format(time.RFC3339)
+	}
+	if !newest.IsZero() {
+		newestS = newest.UTC().Format(time.RFC3339)
+	}
+	status, env := MapResult(almanacSummaryData{
+		Total: len(all), ByType: byType,
+		Lessons: lessons, Candidates: candidates,
+		Oldest: oldestS, Newest: newestS, IndexStatus: idx,
+	}, "", 0)
+	writeEnvelope(w, status, env)
+}
+
+// handleDashboard serves the embedded visual (T2, S1-S2): Harness /
+// Guardado / Aprendizaje with 30s auto-refresh. Unknown /v1/* still 404s
+// through the shared envelope so versioned-contract tests stay green.
+func (s Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
+		return
+	}
+	if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/v1/" {
+		s.handleNotFound(w, r)
+		return
+	}
+	if r.URL.Path != "/" && r.URL.Path != "/dashboard" {
+		s.handleNotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(dashboardHTML))
+}
