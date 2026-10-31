@@ -4,6 +4,52 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.10.0] - 2026-10-31
+
+Same branch (`feat/v0.4-evolution`); tags cut on main at merge.
+
+Batch delivered since 0.9.0 (HEAD `9953490`):
+
+### Added
+- win-hardening (`50249aa`): CRLF-tolerant defaults, resolve log,
+  OS-aware VersionLine, portable ShRunner test.
+- crap-paydown (`5ee7d31`): SPLIT+COVER serve/Resolve/run/gateCmd/Assess
+  + resto hasta max 29.46.
+- shell-LF (`d355993`): enforce LF for shell entrypoints via
+  `.gitattributes` so bash build works on Windows.
+- retention-gc (`172d5b6`): evidence prune con guard CLOSED, trace
+  prune `--all`, retention CI 30d.
+- memory-hybrid (`145365e`): auto-reindex tras mutar, dedup env
+  `REGULUS_DEDUP_THRESHOLD`, round-trip pins/relations/status.
+- toolchain-gates (`9953490`): mutation hermética sobre HEAD export,
+  preflight fail-fast, docs toolchain.
+
+### Fixed
+- CRLF scripts: shell entrypoints forced to LF (`d355993`); bash build
+  no longer breaks on Windows pipefail.
+- TestShRunnerEnvUnsetFilter portable (`50249aa`).
+- CRAP max 156→29.46 (`5ee7d31`).
+- resolve-log (`50249aa`): resolve failures leave a log trail.
+- VersionLine OS-aware (`50249aa`): stamped version line handles CRLF.
+
+Release gauntlet `bin/regulus gate run release-0-10-0/V1`: 12/12 pass
+(receipts below, append-only).
+
+| Layer | Gate | Receipt |
+|---|---|---|
+| 1 | typecheck | `rec_18e3c1b97c42635c` |
+| 2 | lint | `rec_18e3c1b9c517f4fc` |
+| 3 | build | `rec_18e3c1b9ec69bcd4` |
+| 4 | unit-tests | `rec_18e3c1ba2a3fb1f8` |
+| 5 | coverage-floor (85.20 >= 80.00) | `rec_18e3c1d43a7b92ac` |
+| 6 | mutation | `rec_18e3c1d465bf9ea4` |
+| 7 | crap | `rec_18e3c1d9f5b2dc4c` |
+| 8 | vulncheck | `rec_18e3c1da1012b5bc` |
+| 9 | spec | `rec_18e3c1dac5181524` |
+| 10 | ts-typecheck | `rec_18e3c1dadda0b434` |
+| 11 | ts-unit-tests | `rec_18e3c1daf9680708` |
+| 12 | gofmt | `rec_18e3c1db7214f544` |
+
 ## [Unreleased]
 
 ### Phase 8 — Observability (develop)
