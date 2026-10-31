@@ -10,14 +10,17 @@ import (
 )
 
 // evidenceCmd implements `regulus evidence list [--task <t>] | show
-// <file> | verify [--task <t>]`: the human audit surface (PRD R-G6) —
-// receipts, never diffs — plus the Phase 1 integrity verifier.
+// <file> | verify [--task <t>] | prune --task <t> [--keep N] [--yes] [--force]`:
+// the human audit surface (PRD R-G6) — receipts, never diffs — plus the
+// Phase 1 integrity verifier and the retention-gc pruner.
 func (c CLI) evidenceCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>] | regulus evidence prune --task <task> [--keep N] [--yes] [--force]")
 		return 2
 	}
 	switch args[0] {
+	case "prune":
+		return c.evidencePruneCmd(args[1:])
 	case "verify":
 		return c.evidenceVerifyCmd(args[1:])
 	case "list":
@@ -94,9 +97,62 @@ func (c CLI) evidenceCmd(args []string) int {
 		fmt.Fprintf(c.Stdout, "stderr (sha256 %s):\n%s\n", rec.StderrSHA, rec.Stderr)
 		return 0
 	default:
-		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>] | regulus evidence prune --task <task> [--keep N] [--yes] [--force]")
 		return 2
 	}
+}
+
+// evidencePruneCmd implements `regulus evidence prune --task <slug>
+// [--keep N] [--yes] [--force]`: retention-gc S1. Without --yes it is a
+// dry run (lists, deletes nothing); with --yes it deletes receipts
+// oldest-first keeping the N newest, never manifests, never corrupt/.
+// A task marked CLOSED in charts/ refuses without --force.
+func (c CLI) evidencePruneCmd(args []string) int {
+	fs := flag.NewFlagSet("evidence prune", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	task := fs.String("task", "", "prune only this task's receipts")
+	keep := fs.Int("keep", 0, "keep the N newest receipts")
+	yes := fs.Bool("yes", false, "actually delete (without --yes this is a dry run)")
+	force := fs.Bool("force", false, "allow pruning evidence of a closed task")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *task == "" || *keep < 0 || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evidence prune --task <task> [--keep N] [--yes] [--force]")
+		return 2
+	}
+	toDelete, _, manifests, err := evidence.Plan(".", *task, *keep)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evidence prune: %v\n", err)
+		return 1
+	}
+	closed, err := evidence.IsClosed(".", *task)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evidence prune: %v\n", err)
+		return 1
+	}
+	slug := receipts.Slug(*task)
+	if closed && !*force {
+		fmt.Fprintf(c.Stderr, "refused: evidence of closed task %s — re-run with --force and explicit authorization\n", slug)
+		return 1
+	}
+	if closed && *force {
+		fmt.Fprintf(c.Stderr, "warning: pruning closed task %s with --force (explicit authorization)\n", slug)
+	}
+	if !*yes {
+		fmt.Fprintf(c.Stdout, "dry run: %d receipt(s) would be removed, %d manifest(s) kept\n", len(toDelete), manifests)
+		for _, p := range toDelete {
+			fmt.Fprintln(c.Stdout, p)
+		}
+		return 0
+	}
+	n, err := evidence.Delete(toDelete)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evidence prune: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "pruned %d\n", n)
+	return 0
 }
 
 // evidenceVerifyCmd implements `regulus evidence verify [--task <task>]`:

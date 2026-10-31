@@ -17,7 +17,7 @@ import (
 // trace keeping the last N entries.
 func (c CLI) traceCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N]")
 		return 2
 	}
 	switch args[0] {
@@ -33,7 +33,7 @@ func (c CLI) traceCmd(args []string) int {
 		return c.tracePruneCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N]")
 		return 2
 	}
 }
@@ -90,19 +90,47 @@ func (c CLI) traceSessionsCmd(args []string) int {
 	return 0
 }
 
-// tracePruneCmd implements `regulus trace prune --session <s> [--keep N]`:
-// rotation for unbounded sessions — rewrites the trace keeping only
-// the last N entries (default 200). Unknown sessions are a no-op.
+// tracePruneCmd implements `regulus trace prune --session <s> [--keep N]`
+// and `regulus trace prune --all [--keep N]`: rotation for unbounded
+// sessions — rewrites the trace keeping only the last N entries
+// (default 200). Unknown sessions are a no-op. `--all` applies
+// `trace.Prune` to every session from `trace.Sessions` and reports
+// per session plus a total; files are never removed (prune rewrites
+// via temp+rename only).
 func (c CLI) tracePruneCmd(args []string) int {
 	fs := flag.NewFlagSet("trace prune", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
-	session := fs.String("session", "", "the session id (required)")
+	session := fs.String("session", "", "the session id (required unless --all)")
 	keep := fs.Int("keep", 200, "keep the last N entries")
+	all := fs.Bool("all", false, "prune every session")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *session == "" || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace prune --session <s> [--keep N]")
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N]")
+		return 2
+	}
+	if *all {
+		sessions, err := trace.Sessions(".")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "trace prune: %v\n", err)
+			return 1
+		}
+		total := 0
+		for _, s := range sessions {
+			n, err := trace.Prune(".", s, *keep)
+			if err != nil {
+				fmt.Fprintf(c.Stderr, "trace prune: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(c.Stdout, "trace %s: %d entr(y/ies) kept\n", s, n)
+			total += n
+		}
+		fmt.Fprintf(c.Stdout, "total: %d entr(y/ies) kept across %d session(s)\n", total, len(sessions))
+		return 0
+	}
+	if *session == "" {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N]")
 		return 2
 	}
 	n, err := trace.Prune(".", *session, *keep)

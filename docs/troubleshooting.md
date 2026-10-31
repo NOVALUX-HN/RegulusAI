@@ -207,25 +207,31 @@ first. Notes on the output:
 ## `.regulus/traces/` and `.regulus/evidence/` keep growing — retention policy
 
 `.regulus/` is local runtime state, gitignored (`.gitignore`), never
-committed — the committed receipts trail is `docs/EVIDENCE.md`,
-regenerated only on `main` by `.github/workflows/gauntlet.yml:66-77`.
-CI uploads gate receipts as an artifact with `retention-days: 7`
-(`gauntlet.yml:99`); there is no local equivalent because local runs
-are the audit source the CI trail is rendered from.
+committed. CI uploads gate receipts as an artifact with
+`retention-days: 30` (`gauntlet.yml:77`); local runs are the audit
+source the CI trail is rendered from.
 
-There is no global `gc`/`prune` command by design — evidence of closed
-tasks must not be deleted without authorization. Prune manually,
-per scope, and only what you own:
+There is no global `gc` command by design — evidence of closed
+tasks must not be deleted without authorization. Prune per scope,
+and only what you own:
 
 ```bash
-# traces: per-session prune (--keep N keeps the last N records of that session)
-regulus trace prune --session <session-id> [--keep N]
+# evidence: dry run by default (lists what would be removed, deletes
+# nothing); --yes executes. --keep N keeps the N newest receipts
+# (default 0); manifests (manifest-*.json) are never deleted and
+# corrupt/ is never touched. A task marked CLOSED in charts/ refuses
+# without --force plus explicit authorization:
+regulus evidence prune --task <slug> [--keep N]
+regulus evidence prune --task <slug> --keep 5 --yes
+regulus evidence prune --task <closed-slug> --keep 5 --yes --force   # only with authorization
 
-# evidence: list/show only, no prune subcommand — remove one task dir by hand,
-# never evidence of a closed task without explicit authorization:
-#   Remove-Item -Recurse .regulus/evidence/<task__name>/
+# traces: per-session or bulk rotation (default --keep 200 keeps the
+# last 200 entries of each session). Files are never removed — prune
+# rewrites via temp+rename only, with a per-session report:
+regulus trace prune --session <session-id> [--keep N]
+regulus trace prune --all [--keep N]
 ```
 
-Sizes at last review (2026-10-30): 49 trace sessions,
-39 evidence task dirs (~369 receipts). Nothing was deleted for this
-policy — the directories stay until their owners prune them.
+Sizes at last review (2026-10-31): 82 trace sessions,
+62 evidence task dirs (821 receipts, 2 manifests). Nothing is deleted
+automatically — the directories stay until their owners prune them.
