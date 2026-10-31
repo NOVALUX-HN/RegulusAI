@@ -6,6 +6,22 @@ chart close — see G3.9).
 
 ## [Unreleased]
 
+### Phase 6 — Evolution controlled self-improvement (develop)
+
+- Pipeline OBSERVE → HYPOTHESIZE → PROPOSE → PROBE → EVALUATE →
+  ADOPT / REJECT with validated transitions and explicit stage contracts
+  (docs/evolution.md §1, adr/T6-01).
+- Observation discipline: receipt-backed collectors + attested notes;
+  isolated single cases never generalize (`ErrIsolated`, MinSupport=2).
+- Experiment records (`exp_*`, `.regulus/evolution/`) with exclusive ids,
+  integrity re-checks, sequential/parallel/hybrid runners with run caps
+  and disk-reloaded state (no stale clobbering).
+- Metrics aggregation, pinned baselines, mandatory-guarantee gate,
+  versioned adoption and rollback with audit trail.
+- INV/DOM separation with fundamental-component enforcement; untrusted-
+  proposal checklist + named human approval verified structurally by
+  `Adopt` — no self-approval (adr/T6-02). Library-level, no CLI scope.
+
 ### Phase 5 — Almanac engineering memory (personal use)
 
 - Memory systems derived from type (episodic/semantic/decision/procedural/
