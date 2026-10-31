@@ -169,3 +169,24 @@ period is spent, `regulus reflect` refuses until the human raises it.
   exit codes and receipt contents.
 - **Dogfooding as acceptance:** M4 builds a real feature with Regulus; the
   receipts of that build are v1's acceptance test.
+
+## 11. Runtime independence (Phase 7)
+
+The core is agent-SDK free: `go list -m all` shows only `regulus-ai`
+(pinned by `internal/runtime` boundary tests). Runtimes live outside the
+boundary and speak the `Adapter` contract (`internal/runtime`): lifecycle
+(Open/Report/Fail/Close), task context, agent identity, capabilities,
+permission boundaries, execution metadata, context exchange, results and
+typed errors — with explicit capability negotiation, never silent
+assumption. Only **opencode** is product-supported (the preserved TS
+plugin, contract-gated); claude-code/codex are unclaimed by design — no
+fictitious adapters.
+
+MCP is the agnostic interface (`internal/mcp`): versioned descriptors
+(`regulus.mcp/v1`), capability discovery, JSON-RPC error contract, local
+trust on stdio. It exposes core paths (buffers in/out, same as CLI),
+never duplicating policy. HTTP (`internal/httpapi`) is a minimal read-only
+subset (`GET /v1/status`, `GET /v1/version`) proving the shared envelope:
+same core readout, same error codes, no per-interface policies. Contracts:
+`regulus.contract/v1` (plugin↔core), `regulus.mcp/v1`, `regulus.http/v1` —
+unknown versions refuse explicitly; see `docs/adr/T7-01`, `T7-02`.

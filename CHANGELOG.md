@@ -6,6 +6,20 @@ chart close — see G3.9).
 
 ## [Unreleased]
 
+### Phase 7 — Runtime independence (develop)
+
+- Core is agent-SDK free: zero external modules, pinned by
+  `internal/runtime` boundary tests (docs/architecture.md §11).
+- `Adapter`/`Session` contract with explicit capability negotiation;
+  production registry empty, only opencode supported via the preserved
+  TS plugin — no fictitious adapters (adr/T7-01).
+- MCP as agnostic interface: versioned descriptors (`regulus.mcp/v1`),
+  capability discovery, JSON-RPC error contract, local-trust stdio;
+  exposes core paths without duplicating logic (adr/T7-02).
+- Minimal read-only HTTP adapter (`GET /v1/status`, `GET /v1/version`)
+  proving the shared envelope: same core readout, same error codes.
+- Cross-interface integration, compatibility and S8 acceptance tests.
+
 ### Phase 6 — Evolution controlled self-improvement (develop)
 
 - Pipeline OBSERVE → HYPOTHESIZE → PROPOSE → PROBE → EVALUATE →
