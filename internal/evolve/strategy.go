@@ -57,25 +57,32 @@ type RunCap struct {
 // evolution cap is enforced first (S1): an exhausted day refuses the
 // whole run with no probe firing, and an allowed run records one
 // experiment-run ledger entry before running.
-func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCap, probe ProbeFunc) ([]RunOutcome, error) {
+// checkStrategyArgs validates the strategy name and probe before any
+// ledger work: unknown strategies and a nil probe are refused with no
+// side effects.
+func checkStrategyArgs(strategy Strategy, probe ProbeFunc) error {
 	switch strategy {
 	case StrategySequential, StrategyParallel, StrategyHybrid:
 	default:
-		return nil, fmt.Errorf("evolve: unknown strategy %q (want sequential, parallel or hybrid)", strategy)
+		return fmt.Errorf("evolve: unknown strategy %q (want sequential, parallel or hybrid)", strategy)
 	}
 	if probe == nil {
-		return nil, errors.New("evolve: strategy run needs a probe function")
+		return errors.New("evolve: strategy run needs a probe function")
 	}
-	// Global evolution cap (PRD R-E4, S1): strategy runs consume the
-	// daily ledger like the rest, mirroring reflect.Run. Experiments
-	// carry no task, so Task="" (global cap only); refusals are free
-	// and recorded. RunExperiments has no clock, so the gate reads the
-	// wall clock.
+	return nil
+}
+
+// enforceExperimentBudget enforces the global evolution cap (PRD R-E4,
+// S1): strategy runs consume the daily ledger like the rest, mirroring
+// reflect.Run. Experiments carry no task, so Task="" (global cap only);
+// refusals are free and recorded. An allowed run records one
+// experiment-run ledger entry before running.
+func enforceExperimentBudget(root string, strategy Strategy, n int) error {
 	now := time.Now().UTC()
 	dailyCap := reflect.EvolutionCap(root)
 	today, err := budget.TodayEvolutionCount(root, now)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if today >= dailyCap {
 		if err := budget.Record(root, budget.Entry{
@@ -85,17 +92,69 @@ func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCa
 			Outcome:   budget.OutcomeRefusedCap,
 			Detail:    fmt.Sprintf("cap %d reached", dailyCap),
 		}); err != nil {
-			return nil, err
+			return err
 		}
-		return nil, fmt.Errorf("evolve: evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, dailyCap)
+		return fmt.Errorf("evolve: evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, dailyCap)
 	}
 	if err := budget.Record(root, budget.Entry{
 		Kind:      budget.KindExperiment,
 		Timestamp: now,
 		Task:      "",
 		Outcome:   budget.OutcomeExperimentRun,
-		Detail:    fmt.Sprintf("strategy %s: %d experiment(s)", strategy, len(exps)),
+		Detail:    fmt.Sprintf("strategy %s: %d experiment(s)", strategy, n),
 	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runSingleExperiment runs one experiment's attempts: it reloads from
+// disk (the caller may hold a stale copy, and saving it back would
+// clobber state transitions made after the copy), requires RUNNING,
+// records every attempt in the history and stops on the first pass.
+func runSingleExperiment(root string, strategy Strategy, id string, claim func() error, probe ProbeFunc) (RunOutcome, error) {
+	exp, err := LoadExperiment(root, id)
+	if err != nil {
+		return RunOutcome{ID: id}, err
+	}
+	if exp.State != StateRunning {
+		return RunOutcome{ID: exp.ID}, fmt.Errorf("evolve: strategy runs RUNNING experiments, %s is %s", exp.ID, exp.State)
+	}
+	res := RunOutcome{ID: exp.ID}
+	for attempt := 1; attempt <= exp.Budget.MaxRuns; attempt++ {
+		if err := claim(); err != nil {
+			return res, err
+		}
+		got, perr := probe(exp, attempt)
+		detail := got.Detail
+		if perr != nil {
+			detail = "probe error: " + perr.Error()
+		}
+		exp.History = append(exp.History, ExpHistoryEvent{
+			Kind: "probe", From: exp.State, To: exp.State,
+			By:   "strategy-" + string(strategy),
+			Note: fmt.Sprintf("attempt %d/%d: %s", attempt, exp.Budget.MaxRuns, detail),
+		})
+		if serr := exp.save(root); serr != nil {
+			return res, serr
+		}
+		res.Attempts = attempt
+		res.Detail = detail
+		if perr == nil && got.Pass {
+			res.Pass = true
+			break
+		}
+	}
+	return res, nil
+}
+
+func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCap, probe ProbeFunc) ([]RunOutcome, error) {
+	if err := checkStrategyArgs(strategy, probe); err != nil {
+		return nil, err
+	}
+	// Global evolution cap (PRD R-E4, S1): enforced first, before any
+	// probe fires.
+	if err := enforceExperimentBudget(root, strategy, len(exps)); err != nil {
 		return nil, err
 	}
 	out := make([]RunOutcome, len(exps))
@@ -111,46 +170,9 @@ func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCa
 		return nil
 	}
 	runOne := func(i int) error {
-		// Reload from disk: the caller may hold a stale copy, and saving
-		// it back would clobber state transitions made after the copy.
-		exp, err := LoadExperiment(root, exps[i].ID)
-		if err != nil {
-			out[i] = RunOutcome{ID: exps[i].ID}
-			return err
-		}
-		if exp.State != StateRunning {
-			out[i] = RunOutcome{ID: exp.ID}
-			return fmt.Errorf("evolve: strategy runs RUNNING experiments, %s is %s", exp.ID, exp.State)
-		}
-		res := RunOutcome{ID: exp.ID}
-		for attempt := 1; attempt <= exp.Budget.MaxRuns; attempt++ {
-			if err := claim(); err != nil {
-				out[i] = res
-				return err
-			}
-			got, perr := probe(exp, attempt)
-			detail := got.Detail
-			if perr != nil {
-				detail = "probe error: " + perr.Error()
-			}
-			exp.History = append(exp.History, ExpHistoryEvent{
-				Kind: "probe", From: exp.State, To: exp.State,
-				By:   "strategy-" + string(strategy),
-				Note: fmt.Sprintf("attempt %d/%d: %s", attempt, exp.Budget.MaxRuns, detail),
-			})
-			if serr := exp.save(root); serr != nil {
-				out[i] = res
-				return serr
-			}
-			res.Attempts = attempt
-			res.Detail = detail
-			if perr == nil && got.Pass {
-				res.Pass = true
-				break
-			}
-		}
+		res, err := runSingleExperiment(root, strategy, exps[i].ID, claim, probe)
 		out[i] = res
-		return nil
+		return err
 	}
 	switch strategy {
 	case StrategySequential:

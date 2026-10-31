@@ -1,17 +1,10 @@
 package cli
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"os"
-	"sort"
-	"strings"
 
-	"regulus-ai/internal/contract"
 	"regulus-ai/internal/crap"
-	"regulus-ai/internal/gates"
-	"regulus-ai/internal/manifest"
 )
 
 // gateCmd implements `regulus gate run [--profile NAME] [--dry-run] <task>`:
@@ -19,6 +12,10 @@ import (
 // gate (PRD R-G2, R-G4). --dry-run prints the execution plan and writes
 // nothing. --profile selects required gates plus the profile's members
 // (quick = required only, full = everything, the default).
+//
+// gateCmd is a thin orchestrator: parseGateRunArgs validates flags, task
+// and config; renderDryRunPlan prints the plan; execAndReport runs the
+// gauntlet. Behavior, messages and exit codes are unchanged.
 func (c CLI) gateCmd(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
@@ -34,130 +31,14 @@ func (c CLI) gateCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
 		return 2
 	}
-	fs := flag.NewFlagSet("gate run", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
-	dryRun := fs.Bool("dry-run", false, "print the execution plan without running gates")
-	profile := fs.String("profile", "", "run required gates plus this profile's members (quick, full, or a declared name)")
-	if err := fs.Parse(args[1:]); err != nil {
-		return 2
+	plan, code, ok := c.parseGateRunArgs(args[1:])
+	if !ok {
+		return code
 	}
-	if fs.NArg() != 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task>")
-		return 2
+	if plan.dryRun {
+		return c.renderDryRunPlan(plan)
 	}
-	task := fs.Arg(0)
-	if !validTaskID(task) {
-		fmt.Fprintf(c.Stderr, "gate run: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')\n", task)
-		return 2
-	}
-	r := c.Runner
-	if r == nil {
-		r = gates.ShRunner{}
-	}
-	cfg, err := gates.Load("regulus.json")
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
-		return 1
-	}
-	if *dryRun {
-		ordered, err := gates.SelectGates(cfg, *profile)
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
-			return 1
-		}
-		sort.Slice(ordered, func(i, j int) bool { return ordered[i].Layer < ordered[j].Layer })
-		max := 3600
-		if cfg.Execution != nil && cfg.Execution.MaxTimeoutSec > 0 {
-			max = cfg.Execution.MaxTimeoutSec
-		}
-		dockerImage := ""
-		if cfg.Execution != nil {
-			dockerImage = cfg.Execution.DockerImage
-		}
-		_, isSh := r.(gates.ShRunner)
-		if !isSh {
-			if _, ok := r.(*gates.ShRunner); ok {
-				isSh = true
-			}
-		}
-		for _, g := range ordered {
-			timeout := g.TimeoutSec
-			if timeout <= 0 {
-				timeout = gates.DefaultTimeoutSec
-			}
-			if timeout > max {
-				timeout = max
-			}
-			if timeout < 1 {
-				timeout = 1
-			}
-			classification := gates.Classify(g.Command)
-			isolation := "unknown"
-			if isSh {
-				isolation = "host-contained"
-				if g.Isolate == "docker" && dockerImage != "" {
-					isolation = "docker"
-				}
-			}
-			repro := g.Reproducibility
-			if repro == "" {
-				repro = "unknown"
-			} else if p := manifest.ParseReproducibility(repro); p != "" {
-				repro = p
-			}
-			policy := g.EffectiveOnFail()
-			required := "required"
-			if !g.IsRequired() {
-				required = "optional"
-			}
-			cond := "always"
-			if len(g.When) > 0 {
-				cond = "when " + strings.Join(g.When, ",")
-			}
-			fmt.Fprintf(c.Stdout, "layer %d %-16s %q timeout=%ds classification=%s isolation=%s reproducibility=%s on_fail=%s %s %s\n", g.Layer, g.Name, g.Command, timeout, classification, isolation, repro, policy, required, cond)
-		}
-		return 0
-	}
-	cfgBytes, err := os.ReadFile("regulus.json")
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
-		return 1
-	}
-	res, mpath, err := gates.RunTask(context.Background(), cfg, cfgBytes, ".", task, c.Version, contract.Version, *profile, r)
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
-		return 1
-	}
-	for _, o := range res.Outcomes {
-		if o.Skipped {
-			fmt.Fprintf(c.Stdout, "layer %d %-16s skipped (%s)\n", o.Layer, o.Name, o.SkipReason)
-			continue
-		}
-		fmt.Fprintf(c.Stdout, "layer %d %-16s %s (%dms)\n", o.Layer, o.Name, o.Verdict, o.DurationMS)
-	}
-	if res.Failed {
-		fmt.Fprintf(c.Stdout, "gauntlet: stopped at gate %q — %d/%d gates passed\n", res.FailedGate, res.Passed, res.Executed)
-	} else {
-		fmt.Fprintf(c.Stdout, "gauntlet: %d/%d gates passed\n", res.Passed, res.Executed)
-	}
-	advisory := 0
-	for _, o := range res.Outcomes {
-		if o.Advisory && o.Verdict == "fail" {
-			advisory++
-		}
-	}
-	if advisory > 0 {
-		fmt.Fprintf(c.Stdout, "gauntlet: %d advisory failure(s) recorded, run continues\n", advisory)
-	}
-	if len(res.Skipped) > 0 {
-		fmt.Fprintf(c.Stdout, "gauntlet: %d gate(s) skipped\n", len(res.Skipped))
-	}
-	fmt.Fprintf(c.Stdout, "verdict: %s (%s)\n", res.Status, res.Reason)
-	fmt.Fprintf(c.Stdout, "manifest: %s\n", mpath)
-	if res.Failed {
-		return 1
-	}
-	return 0
+	return c.execAndReport(plan)
 }
 
 // crapCmd implements `regulus crap --profile <coverprofile> [--max N]
