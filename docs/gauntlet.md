@@ -70,3 +70,45 @@ categories and the skip list, and every receipt carries the policy that
 produced it. Re-running the same profile against the same candidate
 reproduces the same decisions; `when` conditions that cannot be evaluated
 (fresh clone without git) fail open with a receipt note, never silently.
+
+## 6. Toolchain and profiles
+
+Heavy gates need three binaries outside the Go module. The pin source
+is CI (`.github/workflows/gauntlet.yml:31-35`); local installs must
+match it:
+
+```bash
+go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+```
+
+`bun` comes from the upstream installer (https://bun.sh), then
+`bun install` for the project deps (same file, `setup-bun` +
+typecheck/test steps). `gremlins` drives layer 6 (mutation),
+`govulncheck` layer 8 (vulncheck), `bun` layers 10–11 (TypeScript).
+Troubleshooting details live in `docs/troubleshooting.md` ("Toolchain
+installs (pinned)"); a missing binary fails the run before layer 1
+with the install hint, instead of a mid-run command-not-found.
+
+Profiles select cost, never mandatory proof (§2): `quick` runs
+required gates only (fast feedback), `full` runs everything and is the
+default. Required gates always run under every profile. The `mutation`
+gate keeps `profiles: [full]` but stays `required: true`, so it runs
+under `quick` too.
+
+Since T1, mutation is hermetic: the gate exports `git archive HEAD`
+(tracked files only) into a fresh temp dir and runs gremlins there, so
+untracked bloat such as `node_modules` never reaches it (portable Go:
+`os` + `os/exec` + `archive/tar`, no POSIX). When the export fails
+(not a git checkout, `git` absent) the gate falls back in-situ and the
+receipt says so — `mutation: clean export via git archive HEAD
+(hermetic, no untracked files)` vs `warning: mutation without clean
+export (not a git checkout)` — while the verdict still comes from
+efficacy/exit facts.
+
+Wontfix, with evidence (see `docs/troubleshooting.md` "Wontfix" for
+the full citations): no npm publish (owner decision,
+`CHANGELOG.md:331-333` G3.8 + `README.md:19-23` build-from-repo); the
+plugin-16 vs MCP-12 gap-4 is an intentional pinned divergence
+(`internal/cli/mcp_test.go:179-215` +
+`docs/devin.md:133-137`).

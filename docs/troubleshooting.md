@@ -46,7 +46,7 @@ and install V2 with the command above.
 The mutation gate (layer 6) needs [gremlins](https://github.com/go-gremlins/gremlins):
 
 ```bash
-go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
+go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 ```
 
 ## `regulus status` says "no regulus.json — not configured"
@@ -257,3 +257,90 @@ regulus trace prune --all [--keep N]
 Sizes at last review (2026-10-31): 82 trace sessions,
 62 evidence task dirs (821 receipts, 2 manifests). Nothing is deleted
 automatically — the directories stay until their owners prune them.
+
+## Toolchain installs (pinned)
+
+The heavy gates need three binaries outside the Go module. The pin
+source is CI (`.github/workflows/gauntlet.yml:31-35`); local installs
+must match it exactly, otherwise `regulus status` and the gate report
+a binary the CI would not have used:
+
+```bash
+go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+```
+
+`bun` comes from the upstream installer (https://bun.sh), then the
+project deps, exactly as CI does (`.github/workflows/gauntlet.yml:29-41`):
+
+```bash
+bun install
+```
+
+`gremlins` drives the layer-6 mutation gate, `govulncheck` the layer-8
+vulncheck gate, `bun` the layer-10/11 TypeScript gates. If any is
+missing from `PATH`, the gate refuses before layer 1 and its message
+names the install above — install the missing binary and re-run.
+
+## Gauntlet profiles: `quick` vs `full`
+
+`gate run --profile NAME` runs required gates plus the profile's
+members (`docs/gauntlet.md` §2, `internal/gates/gates.go:93-98`):
+
+- `quick` — required gates only (fast feedback);
+- `full` — everything (the default when no profile is given).
+
+Required gates always run: neither profiles nor `when` conditions can
+omit them. The `mutation` gate keeps `profiles: [full]`
+(`regulus.json`) but stays `required: true`, so it runs under both
+profiles — `quick` never silently skips mandatory proof. Any other
+profile name must be declared by at least one gate, else the run
+refuses rather than running a silent subset.
+
+## Mutation runs on a hermetic HEAD export
+
+Since T1 the layer-6 mutation gate runs gremlins over a clean export,
+not over your working tree: the runner exports `git archive HEAD`
+(tracked files only) into a fresh temp dir and runs the gate command
+there, so untracked bloat such as `node_modules` never reaches
+gremlins (the old Windows timeout cause, see "The gauntlet's mutation
+gate fails with timeouts" above). Portable implementation (`os` +
+`os/exec` + `archive/tar`, no POSIX `tar`/`mktemp`); the temp dir is
+always removed.
+
+Fallback: when the export fails (not a git checkout, `git` absent,
+empty archive) the gate runs in-situ and the receipt carries the
+warning instead of failing silently:
+
+- clean run: `mutation: clean export via git archive HEAD (hermetic, no untracked files)`
+- fallback: `warning: mutation without clean export (not a git checkout)`
+
+Either way the verdict still comes from efficacy/exit facts — the note
+only records which tree the facts came from. If you see the fallback
+warning, check that `git archive HEAD` works in your checkout.
+
+## Wontfix (with evidence — do not re-file)
+
+- **No npm publish.** Dropped as unnecessary by owner decision:
+  `CHANGELOG.md:331-333` (G3.8 — personal use, local build + plugin
+  by path cover the workflow, CI builds from source) and
+  `README.md:19-23` (quickstart is build-from-repo: `regulus-ai` is
+  not published). Revisit only if the project ever goes public.
+- **Plugin-16 vs MCP-12 gap (gap-4) is intentional.** The OpenCode
+  agent surface is 16 tools; MCP deliberately exposes 12. The 4-gap
+  (`evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`)
+  is a Devin-side policy decision, not drift: `internal/cli/mcp_test.go:179-215`
+  (`TestMCPIntentionalGapPinsPluginDelta`) pins the exact gap, and
+  `docs/devin.md:133-137` lists what is deliberately NOT ported and
+  why. Evolving the tool list means updating `docs/devin.md` too.
+- **`bash "*"` allow is the yolo design, not a hole.**
+  `docs/troubleshooting.md:3-15` (`/regulus-yolo` section): `regulus
+  yolo on` flips worker bash to `allow` (with every destructive deny
+  kept denied, guardians read-only), `off` restores `ask`. After `on`
+  + `/reload`, normal bash/edit stops asking while deletes stay
+  blocked — that is the documented behavior.
+- **Unstamped binary warning is by design, message is OS-aware.**
+  `docs/troubleshooting.md:72-78`: a raw `go build -o bin/regulus`
+  stays unstamped on purpose — `regulus doctor` warns (`WARNING —
+  unstamped dev build`) until you rebuild with `npm run build`
+  (stamped `binaries/` + local `bin/regulus`).

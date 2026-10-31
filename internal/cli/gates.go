@@ -14,8 +14,9 @@ import (
 // (quick = required only, full = everything, the default).
 //
 // gateCmd is a thin orchestrator: parseGateRunArgs validates flags, task
-// and config; renderDryRunPlan prints the plan; execAndReport runs the
-// gauntlet. Behavior, messages and exit codes are unchanged.
+// and config; renderDryRunPlan prints the plan (no preflight: it writes
+// nothing); execAndReport preflights binaries then runs the gauntlet.
+// Behavior, messages and exit codes are unchanged.
 func (c CLI) gateCmd(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -134,15 +135,120 @@ func dryRunGateLine(g gates.Gate, max int, dockerImage string, isSh bool) string
 	return fmt.Sprintf("layer %d %-16s %q timeout=%ds classification=%s isolation=%s reproducibility=%s on_fail=%s %s %s\n", g.Layer, g.Name, g.Command, timeout, classification, isolation, repro, policy, required, cond)
 }
 
+// gateToolHint maps a gate binary to its install hint. Pinned versions
+// match .github/workflows/gauntlet.yml:31-35 (gremlins v0.6.0,
+// govulncheck v1.9.0); bun/bunx and go point at their install pages.
+// Unknown tools fall back to the troubleshooting doc so the message
+// always carries a hint.
+func gateToolHint(tool string) string {
+	switch strings.ToLower(tool) {
+	case "gremlins":
+		return "go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0"
+	case "govulncheck":
+		return "go install golang.org/x/vuln/cmd/govulncheck@v1.9.0"
+	case "bun", "bunx":
+		return "https://bun.sh"
+	case "go":
+		return "https://go.dev/dl/"
+	default:
+		return "see docs/troubleshooting.md"
+	}
+}
+
+// preflightFirstToken extracts the binary of a gate command: the first
+// whitespace token, unquoted, basenamed on both separators, without a
+// trailing .exe. `go run ./cmd/regulus ...` maps to `go`,
+// `./regulus.exe crap ...` maps to `regulus`.
+func preflightFirstToken(command string) string {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return ""
+	}
+	first := strings.Trim(fields[0], `"'`)
+	if i := strings.LastIndex(first, "/"); i >= 0 {
+		first = first[i+1:]
+	}
+	if i := strings.LastIndex(first, `\`); i >= 0 {
+		first = first[i+1:]
+	}
+	return strings.TrimSuffix(first, ".exe")
+}
+
+// preflightShellResolved reports whether a gate binary resolves via the
+// shell rather than PATH, so preflight must not LookPath it. Gates run
+// through `sh -c` / `pwsh -Command` / `powershell -Command` / `cmd /C`
+// (see ShRunner), where builtins resolve without any binary on PATH —
+// `echo` is the one the fixtures and the `init --stack smoke` scaffold
+// actually use, the rest are its common siblings. `regulus` is the
+// self-reference to the running harness binary (`regulus ...`,
+// `./regulus.exe ...`): it is not on PATH by design, so there is
+// nothing to preflight. Match is case-insensitive; callers pass the
+// preflightFirstToken form (already basenamed, .exe stripped).
+func preflightShellResolved(tool string) bool {
+	switch strings.ToLower(tool) {
+	case "echo", "cd", "dir", "del", "erase", "copy", "move", "ren",
+		"rename", "type", "set", "rem", "cls", "exit", "pwd", "export",
+		"source", "alias", "unalias", "true", "false", "test", "printf",
+		"command", "history",
+		"regulus":
+		return true
+	}
+	return false
+}
+
+// preflightMissingTools returns the deduped tools of the selected gates
+// that lookPath cannot resolve, in first-seen order, each with its
+// install hint. Tokens that resolve via the shell (builtins,
+// self-reference) are skipped, never reported. Pure: no I/O, no
+// execution.
+func preflightMissingTools(selected []gates.Gate, lookPath func(string) (string, error)) []string {
+	var missing []string
+	seen := map[string]bool{}
+	for _, g := range selected {
+		tool := preflightFirstToken(g.Command)
+		if tool == "" || seen[tool] {
+			continue
+		}
+		seen[tool] = true
+		if preflightShellResolved(tool) {
+			continue
+		}
+		if _, err := lookPath(tool); err != nil {
+			missing = append(missing, tool+" (install: "+gateToolHint(tool)+")")
+		}
+	}
+	return missing
+}
+
 // execAndReport runs the gauntlet for one task and prints the per-layer
-// lines plus the gauntlet/verdict/manifest footers. Exit 1 on load, run or
-// gate failure; exit 0 when the gauntlet passes (advisory-only failures
-// also exit 0, exactly as before).
+// lines plus the gauntlet/verdict/manifest footers. Before any layer it
+// preflights the selected gates' binaries (LookPath, fail-fast with
+// install hints, real-shell runs only). Exit 1 on load, preflight, run
+// or gate failure; exit 0 when the gauntlet passes (advisory-only
+// failures also exit 0, exactly as before).
 func (c CLI) execAndReport(plan gateRunArgs) int {
 	cfgBytes, err := os.ReadFile("regulus.json")
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1
+	}
+	// Preflight (S2): before any layer runs and before any receipt is
+	// written, resolve the binary of every SELECTED gate (profile-aware)
+	// via LookPath and fail fast listing the missing ones with install
+	// hints. Real-shell runs only: test doubles (non-Sh runners) provide
+	// their own commands, so there is nothing on PATH to check. --dry-run
+	// never reaches here: the plan only prints commands and writes
+	// nothing, so preflight is exec-only by design.
+	if plan.runner == nil || dryRunIsSh(plan.runner) {
+		ordered, serr := gates.SelectGates(plan.cfg, plan.profile)
+		if serr != nil {
+			fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
+			return 1
+		}
+		if missing := preflightMissingTools(ordered, exec.LookPath); len(missing) > 0 {
+			fmt.Fprintf(c.Stderr, "gate run: missing required tools: %s\n", strings.Join(missing, ", "))
+			return 1
+		}
 	}
 	res, mpath, err := gates.RunTask(context.Background(), plan.cfg, cfgBytes, ".", plan.task, c.Version, contract.Version, plan.profile, plan.runner)
 	if err != nil {

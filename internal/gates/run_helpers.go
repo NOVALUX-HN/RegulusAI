@@ -125,6 +125,9 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 		}
 	}
 	if sh, ok := asShRunner(r); ok {
+		if isMutationGate(g) {
+			return execMutationSh(ctx, g, sh, timeout, dockerImage, execEnvUnset)
+		}
 		mergedEnv := append(append([]string(nil), sh.EnvUnset...), execEnvUnset...)
 		shGate := ShRunner{Dir: sh.Dir, EnvUnset: mergedEnv}
 		gctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
