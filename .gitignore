@@ -18,8 +18,10 @@ binaries/
 # Generated Almanac export bundle (share as artifact, not committed)
 .regulus-export/
 
-# Legacy pre-charts task docs (superseded by charts/, kept locally)
-odd/
+# ODD feature docs are tracked (specs, tasks, log per phase);
+# scratch notes under odd/ outside tasks/ stay local.
+odd/*
+!odd/tasks/
 
 # Generated evidence view (retired from tracking; regenerate locally via
 # `regulus evidence list --task <t>` when needed)
