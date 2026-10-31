@@ -26,24 +26,66 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // DedupThreshold is the save-time near-duplicate bar: a candidate whose
 // best cosine against the live log exceeds it is refused.
 const DedupThreshold = 0.92
 
+// DedupThresholdEnv names the optional override for the save-time
+// near-duplicate bar. Empty or invalid values fall back to
+// DedupThreshold (with a stderr warning); valid values in [0,1] win.
+const DedupThresholdEnv = "REGULUS_DEDUP_THRESHOLD"
+
+// DedupThresholdFromEnv resolves the effective save-time bar: the
+// REGULUS_DEDUP_THRESHOLD override when it parses to a number in
+// [0,1], DedupThreshold otherwise. The second return reports whether
+// the env override applied. Invalid non-empty values (unparsable,
+// NaN/Inf, out of [0,1]) warn on stderr and fall back to the default;
+// resolving the threshold never fails a save.
+func DedupThresholdFromEnv() (float64, bool) {
+	raw := strings.TrimSpace(os.Getenv(DedupThresholdEnv))
+	if raw == "" {
+		return DedupThreshold, false
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
+		fmt.Fprintf(os.Stderr, "warning: invalid %s %q — want a number in [0,1]; using default %.2f\n", DedupThresholdEnv, raw, DedupThreshold)
+		return DedupThreshold, false
+	}
+	return v, true
+}
+
 // DuplicateError is the save-time refusal: the candidate duplicates ID
 // at Similarity, and the guidance points at the topic-key escape hatch.
 type DuplicateError struct {
 	ID         string
 	Similarity float64
+	// Threshold is the effective bar that refused the save (default
+	// DedupThreshold unless a valid env override applied). Zero with
+	// FromEnv unset means a pre-threshold literal — Error renders the
+	// default bar.
+	Threshold float64
+	// FromEnv reports the bar came from REGULUS_DEDUP_THRESHOLD, so
+	// the message can cite the env source.
+	FromEnv bool
 }
 
 // Error names the near-duplicate id and hints at setting a topic key to
 // link the save as a revision.
 func (e *DuplicateError) Error() string {
-	return fmt.Sprintf("refusing near-duplicate save (matches %s at similarity %.2f, threshold %.2f) — set a topic key to link it as a revision", e.ID, e.Similarity, DedupThreshold)
+	th := e.Threshold
+	if th == 0 && !e.FromEnv {
+		th = DedupThreshold
+	}
+	if e.FromEnv {
+		return fmt.Sprintf("refusing near-duplicate save (matches %s at similarity %.2f, threshold %.2f from %s) — set a topic key to link it as a revision", e.ID, e.Similarity, th, DedupThresholdEnv)
+	}
+	return fmt.Sprintf("refusing near-duplicate save (matches %s at similarity %.2f, threshold %.2f) — set a topic key to link it as a revision", e.ID, e.Similarity, th)
 }
 
 // CheckDuplicate decides one save: nil lets it through, *DuplicateError
@@ -74,6 +116,7 @@ func CheckDuplicate(root string, candidate *Observation) error {
 	if isZeroVec(query) {
 		return nil
 	}
+	threshold, fromEnv := DedupThresholdFromEnv()
 	bestID, best := "", 0.0
 	for _, o := range all {
 		if superseded[o.ID] {
@@ -83,8 +126,8 @@ func CheckDuplicate(root string, candidate *Observation) error {
 			best, bestID = sim, o.ID
 		}
 	}
-	if best > DedupThreshold {
-		return &DuplicateError{ID: bestID, Similarity: best}
+	if best > threshold {
+		return &DuplicateError{ID: bestID, Similarity: best, Threshold: threshold, FromEnv: fromEnv}
 	}
 	return nil
 }

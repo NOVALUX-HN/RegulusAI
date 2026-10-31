@@ -1,8 +1,10 @@
 package cli
 
-// H3 (S5): a save past the last reindex must not go stale in silence —
+// H3 (S5): an append past the last reindex must not go stale in silence —
 // `regulus status` and `regulus memory doctor` name the state with the
-// repairing command.
+// repairing command. (M1 S1: CLI note/save/import/prune --yes auto-refresh
+// the index, so stale is built with a direct library append here — the
+// external-edit path that still needs the repair pointer.)
 
 import (
 	"strings"
@@ -23,9 +25,11 @@ func saveTwoWithReindexBetween(t *testing.T) {
 	if code := cR.Run([]string{"memory", "reindex"}); code != 0 {
 		t.Fatalf("reindex: exit = %d", code)
 	}
-	cS, _, _ := newCLI(nil)
-	if code := cS.Run([]string{"memory", "save", "--type", "decision", "--title", "second choice", "more content"}); code != 0 {
-		t.Fatalf("save 2: exit = %d", code)
+	// Append past the reindex WITHOUT the CLI auto-reindex (M1 S1 keeps
+	// CLI saves fresh) so the index goes stale: a direct library append
+	// bypasses the CLI refresh, like an external log edit.
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "second choice", Content: "more content"}, time.Now().UTC()); err != nil {
+		t.Fatalf("library save 2: %v", err)
 	}
 }
 

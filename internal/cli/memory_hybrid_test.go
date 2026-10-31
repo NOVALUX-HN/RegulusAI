@@ -3,6 +3,9 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"regulus-ai/internal/almanac"
 )
 
 func TestMemorySearchStaleWarnsLexicalOnly(t *testing.T) {
@@ -15,10 +18,11 @@ func TestMemorySearchStaleWarnsLexicalOnly(t *testing.T) {
 	if code := cR.Run([]string{"memory", "reindex"}); code != 0 {
 		t.Fatalf("reindex: exit = %d", code)
 	}
-	// Append after the reindex so the index goes stale.
-	cS, _, _ := newCLI(nil)
-	if code := cS.Run([]string{"memory", "save", "--type", "decision", "--title", "second choice", "more content"}); code != 0 {
-		t.Fatalf("save 2: exit = %d", code)
+	// Append past the reindex WITHOUT the CLI auto-reindex (M1 S1 keeps
+	// CLI saves fresh) so the index goes stale: a direct library append
+	// bypasses the CLI refresh, like an external log edit.
+	if _, err := almanac.Save(".", &almanac.Observation{Type: almanac.TypeDecision, Title: "second choice", Content: "more content"}, time.Now().UTC()); err != nil {
+		t.Fatalf("library save 2: %v", err)
 	}
 	c2, out, errb := newCLI(nil)
 	if code := c2.Run([]string{"memory", "search", "postgres"}); code != 0 {

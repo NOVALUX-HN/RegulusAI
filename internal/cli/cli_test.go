@@ -972,7 +972,10 @@ func TestMemorySaveSearchHistoryContext(t *testing.T) {
 	if code := c2.Run([]string{"memory", "search", "postgres"}); code != 0 {
 		t.Fatalf("search: exit = %d", code)
 	}
-	if !strings.Contains(out.String(), "chose postgres") || !strings.Contains(out.String(), "1 hit(s)") {
+	// Hybrid ranking active (M1 S1: CLI saves auto-reindex): the vector
+	// channel ranks by terms instead of filtering, so both observations
+	// may surface — the must-hit stays the postgres choice.
+	if !strings.Contains(out.String(), "chose postgres") {
 		t.Fatalf("search output = %q", out.String())
 	}
 	c3, out3, _ := newCLI(nil)

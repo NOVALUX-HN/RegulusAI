@@ -444,8 +444,8 @@ func TestExportWritesBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 2 {
-		t.Fatalf("want the jsonl + INDEX, got %v", paths)
+	if len(paths) != 5 {
+		t.Fatalf("want the jsonl + INDEX + pins + relations + status, got %v", paths)
 	}
 	data, err := os.ReadFile(filepath.Join(root, ".regulus-export", "almanac.jsonl"))
 	if err != nil {

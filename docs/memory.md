@@ -62,10 +62,20 @@
 Team sharing (F3): `regulus memory export` renders a shareable bundle from
 the log — Engram's `sync` pattern, but as rendered views of one append-only
 log instead of a second mutable copy of the data: `.regulus-export/
-almanac.jsonl` (verbatim copy of the log) + `.regulus-export/INDEX.md`
-(a rendered digest grouped by type, with pinned and relations sections).
-The bundle is a generated artifact (gitignored) — share it as a CI artifact
-or a release attachment, not as a commit.
+almanac.jsonl` (verbatim copy of the log) + `.regulus-export/pins.jsonl`,
+`relations.jsonl` and `status.jsonl` (verbatim copies of the pin, relation
+and governance stores; empty files when a store has nothing yet) +
+`.regulus-export/INDEX.md` (a rendered digest grouped by type, with pinned
+and relations sections). The bundle is a generated artifact (gitignored) —
+share it as a CI artifact or a release attachment, not as a commit.
+
+Cloud round-trip: on machine A run `regulus memory export`, copy the
+`.regulus-export/` directory to the clean tree on machine B, and run
+`regulus memory import .regulus-export` there — observations, pins,
+relations and status restore idempotently by id (re-importing skips what
+is already present; events pointing at unknown observations skip with a
+warning), and the index is fresh without a manual reindex (the CLI
+reindexes automatically after every mutating command).
 
 ## 4. Observation schema (F3)
 
@@ -106,8 +116,8 @@ or a release attachment, not as a commit.
 | F3 | `regulus memory context [--limit N]` | deterministic resume block: project identity, charts, session notes (all, or latest N with `--limit`), lessons with cue+content, decisions/discoveries/preferences |
 | F4 | `regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv\|dom] [--confidence] <feature-doc>` | evidence-gated lesson candidate (dimension defaults to unset) |
 | F3 | `regulus memory history --topic-key <key>` | revision chain of one evolving topic |
-| F3 | `regulus memory export` | render the committed team bundle from the log (`.regulus-export/almanac.jsonl` + `INDEX.md`) |
-| F3 | `regulus memory import <file>` | restore observations from an export bundle (idempotent by id) |
+| F3 | `regulus memory export` | render the committed team bundle from the log (`.regulus-export/almanac.jsonl` + `pins.jsonl` + `relations.jsonl` + `status.jsonl` + `INDEX.md`) |
+| F3 | `regulus memory import <file\|dir>` | restore a bundle: a single JSONL file restores observations; a bundle directory restores observations + pins + relations + status (idempotent by id; orphan events skip with a warning; old bundles without the extra files import like the file form) |
 | F3 | `regulus memory pin|unpin <id>` | pin an observation (pins survive prune, win chain collapse) |
 | F3 | `regulus memory relate --id <a> --relation <r> --to <b>` / `--suggest <id>` | record a relation edge; `--suggest` prints top-5 vector candidates above the 0.5 floor (writes nothing, self-heals a stale index) |
 | F3 | `regulus memory doctor` | health report: counts, age, malformed lines, orphan pins/relations, index freshness (`fresh` = hybrid active, else reindex) |

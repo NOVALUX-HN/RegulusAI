@@ -120,7 +120,12 @@ observations are immune and never listed.
 The import is atomic: the first invalid line aborts the whole file so
 a half-imported log is impossible. Fix the cited line (missing id,
 unknown type, lesson without evidence) and re-run — already-imported
-ids are skipped, so re-running is safe.
+ids are skipped, so re-running is safe. Importing a bundle directory
+(`regulus memory import .regulus-export`) validates every file before
+writing anything, and its errors name the file too
+(`relations.jsonl line 3: ...`); events pointing at unknown
+observations (orphan pins/relations/status) skip with a warning on
+stderr instead of failing.
 
 ## `regulus evolve propose` says "no evidence"
 
@@ -143,10 +148,15 @@ Semantic search needs the derived vector index
 regulus memory reindex
 ```
 
-Run it once after upgrading to v2.0, and again whenever search or
-`suggest` complains the index is stale — any save after the last
-reindex makes it stale (the index pins the log's sha256, so staleness
-is exact, not heuristic). You don't have to guess: `regulus status`
+Mutating through the CLI needs no manual reindex: `memory note`,
+`save`, `import` and `prune --yes` rebuild the derived index
+automatically (best-effort, silent on success), so `regulus memory
+doctor` reports `index: fresh` straight after the mutation and `memory
+search` runs hybrid with no stale warning. Reach for a manual reindex
+only when the log changed behind the CLI's back — right after
+upgrading to v2.0, after hand-editing `observations.jsonl`, or whenever
+search or `suggest` complains the index is stale. The index pins the
+log's sha256, so staleness is exact, not heuristic. You don't have to guess: `regulus status`
 reports a `memory:` line (`fresh`, `stale`, `missing`, or nothing to
 index yet) and `regulus memory doctor` an `index:` line, both naming
 the repairing command. Reindexing is a pure function of the log:
@@ -189,6 +199,18 @@ Refused saves exit non-zero and leave the log untouched. `memory import`
 is exempt (re-importing identical content must succeed), and
 observations hidden by a `supersedes` relation are excluded from the
 comparison.
+
+When the refused save really is a different thought the hash embedder
+confuses, raise the bar for one command instead of rewording around it:
+
+```bash
+REGULUS_DEDUP_THRESHOLD=0.99 regulus memory save --type discovery --title ... <content>
+```
+
+The override must parse to a number in [0,1]; anything else (unparsable,
+NaN/Inf, out of range) is rejected with a stderr warning and the default
+0.92 applies. Without the variable the 0.92 bar and the refusal message
+above are exactly as documented.
 
 ## `regulus memory relate --suggest <id>` says "requires a fresh semantic index"
 

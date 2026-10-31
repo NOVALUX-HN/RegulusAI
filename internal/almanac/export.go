@@ -44,8 +44,13 @@ func ProjectName(root string) string {
 }
 
 // Export writes the committed team bundle: .regulus-export/almanac.jsonl
-// (verbatim copy of the log) and .regulus-export/INDEX.md (a rendered
-// digest grouped by type, with pinned and relations sections).
+// (verbatim copy of the log), pins.jsonl, relations.jsonl and
+// status.jsonl (verbatim copies of their stores, so a clean tree can
+// restore the full Almanac), and .regulus-export/INDEX.md (a rendered
+// digest grouped by type, with pinned and relations sections). A store
+// with no file yet exports as an empty file — the bundle shape is
+// stable, and `memory import` of an old bundle without the extra files
+// still restores the observations.
 func Export(root string) (paths []string, err error) {
 	all, err := All(root)
 	if err != nil {
@@ -109,5 +114,30 @@ func Export(root string) (paths []string, err error) {
 	if err := os.WriteFile(index, []byte(b.String()), 0o644); err != nil {
 		return nil, err
 	}
-	return []string{jsonl, index}, nil
+	paths = []string{jsonl, index}
+	// Verbatim copies of the event stores, re-importable as-is: each
+	// bundle file mirrors its store line for line (missing store file
+	// means an empty bundle file, never an omission).
+	stores := []struct {
+		src  string
+		name string
+	}{
+		{pinsFile(root), "pins.jsonl"},
+		{relationsFile(root), "relations.jsonl"},
+		{StatusFile(root), "status.jsonl"},
+	}
+	for _, s := range stores {
+		raw, err := os.ReadFile(s.src)
+		if os.IsNotExist(err) {
+			raw = []byte("")
+		} else if err != nil {
+			return nil, err
+		}
+		dst := filepath.Join(exportDir, s.name)
+		if err := os.WriteFile(dst, raw, 0o644); err != nil {
+			return nil, err
+		}
+		paths = append(paths, dst)
+	}
+	return paths, nil
 }

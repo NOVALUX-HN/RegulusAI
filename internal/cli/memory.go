@@ -180,7 +180,9 @@ func (c CLI) memoryReindexCmd(args []string) int {
 // Lessons and pinned observations are never pruned (safety
 // invariants in almanac.Prune). Without --yes it is a dry run: lists
 // what WOULD be removed and removes nothing — the human confirmation
-// is the explicit flag.
+// is the explicit flag. A successful --yes apply refreshes the derived
+// retrieval.bin best-effort (M1 S1: doctor stays fresh without a manual
+// reindex); a rebuild failure warns on stderr and never fails the prune.
 func (c CLI) memoryPruneCmd(args []string) int {
 	fs := flag.NewFlagSet("memory prune", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -227,8 +229,25 @@ func (c CLI) memoryPruneCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory prune: %v\n", err)
 		return 1
 	}
+	c.refreshIndexBestEffort("prune")
 	fmt.Fprintf(c.Stdout, "pruned %d observation(s)\n", len(removed))
 	return 0
+}
+
+// refreshIndexBestEffort rebuilds retrieval.bin after a mutating CLI
+// command (M1 S1: note/save/import/prune --yes leave the index fresh).
+// The index is a pure derived function of observations.jsonl — cheap
+// and byte-deterministic — so the refresh is best-effort: success is
+// silent (stdout stays machine-stable), ErrNoLog (empty log, nothing
+// to index) is silent, and any other failure warns on stderr without
+// failing the mutation that already succeeded.
+func (c CLI) refreshIndexBestEffort(op string) {
+	if _, _, err := almanac.Reindex("."); err != nil {
+		if errors.Is(err, almanac.ErrNoLog) {
+			return
+		}
+		fmt.Fprintf(c.Stderr, "warning: auto-reindex after %s failed (%v) — run `regulus memory reindex`\n", op, err)
+	}
 }
 
 // memoryNoteCmd implements `regulus memory note <text>`.
@@ -255,6 +274,7 @@ func (c CLI) memoryNoteCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
 		return 1
 	}
+	c.refreshIndexBestEffort("note")
 	fmt.Fprintln(c.Stdout, "memory: note saved")
 	return 0
 }
@@ -346,6 +366,7 @@ func (c CLI) memorySaveCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 1
 	}
+	c.refreshIndexBestEffort("save")
 	fmt.Fprintln(c.Stdout, "memory: observation saved")
 	return 0
 }
@@ -583,19 +604,26 @@ func (c CLI) memoryExportCmd(args []string) int {
 	return 0
 }
 
-// memoryImportCmd implements `regulus memory import <file>`: restores
-// observations from a `memory export` bundle. Idempotent by id —
+// memoryImportCmd implements `regulus memory import <file|dir>`: restores
+// observations from a `memory export` bundle. A single JSONL file
+// restores observations; a bundle directory (`.regulus-export/`) also
+// restores pins, relations and status. Idempotent by id —
 // re-importing skips what is already present; the first invalid line
 // aborts with its line number and imports nothing.
 func (c CLI) memoryImportCmd(args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory import <file>")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory import <file|dir>")
 		return 2
 	}
 	imported, skipped, err := almanac.Import(".", args[0])
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory import: %v\n", err)
 		return 1
+	}
+	// Only a real append can stale the index; a fully-skipped
+	// re-import writes nothing and needs no rebuild.
+	if imported > 0 {
+		c.refreshIndexBestEffort("import")
 	}
 	fmt.Fprintf(c.Stdout, "imported %d, skipped %d (already present)\n", imported, skipped)
 	return 0
