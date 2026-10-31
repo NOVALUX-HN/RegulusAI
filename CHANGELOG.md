@@ -6,6 +6,19 @@ chart close — see G3.9).
 
 ## [Unreleased]
 
+### Phase 8 — Observability (develop)
+
+- Structured event log with the S1 fields, mandatory redaction on every
+  write path and tail-keeping retention (docs/observability.md §1, §4).
+- OTel-compatible spans and correlation without the OTel SDK (evaluated,
+  not adopted — adr/T8-01); read-only timeline projection from
+  receipts/traces/budget/evolution, honest empties otherwise (adr/T8-02).
+- Read-only S3 metrics aggregation (empty → zeros) and budgets that
+  distinguish measured values from estimates; JSONL + in-memory
+  exporters, failures as errors.
+- S7 matrix (malformed-store behavior, unwritable exporters) and S8
+  acceptance over one shared fixture (7/7 criteria).
+
 ### Phase 7 — Runtime independence (develop)
 
 - Core is agent-SDK free: zero external modules, pinned by
