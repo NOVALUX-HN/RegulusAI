@@ -28,7 +28,10 @@ never invented.
 ## 3. Metrics and budgets
 
 `Summarize` aggregates the S3 rates read-only; empty input yields zeros,
-never NaN. `BudgetUsage` marks every item measured or estimated with a
+never NaN. Honest gap, pinned by tests: guardian disagreement has no
+backing store, so it reports 0 with a coverage note (same honesty rule
+as the T2 span projections) — a real guardian-decision log would be
+needed to measure it. `BudgetUsage` marks every item measured or estimated with a
 reason: execution time (receipt durations) and tool usage (trace counts)
 are measured; tokens and model costs are unmeasured unless the caller
 supplies reliable figures — no cost is ever invented.
