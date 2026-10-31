@@ -78,6 +78,7 @@ func TestF1VerticalSpine(t *testing.T) {
 		t.Fatalf("gate run: exit=%d out=%q", code, out)
 	}
 	receipts, err := filepath.Glob(filepath.Join(".regulus", "evidence", "tiny__T1", "*.json"))
+	receipts = withoutManifests(receipts)
 	if err != nil || len(receipts) != 2 {
 		t.Fatalf("the journey must leave exactly 2 receipts, got %v (err %v)", receipts, err)
 	}

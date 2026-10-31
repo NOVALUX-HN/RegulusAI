@@ -35,7 +35,7 @@ func (c CLI) chartCmd(args []string) int {
 			fmt.Fprintf(c.Stderr, "chart init: %v\n", err)
 			return 1
 		}
-		scaffold := "# " + name + "\n\nDomain: <name>\n\nWhat this feature is and why it exists.\n\n## Acceptance\n\n### Scenario: the happy path\n\n- Given a clean project\n- When the change runs\n- Then the exit code is 0\n\n## Log\n\n- Chart scaffolded by regulus chart init.\n"
+		scaffold := "# " + name + "\n\nDomain: <name>\nClass: STANDARD\n\nWhat this feature is and why it exists.\n\n## Contract\n\n- Objective: what changes and why\n- Scope: what is in and out\n- Constraints: what must never happen\n- Acceptance: the happy path\n- Artifacts: files and commands the task produces\n- Dependencies: none\n- Risk: standard\n- Verification: gauntlet + receipts\n- Completion: scenarios PROVEN with receipt ids\n\n## Acceptance\n\n### Scenario: the happy path\n\n- Given a clean project\n- When the change runs\n- Then the exit code is 0\n\n## Tasks\n\n| ID | Spec | Work | Route | Depends | Status |\n|----|------|------|-------|---------|--------|\n| T1 | the happy path | implement | inline | - | todo |\n\n## Log\n\n- Chart scaffolded by regulus chart init.\n"
 		if err := os.WriteFile(path, []byte(scaffold), 0o644); err != nil {
 			fmt.Fprintf(c.Stderr, "chart init: %v\n", err)
 			return 1

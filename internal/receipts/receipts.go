@@ -29,6 +29,11 @@ const (
 	VerdictFail = "fail"
 )
 
+// ReceiptSchemaVersion versions the receipt document. 0 (absent) means a
+// legacy receipt written before Phase 1: hash checks apply, manifest
+// cross-checks do not. Readers must refuse versions they do not know.
+const ReceiptSchemaVersion = 1
+
 // Receipt records one gate execution.
 type Receipt struct {
 	ID         string    `json:"id"`
@@ -52,6 +57,18 @@ type Receipt struct {
 	MetricValue     *float64 `json:"metric_value,omitempty"`
 	MetricThreshold *float64 `json:"metric_threshold,omitempty"`
 	MetricOperator  string   `json:"metric_operator,omitempty"`
+
+	// Phase 1 trust fields (additive; absent means a legacy receipt).
+	// Verdict stays the derived pass/fail vocabulary for compatibility;
+	// Status/Reason carry the centralized verdict contract.
+	RunID          string `json:"run_id,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Manifest       string `json:"manifest,omitempty"`
+	CPUTimeMS      int64  `json:"cpu_time_ms,omitempty"`
+	Isolation      string `json:"isolation,omitempty"`
+	Classification string `json:"classification,omitempty"`
+	Schema         int    `json:"schema_version,omitempty"`
 }
 
 // Capture bounds s, marking truncation, and returns the SHA-256 of the

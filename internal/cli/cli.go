@@ -72,6 +72,10 @@ func (c CLI) Run(args []string) int {
 		return c.probeCmd(args[1:])
 	case "trace":
 		return c.traceCmd(args[1:])
+	case "task":
+		return c.taskCmd(args[1:])
+	case "decide":
+		return c.decideCmd(args[1:])
 	case "yolo":
 		return c.yoloCmd(args[1:])
 	case "crap":
@@ -153,9 +157,9 @@ Commands:
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
-  evidence list [--task <t>] | show <file>   audit gauntlet receipts
+  evidence list [--task <t>] | show <file> | verify [--task <t>]   audit gauntlet receipts
   evolve propose --task <t> --domain <d>   assemble the evidence pack a proposer needs
-  gate run <task>    run the layered gauntlet and write receipts
+  gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
@@ -168,6 +172,8 @@ Commands:
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   skills list        trigger registry: skills with their one-line triggers
   trace record|show|files|sessions|prune   capture and inspect per-session tool traces (regulus trace --help)
+  task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
+  decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
   spec check <file|dir>  validate the acceptance contract of feature documents
   status             one look at the project: runtime, gauntlet, evolution, receipts
   yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)

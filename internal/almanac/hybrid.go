@@ -80,21 +80,23 @@ func degradedLexical(root string, q Query) ([]Observation, bool, error) {
 }
 
 // hybridCorpus is the once-per-HybridSearch shared read: the parsed log
-// plus pins and the supersede-hidden set. Loaded once in hybridFresh and
-// shared by the lexical-rank and vector-rank paths (and by both domain
-// scopes) so one HybridSearch parses the JSONL once, not twice, and reads
-// pins/relations once.
+// plus pins, the supersede-hidden set and the stale set (invalidated,
+// rejected, expired as of the query instant). Loaded once in hybridFresh
+// and shared by the lexical-rank and vector-rank paths (and by both
+// domain scopes) so one HybridSearch parses the JSONL once, not twice,
+// and reads pins/relations/status once.
 type hybridCorpus struct {
 	all    []Observation
 	pins   map[string]bool
 	hidden map[string]bool // full supersede-hidden set; nil when no relations (matches SupersededIDs)
+	stale  map[string]bool // invalidated + rejected + expired; nil when empty
 }
 
 // loadHybridCorpus reads the log, pins and relations once. The hidden set
 // mirrors SupersededIDs exactly (nil with no relations, otherwise the
 // superseder-exists-guarded set) but reuses the already-loaded log
 // instead of parsing it a second time inside SupersededIDs.
-func loadHybridCorpus(root string) (hybridCorpus, error) {
+func loadHybridCorpus(root string, now time.Time) (hybridCorpus, error) {
 	all, err := All(root)
 	if err != nil {
 		return hybridCorpus{}, err
@@ -107,6 +109,11 @@ func loadHybridCorpus(root string) (hybridCorpus, error) {
 	if err != nil {
 		return hybridCorpus{}, err
 	}
+	ends, err := statusEnds(root)
+	if err != nil {
+		return hybridCorpus{}, err
+	}
+	stale := map[string]bool{}
 	var hidden map[string]bool
 	if len(rels) > 0 {
 		exists := make(map[string]bool, len(all))
@@ -115,12 +122,38 @@ func loadHybridCorpus(root string) (hybridCorpus, error) {
 		}
 		hidden = make(map[string]bool)
 		for _, r := range rels {
-			if r.Relation == RelationSupersedes && exists[r.From] && exists[r.To] {
+			if !exists[r.From] || !exists[r.To] {
+				continue
+			}
+			switch r.Relation {
+			case RelationSupersedes:
 				hidden[r.To] = true
+			case RelationInvalidatedBy:
+				stale[r.To] = true
 			}
 		}
 	}
-	return hybridCorpus{all: all, pins: pins, hidden: hidden}, nil
+	for _, o := range all {
+		if ends[o.ID] == StatusRejected {
+			stale[o.ID] = true
+		}
+		if o.ExpiresAt != nil && !now.Before(*o.ExpiresAt) {
+			stale[o.ID] = true
+		}
+	}
+	if len(stale) == 0 {
+		stale = nil
+	}
+	return hybridCorpus{all: all, pins: pins, hidden: hidden, stale: stale}, nil
+}
+
+// staleFor selects the stale set for one query scope: empty when
+// IncludeStale, otherwise invalidated, rejected and expired observations.
+func (c hybridCorpus) staleFor(q Query) map[string]bool {
+	if q.IncludeStale {
+		return map[string]bool{}
+	}
+	return c.stale
 }
 
 // supersededFor selects the hidden set for one query scope: empty when
@@ -137,7 +170,7 @@ func (c hybridCorpus) supersededFor(q Query) map[string]bool {
 // the global fallback, deduped by ID, then Latest/Limit apply. The corpus
 // loads once here and is shared by every rank path below.
 func hybridFresh(root string, q Query, entries []IndexEntry, emb Embedder, now time.Time) ([]Observation, error) {
-	corpus, err := loadHybridCorpus(root)
+	corpus, err := loadHybridCorpus(root, now)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +241,8 @@ type scoredObs struct {
 func fusedRankedWith(corpus hybridCorpus, q Query, entries []IndexEntry, emb Embedder, now time.Time) []Observation {
 	lexRank := lexicalRanksWith(corpus, q)
 	superseded := corpus.supersededFor(q)
-	vecRank, byID := vectorRanks(q, corpus.all, entries, superseded, emb)
+	stale := corpus.staleFor(q)
+	vecRank, byID := vectorRanks(q, corpus.all, entries, superseded, stale, emb)
 	scored := scoreCandidates(byID, lexRank, vecRank, now)
 	sortScored(corpus.pins, scored)
 	out := make([]Observation, 0, len(scored))
@@ -225,7 +259,7 @@ func lexicalRanksWith(corpus hybridCorpus, q Query) map[string]int {
 	qLex := q
 	qLex.Limit = 0
 	qLex.Latest = false
-	matcher := queryMatcher{q: qLex, superseded: corpus.supersededFor(qLex)}
+	matcher := queryMatcher{q: qLex, superseded: corpus.supersededFor(qLex), stale: corpus.staleFor(qLex)}
 	var hits []Observation
 	for _, o := range corpus.all {
 		if !matcher.keeps(o) {
@@ -243,7 +277,7 @@ func lexicalRanksWith(corpus hybridCorpus, q Query) map[string]int {
 
 // vectorRanks scans the index for bucket-passing candidates above zero
 // cosine, returning 1-indexed ranks plus the observation index.
-func vectorRanks(q Query, all []Observation, entries []IndexEntry, superseded map[string]bool, emb Embedder) (map[string]int, map[string]Observation) {
+func vectorRanks(q Query, all []Observation, entries []IndexEntry, superseded, stale map[string]bool, emb Embedder) (map[string]int, map[string]Observation) {
 	byID := make(map[string]Observation, len(all))
 	for _, o := range all {
 		byID[o.ID] = o
@@ -252,7 +286,7 @@ func vectorRanks(q Query, all []Observation, entries []IndexEntry, superseded ma
 	for _, e := range entries {
 		vecByID[e.ID] = e.Vec
 	}
-	matcher := queryMatcher{q: q, superseded: superseded}
+	matcher := queryMatcher{q: q, superseded: superseded, stale: stale}
 	queryVec := emb.Embed(strings.Join(q.Terms, " "))
 	if isZeroVec(queryVec) {
 		return map[string]int{}, byID

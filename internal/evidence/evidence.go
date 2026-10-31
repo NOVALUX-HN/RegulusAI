@@ -5,6 +5,7 @@ package evidence
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"regulus-ai/internal/receipts"
 )
@@ -27,6 +28,8 @@ func TaskDir(root, task string) string {
 
 // List returns receipts ordered by path (task slug, then the nanosecond
 // slot — chronological). A task of "" lists every task's receipts.
+// Candidate manifests (manifest-*.json) live in the same directories but
+// are indexes, not receipts, and are skipped here.
 func List(root, task string) ([]Entry, error) {
 	var paths []string
 	var err error
@@ -41,6 +44,9 @@ func List(root, task string) ([]Entry, error) {
 	sort.Strings(paths)
 	entries := make([]Entry, 0, len(paths))
 	for _, p := range paths {
+		if strings.HasPrefix(filepath.Base(p), "manifest-") {
+			continue
+		}
 		rec, err := receipts.ReadFile(p)
 		if err != nil {
 			return nil, err

@@ -55,7 +55,18 @@ type Provenance struct {
 	Receipts []string `json:"receipts,omitempty"`
 }
 
-// Observation is one append-only record in the Almanac.
+// Observation sources: who recorded this. Imports are marked, never
+// laundered into agent observations.
+const (
+	SourceAgent  = "agent"
+	SourceHuman  = "human"
+	SourceCore   = "core"
+	SourceImport = "import"
+)
+
+// Observation is one append-only record in the Almanac. SavedAt is both
+// created_at and observed_at: the log only ever appends the moment an
+// observation entered. ExpiresAt is optional temporal validity.
 type Observation struct {
 	ID         string      `json:"id"`
 	Type       string      `json:"type"`
@@ -65,12 +76,79 @@ type Observation struct {
 	Domain     string      `json:"domain,omitempty"`
 	Lesson     *Lesson     `json:"lesson,omitempty"`
 	Provenance *Provenance `json:"provenance,omitempty"`
+	Source     string      `json:"source,omitempty"`
+	Origin     string      `json:"origin,omitempty"`
+	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
 	SavedAt    time.Time   `json:"saved_at"`
+}
+
+// Memory systems, derived from the observation type so no second store is
+// needed: episodic (what happened), semantic (what is true), decision
+// (what was chosen), procedural (how work goes), evolution (what the
+// harness learned under evidence).
+const (
+	SystemEpisodic   = "episodic"
+	SystemSemantic   = "semantic"
+	SystemDecision   = "decision"
+	SystemProcedural = "procedural"
+	SystemEvolution  = "evolution"
+)
+
+// ParseSystem validates a memory-system bucket name (empty = no filter).
+func ParseSystem(s string) (string, error) {
+	switch s {
+	case "":
+		return "", nil
+	case SystemEpisodic, SystemSemantic, SystemDecision, SystemProcedural, SystemEvolution:
+		return s, nil
+	default:
+		return "", fmt.Errorf("system %q is not one of episodic, semantic, decision, procedural, evolution", s)
+	}
+}
+
+// SystemOf maps an observation type to its memory system.
+func SystemOf(typ string) string {
+	switch typ {
+	case TypeSessionNote:
+		return SystemEpisodic
+	case TypeDiscovery:
+		return SystemSemantic
+	case TypeDecision:
+		return SystemDecision
+	case TypePreference:
+		return SystemProcedural
+	case TypeLesson:
+		return SystemEvolution
+	default:
+		return "unknown"
+	}
+}
+
+// IsExpired reports whether the observation's temporal validity passed.
+// No expiry means no deadline.
+func IsExpired(o *Observation, now time.Time) bool {
+	if o == nil || o.ExpiresAt == nil {
+		return false
+	}
+	return !now.Before(*o.ExpiresAt)
 }
 
 // File returns the observation log path under a project root.
 func File(root string) string {
 	return filepath.Join(root, ".regulus", "almanac", "observations.jsonl")
+}
+
+// logIDs returns the ids already in the log (missing log reads empty).
+func logIDs(root string) (map[string]bool, error) {
+	all, err := All(root)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(all))
+	for _, o := range all {
+		out[o.ID] = true
+	}
+	return out, nil
 }
 
 func pinsFile(root string) string {
@@ -98,6 +176,11 @@ func validate(o *Observation) error {
 	}
 	if strings.TrimSpace(o.Content) == "" {
 		return errors.New("content must not be empty")
+	}
+	switch o.Source {
+	case "", SourceAgent, SourceHuman, SourceCore, SourceImport:
+	default:
+		return fmt.Errorf("source %q is not one of agent, human, core, import", o.Source)
 	}
 	if o.Type == TypeLesson {
 		if o.Lesson == nil {
@@ -136,7 +219,19 @@ func Save(root string, o *Observation, now time.Time) (Observation, error) {
 	if saved.SavedAt.IsZero() {
 		saved.SavedAt = now.UTC()
 	}
+	if strings.TrimSpace(saved.Source) == "" {
+		saved.Source = SourceAgent
+	}
 	saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
+	// Identity must be unique even when the clock is coarse: advance the
+	// timestamp until the id is fresh (bounded; mirrors the receipts
+	// collision advance). Two observations must never share an id.
+	if taken, err := logIDs(root); err == nil && taken[saved.ID] {
+		for i := 0; i < 1000 && taken[saved.ID]; i++ {
+			saved.SavedAt = saved.SavedAt.Add(time.Nanosecond)
+			saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
 		return Observation{}, err
 	}
@@ -217,10 +312,13 @@ type Query struct {
 	Type              string
 	Dimension         string // bucket: lesson dimension (inv | dom)
 	Path              string // bucket: provenance path (exact match)
+	System            string // bucket: memory system (episodic|semantic|decision|procedural|evolution)
 	Limit             int    // keep the first N results after sorting (<= 0: all)
 	Any               bool   // OR the terms instead of ANDing them
 	Latest            bool   // collapse each topic chain to its best hit (default: all coexist)
 	IncludeSuperseded bool   // show observations a supersedes relation hides (default: hidden)
+	IncludeStale      bool   // show expired, rejected and invalidated observations (default: hidden)
+	Now               time.Time
 }
 
 // SupersededIDs returns the observation ids hidden from Search by a
@@ -255,13 +353,27 @@ func SupersededIDs(root string) (map[string]bool, error) {
 type queryMatcher struct {
 	q          Query
 	superseded map[string]bool
+	stale      map[string]bool
 }
 
 // keepsBuckets reports whether one observation passes every bucket filter
-// (superseded, topic, domain, type, dimension, path) — the shared decider
-// the vector channel reuses; terms are a ranking signal there, not a filter.
+// (superseded, stale, system, topic, domain, type, dimension, path) — the
+// shared decider the vector channel reuses; terms are a ranking signal
+// there, not a filter. Stale means invalidated, rejected, or expired, and
+// hides by default; superseded hides unless explicitly included.
 func (m queryMatcher) keepsBuckets(o Observation) bool {
 	if m.superseded[o.ID] {
+		return false
+	}
+	if !m.q.IncludeStale {
+		if m.stale[o.ID] {
+			return false
+		}
+		if o.ExpiresAt != nil && !m.q.effectiveNow().Before(*o.ExpiresAt) {
+			return false
+		}
+	}
+	if m.q.System != "" && SystemOf(o.Type) != m.q.System {
 		return false
 	}
 	if m.q.TopicKey != "" && o.TopicKey != m.q.TopicKey {
@@ -280,6 +392,39 @@ func (m queryMatcher) keepsBuckets(o Observation) bool {
 		return false
 	}
 	return true
+}
+
+// effectiveNow resolves the query reference instant for temporal
+// validity: explicit when set, otherwise the current time.
+func (q Query) effectiveNow() time.Time {
+	if q.Now.IsZero() {
+		return time.Now().UTC()
+	}
+	return q.Now
+}
+
+// staleIDs folds invalidated relations and REJECTED statuses into the
+// hidden set for one search. Expired observations are excluded separately
+// (they need the observation, not just the id).
+func staleIDs(root string) (map[string]bool, error) {
+	out := map[string]bool{}
+	inv, err := InvalidatedIDs(root)
+	if err != nil {
+		return nil, err
+	}
+	for id := range inv {
+		out[id] = true
+	}
+	ends, err := statusEnds(root)
+	if err != nil {
+		return nil, err
+	}
+	for id, to := range ends {
+		if to == StatusRejected {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 
 // keeps reports whether one observation passes every bucket and term
@@ -348,9 +493,16 @@ func Search(root string, q Query) ([]Observation, error) {
 			return nil, err
 		}
 	}
+	stale := map[string]bool{}
+	if !q.IncludeStale {
+		stale, err = staleIDs(root)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var hits []Observation
 	collapsed := map[string]Observation{}
-	matcher := queryMatcher{q: q, superseded: superseded}
+	matcher := queryMatcher{q: q, superseded: superseded, stale: stale}
 	for _, o := range all {
 		if !matcher.keeps(o) {
 			continue

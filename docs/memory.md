@@ -127,3 +127,41 @@ or a release attachment, not as a commit.
   keeps the newest-first behavior.
 - Agents write via the CLI — single writer, like every piece of Regulus
   state. Nothing but `regulus` mutates `.regulus/`.
+
+## 7. Phase 5 — governed memory (systems, provenance, validity, trust)
+
+No new stores: the JSONL log stays the single source of truth, indexes
+stay derived, and the only addition is `status.jsonl` (append-only
+governance transitions — states mutate, the log does not).
+
+- **Systems** (no duplication, derived from `type`): episodic
+  (session-note), semantic (discovery), decision, procedural
+  (preference), evolution (lesson). Filter with
+  `memory search|context --system`.
+- **Provenance**: `source` (agent|human|core|import), `origin`
+  (project identity at save time), plus the existing task/git_head/
+  paths/receipts. `memory save --source --expires` records both;
+  `memory import` forces `source=import` and keeps (or marks
+  `unknown-`) origin.
+- **Temporal validity**: `saved_at` is created and observed; `expires_at`
+  is optional. Retrieval hides expired, rejected, invalidated and
+  superseded observations unless `--include-stale` is passed
+  (`--include-superseded` keeps its narrower meaning).
+- **New relation kinds**: `invalidated_by` (hides like superseded),
+  `derived_from`, `verified_by`, `related_to` (informational). New kinds
+  are validated; unknown kinds are still refused.
+- **Governance**: OBSERVED (saved) → VERIFIED (`memory verify <id>
+  --receipt`, needs evidence; `--accept` promotes) or REJECTED
+  (`memory reject --reason`); imports enter PROPOSED until reviewed;
+  lessons admitted through reflect are ACCEPTED; SUPERSEDED is computed
+  from `supersedes` edges. `memory status` shows state + trail;
+  `memory check` reports live contradictions (`conflicts_with` with both
+  ends active) and stale-but-active knowledge.
+- **Scoped context**: `memory context [--task T] [--path P]
+  [--system S] [--budget N]` filters by provenance/system and caps long
+  lists (pins always surface); unscoped output is byte-identical to the
+  legacy block.
+- **Trust boundaries**: retrieved content is DATA — `search`, `show` and
+  `history` print an untrusted-content banner on stderr (stdout stays
+  machine-stable); the resume block keeps its DATA framing; imported
+  knowledge stays PROPOSED and is never instructions.

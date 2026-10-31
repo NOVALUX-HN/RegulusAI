@@ -75,11 +75,18 @@ func PinnedIDs(root string) (map[string]bool, error) {
 	return pins, nil
 }
 
-// Relation types.
+// Relation types. Supersedes and invalidated_by retire knowledge (both
+// hide it from default retrieval); conflicts_with flags live
+// contradictions; derived_from, verified_by and related/related_to are
+// informational links.
 const (
 	RelationSupersedes    = "supersedes"
 	RelationConflictsWith = "conflicts_with"
 	RelationRelated       = "related"
+	RelationRelatedTo     = "related_to"
+	RelationInvalidatedBy = "invalidated_by"
+	RelationDerivedFrom   = "derived_from"
+	RelationVerifiedBy    = "verified_by"
 )
 
 // Relation is one recorded relation between two observations.
@@ -93,9 +100,10 @@ type Relation struct {
 // Relate records a validated relation between two existing observations.
 func Relate(root, from, relation, to string, now time.Time) error {
 	switch relation {
-	case RelationSupersedes, RelationConflictsWith, RelationRelated:
+	case RelationSupersedes, RelationConflictsWith, RelationRelated,
+		RelationRelatedTo, RelationInvalidatedBy, RelationDerivedFrom, RelationVerifiedBy:
 	default:
-		return fmt.Errorf("relation %q is not one of supersedes, conflicts_with, related", relation)
+		return fmt.Errorf("relation %q is not one of supersedes, conflicts_with, related, related_to, invalidated_by, derived_from, verified_by", relation)
 	}
 	if from == to {
 		return errors.New("an observation cannot relate to itself")

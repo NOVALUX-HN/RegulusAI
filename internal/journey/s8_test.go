@@ -294,6 +294,7 @@ func TestS8WindowsHideJourney(t *testing.T) {
 		t.Fatalf("hidden gate run: exit=%d out=%q", code, out)
 	}
 	got, err := filepath.Glob(filepath.Join(".regulus", "evidence", receipts.Slug("hide/T1"), "*.json"))
+	got = withoutManifests(got)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("hidden gate must leave one receipt, got %v (%v)", got, err)
 	}

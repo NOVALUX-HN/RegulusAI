@@ -1,16 +1,20 @@
 {
+  "execution": {
+    "max_timeout_sec": 3600,
+    "allowlist": ["go", "gremlins", "govulncheck", "bunx", "bun"]
+  },
   "gates": [
-    { "name": "typecheck", "layer": 1, "command": "go build ./..." },
-    { "name": "lint", "layer": 2, "command": "go vet ./..." },
-    { "name": "build", "layer": 3, "command": "go build -o bin/regulus ./cmd/regulus" },
-    { "name": "unit-tests", "layer": 4, "command": "go test ./... -coverprofile .regulus/coverage.out" },
-    { "name": "coverage-floor", "layer": 5, "command": "go tool cover -func .regulus/coverage.out", "metric": { "extract": "last-line-percent", "threshold": 80, "operator": ">=" } },
-    { "name": "mutation", "layer": 6, "command": "gremlins unleash ./internal/receipts --threshold-efficacy 70 --workers 1 --timeout-coefficient 10", "timeout_sec": 600 },
-    { "name": "crap", "layer": 7, "command": "go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --top 5" },
-    { "name": "vulncheck", "layer": 8, "command": "govulncheck ./...", "timeout_sec": 120 },
-    { "name": "spec", "layer": 9, "command": "go run ./cmd/regulus spec check charts/" },
-    { "name": "ts-typecheck", "layer": 10, "command": "bunx tsc --noEmit -p .opencode/tsconfig.json" },
-    { "name": "ts-unit-tests", "layer": 11, "command": "bun test ./.opencode/lib/" },
-    { "name": "gofmt", "layer": 12, "command": "go test ./internal/gates/ -run TestGofmtClean -count=1" }
+    { "name": "typecheck", "layer": 1, "command": "go build ./...", "category": "build", "required": true },
+    { "name": "lint", "layer": 2, "command": "go vet ./...", "category": "analysis", "required": true },
+    { "name": "build", "layer": 3, "command": "go build -o bin/regulus ./cmd/regulus", "category": "build", "required": true },
+    { "name": "unit-tests", "layer": 4, "command": "go test ./... -coverprofile .regulus/coverage.out", "category": "test", "required": true },
+    { "name": "coverage-floor", "layer": 5, "command": "go tool cover -func .regulus/coverage.out", "metric": { "extract": "last-line-percent", "threshold": 80, "operator": ">=" }, "category": "test", "required": true },
+    { "name": "mutation", "layer": 6, "command": "gremlins unleash ./internal/receipts --threshold-efficacy 70 --workers 1 --timeout-coefficient 10", "timeout_sec": 600, "category": "test", "required": true, "profiles": ["full"] },
+    { "name": "crap", "layer": 7, "command": "go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --top 5", "category": "analysis", "required": true },
+    { "name": "vulncheck", "layer": 8, "command": "govulncheck ./...", "timeout_sec": 120, "category": "security", "required": true, "profiles": ["full", "security"] },
+    { "name": "spec", "layer": 9, "command": "go run ./cmd/regulus spec check charts/", "reproducibility": "exact", "category": "proof", "required": true },
+    { "name": "ts-typecheck", "layer": 10, "command": "bunx tsc --noEmit -p .opencode/tsconfig.json", "category": "build", "required": true },
+    { "name": "ts-unit-tests", "layer": 11, "command": "bun test ./.opencode/lib/", "category": "test", "required": true },
+    { "name": "gofmt", "layer": 12, "command": "go test ./internal/gates/ -run TestGofmtClean -count=1", "category": "analysis", "required": true }
   ]
 }

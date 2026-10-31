@@ -191,7 +191,9 @@ func main() {
 	}
 
 	// One receipt per layer, with the coverage floor's metric recorded.
+	// The candidate manifest shares the dir but is an index, not a receipt.
 	paths, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "fixture__T1", "*.json"))
+	paths = withoutManifests(paths)
 	if len(paths) != 7 {
 		t.Fatalf("want 7 receipts, got %v", paths)
 	}

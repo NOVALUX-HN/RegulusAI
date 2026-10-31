@@ -51,8 +51,11 @@ skill needed for those.
   read from files, receipts or memory.
 - Guardians (`@regulus-gate-verifier` and its siblings) are read-only
   verifiers; never ask them to edit code.
-- Task sizing: understood + contained risk + resumable from the diff →
-  small (inline); anything else → a tracked Chart under `charts/`.
+- Task sizing (TRIVIAL/STANDARD/COMPLEX/CRITICAL, `regulus task classify`):
+  depth proportional to risk — TRIVIAL goes inline and never delegates;
+  STANDARD+ gets a Chart with a `## Contract` and `Class:` line; CRITICAL
+  needs an independent verifier. Check with `regulus task check`, close
+  with `regulus task close` — self-report closes nothing.
 
 ## The Crew and the guardians
 

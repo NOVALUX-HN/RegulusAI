@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Import reads observations from a JSONL file (the `memory export`
@@ -50,6 +51,12 @@ func Import(root, path string) (imported, skipped int, err error) {
 			continue
 		}
 		have[o.ID] = true
+		// Imported knowledge is never laundered: it enters marked as
+		// import-sourced, keeping its origin when the bundle carried one.
+		o.Source = SourceImport
+		if strings.TrimSpace(o.Origin) == "" {
+			o.Origin = "unknown-origin"
+		}
 		fresh = append(fresh, o)
 	}
 	if len(fresh) == 0 {
@@ -63,6 +70,7 @@ func Import(root, path string) (imported, skipped int, err error) {
 		return 0, 0, err
 	}
 	defer f.Close()
+	var ids []string
 	for _, o := range fresh {
 		line, err := json.Marshal(o)
 		if err != nil {
@@ -71,7 +79,11 @@ func Import(root, path string) (imported, skipped int, err error) {
 		if _, err := f.Write(append(line, '\n')); err != nil {
 			return 0, 0, err
 		}
+		ids = append(ids, o.ID)
 		imported++
+	}
+	if err := MarkImported(root, ids, time.Now().UTC()); err != nil {
+		return 0, 0, err
 	}
 	return imported, skipped, nil
 }

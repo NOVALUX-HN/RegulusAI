@@ -4,6 +4,103 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [Unreleased]
+
+### Phase 5 — Almanac engineering memory (personal use)
+
+- Memory systems derived from type (episodic/semantic/decision/procedural/
+  evolution) with `--system` filters; no duplicated stores (docs/memory.md
+  §7, adr/T5-01).
+- Provenance: `source` (agent|human|core|import), `origin` (project
+  identity); imports are marked and stay PROPOSED until reviewed.
+- Temporal validity: optional `expires_at`; retrieval hides expired,
+  rejected, invalidated and superseded observations unless
+  `--include-stale` is passed.
+- Knowledge governance: OBSERVED → VERIFIED (`memory verify`, needs cited
+  evidence) / REJECTED (`memory reject --reason`); lessons ACCEPTED;
+  SUPERSEDED computed from relations; append-only `status.jsonl` audit
+  trail; new relation kinds (`invalidated_by`, `derived_from`,
+  `verified_by`, `related_to`).
+- Retrieval filters on both channels (lexical + hybrid) without touching
+  ranking weights; scoped `memory context [--task --path --system --budget]`;
+  save keeps unique ids even on coarse clocks (adr/T5-02).
+- Trust boundaries: untrusted-DATA banner on retrieved output; imported
+  knowledge is never instructions.
+
+### Phase 4 — Decision Intelligence (personal use)
+
+- Structured decision contracts (`internal/decisions`, `regulus decide
+  propose --file`): problem, proposal, scope, alternatives with trade-offs,
+  constraints, risks, consequences, evidence refs, confidence,
+  reversibility, artifacts, commits, task, related, critical; shape
+  validated at propose time (docs/decisions.md, adr/T4-01).
+- Assess pipeline (`decide assess [--json]`): PERCEPTION → EVIDENCE →
+  POLICY → ASSESSMENT → DECISION with ten pass|fail|abstain criteria and
+  coded findings (contradiction incl. zero-dep, missing alternatives,
+  unmitigated risk, hidden dependency, obsolete scope, insufficient
+  evidence, unsupported assumptions).
+- Governed resolution (`decide resolve/show/list`): assessment advises,
+  policy gates (zero blocking findings), humans approve critical decisions
+  and supersedes (`--approve-by "nick: reason"`); atomic accept+supersede
+  (no double-decided scopes, no deadlock); refusals persist nothing;
+  INCONCLUSIVE abstention; integrity revalidates on show (adr/T4-02).
+
+### Phase 3 — Gauntlet independent verification (personal use)
+
+- Gate metadata with behavior-preserving defaults (`id`, `category`, `when`,
+  `on_fail: halt|advisory`, `required`, `profiles`): advisory failures record
+  and continue, `when` skips only optional gates (required always run,
+  unevaluable conditions fail open with a receipt note), skips recorded in
+  result + manifest. `gate run --profile NAME` (quick/full/reserved/declared).
+- Guardian governance (`internal/guardians`): six-guardian registry with
+  bounded responsibilities; `regulus gate evaluate` validates (known
+  guardian, crew rejected, parseable verdict, non-empty note, existing
+  evidence) and appends to `evaluations.jsonl` — read-only by construction.
+- Core consolidation (`regulus gate verdict`): receipts decide (FAIL beats
+  BLOCKED beats INCONCLUSIVE beats PASS), evaluations flagged AGREE/DISPUTE
+  and counted, never applied; measured rates (disagreement, inconclusive,
+  manifest-linked completeness) instead of invented FP/FN.
+- `docs/gauntlet.md`, `docs/adr/T3-01`, `T3-02`; repo `regulus.json`
+  dogfoods categories + required + expensive-gate profiles (default run
+  unchanged: all 12 gates).
+
+### Phase 2 — Sextant discipline (personal use)
+
+- Task classification TRIVIAL/STANDARD/COMPLEX/CRITICAL (`internal/sextant`,
+  `regulus task classify`): depth proportional to risk; risk markers force
+  CRITICAL and TRIVIAL never delegates (docs/sextant.md, adr/T2-01).
+- Structured chart contracts (`Class:` + `## Contract`): required keys per
+  level, acceptance↔scenario traceability, Risk/Class agreement; `chart init`
+  scaffolds a valid contract.
+- Delegation + execution governance: `regulus task check` (routes, specs,
+  dependencies incl. cycles, blockers with reasons, REPLAN format) and
+  `regulus task status`.
+- Core-verified completion: `regulus task close` checks contract, spec,
+  hash-verified all-PASS receipts, closed dependencies and verifier evidence
+  for CRITICAL; flips Status and appends CLOSED, or lists every unmet
+  condition (docs/adr/T2-02). Skill/agent/discipline prose updated to match;
+  plugin sync literals regenerated, token budgets green.
+
+### Phase 1 — trust foundation (personal use)
+
+- Centralized verdicts (`internal/verdict`): PASS/FAIL/BLOCKED/INCONCLUSIVE
+  with six reasons; the core adjudicates, evaluations are recorded and can
+  never override (docs/adr/T1-01).
+- Candidate manifests: every `gate run` pins HEAD + diff hash,
+  modified/untracked inventories, config fingerprint, tool versions,
+  environment-names hash and task→artifact links next to its receipts
+  (docs/adr/T1-02).
+- `regulus evidence verify [--task]`: recomputes hashes, cross-checks
+  manifests, quarantines corruption to `corrupt/` (moved, never deleted),
+  fails closed on future schemas without crypto (docs/adr/T1-03).
+- Execution policy (`execution` block + per-gate `isolate`/
+  `reproducibility`): timeout clamps, destructive/allowlist classification,
+  cwd pin, env unset list, 8 MB output cap with kill, opt-in Docker with
+  recorded host fallback (docs/adr/T1-04). `gate run --dry-run` plans
+  without executing; footer prints `verdict:` + `manifest:` lines.
+- `docs/trust.md` documents the trust story; repo `regulus.json`
+  dogfoods the `execution` block.
+
 ## [0.9.0] — 2026-10-30 — twelve gates + memory depth + doctor V2 (personal use)
 
 Same branch (`feat/v0.4-evolution`); tags cut on main at merge.

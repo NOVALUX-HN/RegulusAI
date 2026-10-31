@@ -10,13 +10,16 @@ import (
 )
 
 // evidenceCmd implements `regulus evidence list [--task <t>] | show
-// <file>`: the human audit surface (PRD R-G6) — receipts, never diffs.
+// <file> | verify [--task <t>]`: the human audit surface (PRD R-G6) —
+// receipts, never diffs — plus the Phase 1 integrity verifier.
 func (c CLI) evidenceCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file>")
+		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>]")
 		return 2
 	}
 	switch args[0] {
+	case "verify":
+		return c.evidenceVerifyCmd(args[1:])
 	case "list":
 		fs := flag.NewFlagSet("evidence list", flag.ContinueOnError)
 		fs.SetOutput(c.Stderr)
@@ -68,11 +71,73 @@ func (c CLI) evidenceCmd(args []string) int {
 			fmt.Fprintf(c.Stdout, "metric:      %.2f %s %.2f\n", *rec.MetricValue, rec.MetricOperator, *rec.MetricThreshold)
 		}
 		fmt.Fprintf(c.Stdout, "git_head:    %s\n", rec.GitHead)
+		if rec.Schema != 0 || rec.Status != "" {
+			fmt.Fprintf(c.Stdout, "status:      %s (%s)\n", rec.Status, rec.Reason)
+			fmt.Fprintf(c.Stdout, "schema:      %d\n", rec.Schema)
+		}
+		if rec.RunID != "" {
+			fmt.Fprintf(c.Stdout, "run_id:      %s\n", rec.RunID)
+		}
+		if rec.Manifest != "" {
+			fmt.Fprintf(c.Stdout, "manifest:    %s\n", rec.Manifest)
+		}
+		if rec.CPUTimeMS != 0 {
+			fmt.Fprintf(c.Stdout, "cpu_time_ms: %d\n", rec.CPUTimeMS)
+		}
+		if rec.Isolation != "" {
+			fmt.Fprintf(c.Stdout, "isolation:   %s\n", rec.Isolation)
+		}
+		if rec.Classification != "" {
+			fmt.Fprintf(c.Stdout, "class:       %s\n", rec.Classification)
+		}
 		fmt.Fprintf(c.Stdout, "stdout (sha256 %s):\n%s\n", rec.StdoutSHA, rec.Stdout)
 		fmt.Fprintf(c.Stdout, "stderr (sha256 %s):\n%s\n", rec.StderrSHA, rec.Stderr)
 		return 0
 	default:
-		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file>")
+		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>]")
 		return 2
 	}
+}
+
+// evidenceVerifyCmd implements `regulus evidence verify [--task <task>]`:
+// recompute every content hash, check versions and manifest links, and
+// quarantine corrupt files into corrupt/ (moved, never deleted).
+func (c CLI) evidenceVerifyCmd(args []string) int {
+	fs := flag.NewFlagSet("evidence verify", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	task := fs.String("task", "", "verify only this task's receipts")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evidence verify [--task <task>]")
+		return 2
+	}
+	rep, err := evidence.Verify(".", *task, true)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evidence verify: %v\n", err)
+		return 1
+	}
+	scope := "all tasks"
+	if *task != "" {
+		scope = "task " + *task
+	}
+	fmt.Fprintf(c.Stdout, "evidence verify (%s): %d checked, %d passed", scope, rep.Checked, rep.Passed)
+	if rep.Legacy > 0 {
+		fmt.Fprintf(c.Stdout, " (%d legacy, hash-checked only)", rep.Legacy)
+	}
+	if rep.Manifests > 0 {
+		fmt.Fprintf(c.Stdout, " [%d manifest(s)]", rep.Manifests)
+	}
+	fmt.Fprintln(c.Stdout)
+	for _, f := range rep.Failed {
+		fmt.Fprintf(c.Stdout, "FAIL %s: %s — %s\n", f.File, f.Reason, f.Detail)
+	}
+	for _, q := range rep.Quarantined {
+		fmt.Fprintf(c.Stdout, "quarantined: %s\n", q)
+	}
+	if len(rep.Failed) != 0 {
+		return 1
+	}
+	return 0
 }

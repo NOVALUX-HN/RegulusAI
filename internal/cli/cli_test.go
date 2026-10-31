@@ -302,6 +302,7 @@ func TestGateRunAllPass(t *testing.T) {
 		t.Fatalf("stdout = %q", out.String())
 	}
 	found, _ := filepath.Glob(filepath.Join(".regulus", "evidence", "regulus-ai-v1__T2", "*.json"))
+	found = withoutManifests(found)
 	if len(found) != 2 {
 		t.Fatalf("want 2 receipts under the task slug dir, got %v", found)
 	}
