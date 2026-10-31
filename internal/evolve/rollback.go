@@ -87,6 +87,12 @@ func Adopt(root, expID string, candidate Metrics, snapshot, approvedBy string) (
 	if strings.TrimSpace(exp.Results) == "" {
 		return Version{}, errors.New("evolve: adoption needs recorded evaluation outcomes")
 	}
+	if err := CheckDomain(exp); err != nil {
+		return Version{}, err
+	}
+	if err := exp.Trust.Verify(); err != nil {
+		return Version{}, err
+	}
 	base, err := GetBaseline(root, exp.Baseline)
 	if err != nil {
 		return Version{}, err

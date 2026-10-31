@@ -80,6 +80,7 @@ type Experiment struct {
 	Domain             string            `json:"domain"`
 	Parameters         map[string]string `json:"parameters"`
 	Budget             Budget            `json:"budget"`
+	Trust              TrustCheck        `json:"trust"`
 	Results            string            `json:"results,omitempty"`
 	RegressionAnalysis string            `json:"regression_analysis,omitempty"`
 	Decision           string            `json:"decision,omitempty"`

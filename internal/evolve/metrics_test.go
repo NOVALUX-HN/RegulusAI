@@ -62,6 +62,10 @@ func mkEvaluatedExp(t *testing.T, root string) Experiment {
 	if err := exp.Advance(root, StateRunning); err != nil {
 		t.Fatal(err)
 	}
+	fullTrust := TrustCheck{Isolated: true, Provenance: "T9 receipts + gate manifests", Validations: true, Regressions: true, Policies: true, Reversible: true}
+	if err := exp.AttestTrust(root, fullTrust); err != nil {
+		t.Fatal(err)
+	}
 	if err := exp.SetOutcome("pass", "no regressions", "adopt"); err != nil {
 		t.Fatal(err)
 	}
