@@ -17,7 +17,7 @@ const DISCIPLINE_MARKER = "Regulus discipline (evidence-first"
 // and intro paragraphs stay file-only by design (a fallback must not
 // inject meta-commentary into the system prompt).
 export function renderDisciplineDefault(md: string): string {
-  const lines = md.split("\n")
+  const lines = md.replace(/\r\n/g, "\n").split("\n")
   const start = lines.findIndex((l) => l.startsWith(DISCIPLINE_MARKER))
   if (start < 0) throw new Error("sync-plugin-defaults: discipline marker line missing")
   return lines.slice(start).join("\n").trim()
@@ -28,10 +28,13 @@ export function renderDisciplineDefault(md: string): string {
 // the compiled literal and the live merge can never disagree.
 export function renderGuidanceDefaults(md: string): Record<string, string> {
   const out: Record<string, string> = {}
+  // CRLF-tolerant (H1/S1): Windows checkouts (core.autocrlf=true) hand
+  // the .md sources with \r\n; normalize first so the render is byte-
+  // identical to LF. trim()/\s+ already absorbed \r, this locks it in.
   // slice(1) drops the preamble before the first ## (title + intro) —
   // it is file-only by design, like the discipline header. The runtime
   // parseToolGuidance must skip it the same way (see regulus.ts).
-  for (const part of md.split(/^##\s+/m).slice(1)) {
+  for (const part of md.replace(/\r\n/g, "\n").split(/^##\s+/m).slice(1)) {
     const nl = part.indexOf("\n")
     if (nl < 0) continue
     const name = part.slice(0, nl).trim()

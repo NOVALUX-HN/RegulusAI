@@ -148,6 +148,14 @@ export function formatGateFailure(message: string): string {
   return `${detail}\nexit code: -1`;
 }
 
+// formatResolveLog renders the S2 first-match-wins diagnostic: which
+// regulus binary resolveRegulus picked and why (doctor OK, contract
+// OK). Pure so bun tests pin the wording; the plugin prints it to
+// stderr without touching candidate order or match logic.
+export function formatResolveLog(bin: string): string {
+  return `[regulus] using ${bin} (doctor OK, contract OK)`;
+}
+
 // REGULUS_CONTRACT is the plugin<->core protocol version this backend
 // build speaks. Mirrors the Go core's internal/contract.Version: the
 // CLI prints it for `regulus contract`, and the plugin refuses the

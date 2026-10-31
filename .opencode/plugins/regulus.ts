@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { checkContract, extractPaths, formatGateFailure, formatGateResult, gateRunTimeoutMs, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
+import { checkContract, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, loadSkills, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
 
 const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sextant: authorize, chart, build, prove, learn):
 - Spec first: authorized changes declare acceptance scenarios (Given/When/Then) in the Chart's ## Acceptance section (charts/); validate them with the spec_check tool before implementing.
@@ -69,9 +69,11 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
 // are dropped so the default survives.
 function parseToolGuidance(text: string): Record<string, string> {
   const out: Record<string, string> = {}
+  // CRLF-tolerant (H1/S1): normalize \r\n first so a Windows checkout
+  // renders byte-identical to LF (trim() already absorbed a lone \r).
   // slice(1) drops the preamble before the first ## (title + intro) so
   // it never becomes a junk key shadowing a real default.
-  for (const part of text.split(/^##\s+/m).slice(1)) {
+  for (const part of text.replace(/\r\n/g, "\n").split(/^##\s+/m).slice(1)) {
     const nl = part.indexOf("\n")
     if (nl < 0) continue
     const name = part.slice(0, nl).trim()
@@ -94,6 +96,7 @@ async function loadToolGuidance(dir: string): Promise<Record<string, string>> {
 
 function dataBlock(title: string, content: string): string {
   const body = content
+    .replace(/\r\n/g, "\n")
     .split("\n")
     .map((line) => `| ${line}`)
     .join("\n")
@@ -182,7 +185,12 @@ async function resolveRegulus(dir: string): Promise<string> {
       continue
     }
     const refusal = checkContract(await run(bin, ["contract"], dir))
-    if (refusal === "") return bin
+    if (refusal === "") {
+      // S2: first-match-wins is unchanged — the winner is logged to
+      // stderr for troubleshooting (which binary, and why it won).
+      console.error(formatResolveLog(bin))
+      return bin
+    }
     failures.push(`${bin}: ${refusal}`)
   }
   throw new Error(

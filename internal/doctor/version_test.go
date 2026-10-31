@@ -3,6 +3,7 @@ package doctor
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,5 +51,50 @@ func TestVersionLineDevNamesStampedRebuild(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("dev warning must contain %q, got %q", want, got)
 		}
+	}
+}
+
+func TestBuildScriptFor(t *testing.T) {
+	cases := []struct {
+		goos       string
+		wantScript string
+		wantBinary string
+	}{
+		{"windows", "scripts/build.ps1", "bin/regulus.exe"},
+		{"linux", "scripts/build.bash", "bin/regulus"},
+		{"darwin", "scripts/build.bash", "bin/regulus"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.goos, func(t *testing.T) {
+			script, binary := buildScriptFor(tc.goos)
+			if script != tc.wantScript || binary != tc.wantBinary {
+				t.Fatalf("buildScriptFor(%q) = (%q, %q), want (%q, %q)", tc.goos, script, binary, tc.wantScript, tc.wantBinary)
+			}
+		})
+	}
+}
+
+// H3 (S3): VersionLine warnings are OS-aware — unstamped and mismatch both
+// name the stamping script for the current OS via npm run build.
+func TestVersionLineOSAware(t *testing.T) {
+	script, binary := buildScriptFor(runtime.GOOS)
+	for _, tc := range []struct {
+		name string
+		bin  string
+		pkg  string
+	}{
+		{"unstamped dev", "dev", `{"version":"0.8.1"}`},
+		{"mismatch", "0.6.0", `{"version":"0.7.0"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writePkg(t, dir, tc.pkg)
+			got := VersionLine(dir, tc.bin)
+			for _, want := range []string{"WARNING", "npm run build", script, binary} {
+				if !strings.Contains(got, want) {
+					t.Fatalf("VersionLine(%q) must contain %q, got %q", tc.bin, want, got)
+				}
+			}
+		})
 	}
 }

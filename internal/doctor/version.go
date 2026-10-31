@@ -5,7 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
+
+// buildScriptFor returns the stamping build script and its binary output
+// for a GOOS value: PowerShell on Windows, bash elsewhere.
+func buildScriptFor(goos string) (script, binary string) {
+	if goos == "windows" {
+		return "scripts/build.ps1", "bin/regulus.exe"
+	}
+	return "scripts/build.bash", "bin/regulus"
+}
 
 // VersionLine compares the stamped binary version against the project's
 // package.json and returns the one-line verdict for `regulus doctor`.
@@ -27,7 +37,9 @@ func VersionLine(dir, binaryVersion string) string {
 		return fmt.Sprintf("version:    %s (matches package.json)", binaryVersion)
 	}
 	if binaryVersion == "dev" {
-		return fmt.Sprintf("version:    WARNING — unstamped dev build (package.json says %s): rebuild with npm run build (scripts/build.bash stamps bin/regulus)", pkg.Version)
+		script, binary := buildScriptFor(runtime.GOOS)
+		return fmt.Sprintf("version:    WARNING — unstamped dev build (package.json says %s): rebuild with npm run build (%s stamps %s)", pkg.Version, script, binary)
 	}
-	return fmt.Sprintf("version:    WARNING — binary says %s but package.json says %s: rebuild with npm run build (scripts/build.bash stamps bin/regulus)", binaryVersion, pkg.Version)
+	script, binary := buildScriptFor(runtime.GOOS)
+	return fmt.Sprintf("version:    WARNING — binary says %s but package.json says %s: rebuild with npm run build (%s stamps %s)", binaryVersion, pkg.Version, script, binary)
 }

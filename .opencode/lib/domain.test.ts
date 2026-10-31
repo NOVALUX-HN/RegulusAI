@@ -11,6 +11,7 @@ import {
   findDomainInChart,
   formatGateFailure,
   formatGateResult,
+  formatResolveLog,
   GATE_RUN_TIMEOUT_MS_DEFAULT,
   GATE_RUN_TIMEOUT_MS_FLOOR,
   gateRunTimeoutMs,
@@ -462,6 +463,79 @@ describe("gate_run timeout (D3)", () => {
     expect(gateBlock).not.toMatch(/timeoutMs\s*=\s*30000/);
     expect(gateBlock).toContain("formatGateResult");
     expect(gateBlock).toContain("formatGateFailure");
+  });
+});
+
+describe("CRLF-tolerant defaults render (H1/S1)", () => {
+  const LF_DISCIPLINE = "# Title\n\nIntro stays file-only.\nRegulus discipline (evidence-first harness):\n- one\n- two\n";
+  const LF_GUIDANCE = "# Title\n\nIntro.\n\n## alpha\n\nBody one here.\n\n## beta\n\nBody two here.\n";
+  const toCRLF = (s: string) => s.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
+
+  test("renderDisciplineDefault: CRLF renders identically to LF, no \\r", () => {
+    const lf = renderDisciplineDefault(LF_DISCIPLINE);
+    const crlf = renderDisciplineDefault(toCRLF(LF_DISCIPLINE));
+    expect(crlf).toBe(lf);
+    expect(crlf).not.toContain("\r");
+    expect(crlf.startsWith("Regulus discipline (evidence-first")).toBe(true);
+  });
+
+  test("renderGuidanceDefaults: CRLF renders identically to LF, no \\r", () => {
+    const lf = renderGuidanceDefaults(LF_GUIDANCE);
+    const crlf = renderGuidanceDefaults(toCRLF(LF_GUIDANCE));
+    expect(crlf).toEqual(lf);
+    expect(Object.keys(crlf).sort()).toEqual(["alpha", "beta"]);
+    for (const v of Object.values(crlf)) expect(v).not.toContain("\r");
+  });
+
+  test("renderDisciplineDefault: real discipline.md with CRLF still finds the marker", async () => {
+    const root = import.meta.dir + "/../..";
+    const md = await Bun.file(`${root}/.opencode/discipline.md`).text();
+    expect(renderDisciplineDefault(toCRLF(md))).toBe(renderDisciplineDefault(md));
+    expect(renderDisciplineDefault(toCRLF(md))).not.toContain("\r");
+  });
+
+  test("renderGuidanceDefaults: real tool-guidance.md with CRLF matches LF", async () => {
+    const root = import.meta.dir + "/../..";
+    const md = await Bun.file(`${root}/.opencode/tool-guidance.md`).text();
+    expect(renderGuidanceDefaults(toCRLF(md))).toEqual(renderGuidanceDefaults(md));
+  });
+
+  // regulus.ts carries the OpenCode host import, so its pure helpers
+  // are pinned by source assertion (precedent: S3/D3 wiring tests).
+  test("regulus.ts parseToolGuidance normalizes CRLF before splitting", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = src.slice(src.indexOf("function parseToolGuidance"), src.indexOf("// loadToolGuidance"));
+    expect(block).toContain('text.replace(/\\r\\n/g, "\\n")');
+    expect(block).toContain("split(/^##\\s+/m)");
+  });
+
+  test("regulus.ts dataBlock normalizes CRLF before splitting", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = src.slice(src.indexOf("function dataBlock"), src.indexOf("interface RunResult"));
+    expect(block).toContain('.replace(/\\r\\n/g, "\\n")');
+    expect(block).toContain('.split("\\n")');
+  });
+});
+
+describe("binary resolution log (H2/S2)", () => {
+  test("formatResolveLog names the winner and why it won", () => {
+    const got = formatResolveLog("bin/regulus.exe");
+    expect(got).toContain("bin/regulus.exe");
+    expect(got).toContain("doctor OK");
+    expect(got).toContain("contract OK");
+  });
+
+  // regulus.ts carries the OpenCode host import, so the resolve wiring
+  // is pinned by source assertion (precedent: S3/D3 wiring tests).
+  test("resolveRegulus logs the winner without changing first-match-wins order", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const resolveBlock = src.slice(src.indexOf("function resolveRegulus"), src.indexOf("export default"));
+    expect(resolveBlock).toContain("for (const bin of candidates(dir))");
+    expect(resolveBlock).toContain("formatResolveLog(bin)");
+    expect(resolveBlock).toContain("return bin");
+    // candidates() order untouched: env override first, PATH fallback last.
+    const candBlock = src.slice(src.indexOf("function candidates"), src.indexOf("// resolveRegulus finds"));
+    expect(candBlock.indexOf("REGULUS_BIN")).toBeLessThan(candBlock.indexOf('"regulus"'));
   });
 });
 

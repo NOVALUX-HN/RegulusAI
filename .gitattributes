@@ -5,3 +5,6 @@
 *.go text eol=lf
 *.mod text eol=lf
 *.sum text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.json text eol=lf

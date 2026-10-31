@@ -3,6 +3,7 @@ package gates
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -235,22 +236,30 @@ func TestShRunnerDirHonoredAndMissing(t *testing.T) {
 
 func TestShRunnerEnvUnsetFilter(t *testing.T) {
 	t.Setenv("REGULUS_TEST_UNSET_ME", "secret-value")
-	r := ShRunner{EnvUnset: []string{"REGULUS_TEST_UNSET_ME"}}
-	out, _, code, err := r.Run(context.Background(), "echo ${REGULUS_TEST_UNSET_ME:-absent}")
-	if err != nil || code != 0 {
-		t.Fatalf("env unset run: out=%q code=%d err=%v", out, code, err)
+	// Portable child probe: a tiny Go program prints the var or "absent".
+	// `go run` needs no shell expansion syntax, so the same command runs
+	// unchanged under sh, pwsh and cmd alike.
+	dir := t.TempDir()
+	probe := "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\tif v, ok := os.LookupEnv(\"REGULUS_TEST_UNSET_ME\"); ok {\n\t\tfmt.Println(v)\n\t} else {\n\t\tfmt.Println(\"absent\")\n\t}\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, "printenv_probe.go"), []byte(probe), 0o644); err != nil {
+		t.Fatalf("write probe: %v", err)
 	}
-	if strings.Contains(out, "secret-value") {
+	runProbe := func(r ShRunner) string {
+		t.Helper()
+		out, _, code, err := r.Run(context.Background(), "go run ./printenv_probe.go")
+		if err != nil || code != 0 {
+			t.Fatalf("env probe run: out=%q code=%d err=%v", out, code, err)
+		}
+		return out
+	}
+	if out := runProbe(ShRunner{Dir: dir, EnvUnset: []string{"REGULUS_TEST_UNSET_ME"}}); strings.Contains(out, "secret-value") {
 		t.Fatalf("EnvUnset must filter the var, got %q", out)
+	} else if !strings.Contains(out, "absent") {
+		t.Fatalf("filtered probe must print absent, got %q", out)
 	}
 	// zero value keeps current behavior
-	r2 := ShRunner{}
-	out2, _, _, err := r2.Run(context.Background(), "echo ${REGULUS_TEST_UNSET_ME:-absent}")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out2, "secret-value") {
-		t.Fatalf("zero-value ShRunner must keep environ, got %q", out2)
+	if out := runProbe(ShRunner{Dir: dir}); !strings.Contains(out, "secret-value") {
+		t.Fatalf("zero-value ShRunner must keep environ, got %q", out)
 	}
 }
 
