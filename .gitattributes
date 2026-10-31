@@ -8,3 +8,9 @@
 *.ts text eol=lf
 *.md text eol=lf
 *.json text eol=lf
+# Shell entrypoints must stay LF so `bash scripts/*.bash` works on Windows
+# with git-bash (CRLF breaks `set -euo pipefail` and injects `$'\r'`).
+# PowerShell accepts LF fine (see install-dashboard-autostart.ps1, LF).
+*.bash text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
