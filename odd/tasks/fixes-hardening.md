@@ -25,11 +25,17 @@ opencode v2, todo verde antes de reportar."
 
 - F1 (S1): cap global de experimentos — route: delegated (gentle-ai-worker) — commit: 8d2d83e
 - F2 (S2): guardian decision log + métrica — route: delegated (gentle-ai-worker) — commit: 23c0602
-- F3 (S3): tracking odd/tasks — route: inline — commit: —
-- F4 (S4): reindex operativo — route: inline — commit: —
-- F5 (S5): micro-deuda segura — route: inline — commit: —
-- F6 (S6): verificación total + reporte — route: inline — commit: —
+- F3 (S3): tracking odd/tasks — route: inline — commit: bc6f098
+- F4 (S4): reindex operativo — route: inline — commit: n/a (operacional, ver L4)
+- F5 (S5): micro-deuda segura — route: inline — commit: n/a (evaluada, sin cambio: const pineada por diseño, Encode insignificante, Negotiate cosmético; ver L3)
+- F6 (S6): verificación total + reporte — route: inline — commit: n/a (verificación, ver L5)
 
 ## Log
+
+L5 (2026-10-31, F6 verificación): `go vet ./...` 0 + `go build ./cmd/regulus` 0 + `go test ./...` verde (28 pkgs) + `bun test --cwd .opencode` 56 pass + `opencode --version` v2.2.3 + `regulus doctor` V2 supported (unstamped dev build por diseño, `npm run build` estampa release). Todo verde.
+
+L4 (2026-10-31, F4 reindex): `regulus memory reindex` 42 obs sha256 f97d179f + `memory doctor` fresh hybrid active + `status` memory fresh, evolution 0/10, 569 receipts. Stale de auditoría ya resuelto.
+
+L3 (2026-10-31, F5 veredicto): los tres micros se evaluaron y se dejan como están: (a) mcpProtocolVersion en cli/mcp.go parece en desuso pero TestProtocolVersionPinned la lee del source a propósito — quitarla exigiría reescribir el test hacia el path servido (cross-package, scope creep sin ganancia funcional); (b) `_ = Encode` solo fallaría con conexión rota, sin nada útil que hacer; (c) Negotiate case-sensitive/duplicados es cosmético. Ninguno califica como "trivial y testeado" sin churn.
 
 L1 (user original verbatim): "soluciona todos los problemas y mejoras en orden hasta finalizarlos todos, luego prueba todo nuevamente para verificar que las mejoras funcionaron"
