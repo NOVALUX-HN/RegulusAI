@@ -1,0 +1,7 @@
+# Regulus AI — line-ending policy.
+# Go sources must stay LF so `gofmt -l` (gauntlet layer 12) is green on
+# Windows checkouts with core.autocrlf=true (which would otherwise hand
+# gofmt CRLF and fail TestGofmtClean).
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
