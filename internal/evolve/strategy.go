@@ -72,7 +72,17 @@ func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCa
 		return nil
 	}
 	runOne := func(i int) error {
-		exp := exps[i]
+		// Reload from disk: the caller may hold a stale copy, and saving
+		// it back would clobber state transitions made after the copy.
+		exp, err := LoadExperiment(root, exps[i].ID)
+		if err != nil {
+			out[i] = RunOutcome{ID: exps[i].ID}
+			return err
+		}
+		if exp.State != StateRunning {
+			out[i] = RunOutcome{ID: exp.ID}
+			return fmt.Errorf("evolve: strategy runs RUNNING experiments, %s is %s", exp.ID, exp.State)
+		}
 		res := RunOutcome{ID: exp.ID}
 		for attempt := 1; attempt <= exp.Budget.MaxRuns; attempt++ {
 			if err := claim(); err != nil {
