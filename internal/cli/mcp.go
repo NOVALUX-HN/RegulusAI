@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"regulus-ai/internal/contract"
+	"regulus-ai/internal/mcp"
 	"regulus-ai/internal/receipts"
 )
 
@@ -104,10 +105,18 @@ func (c CLI) handleMCPLine(line string) []byte {
 	}
 	switch req.Method {
 	case "initialize":
+		disc := mcp.CapabilityDiscovery()
+		caps := map[string]any{"tools": map[string]any{}}
+		if len(disc.Resources) > 0 {
+			caps["resources"] = map[string]any{}
+		}
+		if len(disc.Prompts) > 0 {
+			caps["prompts"] = map[string]any{}
+		}
 		return mcpOK(req.ID, map[string]any{
-			"protocolVersion": mcpProtocolVersion,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "regulus", "version": c.Version, "contract": contract.Version},
+			"protocolVersion": disc.ProtocolVersion,
+			"capabilities":    caps,
+			"serverInfo":      map[string]any{"name": "regulus", "version": c.Version, "contract": contract.Version, "mcpContract": mcp.ContractVersion},
 		})
 	case "tools/list":
 		return mcpOK(req.ID, map[string]any{"tools": mcpToolList()})
