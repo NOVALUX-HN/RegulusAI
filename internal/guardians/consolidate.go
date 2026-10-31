@@ -100,6 +100,15 @@ func Consolidate(root, task string) (Consolidation, error) {
 			Guardian: ev.Guardian, Status: ev.Status, Note: ev.Note,
 			Evidence: append([]string(nil), ev.Evidence...), Disputed: disputed,
 		})
+		// Decision log (F2/S2): record the consolidated call. Best
+		// effort by design: logging never changes verdict logic.
+		decision := DecisionAgree
+		if disputed {
+			decision = DecisionDisagree
+		}
+		if _, err := RecordDecision(root, task, ev.Guardian, decision, ev.Note); err != nil {
+			// Best effort: the log must never fail consolidation.
+		}
 	}
 	if n := len(evals); n > 0 {
 		con.DisagreementRate = float64(con.Dispute) / float64(n)

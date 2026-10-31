@@ -16,6 +16,7 @@ import (
 
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/evolve"
+	"regulus-ai/internal/guardians"
 	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/trace"
 )
@@ -335,5 +336,47 @@ func TestFileExporterRoundTripRedacted(t *testing.T) {
 	kept, _ := json.Marshal(mem.Payloads[0])
 	if strings.Contains(string(kept), secret) {
 		t.Errorf("memory exporter kept unredacted secret")
+	}
+}
+
+// F2 (spec S2): guardian_disagreement_rate aggregates the guardian
+// decision log when present (disagree/total, scoped by task); absent,
+// today's honest 0 + coverage note is preserved (see
+// TestMetricsRateMathOnFixtures, unmodified). RED test: fails before
+// Summarize reads the log.
+func TestMetricsGuardianDisagreementFromDecisionLog(t *testing.T) {
+	root := t.TempDir()
+	seedMetricsWorld(t, root)
+	if _, err := guardians.RecordDecision(root, "task-a", "regulus-reviewer", guardians.DecisionAgree, "matches"); err != nil {
+		t.Fatalf("RecordDecision: %v", err)
+	}
+	if _, err := guardians.RecordDecision(root, "task-b", "regulus-reviewer", guardians.DecisionDisagree, "looks fine to me"); err != nil {
+		t.Fatalf("RecordDecision: %v", err)
+	}
+
+	m, err := Summarize(root, "")
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	assertNoNaN(t, m)
+	if m.GuardianDisagreementRate != 0.5 {
+		t.Errorf("guardian disagreement rate = %v, want 0.5 (1 disagree of 2)", m.GuardianDisagreementRate)
+	}
+	if note := m.Coverage["guardian_disagreement_rate"]; strings.TrimSpace(note) == "" {
+		t.Error("coverage note missing for measured guardian rate")
+	}
+	for _, u := range m.Unmeasured {
+		if u == "guardian_disagreement_rate" {
+			t.Errorf("measured guardian rate must leave unmeasured (have %v)", m.Unmeasured)
+		}
+	}
+
+	// Task scope: task-a agreed, so its own rate is 0.
+	scoped, err := Summarize(root, "task-a")
+	if err != nil {
+		t.Fatalf("Summarize task-a: %v", err)
+	}
+	if scoped.GuardianDisagreementRate != 0 {
+		t.Errorf("scoped guardian rate = %v, want 0 (task-a agreed)", scoped.GuardianDisagreementRate)
 	}
 }

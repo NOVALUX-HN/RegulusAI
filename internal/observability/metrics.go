@@ -21,6 +21,7 @@ import (
 
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/evolve"
+	"regulus-ai/internal/guardians"
 	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/trace"
 )
@@ -199,7 +200,29 @@ func Summarize(root, task string) (Metrics, error) {
 	m.Coverage["task_completion_rate"] = "receipts: tasks with every verdict pass / tasks with any receipts"
 	m.Coverage["verification_pass_rate"] = "receipts: verdict pass / total receipts"
 	m.Coverage["verification_failure_rate"] = "receipts: verdict fail / total receipts"
-	m.Coverage["guardian_disagreement_rate"] = "no guardian execution store; honest zero (see ProjectGuardianExecutions)"
+	decisions, err := guardians.ListDecisions(root, task)
+	if err != nil {
+		return Metrics{}, err
+	}
+	if len(decisions) > 0 {
+		disagree := 0
+		for _, d := range decisions {
+			if d.Verdict == guardians.DecisionDisagree {
+				disagree++
+			}
+		}
+		m.GuardianDisagreementRate = float64(disagree) / float64(len(decisions))
+		m.Coverage["guardian_disagreement_rate"] = "guardian decision log disagree/total under .regulus/guardians/decisions.jsonl"
+		kept := m.Unmeasured[:0]
+		for _, u := range m.Unmeasured {
+			if u != unmeasuredGuardian {
+				kept = append(kept, u)
+			}
+		}
+		m.Unmeasured = kept
+	} else {
+		m.Coverage["guardian_disagreement_rate"] = "no guardian execution store; honest zero (see ProjectGuardianExecutions)"
+	}
 	m.Coverage["evidence_completeness"] = "evidence.Verify passed/checked with quarantine disabled (hash pins and manifest links)"
 	m.Coverage["evolution_acceptance_rate"] = "evolve experiments adopted/total under .regulus/evolution; experiments are global (no task field)"
 	m.Coverage["regression_rate"] = "receipts: fail verdicts carrying a metric value / total receipts; non-metric failures excluded"
