@@ -10,6 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
+
+	"regulus-ai/internal/budget"
+	"regulus-ai/internal/reflect"
 )
 
 // Strategy selects how experiments run.
@@ -49,7 +53,10 @@ type RunCap struct {
 
 // RunExperiments runs exps under strategy. Outcomes follow input order for
 // every strategy. Attempts beyond RunCap never fire: the run stops with
-// ErrBudgetExhausted and the outcomes collected so far.
+// ErrBudgetExhausted and the outcomes collected so far. The global
+// evolution cap is enforced first (S1): an exhausted day refuses the
+// whole run with no probe firing, and an allowed run records one
+// experiment-run ledger entry before running.
 func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCap, probe ProbeFunc) ([]RunOutcome, error) {
 	switch strategy {
 	case StrategySequential, StrategyParallel, StrategyHybrid:
@@ -58,6 +65,38 @@ func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCa
 	}
 	if probe == nil {
 		return nil, errors.New("evolve: strategy run needs a probe function")
+	}
+	// Global evolution cap (PRD R-E4, S1): strategy runs consume the
+	// daily ledger like the rest, mirroring reflect.Run. Experiments
+	// carry no task, so Task="" (global cap only); refusals are free
+	// and recorded. RunExperiments has no clock, so the gate reads the
+	// wall clock.
+	now := time.Now().UTC()
+	dailyCap := reflect.EvolutionCap(root)
+	today, err := budget.TodayEvolutionCount(root, now)
+	if err != nil {
+		return nil, err
+	}
+	if today >= dailyCap {
+		if err := budget.Record(root, budget.Entry{
+			Kind:      budget.KindExperiment,
+			Timestamp: now,
+			Task:      "",
+			Outcome:   budget.OutcomeRefusedCap,
+			Detail:    fmt.Sprintf("cap %d reached", dailyCap),
+		}); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("evolve: evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, dailyCap)
+	}
+	if err := budget.Record(root, budget.Entry{
+		Kind:      budget.KindExperiment,
+		Timestamp: now,
+		Task:      "",
+		Outcome:   budget.OutcomeExperimentRun,
+		Detail:    fmt.Sprintf("strategy %s: %d experiment(s)", strategy, len(exps)),
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]RunOutcome, len(exps))
 	var mu sync.Mutex

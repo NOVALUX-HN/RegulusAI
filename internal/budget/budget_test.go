@@ -108,3 +108,31 @@ func TestTaskEvolutionCountFiltersTaskAndOutcomes(t *testing.T) {
 		t.Fatalf("task count = %d, want 1, err=%v", n, err)
 	}
 }
+
+// Experiment runs consume the daily evolution budget like the rest
+// (S1): experiment-run entries count toward the daily total and toward
+// the matching task share; refusals stay free.
+func TestEvolutionCountIncludesExperiments(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC)
+	must := func(e Entry) {
+		t.Helper()
+		if err := Record(root, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(Entry{Kind: KindExperiment, Timestamp: base, Outcome: OutcomeExperimentRun})
+	must(Entry{Kind: KindExperiment, Timestamp: base.Add(time.Hour), Task: "a/1", Outcome: OutcomeExperimentRun})
+	must(Entry{Kind: KindExperiment, Timestamp: base.Add(2 * time.Hour), Outcome: OutcomeRefusedCap})
+	must(Entry{Kind: KindReflect, Timestamp: base.Add(3 * time.Hour), Task: "b/2", Outcome: OutcomeCandidateProposed})
+	n, err := TodayEvolutionCount(root, base.Add(4*time.Hour))
+	if err != nil || n != 3 {
+		t.Fatalf("daily count = %d, want 3 (two experiment runs + one reflect proposal; refusal excluded), err=%v", n, err)
+	}
+	if n, err := TaskEvolutionCount(root, "", base.Add(4*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("empty-task count = %d, want 1 (global experiment run only), err=%v", n, err)
+	}
+	if n, err := TaskEvolutionCount(root, "a/1", base.Add(4*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("task a/1 count = %d, want 1, err=%v", n, err)
+	}
+}

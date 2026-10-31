@@ -23,14 +23,16 @@ type Entry struct {
 
 // Evolution ledger kinds and outcomes (PRD R-E4).
 const (
-	KindReflect = "reflect"
-	KindProbe   = "probe"
-	KindSurface = "surface"
+	KindReflect    = "reflect"
+	KindProbe      = "probe"
+	KindSurface    = "surface"
+	KindExperiment = "experiment"
 
 	OutcomeCandidateProposed = "candidate-proposed"
 	OutcomeAdmitted          = "admitted"
 	OutcomeRefusedCap        = "refused-cap"
 	OutcomeProbeRun          = "probe-run"
+	OutcomeExperimentRun     = "experiment-run"
 	OutcomeSurfaceProposed   = "surface-proposed"
 	OutcomeSurfaceApplied    = "surface-applied"
 )
@@ -40,7 +42,7 @@ const (
 const DefaultEvolutionCapPerDay = 10
 
 // TodayEvolutionCount counts today's evolution runs that consume the
-// cap: proposals and probes. Refusals are free (and recorded); the
+// cap: proposals, probes and experiment runs. Refusals are free (and recorded); the
 // admission step is mechanical and does not consume the cap.
 func TodayEvolutionCount(root string, now time.Time) (int, error) {
 	entries, err := Show(root)
@@ -50,10 +52,10 @@ func TodayEvolutionCount(root string, now time.Time) (int, error) {
 	today := now.UTC().Format("2006-01-02")
 	n := 0
 	for _, e := range entries {
-		if e.Kind != KindReflect && e.Kind != KindProbe && e.Kind != KindSurface {
+		if e.Kind != KindReflect && e.Kind != KindProbe && e.Kind != KindSurface && e.Kind != KindExperiment {
 			continue
 		}
-		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun && e.Outcome != OutcomeSurfaceProposed {
+		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun && e.Outcome != OutcomeSurfaceProposed && e.Outcome != OutcomeExperimentRun {
 			continue
 		}
 		if e.Timestamp.UTC().Format("2006-01-02") == today {
@@ -77,10 +79,10 @@ func TaskEvolutionCount(root, task string, now time.Time) (int, error) {
 		if e.Task != task {
 			continue
 		}
-		if e.Kind != KindReflect && e.Kind != KindProbe && e.Kind != KindSurface {
+		if e.Kind != KindReflect && e.Kind != KindProbe && e.Kind != KindSurface && e.Kind != KindExperiment {
 			continue
 		}
-		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun && e.Outcome != OutcomeSurfaceProposed {
+		if e.Outcome != OutcomeCandidateProposed && e.Outcome != OutcomeProbeRun && e.Outcome != OutcomeSurfaceProposed && e.Outcome != OutcomeExperimentRun {
 			continue
 		}
 		if e.Timestamp.UTC().Format("2006-01-02") == today {
