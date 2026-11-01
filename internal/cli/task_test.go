@@ -141,6 +141,28 @@ func TestTaskCloseEndToEnd(t *testing.T) {
 	}
 }
 
+func TestTaskCloseRefusalLeavesChartUnchanged(t *testing.T) {
+	chart := initTaskChart(t, "demo")
+	before, err := os.ReadFile(chart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"task", "close", chart, "T1"}); code != 1 {
+		t.Fatalf("close without receipts must exit 1, got %d, output:\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "cannot close") {
+		t.Fatalf("refusal must list the unmet conditions, got %q", out.String())
+	}
+	after, err := os.ReadFile(chart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("refused close must leave the chart byte-identical")
+	}
+}
+
 func TestTaskCloseRefusesFailingGate(t *testing.T) {
 	chart := initTaskChart(t, "demo")
 	writeTaskReceipt(t, "demo/T1", "build", false)

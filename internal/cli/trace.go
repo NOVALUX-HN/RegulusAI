@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"regulus-ai/internal/trace"
@@ -143,7 +144,9 @@ func (c CLI) tracePruneCmd(args []string) int {
 }
 
 // traceFilesCmd implements `regulus trace files --session <s>`: prints
-// the distinct touched paths in call order, one per line.
+// the distinct touched paths in call order, one per line. A missing
+// trace file (never recorded) and a recorded trace with no files are
+// different honest outcomes: both exit 0 with distinct messages.
 func (c CLI) traceFilesCmd(args []string) int {
 	fs := flag.NewFlagSet("trace files", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -154,6 +157,10 @@ func (c CLI) traceFilesCmd(args []string) int {
 	if *session == "" || fs.NArg() != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace files --session <s>")
 		return 2
+	}
+	if _, err := os.Stat(trace.File(".", *session)); os.IsNotExist(err) {
+		fmt.Fprintf(c.Stdout, "no trace file for session %s (never recorded)\n", *session)
+		return 0
 	}
 	entries, err := trace.List(".", *session)
 	if err != nil {
@@ -173,13 +180,15 @@ func (c CLI) traceFilesCmd(args []string) int {
 		}
 	}
 	if !any {
-		fmt.Fprintf(c.Stdout, "(no trace for session %s)\n", *session)
+		fmt.Fprintf(c.Stdout, "session %s has no files\n", *session)
 	}
 	return 0
 }
 
 // traceShowCmd implements `regulus trace show --session <s>`: prints the
-// session fingerprint (sequence, tool, status), one per line.
+// session fingerprint (sequence, tool, status), one per line. Like
+// files, it distinguishes a never-recorded session (no trace file)
+// from a recorded-but-empty one — both exit 0 with distinct messages.
 func (c CLI) traceShowCmd(args []string) int {
 	fs := flag.NewFlagSet("trace show", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -191,13 +200,17 @@ func (c CLI) traceShowCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace show --session <s>")
 		return 2
 	}
+	if _, err := os.Stat(trace.File(".", *session)); os.IsNotExist(err) {
+		fmt.Fprintf(c.Stdout, "no trace file for session %s (never recorded)\n", *session)
+		return 0
+	}
 	entries, err := trace.List(".", *session)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace show: %v\n", err)
 		return 1
 	}
 	if len(entries) == 0 {
-		fmt.Fprintf(c.Stdout, "(no trace for session %s)\n", *session)
+		fmt.Fprintf(c.Stdout, "session %s has no files (no entries)\n", *session)
 		return 0
 	}
 	for _, line := range trace.Fingerprint(entries) {

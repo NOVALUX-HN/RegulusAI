@@ -19,15 +19,28 @@ const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first harness, the Sext
 // loadDiscipline reads the editable system prompt (.opencode/discipline.md).
 // The file is harness surface: Evolution may edit it through surface
 // propose/apply. A missing or empty file falls back to the compiled
-// default so older checkouts keep working.
+// default so older checkouts keep working. Every fallback logs which
+// file failed and why (read error vs empty vs marker) to stderr before
+// returning the default — a silent fallback would lie about which
+// discipline is in force.
+const DISCIPLINE_MARKER = "Regulus discipline (evidence-first";
 async function loadDiscipline(dir: string): Promise<string> {
+  const path = `${dir}/.opencode/discipline.md`;
   try {
-    const text = await Bun.file(`${dir}/.opencode/discipline.md`).text()
-    if (text.trim() !== "") return text.trim()
-  } catch {
-    // fall through to the default
+    const text = await Bun.file(path).text();
+    if (text.trim() === "") {
+      console.error(`[regulus] discipline fallback: ${path} is empty — using compiled default`);
+      return DEFAULT_DISCIPLINE;
+    }
+    if (!text.includes(DISCIPLINE_MARKER)) {
+      console.error(`[regulus] discipline fallback: ${path} missing marker "${DISCIPLINE_MARKER}" — using compiled default`);
+      return DEFAULT_DISCIPLINE;
+    }
+    return text.trim();
+  } catch (err) {
+    console.error(`[regulus] discipline fallback: cannot read ${path} (${(err as Error)?.message ?? String(err)}) — using compiled default`);
+    return DEFAULT_DISCIPLINE;
   }
-  return DEFAULT_DISCIPLINE
 }
 
 // DEFAULT_TOOL_GUIDANCE is the compiled fallback for every tool
@@ -84,14 +97,28 @@ function parseToolGuidance(text: string): Record<string, string> {
 }
 
 // loadToolGuidance merges the editable file over the compiled defaults.
+// A missing, empty, or section-less file falls back to the compiled
+// defaults; every fallback logs which file failed and why (read error
+// vs empty vs marker) to stderr so a stale description never passes
+// as intentional.
 async function loadToolGuidance(dir: string): Promise<Record<string, string>> {
+  const path = `${dir}/.opencode/tool-guidance.md`;
   try {
-    const text = await Bun.file(`${dir}/.opencode/tool-guidance.md`).text()
-    if (text.trim() !== "") return { ...DEFAULT_TOOL_GUIDANCE, ...parseToolGuidance(text) }
-  } catch {
-    // fall through to the defaults
+    const text = await Bun.file(path).text();
+    if (text.trim() === "") {
+      console.error(`[regulus] tool-guidance fallback: ${path} is empty — using compiled defaults`);
+      return { ...DEFAULT_TOOL_GUIDANCE };
+    }
+    const parsed = parseToolGuidance(text);
+    if (Object.keys(parsed).length === 0) {
+      console.error(`[regulus] tool-guidance fallback: ${path} has no ## sections (marker) — using compiled defaults`);
+      return { ...DEFAULT_TOOL_GUIDANCE };
+    }
+    return { ...DEFAULT_TOOL_GUIDANCE, ...parsed };
+  } catch (err) {
+    console.error(`[regulus] tool-guidance fallback: cannot read ${path} (${(err as Error)?.message ?? String(err)}) — using compiled defaults`);
+    return { ...DEFAULT_TOOL_GUIDANCE };
   }
-  return { ...DEFAULT_TOOL_GUIDANCE }
 }
 
 function dataBlock(title: string, content: string): string {
@@ -382,7 +409,11 @@ export default Plugin.define({
         input: { type: "object", properties: {}, additionalProperties: false },
         options: { namespace: "regulus", codemode: true },
         execute: async (_input, context) => {
-          const res = await run(bin, ["memory", "context"], dir, context.signal)
+          // S1 (plugin-ux): memory context assembles charts + notes +
+          // lessons and can exceed the generic 30s spawn budget on large
+          // repos — reuse the gate_run long budget (1h default, 600s floor,
+          // REGULUS_GATE_RUN_TIMEOUT_MS override) instead of aborting.
+          const res = await run(bin, ["memory", "context"], dir, context.signal, gateRunTimeoutMs())
           return { content: res.output }
         },
       })
@@ -421,7 +452,10 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { task, domain } = input as Record<string, string>
-          const res = await run(bin, ["evolve", "propose", "--task", task, "--domain", domain], dir, context.signal)
+          // S1 (plugin-ux): evolve propose assembles the evidence pack
+          // (traces, receipts, INDEX) and can exceed 30s — same shared
+          // long budget as gate_run (see memory_context).
+          const res = await run(bin, ["evolve", "propose", "--task", task, "--domain", domain], dir, context.signal, gateRunTimeoutMs())
           return { content: res.output }
         },
       })
@@ -443,11 +477,14 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { task, gate, a, b } = input as Record<string, string>
+          // S1 (plugin-ux): probe_contrast runs a real gate twice, so it
+          // needs the same long budget as gate_run, not the 30s default.
           const res = await run(
             bin,
             ["probe", "contrast", "--task", task, "--gate", gate, "--a", a, "--b", b],
             dir,
             context.signal,
+            gateRunTimeoutMs(),
           )
           return { content: res.output }
         },
@@ -531,11 +568,14 @@ export default Plugin.define({
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
           const { task, gate, base, a, b } = input as Record<string, string>
+          // S1 (plugin-ux): probe_compose runs a real gate three times —
+          // same long budget as gate_run (see probe_contrast).
           const res = await run(
             bin,
             ["probe", "compose", "--task", task, "--gate", gate, "--base", base, "--a", a, "--b", b],
             dir,
             context.signal,
+            gateRunTimeoutMs(),
           )
           return { content: res.output }
         },
@@ -584,7 +624,8 @@ export default Plugin.define({
 
     // Trace capture (G2.6): every tool execution appends one line to the
     // session trace via the binary. Awaited inside try/catch so a hook
-    // failure never breaks tool execution.
+    // failure never breaks tool execution — but it is logged to stderr
+    // (S4: honest messages) instead of swallowed, naming the session.
     await ctx.tool.hook("execute.after", async (event) => {
       try {
         const status = event.status === "completed" ? "completed" : "error"
@@ -604,9 +645,12 @@ export default Plugin.define({
         ]
         const files = extractPaths(JSON.stringify((event as { input?: unknown }).input ?? ""))
         if (files.length > 0) args.push("--files", files.join(","))
-        await run(bin, args, dir)
-      } catch {
-        // hook failures never break tool execution
+        const res = await run(bin, args, dir)
+        if (res.exitCode !== 0) {
+          console.error(`[regulus] trace hook: record failed for session ${event.sessionID} (exit ${res.exitCode}): ${res.output}`)
+        }
+      } catch (err) {
+        console.error(`[regulus] trace hook: ${(err as Error)?.message ?? String(err)}`)
       }
     })
 
@@ -634,6 +678,8 @@ export default Plugin.define({
       }
       // Skill suggestions (E6): match recent message words against
       // skill triggers; conservative (2+ shared words, max 2), DATA.
+      // Best-effort: failures never break context assembly, but they
+      // are logged to stderr (S4) instead of swallowed.
       try {
         const skills = await loadSkills(dir)
         const suggested = suggestSkills(skills, recent)
@@ -641,8 +687,8 @@ export default Plugin.define({
           const lines = suggested.map((s) => (s.description !== "" ? `- ${s.name}: ${s.description}` : `- ${s.name}`))
           event.system.push({ type: "text", text: dataBlock("regulus_suggested_skills", lines.join("\n")) })
         }
-      } catch {
-        // suggestions are best-effort; never break context assembly
+      } catch (err) {
+        console.error(`[regulus] suggestSkills: ${(err as Error)?.message ?? String(err)} — skipping suggestions`)
       }
     })
 

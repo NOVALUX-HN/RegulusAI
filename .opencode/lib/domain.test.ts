@@ -466,6 +466,39 @@ describe("gate_run timeout (D3)", () => {
   });
 });
 
+describe("long timeouts where there are gates (plugin-ux S1)", () => {
+  // regulus.ts carries the OpenCode host import, so the timeout wiring
+  // is pinned by source assertion (precedent: S3/D3 wiring tests).
+  // Decision: probe_contrast/probe_compose run real gates and
+  // evolve_propose/memory_context assemble large packs — all four reuse
+  // the shared gate_run long budget (gateRunTimeoutMs(): 1h default,
+  // 600s floor, REGULUS_GATE_RUN_TIMEOUT_MS override) instead of the
+  // generic 30s spawn default. One shared override, no new env surface.
+  async function toolBlock(name: string, next: string): Promise<string> {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const start = src.indexOf(`name: "${name}"`);
+    const end = next === "" ? src.length : src.indexOf(`name: "${next}"`, start);
+    return src.slice(start, end);
+  }
+
+  test("probe_contrast uses the long budget", async () => {
+    const block = await toolBlock("probe_contrast", "trace_show");
+    expect(block).toContain("gateRunTimeoutMs()");
+  });
+  test("probe_compose uses the long budget", async () => {
+    const block = await toolBlock("probe_compose", "");
+    expect(block).toContain("gateRunTimeoutMs()");
+  });
+  test("evolve_propose uses the long budget", async () => {
+    const block = await toolBlock("evolve_propose", "probe_contrast");
+    expect(block).toContain("gateRunTimeoutMs()");
+  });
+  test("memory_context uses the long budget", async () => {
+    const block = await toolBlock("memory_context", "memory_history");
+    expect(block).toContain("gateRunTimeoutMs()");
+  });
+});
+
 describe("CRLF-tolerant defaults render (H1/S1)", () => {
   const LF_DISCIPLINE = "# Title\n\nIntro stays file-only.\nRegulus discipline (evidence-first harness):\n- one\n- two\n";
   const LF_GUIDANCE = "# Title\n\nIntro.\n\n## alpha\n\nBody one here.\n\n## beta\n\nBody two here.\n";
@@ -559,5 +592,56 @@ describe("gate_run content (D3)", () => {
     expect(got).toContain("timed out");
     expect(got).toContain("exit code: -1");
     expect(formatGateFailure("   ")).toContain("exit code: -1");
+  });
+});
+
+describe("honest fallbacks (plugin-ux S4)", () => {
+  // regulus.ts carries the OpenCode host import, so the fallback wiring
+  // is pinned by source assertion (precedent: S3/D3/S1 wiring tests).
+  // Decision: every silent fallback becomes a stderr line naming which
+  // file failed and why (read error vs empty vs marker) before using
+  // the compiled default — a fallback that swallows the cause lies
+  // about which discipline/guidance is in force.
+  async function pluginSrc(): Promise<string> {
+    return Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+  }
+
+  test("loadDiscipline warns with file, marker, and read error before the default", async () => {
+    const src = await pluginSrc();
+    const block = src.slice(src.indexOf("async function loadDiscipline"), src.indexOf("const DEFAULT_TOOL_GUIDANCE"));
+    expect(block).toContain("console.error");
+    expect(block).toContain(".opencode/discipline.md");
+    expect(block).toContain("is empty");
+    expect(block).toContain("missing marker");
+    expect(block).toContain("cannot read");
+    expect(block).toContain("DEFAULT_DISCIPLINE");
+  });
+
+  test("loadToolGuidance warns with file, marker, and read error before the defaults", async () => {
+    const src = await pluginSrc();
+    const block = src.slice(src.indexOf("async function loadToolGuidance"), src.indexOf("function dataBlock"));
+    expect(block).toContain("console.error");
+    expect(block).toContain(".opencode/tool-guidance.md");
+    expect(block).toContain("is empty");
+    expect(block).toContain("no ## sections");
+    expect(block).toContain("cannot read");
+    expect(block).toContain("DEFAULT_TOOL_GUIDANCE");
+  });
+
+  test("trace hook logs instead of swallowing (throw and non-zero exit)", async () => {
+    const src = await pluginSrc();
+    const block = src.slice(src.indexOf('ctx.tool.hook("execute.after"'), src.indexOf('ctx.session.hook("context"'));
+    expect(block).toContain("console.error");
+    expect(block).toContain("[regulus] trace hook");
+    expect(block).toContain("exitCode !== 0");
+    expect(block).not.toMatch(/catch\s*\{\s*\/\/ hook failures/);
+  });
+
+  test("suggestSkills catch logs one line instead of swallowing", async () => {
+    const src = await pluginSrc();
+    const tail = src.slice(src.indexOf("Skill suggestions (E6)"));
+    expect(tail).toContain("console.error");
+    expect(tail).toContain("[regulus] suggestSkills");
+    expect(tail).not.toMatch(/catch\s*\{\s*\/\/ suggestions are best-effort/);
   });
 });

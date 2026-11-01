@@ -338,7 +338,14 @@ func (c CLI) yoloCmd(args []string) int {
 	cur, _ := bash["*"].(string)
 	curEdit := editStar(perm["edit"])
 	if mode == "status" {
-		fmt.Fprintf(c.Stdout, "yolo: %s (bash %s, edit %s)\n", yoloWord(cur), yoloWord(cur), yoloWord(curEdit))
+		bashWord := yoloWord(cur)
+		editWord := yoloWord(curEdit)
+		if bashWord == editWord {
+			fmt.Fprintf(c.Stdout, "yolo: %s (bash %s, edit %s)\n", bashWord, bashWord, editWord)
+			return 0
+		}
+		fmt.Fprintf(c.Stdout, "yolo: mixed (bash %s, edit %s)\n", bashWord, editWord)
+		fmt.Fprintln(c.Stdout, "next: run /reload in opencode (or restart) to apply")
 		return 0
 	}
 	want := map[string]string{"on": "allow", "off": "ask"}[mode]

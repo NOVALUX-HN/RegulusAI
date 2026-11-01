@@ -1455,8 +1455,8 @@ func TestTraceRecordBadStatusRefused(t *testing.T) {
 	if code := c2.Run([]string{"trace", "show", "--session", "s"}); code != 0 {
 		t.Fatalf("show exit = %d, want 0", code)
 	}
-	if !strings.Contains(out2.String(), "(no trace for session s)") {
-		t.Fatalf("refused record must leave the trace empty, got %q", out2.String())
+	if !strings.Contains(out2.String(), "no trace file for session s") || !strings.Contains(out2.String(), "never recorded") {
+		t.Fatalf("refused record must leave no trace file, got %q", out2.String())
 	}
 }
 
@@ -1466,7 +1466,7 @@ func TestTraceShowEmptySession(t *testing.T) {
 	if code := c.Run([]string{"trace", "show", "--session", "ghost"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if got, want := out.String(), "(no trace for session ghost)\n"; got != want {
+	if got, want := out.String(), "no trace file for session ghost (never recorded)\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
@@ -1765,7 +1765,7 @@ func TestTraceFilesEmptyAndUsage(t *testing.T) {
 	if code := c.Run([]string{"trace", "files", "--session", "nobody"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(out.String(), "(no trace for session nobody)") {
+	if !strings.Contains(out.String(), "no trace file for session nobody") || !strings.Contains(out.String(), "never recorded") {
 		t.Fatalf("output = %q", out.String())
 	}
 	c2, _, errb := newCLI(nil)
