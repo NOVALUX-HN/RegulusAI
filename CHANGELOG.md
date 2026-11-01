@@ -4,6 +4,68 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.11.0] - 2026-11-01
+
+Same branch (`develop`); tags cut on main at merge.
+
+Batch delivered since 0.10.0 (HEAD `61490c2`):
+
+### Added
+- programa macizo 16/16 — memory/flow/tokens/dash (`30fa954`..`b884e5a`):
+  M1 ADR SQLite-vs-stdlib; M2 índice v2 con offsets+verify, reindex
+  atómico, lockfile portable, lecturas acotadas; M3 auto-save al cerrar +
+  export/import portable por dominio; M4 minero envfacts +
+  `memory mine --apply`; F1 contabilidad de coste por task en traces;
+  F2 review proporcional congelado; F3 tabla trigger-rules (48 corridas);
+  F4 bench runner + suite de 7 tasks ocultos + baseline; T1 compaction
+  acotada (-58% resume); T2 toolsets full/minimal/auto; T3 loop guard
+  determinista; T4 reporte de ahorro honesto por mecanismo; D1 API
+  read-only paginada; D2 UI profesional embebida sin dependencias;
+  D3 CSP+nosniff y RedactText; D4 autostart POSIX + guía del panel.
+- regulus-health-fix (`7f770f3`): H1–H7 cierran los hallazgos de la
+  verificación.
+- close-sobre-último-manifest (`04acbd6`): `task close` verifica el último
+  manifest verde (C1).
+- design.md canónico (`ab8f681`): design.md adoptado como referencia
+  Obsidian & Lion Gold.
+- dashboard-pro (`7e21082`): retema Obsidian & Lion Gold + info trazable +
+  alcance por proyecto (D1–D3).
+- dashboard-projects (`61490c2`): selector multi-proyecto + auto-detect de
+  raíz (P1–P4).
+- gate-hardening (`5f9af6a`): allowlist por segmentos + jail en evidence +
+  untar sin exec + tests LCS (G1–G4).
+- plugin-ux (`8897b2b`): timeouts largos + launcher unificado + task
+  verificado + mensajes honestos (U1–U4).
+- debt-paydown-2 (`41255f6`): SPLIT CheckClose/Compose/RunTask +
+  regex-cache + capWriter mutex + git timeouts (D1–D3).
+- docs-ci-hygiene (`bb2d4ad`, `ec52173`): docs veraces + CI acotado Node24 +
+  init con floors + tests behavior + helpers compartidos (C1–C4).
+- gap-sweep (`dfaa8c6`, `6b78b80`, `a064e3a`, `8f73e22`, `199f0aa`): MCP
+  gate_run acotado, COVER/SPLIT contra CRAP, fallback de versión sin node,
+  lint stdlib explícito (G2–G6).
+
+### Fixed
+- status sin gremlins en pwsh: probe puro Go (`e201e43`).
+- causa raíz de `stdout_hash_mismatch` corregida (`199f0aa`).
+
+Release gauntlet `bin/regulus gate run release-0-11-0/V1`: 12/12 pass
+(receipts below, append-only).
+
+| Layer | Gate | Receipt |
+|---|---|---|
+| 1 | typecheck | `rec_18e404461b21e690` |
+| 2 | lint | `rec_18e4044663c61ab0` |
+| 3 | build | `rec_18e404468eb633a4` |
+| 4 | unit-tests | `rec_18e40446b7e5faac` |
+| 5 | coverage-floor (85.80 >= 80.00) | `rec_18e40488eda129e0` |
+| 6 | mutation | `rec_18e404891b2f1f34` |
+| 7 | crap | `rec_18e4048e2a95fbf0` |
+| 8 | vulncheck | `rec_18e4048e4a46a29c` |
+| 9 | spec | `rec_18e4048f04d67e0c` |
+| 10 | ts-typecheck | `rec_18e4048f1fe7bad0` |
+| 11 | ts-unit-tests | `rec_18e4048f744e7af0` |
+| 12 | gofmt | `rec_18e4048ff0ac43fc` |
+
 ## [0.10.0] - 2026-10-31
 
 Same branch (`feat/v0.4-evolution`); tags cut on main at merge.

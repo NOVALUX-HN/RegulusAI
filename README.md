@@ -2,7 +2,7 @@
 
 **An OpenCode-native, self-improving engineering harness: a guardian gauntlet over the code, the Sextant workflow over the work, and evidence-driven evolution of the harness itself.**
 
-> Status: v0.10.0 — Gauntlet · Discipline · self-improving Evolution, now with win-hardening, crap-paydown a max 29.46, retention-gc, memory-hybrid, toolchain-gates, plus the 12-gate gauntlet (health/live/polish gaps closed), almanac robustez + g1-g4 retrieval, and doctor V2 refusals — proven by the suite (Go + bun) on this very repository.
+> Status: v0.11.0 — Gauntlet · Discipline · self-improving Evolution, now with win-hardening, crap-paydown a max 29.46, retention-gc, memory-hybrid, toolchain-gates, plus the 12-gate gauntlet (health/live/polish gaps closed), almanac robustez + g1-g4 retrieval, doctor V2 refusals, regulus-health-fix, close-latest-manifest, design.md, dashboard-pro, dashboard-projects — proven by the suite (Go + bun) on this very repository.
 
 Regulus AI fuses four proven ideas into one harness for [OpenCode](https://opencode.ai) V2:
 
