@@ -1,4 +1,4 @@
-// Dashboard read-only JSON (T1, S1): metrics + almanac summary over
+// Dashboard read-only JSON (T1, S1; D2 visual): metrics + almanac summary over
 // EXISTING stores. No producer rewrites. Free-text passes through
 // observability redaction before leaving the process.
 package httpapi
@@ -99,9 +99,11 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	writeEnvelope(w, status, env)
 }
 
-// handleDashboard serves the embedded visual (T2, S1-S2): Harness /
-// Guardado / Aprendizaje with 30s auto-refresh. Unknown /v1/* still 404s
-// through the shared envelope so versioned-contract tests stay green.
+// handleDashboard serves the embedded visual (D2): header with the
+// project state, cards per area, plain-language explanations, paginated
+// tables and dependency-free mini charts with 30s auto-refresh. Unknown
+// /v1/* still 404s through the shared envelope so versioned-contract
+// tests stay green.
 func (s Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
