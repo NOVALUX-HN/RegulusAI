@@ -173,10 +173,79 @@ func bashPosixPath(p string) string {
 	return strings.ReplaceAll(p, `\`, "/")
 }
 
-// hiddenNodeEnv keeps the host environment but swaps PATH for a minimal
-// POSIX one: node (including Windows interop node.exe under WSL) is
-// hidden while grep/head/sed stay available.
-func hiddenNodeEnv() []string {
+// hermeticBinDir builds a PATH directory containing only the binaries
+// the shipped fallback needs (grep/head/sed). Targets are resolved via
+// exec.LookPath BEFORE the PATH is trimmed (with /usr/bin + /bin
+// fallbacks), then exposed through symlinks, so whatever the runner
+// image leaks into the minimal PATH (e.g. node on ubuntu runners)
+// cannot seep into the probe. cd/command/printf are bash builtins and
+// bash itself is invoked by direct path, so the dir is sufficient.
+// Windows/WSL fallback: grep/head/sed live inside the bash companion
+// (WSL distro or Git Bash), not on the Windows PATH, and os.Symlink
+// needs privileges — so anything Go cannot resolve is linked from
+// inside bash itself (full host env, before trimming) with ln, falling
+// back to cp + chmod +x; the CI that matters (linux) uses symlinks.
+func hermeticBinDir(t *testing.T, bashPath string) string {
+	t.Helper()
+	dir := t.TempDir()
+	posixDir := bashPosixPath(dir)
+	var missing []string
+	linkFromGo := func(name, target string) {
+		link := filepath.Join(dir, name)
+		if err := os.Symlink(target, link); err != nil {
+			data, readErr := os.ReadFile(target)
+			if readErr != nil {
+				t.Fatalf("hermetic PATH: symlink %s -> %s: %v (copy fallback read: %v)", link, target, err, readErr)
+			}
+			if writeErr := os.WriteFile(link, data, 0o755); writeErr != nil {
+				t.Fatalf("hermetic PATH: copy %s -> %s: %v (symlink err: %v)", target, link, writeErr, err)
+			}
+		}
+	}
+	for _, name := range []string{"grep", "head", "sed"} {
+		target, err := exec.LookPath(name)
+		if err != nil {
+			for _, cand := range []string{"/usr/bin/" + name, "/bin/" + name} {
+				if fi, statErr := os.Stat(cand); statErr == nil && !fi.IsDir() {
+					target = cand
+					err = nil
+					break
+				}
+			}
+		}
+		if err != nil {
+			missing = append(missing, name)
+			continue
+		}
+		linkFromGo(name, target)
+	}
+	if len(missing) > 0 {
+		// Resolve from inside bash (host env, untrimmed) and link
+		// there: covers WSL/Git Bash where the tools are invisible
+		// to the Windows process. File, not `bash -c`: the WSL
+		// launcher pre-expands $vars in -c args.
+		script := "set -eu\ndest=\"$1\"\nshift\n" +
+			"for t in \"$@\"; do\n" +
+			"  p=\"$(command -v \"$t\")\" || { echo \"hermetic PATH: $t not found via bash\" >&2; exit 1; }\n" +
+			"  ln -sf \"$p\" \"$dest/$t\" 2>/dev/null || { cp \"$p\" \"$dest/$t\" && chmod +x \"$dest/$t\"; }\n" +
+			"done\n"
+		setupPath := filepath.Join(dir, "hermetic-setup.bash")
+		if err := os.WriteFile(setupPath, []byte(script), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		args := append([]string{bashPosixPath(setupPath), posixDir}, missing...)
+		cmd := exec.Command(bashPath, args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hermetic PATH via bash: %v\n%s", err, out)
+		}
+	}
+	return dir
+}
+
+// hermeticProbeEnv keeps the host environment but swaps PATH for the
+// single hermetic dir (posix form under WSL/Git Bash via
+// bashPosixPath). Node cannot leak in from the runner image.
+func hermeticProbeEnv(binDir string) []string {
 	env := os.Environ()
 	out := make([]string, 0, len(env)+1)
 	for _, kv := range env {
@@ -184,17 +253,21 @@ func hiddenNodeEnv() []string {
 			out = append(out, kv)
 		}
 	}
-	return append(out, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	return append(out, "PATH="+bashPosixPath(binDir))
 }
 
 // G5: run the shipped fallback in bash with node hidden from PATH:
 // it resolves the fixture version, and empty when absent (the caller
 // turns "" into the loud failure). Skips where bash is unavailable.
+// The probe PATH is hermetic (only grep/head/sed symlinks), so runner
+// images that leak node into the minimal PATH cannot trip the guard.
 func TestShippedFallbackFunctional(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
 		t.Skip("bash not on PATH — syntax (bash -n) and Go-mirror checks above still hold")
 	}
 	root := repoRoot(t)
+	binDir := hermeticBinDir(t, bashPath)
 	for _, tc := range []struct {
 		name    string
 		script  string
@@ -222,8 +295,8 @@ func TestShippedFallbackFunctional(t *testing.T) {
 			if err := os.WriteFile(probePath, []byte(probe), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			cmd := exec.Command("bash", bashPosixPath(probePath))
-			cmd.Env = hiddenNodeEnv()
+			cmd := exec.Command(bashPath, bashPosixPath(probePath))
+			cmd.Env = hermeticProbeEnv(binDir)
 			var stderr strings.Builder
 			cmd.Stderr = &stderr
 			out, err := cmd.Output()

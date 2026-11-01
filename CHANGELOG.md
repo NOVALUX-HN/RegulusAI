@@ -47,6 +47,9 @@ Batch delivered since 0.10.0 (HEAD `61490c2`):
 ### Fixed
 - status sin gremlins en pwsh: probe puro Go (`e201e43`).
 - causa raíz de `stdout_hash_mismatch` corregida (`199f0aa`).
+- TestShippedFallbackFunctional hermético: el probe corre con PATH de
+  un solo dir (symlinks a grep/head/sed), inmune a runners que filtran
+  `node` al PATH mínimo (CI `41345305422` layer 4 en linux).
 
 Release gauntlet `bin/regulus gate run release-0-11-0/V1`: 12/12 pass
 (receipts below, append-only).
