@@ -47,12 +47,16 @@ Domain: sextant
 
 ## Tasks
 
-| ID | Spec | Work | Route |
-|----|------|------|-------|
-| V1 | S1–S2 | bump 0.11.0 (package.json, README, CHANGELOG) + rebuild stampleado + release gauntlet | @regulus-worker |
-| V2 | S1–S2 | verificación independiente: versión match, binarios stampleados, receipts V1 existen y pasan | @regulus-verifier |
-| V3 | S3 | merge a main + tag v0.11.0 + push (+CI watch) — ejecuta lead inline | inline |
+| ID | Spec | Work | Route | Status |
+|----|------|-------|-------|--------|
+| V1 | S1–S2 | bump 0.11.0 (package.json, README, CHANGELOG) + rebuild stampleado + release gauntlet | @regulus-worker | done |
+| V2 | S1–S2 | verificación independiente: versión match, binarios stampleados, receipts V1 existen y pasan | @regulus-verifier | done |
+| V3 | S3 | merge a main + tag v0.11.0 + push (+CI watch) — ejecuta lead inline | inline | done |
 
 ## Log
 
 - L1: Chart opened 2026-11-01 desde "actualiza la rama y crea un nuevo release". develop == origin/develop == 61490c2, main == origin/main == 1ca0a0a, árbol limpio. Precedente release-0-10-0.md (V1 worker, V2 verifier, V3 lead; tag práctica v0.10.0).
+- CLOSED V1 CRITICAL spec OK + 12 receipt(s) PASS.
+- CLOSED V2 CRITICAL spec OK + 0 receipt(s) PASS.
+- CLOSED V3 CRITICAL spec OK + 0 receipt(s) PASS.
+- L2: CIERRE MANUAL (precedente 0.9.0/0.10.0): V1 12/12 run_6b0280b140040874 + rebuild 7/7 sellado; V2 verifier PASS + bytes 0.11.0 verificados; V3 ff 1ca0a0a..6e733d7 + tag v0.11.0 + push; CI 41345305422 rojo (exit 99, node filtrado al PATH) -> fix 6de0b26 -> CI 41348359270 SUCCESS. Tag en 6e733d7; reintento local BLOCKED host-side, no regresion.
