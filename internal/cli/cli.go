@@ -21,6 +21,33 @@ type CLI struct {
 	Stderr  io.Writer
 }
 
+// cliDispatch routes subcommand names to their handlers. Pure routing
+// table: adding a command means adding one line here, Run stays short.
+// doctor takes no arguments; its entry ignores the tail.
+var cliDispatch = map[string]func(c CLI, args []string) int{
+	"doctor":   func(c CLI, _ []string) int { return c.doctor() },
+	"spec":     func(c CLI, args []string) int { return c.specCmd(args) },
+	"status":   func(c CLI, args []string) int { return c.statusCmd(args) },
+	"chart":    func(c CLI, args []string) int { return c.chartCmd(args) },
+	"init":     func(c CLI, args []string) int { return c.initCmd(args) },
+	"surface":  func(c CLI, args []string) int { return c.surfaceCmd(args) },
+	"evidence": func(c CLI, args []string) int { return c.evidenceCmd(args) },
+	"gate":     func(c CLI, args []string) int { return c.gateCmd(args) },
+	"mcp":      func(c CLI, args []string) int { return c.mcpCmd(args) },
+	"memory":   func(c CLI, args []string) int { return c.memoryCmd(args) },
+	"budget":   func(c CLI, args []string) int { return c.budgetCmd(args) },
+	"library":  func(c CLI, args []string) int { return c.libraryCmd(args) },
+	"reflect":  func(c CLI, args []string) int { return c.reflectCmd(args) },
+	"evolve":   func(c CLI, args []string) int { return c.evolveCmd(args) },
+	"skills":   func(c CLI, args []string) int { return c.skillsCmd(args) },
+	"probe":    func(c CLI, args []string) int { return c.probeCmd(args) },
+	"trace":    func(c CLI, args []string) int { return c.traceCmd(args) },
+	"task":     func(c CLI, args []string) int { return c.taskCmd(args) },
+	"decide":   func(c CLI, args []string) int { return c.decideCmd(args) },
+	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
+	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
+}
+
 // Run executes one CLI invocation and returns the process exit code:
 // 0 success, 1 refusal or failure, 2 usage error.
 func (c CLI) Run(args []string) int {
@@ -38,53 +65,13 @@ func (c CLI) Run(args []string) int {
 	case "contract":
 		fmt.Fprintln(c.Stdout, contract.Version)
 		return 0
-	case "doctor":
-		return c.doctor()
-	case "spec":
-		return c.specCmd(args[1:])
-	case "status":
-		return c.statusCmd(args[1:])
-	case "chart":
-		return c.chartCmd(args[1:])
-	case "init":
-		return c.initCmd(args[1:])
-	case "surface":
-		return c.surfaceCmd(args[1:])
-	case "evidence":
-		return c.evidenceCmd(args[1:])
-	case "gate":
-		return c.gateCmd(args[1:])
-	case "mcp":
-		return c.mcpCmd(args[1:])
-	case "memory":
-		return c.memoryCmd(args[1:])
-	case "budget":
-		return c.budgetCmd(args[1:])
-	case "library":
-		return c.libraryCmd(args[1:])
-	case "reflect":
-		return c.reflectCmd(args[1:])
-	case "evolve":
-		return c.evolveCmd(args[1:])
-	case "skills":
-		return c.skillsCmd(args[1:])
-	case "probe":
-		return c.probeCmd(args[1:])
-	case "trace":
-		return c.traceCmd(args[1:])
-	case "task":
-		return c.taskCmd(args[1:])
-	case "decide":
-		return c.decideCmd(args[1:])
-	case "yolo":
-		return c.yoloCmd(args[1:])
-	case "crap":
-		return c.crapCmd(args[1:])
-	default:
-		fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])
-		c.usage(c.Stderr)
-		return 2
 	}
+	if fn, ok := cliDispatch[args[0]]; ok {
+		return fn(c, args[1:])
+	}
+	fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])
+	c.usage(c.Stderr)
+	return 2
 }
 
 var taskIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)

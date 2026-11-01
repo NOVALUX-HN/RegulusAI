@@ -106,26 +106,33 @@ func probeAttempts(exp evolve.Experiment) int {
 	return n
 }
 
-// Summarize aggregates the S3 metric set for one task ("" for every
-// task). It only reads: evidence receipts, evidence.Verify with
-// quarantine disabled, evolution experiments and trace logs. A task or
-// root with no data yields zero metrics, never NaN.
-func Summarize(root, task string) (Metrics, error) {
-	m := Metrics{
+// newMetrics returns the zero S3 set with the coverage map and the
+// unmeasured list initialized.
+func newMetrics() Metrics {
+	return Metrics{
 		Coverage:   map[string]string{},
 		Unmeasured: []string{unmeasuredGuardian, unmeasuredTokens, unmeasuredCosts},
 	}
+}
 
+// loadReceiptGroups lists evidence receipts for one task scope grouped by
+// task.
+func loadReceiptGroups(root, task string) (map[string][]receipts.Receipt, error) {
 	entries, err := evidence.List(root, task)
 	if err != nil {
-		return Metrics{}, err
+		return nil, err
 	}
 	byTask := map[string][]receipts.Receipt{}
 	for _, e := range entries {
 		byTask[e.Receipt.Task] = append(byTask[e.Receipt.Task], e.Receipt)
 	}
+	return byTask, nil
+}
+
+// summarizeReceiptGroups folds receipt verdicts, durations and CPU time
+// into the task, pass/fail and duration totals.
+func summarizeReceiptGroups(m *Metrics, byTask map[string][]receipts.Receipt) {
 	m.Tasks = len(byTask)
-	m.ReceiptsTotal = len(entries)
 	complete := 0
 	regressed := 0
 	for _, recs := range byTask {
@@ -149,7 +156,15 @@ func Summarize(root, task string) (Metrics, error) {
 		if done {
 			complete++
 		}
+		m.ReceiptsTotal += len(recs)
 	}
+	finishReceiptRates(m, complete, regressed)
+}
+
+// finishReceiptRates derives the pass/fail, regression and completion
+// ratios from folded receipt totals. Zero receipts yield zero rates,
+// never NaN.
+func finishReceiptRates(m *Metrics, complete, regressed int) {
 	if m.ReceiptsTotal > 0 {
 		n := float64(m.ReceiptsTotal)
 		m.VerificationPassRate = float64(m.ReceiptsPass) / n
@@ -160,20 +175,27 @@ func Summarize(root, task string) (Metrics, error) {
 	if m.Tasks > 0 {
 		m.TaskCompletionRate = float64(complete) / float64(m.Tasks)
 	}
+}
 
-	// Completeness is integrity: sound receipts over checked files,
-	// quarantine disabled so aggregation never writes.
+// summarizeCompleteness folds evidence.Verify integrity (sound receipts
+// over checked files, quarantine disabled so aggregation never writes).
+func summarizeCompleteness(root, task string, m *Metrics) error {
 	rep, err := evidence.Verify(root, task, false)
 	if err != nil {
-		return Metrics{}, err
+		return err
 	}
 	if rep.Checked > 0 {
 		m.EvidenceCompleteness = float64(rep.Passed) / float64(rep.Checked)
 	}
+	return nil
+}
 
+// summarizeExperiments folds the stored evolution experiments (adopted
+// over total under .regulus/evolution).
+func summarizeExperiments(root string, m *Metrics) error {
 	exps, err := listExperiments(root)
 	if err != nil {
-		return Metrics{}, err
+		return err
 	}
 	m.ExperimentsTotal = len(exps)
 	for _, e := range exps {
@@ -184,45 +206,61 @@ func Summarize(root, task string) (Metrics, error) {
 	if m.ExperimentsTotal > 0 {
 		m.EvolutionAcceptanceRate = float64(m.ExperimentsAdopted) / float64(m.ExperimentsTotal)
 	}
+	return nil
+}
 
+// summarizeToolCalls folds trace tool-call volume across all sessions
+// (names and order only, never values).
+func summarizeToolCalls(root string, m *Metrics) error {
 	sessions, err := trace.Sessions(root)
 	if err != nil {
-		return Metrics{}, err
+		return err
 	}
 	for _, s := range sessions {
 		got, err := trace.List(root, s)
 		if err != nil {
-			return Metrics{}, err
+			return err
 		}
 		m.ToolCalls += len(got)
 	}
+	return nil
+}
 
+// summarizeGuardians folds the guardian decision log when present
+// (disagree/total, scoped by task); absent, the honest zero stays.
+func summarizeGuardians(root, task string, m *Metrics) error {
+	decisions, err := guardians.ListDecisions(root, task)
+	if err != nil {
+		return err
+	}
+	if len(decisions) == 0 {
+		m.Coverage["guardian_disagreement_rate"] = "no guardian execution store; honest zero (see ProjectGuardianExecutions)"
+		return nil
+	}
+	disagree := 0
+	for _, d := range decisions {
+		if d.Verdict == guardians.DecisionDisagree {
+			disagree++
+		}
+	}
+	m.GuardianDisagreementRate = float64(disagree) / float64(len(decisions))
+	m.Coverage["guardian_disagreement_rate"] = "guardian decision log disagree/total under .regulus/guardians/decisions.jsonl"
+	kept := m.Unmeasured[:0]
+	for _, u := range m.Unmeasured {
+		if u != unmeasuredGuardian {
+			kept = append(kept, u)
+		}
+	}
+	m.Unmeasured = kept
+	return nil
+}
+
+// finishCoverage records the static coverage notes (metric-to-store
+// mapping documented at the top of this file).
+func finishCoverage(m *Metrics) {
 	m.Coverage["task_completion_rate"] = "receipts: tasks with every verdict pass / tasks with any receipts"
 	m.Coverage["verification_pass_rate"] = "receipts: verdict pass / total receipts"
 	m.Coverage["verification_failure_rate"] = "receipts: verdict fail / total receipts"
-	decisions, err := guardians.ListDecisions(root, task)
-	if err != nil {
-		return Metrics{}, err
-	}
-	if len(decisions) > 0 {
-		disagree := 0
-		for _, d := range decisions {
-			if d.Verdict == guardians.DecisionDisagree {
-				disagree++
-			}
-		}
-		m.GuardianDisagreementRate = float64(disagree) / float64(len(decisions))
-		m.Coverage["guardian_disagreement_rate"] = "guardian decision log disagree/total under .regulus/guardians/decisions.jsonl"
-		kept := m.Unmeasured[:0]
-		for _, u := range m.Unmeasured {
-			if u != unmeasuredGuardian {
-				kept = append(kept, u)
-			}
-		}
-		m.Unmeasured = kept
-	} else {
-		m.Coverage["guardian_disagreement_rate"] = "no guardian execution store; honest zero (see ProjectGuardianExecutions)"
-	}
 	m.Coverage["evidence_completeness"] = "evidence.Verify passed/checked with quarantine disabled (hash pins and manifest links)"
 	m.Coverage["evolution_acceptance_rate"] = "evolve experiments adopted/total under .regulus/evolution; experiments are global (no task field)"
 	m.Coverage["regression_rate"] = "receipts: fail verdicts carrying a metric value / total receipts; non-metric failures excluded"
@@ -231,5 +269,31 @@ func Summarize(root, task string) (Metrics, error) {
 	m.Coverage["tool_calls"] = "trace entries across all sessions; entries carry names and order only, never values"
 	m.Coverage[unmeasuredTokens] = "no token-count store; honest zero — supply reliable figures via budgets Figures for measured token usage"
 	m.Coverage[unmeasuredCosts] = "no model-cost store; honest zero, never estimated — supply reliable figures via budgets Figures for measured costs"
+}
+
+// Summarize aggregates the S3 metric set for one task ("" for every
+// task). It only reads: evidence receipts, evidence.Verify with
+// quarantine disabled, evolution experiments and trace logs. A task or
+// root with no data yields zero metrics, never NaN.
+func Summarize(root, task string) (Metrics, error) {
+	m := newMetrics()
+	byTask, err := loadReceiptGroups(root, task)
+	if err != nil {
+		return Metrics{}, err
+	}
+	summarizeReceiptGroups(&m, byTask)
+	if err := summarizeCompleteness(root, task, &m); err != nil {
+		return Metrics{}, err
+	}
+	if err := summarizeExperiments(root, &m); err != nil {
+		return Metrics{}, err
+	}
+	if err := summarizeToolCalls(root, &m); err != nil {
+		return Metrics{}, err
+	}
+	if err := summarizeGuardians(root, task, &m); err != nil {
+		return Metrics{}, err
+	}
+	finishCoverage(&m)
 	return m, nil
 }
