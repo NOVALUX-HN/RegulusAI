@@ -173,6 +173,9 @@ func (c CLI) taskCloseCmd(args []string) int {
 	for _, r := range res.Receipts {
 		fmt.Fprintf(c.Stdout, "  evidence: %s\n", r)
 	}
+	// M3 auto-save: a side effect only — the close already succeeded, and
+	// this call never changes its verdict.
+	c.autoSaveCloseNote(chartBase, id, doc, res)
 	return 0
 }
 

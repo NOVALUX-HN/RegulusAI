@@ -66,8 +66,20 @@ almanac.jsonl` (verbatim copy of the log) + `.regulus-export/pins.jsonl`,
 `relations.jsonl` and `status.jsonl` (verbatim copies of the pin, relation
 and governance stores; empty files when a store has nothing yet) +
 `.regulus-export/INDEX.md` (a rendered digest grouped by type, with pinned
-and relations sections). The bundle is a generated artifact (gitignored) —
-share it as a CI artifact or a release attachment, not as a commit.
+and relations sections). The default bundle is a generated artifact
+(gitignored) — share it as a CI artifact or a release attachment, not as
+a commit.
+
+Portable domain bundles (M3): `regulus memory export --domain <d>`
+scopes the same bundle shape to one domain's observations (pins,
+relations and status follow the surviving ids); `--out <dir>` relocates
+the bundle — point it at a tracked path and the bundle is committable, so
+memory travels with the clone like Engram's `.engram/`. Closing a unit
+also auto-saves one session observation (`task close` records id, spec
+and receipts under the `task-close/<chart>/<id>` topic, skipping when the
+topic already exists or the content duplicates pinned or
+lesson-equivalent knowledge) — the habit is automatic, and domain bundles
+carry those notes wherever the chart declares a `Domain:` line.
 
 Cloud round-trip: on machine A run `regulus memory export`, copy the
 `.regulus-export/` directory to the clean tree on machine B, and run
@@ -75,7 +87,11 @@ Cloud round-trip: on machine A run `regulus memory export`, copy the
 relations and status restore idempotently by id (re-importing skips what
 is already present; events pointing at unknown observations skip with a
 warning), and the index is fresh without a manual reindex (the CLI
-reindexes automatically after every mutating command).
+reindexes automatically after every mutating command). Domain bundles
+round-trip the same way: `regulus memory export --domain go --out
+docs/memory-bundle/go`, commit that directory, and `regulus memory
+import docs/memory-bundle/go` on the other machine merges it without
+duplicates.
 
 ## 4. Observation schema (F3)
 
@@ -116,7 +132,8 @@ reindexes automatically after every mutating command).
 | F3 | `regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]` | deterministic resume block: project identity, charts, session notes (latest 20 by default, or latest N with `--limit`, all with `--limit 0`), lessons with cue+content, decisions/discoveries/preferences (20 per list by default, all with `--budget 0`); `--task` / `--path` / `--system` filter by provenance/system, `--budget` caps long lists (pins always surface, every cap named with its repair) |
 | F4 | `regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv\|dom] [--confidence] <feature-doc>` | evidence-gated lesson candidate (dimension defaults to unset) |
 | F3 | `regulus memory history --topic-key <key>` | revision chain of one evolving topic |
-| F3 | `regulus memory export` | render the committed team bundle from the log (`.regulus-export/almanac.jsonl` + `pins.jsonl` + `relations.jsonl` + `status.jsonl` + `INDEX.md`) |
+| F3 | `regulus memory export [--domain <d>] [--out <dir>]` | render the portable bundle from the log (`.regulus-export/almanac.jsonl` + `pins.jsonl` + `relations.jsonl` + `status.jsonl` + `INDEX.md`); `--domain` scopes it to one domain, `--out` relocates it — a tracked `--out` is the committable bundle (import merges it without duplicates) |
+| M3 | `regulus task close <chart> <id>` (auto-save side effect) | closing a unit also saves one session observation (id, spec, receipts) under `task-close/<chart>/<id>`; skips when the topic already exists or the content duplicates pinned/lesson-equivalent knowledge (never changes the close verdict) |
 | F3 | `regulus memory import <file\|dir>` | restore a bundle: a single JSONL file restores observations; a bundle directory restores observations + pins + relations + status (idempotent by id; orphan events skip with a warning; old bundles without the extra files import like the file form) |
 | F3 | `regulus memory pin|unpin <id>` | pin an observation (pins survive prune, win chain collapse) |
 | F3 | `regulus memory relate --id <a> --relation <r> --to <b>` / `--suggest <id>` | record a relation edge; `--suggest` prints top-5 vector candidates above the 0.5 floor (writes nothing, self-heals a stale index) |

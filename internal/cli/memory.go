@@ -584,13 +584,39 @@ func (c CLI) memoryRelateSuggest(id string) int {
 	return 0
 }
 
-// memoryExportCmd implements `regulus memory export` — the team bundle.
+// memoryExportCmd implements `regulus memory export [--domain <d>]
+// [--out <dir>]`: the portable bundle. Bare it keeps the historical
+// behavior byte-for-byte (`.regulus-export/`, the generated artifact).
+// `--domain` scopes the bundle to one domain's observations (pins,
+// relations and status follow the surviving ids; events pointing outside
+// the bundle are dropped, as import orphans would be); `--out` relocates
+// the bundle — point it at a tracked path and the bundle is committable
+// (Engram's `.engram/` pattern: memory travels with the clone).
 func (c CLI) memoryExportCmd(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory export")
+	fs := flag.NewFlagSet("memory export", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only export observations of this domain (empty: everything)")
+	out := fs.String("out", ".regulus-export", "bundle directory (point at a tracked path to commit it)")
+	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	paths, err := almanac.Export(".")
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory export [--domain <d>] [--out <dir>]")
+		return 2
+	}
+	if *domain == "" && *out == ".regulus-export" {
+		paths, err := almanac.Export(".")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "memory export: %v\n", err)
+			return 1
+		}
+		for _, p := range paths {
+			fmt.Fprintf(c.Stdout, "exported: %s\n", p)
+		}
+		fmt.Fprintln(c.Stdout, "share .regulus-export/ with your team (generated artifact, not committed)")
+		return 0
+	}
+	paths, err := almanac.ExportDomain(".", *domain, *out)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory export: %v\n", err)
 		return 1
@@ -598,7 +624,11 @@ func (c CLI) memoryExportCmd(args []string) int {
 	for _, p := range paths {
 		fmt.Fprintf(c.Stdout, "exported: %s\n", p)
 	}
-	fmt.Fprintln(c.Stdout, "share .regulus-export/ with your team (generated artifact, not committed)")
+	if *out != ".regulus-export" {
+		fmt.Fprintf(c.Stdout, "committable bundle at %s (track it in git; restore with `regulus memory import %s`)\n", *out, *out)
+	} else {
+		fmt.Fprintf(c.Stdout, "domain %q bundle in .regulus-export/ (generated artifact, not committed — pass --out <tracked-dir> to commit it)\n", *domain)
+	}
 	return 0
 }
 
