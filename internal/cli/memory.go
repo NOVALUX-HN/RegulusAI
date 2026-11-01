@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"regulus-ai/internal/almanac"
-	"regulus-ai/internal/gates"
 )
 
 // memoryCmd implements the Almanac surface (docs/memory.md):
@@ -261,7 +259,7 @@ func (c CLI) memoryNoteCmd(args []string) int {
 	if runes := []rune(title); len(runes) > 60 {
 		title = string(runes[:60])
 	}
-	head := gates.GitHead(context.Background(), c.runner())
+	head := gitHeadBounded(c.runner())
 	obs := &almanac.Observation{
 		Type: almanac.TypeSessionNote, Title: title, Content: text,
 		Provenance: &almanac.Provenance{GitHead: head},
@@ -341,7 +339,7 @@ func (c CLI) memorySaveCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "memory save: source import is reserved for memory import")
 		return 2
 	}
-	head := gates.GitHead(context.Background(), c.runner())
+	head := gitHeadBounded(c.runner())
 	var expiry *time.Time
 	if strings.TrimSpace(*expires) != "" {
 		d, err := parseExpiry(*expires)
@@ -670,7 +668,11 @@ func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
 		return ""
 	}
 	head := o.Provenance.GitHead
-	out, _, _, err := c.runner().Run(context.Background(), "git rev-list --count "+head+"..HEAD")
+	// S3 hygiene: the rev-list probe shares the git bound so a wedged
+	// repository degrades to no annotation instead of hanging search.
+	ctx, cancel := gitTimeout()
+	defer cancel()
+	out, _, _, err := c.runner().Run(ctx, "git rev-list --count "+head+"..HEAD")
 	if err != nil || strings.TrimSpace(out) == "" {
 		return ""
 	}

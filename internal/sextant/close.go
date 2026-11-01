@@ -37,13 +37,7 @@ func CheckClose(doc, root, chartBase, taskID string) CloseResult {
 	if len(perrs) != 0 {
 		res.Unmet = append(res.Unmet, perrs...)
 	}
-	var task *Task
-	for i, t := range tasks {
-		if t.ID == taskID {
-			task = &tasks[i]
-			break
-		}
-	}
+	task := findCloseTask(tasks, taskID)
 	if task == nil {
 		res.Unmet = append(res.Unmet, fmt.Sprintf("unknown task %q: no Tasks row declares it", taskID))
 		return res
@@ -53,6 +47,31 @@ func CheckClose(doc, root, chartBase, taskID string) CloseResult {
 		res.Verdict = "PASS"
 		return res
 	}
+	ct := checkContract(doc, &res)
+	checkDeps(doc, task, &res)
+	checkEvidence(root, chartBase, taskID, &res)
+	checkVerifier(root, chartBase, class, ct, &res)
+	finishClose(&res)
+	return res
+}
+
+func findCloseTask(tasks []Task, taskID string) *Task {
+	for i, t := range tasks {
+		if t.ID == taskID {
+			return &tasks[i]
+		}
+	}
+	return nil
+}
+
+func finishClose(res *CloseResult) {
+	res.Closed = len(res.Unmet) == 0
+	if res.Closed {
+		res.Verdict = "PASS"
+	}
+}
+
+func checkContract(doc string, res *CloseResult) Contract {
 	ct, cviol := ParseContract(doc)
 	if ct.Present {
 		for _, v := range cviol {
@@ -69,61 +88,66 @@ func CheckClose(doc, root, chartBase, taskID string) CloseResult {
 	} else if scenarios == 0 {
 		res.Unmet = append(res.Unmet, "spec: no acceptance scenarios declared")
 	}
+	return ct
+}
+
+func checkDeps(doc string, task *Task, res *CloseResult) {
 	closed := ClosedTasks(doc)
 	for _, d := range task.Depends {
 		if !closed[d] {
 			res.Unmet = append(res.Unmet, fmt.Sprintf("dependency %s is not closed", d))
 		}
 	}
-	evidTask, receipts, rep, found := taskEvidence(root, chartBase, taskID)
+}
+
+func checkEvidence(root, chartBase, taskID string, res *CloseResult) {
+	_, receipts, rep, found := taskEvidence(root, chartBase, taskID)
 	if !found {
 		res.Unmet = append(res.Unmet, fmt.Sprintf("no receipts for task: run the gauntlet as %s/%s", chartBase, taskID))
-	} else {
-		failed := []string{}
-		for _, e := range receipts {
-			if e.Receipt.Verdict != "pass" {
-				failed = append(failed, fmt.Sprintf("%s (exit %d)", e.Receipt.Gate, e.Receipt.ExitCode))
-			}
-		}
-		if len(failed) != 0 {
-			res.Unmet = append(res.Unmet, fmt.Sprintf("failing gates: %s", strings.Join(failed, ", ")))
-		}
-		for _, f := range rep.Failed {
-			res.Unmet = append(res.Unmet, fmt.Sprintf("evidence verify: %s: %s", f.File, f.Reason))
-		}
-		for _, e := range receipts {
-			res.Receipts = append(res.Receipts, e.Path)
-		}
-		_ = evidTask
+		return
 	}
-	if class == ClassCritical && ct.Present {
-		verifier := strings.TrimSpace(ct.Verifier)
-		if verifier == "" {
-			res.Unmet = append(res.Unmet, "critical work requires a Verifier task in the contract")
-		} else {
-			// The verifier gates by evidence, not by its own closure: its
-			// receipts must exist and pass. Its closure follows the
-			// normal rules afterwards (no close-order deadlock).
-			_, vrecs, vrep, vfound := taskEvidence(root, chartBase, verifier)
-			if !vfound {
-				res.Unmet = append(res.Unmet, fmt.Sprintf("verifier task %s has no receipts", verifier))
-			} else {
-				for _, e := range vrecs {
-					if e.Receipt.Verdict != "pass" {
-						res.Unmet = append(res.Unmet, fmt.Sprintf("verifier gate %s did not pass", e.Receipt.Gate))
-					}
-				}
-				if len(vrep.Failed) != 0 {
-					res.Unmet = append(res.Unmet, fmt.Sprintf("verifier evidence does not verify (%d problem(s))", len(vrep.Failed)))
-				}
-			}
+	failed := []string{}
+	for _, e := range receipts {
+		if e.Receipt.Verdict != "pass" {
+			failed = append(failed, fmt.Sprintf("%s (exit %d)", e.Receipt.Gate, e.Receipt.ExitCode))
 		}
 	}
-	res.Closed = len(res.Unmet) == 0
-	if res.Closed {
-		res.Verdict = "PASS"
+	if len(failed) != 0 {
+		res.Unmet = append(res.Unmet, fmt.Sprintf("failing gates: %s", strings.Join(failed, ", ")))
 	}
-	return res
+	for _, f := range rep.Failed {
+		res.Unmet = append(res.Unmet, fmt.Sprintf("evidence verify: %s: %s", f.File, f.Reason))
+	}
+	for _, e := range receipts {
+		res.Receipts = append(res.Receipts, e.Path)
+	}
+}
+
+func checkVerifier(root, chartBase string, class Class, ct Contract, res *CloseResult) {
+	if class != ClassCritical || !ct.Present {
+		return
+	}
+	verifier := strings.TrimSpace(ct.Verifier)
+	if verifier == "" {
+		res.Unmet = append(res.Unmet, "critical work requires a Verifier task in the contract")
+		return
+	}
+	// The verifier gates by evidence, not by its own closure: its
+	// receipts must exist and pass. Its closure follows the
+	// normal rules afterwards (no close-order deadlock).
+	_, vrecs, vrep, vfound := taskEvidence(root, chartBase, verifier)
+	if !vfound {
+		res.Unmet = append(res.Unmet, fmt.Sprintf("verifier task %s has no receipts", verifier))
+		return
+	}
+	for _, e := range vrecs {
+		if e.Receipt.Verdict != "pass" {
+			res.Unmet = append(res.Unmet, fmt.Sprintf("verifier gate %s did not pass", e.Receipt.Gate))
+		}
+	}
+	if len(vrep.Failed) != 0 {
+		res.Unmet = append(res.Unmet, fmt.Sprintf("verifier evidence does not verify (%d problem(s))", len(vrep.Failed)))
+	}
 }
 
 // taskEvidence resolves a chart task to its receipts: <chart>/<id> first,

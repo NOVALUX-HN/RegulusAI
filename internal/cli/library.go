@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -40,7 +39,7 @@ func (c CLI) reflectCmd(args []string) int {
 	if r == nil {
 		r = gates.ShRunner{}
 	}
-	head := gates.GitHead(context.Background(), r)
+	head := gitHeadBounded(r)
 	l, err := reflect.Run(".", reflect.Input{
 		FeatureDoc: fs.Arg(0), Domain: *domain, Dimension: *dimension, Task: *task, Cue: *cue, Lesson: *lesson,
 		Confidence: *confidence, Now: time.Now().UTC(),
@@ -232,7 +231,7 @@ func (c CLI) libraryAdmitCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library admit --domain <d> --candidate <id> --guardian <name>")
 		return 2
 	}
-	head := gates.GitHead(context.Background(), c.runner())
+	head := gitHeadBounded(c.runner())
 	l, err := reflect.Admit(".", *domain, *candidate, *guardian, head, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "library admit: %v\n", err)

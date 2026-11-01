@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"regulus-ai/internal/receipts"
 )
@@ -174,6 +175,21 @@ func IsClosed(root, task string) (bool, error) {
 	return false, nil
 }
 
+// directReCache memoizes the per-id word-boundary regexp so the pattern
+// compiles once per distinct id (S3 hygiene): behavior is identical to
+// compiling per call, without paying regexp.Compile in the CLOSED loop.
+var directReCache sync.Map // map[string]*regexp.Regexp
+
+// directReFor returns the cached `\b<id>\b` regexp, compiling once.
+func directReFor(id string) *regexp.Regexp {
+	if re, ok := directReCache.Load(id); ok {
+		return re.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`)
+	actual, _ := directReCache.LoadOrStore(id, re)
+	return actual.(*regexp.Regexp)
+}
+
 // taskMarkedClosed checks the current-line window before every CLOSED
 // for a direct mention of id or a range covering it.
 func taskMarkedClosed(content, id string) bool {
@@ -184,7 +200,7 @@ func taskMarkedClosed(content, id string) bool {
 	if len(locs) == 0 {
 		return false
 	}
-	directRe := regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`)
+	directRe := directReFor(id)
 	var idPrefix string
 	var idNum int
 	idParts := idRe.FindStringSubmatch(id)

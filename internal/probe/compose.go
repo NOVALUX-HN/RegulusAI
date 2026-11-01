@@ -1,19 +1,13 @@
 package probe
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/budget"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/receipts"
-	"regulus-ai/internal/reflect"
 )
 
 // Compose runs a base command and two variants through the SAME path
@@ -45,118 +39,23 @@ func Compose(root, task, gate, base, cmdA, cmdB string, now time.Time) (string, 
 // ComposeWithRunner is Compose with an injected command runner (the CLI
 // passes its own runner so tests can substitute fakes).
 func ComposeWithRunner(root, task, gate, base, cmdA, cmdB string, now time.Time, r gates.CmdRunner) (string, bool, bool, error) {
+	const op = "probe compose"
 	fail := func(err error) (string, bool, bool, error) {
 		return "", false, false, err
 	}
-	if strings.TrimSpace(task) == "" {
-		return fail(fmt.Errorf("probe compose: task must not be empty"))
+	if err := validateComposeInputs(task, gate, base, cmdA, cmdB); err != nil {
+		return fail(err)
 	}
-	if !taskIDRe.MatchString(task) || strings.Contains(task, "..") {
-		return fail(fmt.Errorf("probe compose: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')", task))
-	}
-	if strings.TrimSpace(gate) == "" {
-		return fail(fmt.Errorf("probe compose: gate must not be empty"))
-	}
-	if strings.TrimSpace(base) == "" || strings.TrimSpace(cmdA) == "" || strings.TrimSpace(cmdB) == "" {
-		return fail(fmt.Errorf("probe compose: --base, --a and --b commands must not be empty"))
-	}
-	if r == nil {
-		r = gates.ShRunner{}
-	}
-	if strings.TrimSpace(root) == "" {
-		root = "."
-	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-
-	// Cap check (PRD R-E4), mirroring Contrast: composes consume the
-	// evolution budget like reflect proposals; refusals are recorded
-	// but free, and no command runs on refusal.
-	cap := reflect.EvolutionCap(root)
-	today, err := budget.TodayEvolutionCount(root, now)
+	root, now, r, orig, err := openProbeGate(root, task, gate, op, now, r)
 	if err != nil {
 		return fail(err)
 	}
-	if today >= cap {
-		if err := budget.Record(root, budget.Entry{
-			Kind:      budget.KindProbe,
-			Timestamp: now.UTC(),
-			Task:      task,
-			Outcome:   budget.OutcomeRefusedCap,
-			Detail:    fmt.Sprintf("cap %d reached", cap),
-		}); err != nil {
-			return fail(err)
-		}
-		return fail(fmt.Errorf("probe compose: evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, cap))
-	}
-	tcap := reflect.TaskCap(root)
-	tcount, err := budget.TaskEvolutionCount(root, task, now)
+	head, evidenceDir := probeHead(root, task, r)
+	recBase, recA, recB, err := runComposeTrio(orig, evidenceDir, task, head, r, base, cmdA, cmdB)
 	if err != nil {
 		return fail(err)
 	}
-	if tcount >= tcap {
-		if err := budget.Record(root, budget.Entry{
-			Kind:      budget.KindProbe,
-			Timestamp: now.UTC(),
-			Task:      task,
-			Outcome:   budget.OutcomeRefusedCap,
-			Detail:    fmt.Sprintf("task cap %d reached", tcap),
-		}); err != nil {
-			return fail(err)
-		}
-		return fail(fmt.Errorf("probe compose: task evolution cap reached: task %q has %d run(s) today, task cap %d (regulus.json evolution.max_per_task)", task, tcount, tcap))
-	}
-
-	cfg, err := gates.Load(filepath.Join(root, "regulus.json"))
-	if err != nil {
-		return fail(fmt.Errorf("probe compose: %v", err))
-	}
-	var orig *gates.Gate
-	for i := range cfg.Gates {
-		if cfg.Gates[i].Name == gate {
-			orig = &cfg.Gates[i]
-			break
-		}
-	}
-	if orig == nil {
-		return fail(fmt.Errorf("probe compose: unknown gate %q", gate))
-	}
-
-	head := gates.GitHead(context.Background(), r)
-	// Probe runs land in their own subdirectory: gate evidence stays
-	// pure (reflect's evidence gate, gate-centric audits), and consumers
-	// (evolve pack, human inspection) can tell behavioral contrasts
-	// apart from gate verdicts at a glance.
-	evidenceDir := filepath.Join(root, ".regulus", "evidence", receipts.Slug(task), "probe")
-	run := func(cmd string) (receipts.Receipt, error) {
-		return runProbeReceipt("probe compose", *orig, evidenceDir, task, head, cmd, r)
-	}
-	recBase, err := run(base)
-	if err != nil {
-		return fail(fmt.Errorf("probe compose: run base: %v", err))
-	}
-	recA, err := run(cmdA)
-	if err != nil {
-		return fail(fmt.Errorf("probe compose: run A: %v", err))
-	}
-	recB, err := run(cmdB)
-	if err != nil {
-		return fail(fmt.Errorf("probe compose: run B: %v", err))
-	}
-
-	report, conflicts := renderComposed(recBase, recA, recB, base, cmdA, cmdB, gate, task)
-	sum := sha256.Sum256([]byte(report))
-	if err := budget.Record(root, budget.Entry{
-		Kind:      budget.KindProbe,
-		Timestamp: now.UTC(),
-		Task:      task,
-		Outcome:   budget.OutcomeProbeRun,
-		Detail:    fmt.Sprintf("compose task %s gate %s sha256 %s conflicts=%t", task, gate, hex.EncodeToString(sum[:]), conflicts),
-	}); err != nil {
-		return fail(fmt.Errorf("probe compose: %v", err))
-	}
-	return report, conflicts, true, nil
+	return finishCompose(root, task, gate, base, cmdA, cmdB, now, recBase, recA, recB)
 }
 
 // lineHunk is one conflicting stdout/stderr region: the base lines kept

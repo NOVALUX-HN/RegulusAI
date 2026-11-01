@@ -152,8 +152,12 @@ func (e *outputCapError) Error() string {
 
 // capWriter buffers up to limit bytes, discards the rest, and kills the
 // process once on overflow. It never returns a write error: a failing
-// writer would wedge the pipe copy and deadlock the wait.
+// writer would wedge the pipe copy and deadlock the wait. Writes may
+// arrive from concurrent pipe-copy goroutines (stdout/stderr streams),
+// so total/buf/overflow are guarded by mu; kill fires once per writer
+// via once and once globally via the shared killOnce in runShellCap.
 type capWriter struct {
+	mu       sync.Mutex
 	buf      bytes.Buffer
 	limit    int
 	total    int64
@@ -163,12 +167,17 @@ type capWriter struct {
 }
 
 func (w *capWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
 	w.total += int64(len(p))
 	if w.buf.Len() < w.limit {
 		w.buf.Write(p[:min(len(p), w.limit-w.buf.Len())])
 	}
-	if w.total > int64(w.limit) && !w.overflow {
+	overflowed := w.total > int64(w.limit) && !w.overflow
+	if overflowed {
 		w.overflow = true
+	}
+	w.mu.Unlock()
+	if overflowed {
 		w.once.Do(func() {
 			if w.kill != nil {
 				w.kill()
@@ -176,6 +185,14 @@ func (w *capWriter) Write(p []byte) (int, error) {
 		})
 	}
 	return len(p), nil
+}
+
+// snapshot returns the buffered output, total bytes and overflow flag
+// under the write mutex (race-safe read after Wait).
+func (w *capWriter) snapshot() (string, int64, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String(), w.total, w.overflow
 }
 
 // CmdRunner executes one shell command. The real one goes through a POSIX
@@ -360,10 +377,16 @@ func runShell(ctx context.Context, name string, args []string, dir string, envUn
 func runShellCap(cmd *exec.Cmd, ctx context.Context, name string, capBytes int) (string, string, int, int64, error) {
 	outW := &capWriter{limit: capBytes}
 	errbW := &capWriter{limit: capBytes}
+	// Shared kill gate: each writer fires its own once, but the process
+	// kill itself happens exactly once even when both streams overflow
+	// concurrently.
+	var killOnce sync.Once
 	kill := func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+		killOnce.Do(func() {
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+		})
 	}
 	outW.kill, errbW.kill = kill, kill
 	cmd.Stdout, cmd.Stderr = outW, errbW
@@ -372,9 +395,10 @@ func runShellCap(cmd *exec.Cmd, ctx context.Context, name string, capBytes int) 
 	}
 	werr := cmd.Wait()
 	cpu := cpuMillis(cmd)
-	out, errb := outW.buf.String(), errbW.buf.String()
-	if outW.overflow || errbW.overflow {
-		return out, errb, -1, cpu, &outputCapError{bytes: outW.total + errbW.total}
+	out, outTotal, outOverflow := outW.snapshot()
+	errb, errTotal, errOverflow := errbW.snapshot()
+	if outOverflow || errOverflow {
+		return out, errb, -1, cpu, &outputCapError{bytes: outTotal + errTotal}
 	}
 	if werr == nil {
 		return out, errb, 0, cpu, nil
@@ -675,8 +699,23 @@ func asShRunner(r CmdRunner) (ShRunner, bool) {
 	return ShRunner{}, false
 }
 
+// GitHeadTimeout bounds every `git rev-parse --verify HEAD` probe (S3
+// hygiene): git must never hang the harness on a wedged repository.
+const GitHeadTimeout = 30 * time.Second
+
 // GitHead returns the current HEAD hash, or "" outside a repository.
+// It respects ctx deadlines without hanging: an already-expired ctx
+// returns "" without invoking the runner, and a ctx without a deadline
+// is bounded by GitHeadTimeout so a wedged git cannot wedge the caller.
 func GitHead(ctx context.Context, r CmdRunner) string {
+	if ctx.Err() != nil {
+		return ""
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, GitHeadTimeout)
+		defer cancel()
+	}
 	out, _, _, err := r.Run(ctx, "git rev-parse --verify HEAD")
 	if err != nil {
 		return ""

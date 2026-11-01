@@ -4,18 +4,13 @@ package probe
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/budget"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/receipts"
-	"regulus-ai/internal/reflect"
 )
 
 // Runner executes the probe in tests; production uses gates.ShRunner.
@@ -46,110 +41,20 @@ func Contrast(root, task, gate, cmdA, cmdB string, now time.Time) (string, bool,
 // ContrastWithRunner is Contrast with an injected command runner (the
 // CLI passes its own runner so tests can substitute fakes).
 func ContrastWithRunner(root, task, gate, cmdA, cmdB string, now time.Time, r gates.CmdRunner) (string, bool, error) {
-	if strings.TrimSpace(task) == "" {
-		return "", false, fmt.Errorf("probe contrast: task must not be empty")
+	const op = "probe contrast"
+	if err := validateContrastInputs(task, gate, cmdA, cmdB); err != nil {
+		return "", false, err
 	}
-	if !taskIDRe.MatchString(task) || strings.Contains(task, "..") {
-		return "", false, fmt.Errorf("probe contrast: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')", task)
-	}
-	if strings.TrimSpace(gate) == "" {
-		return "", false, fmt.Errorf("probe contrast: gate must not be empty")
-	}
-	if strings.TrimSpace(cmdA) == "" || strings.TrimSpace(cmdB) == "" {
-		return "", false, fmt.Errorf("probe contrast: both --a and --b commands must not be empty")
-	}
-	if r == nil {
-		r = gates.ShRunner{}
-	}
-	if strings.TrimSpace(root) == "" {
-		root = "."
-	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-
-	// Cap check (PRD R-E4): probes consume the evolution budget like
-	// reflect proposals; refusals are recorded but free.
-	cap := reflect.EvolutionCap(root)
-	today, err := budget.TodayEvolutionCount(root, now)
+	root, now, r, orig, err := openProbeGate(root, task, gate, op, now, r)
 	if err != nil {
 		return "", false, err
 	}
-	if today >= cap {
-		if err := budget.Record(root, budget.Entry{
-			Kind:      budget.KindProbe,
-			Timestamp: now.UTC(),
-			Task:      task,
-			Outcome:   budget.OutcomeRefusedCap,
-			Detail:    fmt.Sprintf("cap %d reached", cap),
-		}); err != nil {
-			return "", false, err
-		}
-		return "", false, fmt.Errorf("probe contrast: evolution cap reached: %d run(s) today, cap %d (regulus.json evolution.max_per_day)", today, cap)
-	}
-	tcap := reflect.TaskCap(root)
-	tcount, err := budget.TaskEvolutionCount(root, task, now)
+	head, evidenceDir := probeHead(root, task, r)
+	recA, recB, err := runContrastPair(orig, evidenceDir, task, head, r, cmdA, cmdB)
 	if err != nil {
 		return "", false, err
 	}
-	if tcount >= tcap {
-		if err := budget.Record(root, budget.Entry{
-			Kind:      budget.KindProbe,
-			Timestamp: now.UTC(),
-			Task:      task,
-			Outcome:   budget.OutcomeRefusedCap,
-			Detail:    fmt.Sprintf("task cap %d reached", tcap),
-		}); err != nil {
-			return "", false, err
-		}
-		return "", false, fmt.Errorf("probe contrast: task evolution cap reached: task %q has %d run(s) today, task cap %d (regulus.json evolution.max_per_task)", task, tcount, tcap)
-	}
-
-	cfg, err := gates.Load(filepath.Join(root, "regulus.json"))
-	if err != nil {
-		return "", false, fmt.Errorf("probe contrast: %v", err)
-	}
-	var orig *gates.Gate
-	for i := range cfg.Gates {
-		if cfg.Gates[i].Name == gate {
-			orig = &cfg.Gates[i]
-			break
-		}
-	}
-	if orig == nil {
-		return "", false, fmt.Errorf("probe contrast: unknown gate %q", gate)
-	}
-
-	head := gates.GitHead(context.Background(), r)
-	// Probe runs land in their own subdirectory: gate evidence stays
-	// pure (reflect's evidence gate, gate-centric audits), and consumers
-	// (evolve pack, human inspection) can tell behavioral contrasts
-	// apart from gate verdicts at a glance.
-	evidenceDir := filepath.Join(root, ".regulus", "evidence", receipts.Slug(task), "probe")
-	run := func(cmd string) (receipts.Receipt, error) {
-		return runProbeReceipt("probe contrast", *orig, evidenceDir, task, head, cmd, r)
-	}
-	recA, err := run(cmdA)
-	if err != nil {
-		return "", false, fmt.Errorf("probe contrast: run A: %v", err)
-	}
-	recB, err := run(cmdB)
-	if err != nil {
-		return "", false, fmt.Errorf("probe contrast: run B: %v", err)
-	}
-
-	diff := Diff(recA, recB, cmdA, cmdB, gate, task)
-	sum := sha256.Sum256([]byte(diff))
-	if err := budget.Record(root, budget.Entry{
-		Kind:      budget.KindProbe,
-		Timestamp: now.UTC(),
-		Task:      task,
-		Outcome:   budget.OutcomeProbeRun,
-		Detail:    fmt.Sprintf("contrast task %s gate %s sha256 %s", task, gate, hex.EncodeToString(sum[:])),
-	}); err != nil {
-		return "", false, fmt.Errorf("probe contrast: %v", err)
-	}
-	return diff, true, nil
+	return finishContrast(root, task, gate, cmdA, cmdB, now, recA, recB)
 }
 
 // runProbeReceipt runs one command variant through the SAME path `gate
