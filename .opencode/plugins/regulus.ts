@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { candidates, compactionContextArgs, dataBlock, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, loadDiscipline, loadSkills, loadToolGuidance, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
+import { candidates, compactionContextArgs, dataBlock, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -98,6 +98,13 @@ async function run(bin: string, args: string[], cwd?: string, signal?: AbortSign
 // (60s per project+domain): admitted lessons only change on admit, so
 // re-spawning on every context assembly is pure latency.
 const lessonsCache = new TtlCache<{ exitCode: number; output: string }>(60000)
+
+// loopGuard (T3 macizo-tokens): deterministic per-session loop nudge.
+// Same tool failing with the same normalized message LOOPGUARD_THRESHOLD
+// times in a row appends a one-line redirect to the error. Advisory only
+// — it never throws or blocks, so the agent can always ignore it — and
+// reversible via TE_LOOPGUARD=off (see isLoopGuardEnabled in lib/domain).
+const loopGuard = new LoopGuard()
 
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
 // bun tests pin candidate order and first-match-wins without spawning;
@@ -500,6 +507,12 @@ export default Plugin.define({
     // session trace via the binary. Awaited inside try/catch so a hook
     // failure never breaks tool execution — but it is logged to stderr
     // (S4: honest messages) instead of swallowed, naming the session.
+    // T3 (macizo-tokens) loop guard shares this hook: on error the
+    // failure streak (tool + normalized message, per session) is counted
+    // and the 3rd consecutive identical failure appends a one-line
+    // redirect nudge to the error message. The nudge never stops the
+    // agent by itself (no throw, no block, no result replacement) and the
+    // agent may ignore it; TE_LOOPGUARD=off disables it entirely.
     await ctx.tool.hook("execute.after", async (event) => {
       try {
         const status = event.status === "completed" ? "completed" : "error"
@@ -525,6 +538,23 @@ export default Plugin.define({
         }
       } catch (err) {
         console.error(`[regulus] trace hook: ${(err as Error)?.message ?? String(err)}`)
+      }
+      try {
+        if (!isLoopGuardEnabled()) {
+          loopGuard.reset(event.sessionID)
+        } else if (event.status === "error") {
+          const holder = event.error as unknown as { message?: unknown }
+          const message = typeof holder.message === "string" ? holder.message : String(holder.message ?? "")
+          const redirect = loopGuard.observe(event.sessionID, event.tool, message, false)
+          if (redirect !== null) {
+            holder.message = message === "" ? redirect : `${message}\n${redirect}`
+            console.error(`[regulus loop-guard] nudge for session ${event.sessionID} tool ${event.tool}`)
+          }
+        } else {
+          loopGuard.reset(event.sessionID)
+        }
+      } catch (err) {
+        console.error(`[regulus loop-guard] ${(err as Error)?.message ?? String(err)}`)
       }
     })
 
