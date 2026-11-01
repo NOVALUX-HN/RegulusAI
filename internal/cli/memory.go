@@ -19,7 +19,7 @@ import (
 // Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor|reindex|verify|reject|check|status")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor|reindex|verify|reject|check|status|mine")
 		return 2
 	}
 	switch args[0] {
@@ -59,9 +59,11 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryCheckCmd(args[1:])
 	case "status":
 		return c.memoryStatusCmd(args[1:])
+	case "mine":
+		return c.memoryMineCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor|reindex|verify|reject|check|status")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor|reindex|verify|reject|check|status|mine")
 		return 2
 	}
 }

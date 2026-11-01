@@ -46,15 +46,18 @@ Domain: almanac
 
 ## Tasks
 
-| ID | Spec | Work | Route |
+| ID | Spec | Work | Route | Status |
 |----|------|------|-------|
-| M1 | M1 | spike + ADR SQLite-vs-stdlib + veredicto guardián | @regulus-worker |
-| M2 | M2 | migración del store según M1 (WAL+índice+locks, legacy legible) | @regulus-worker |
-| M3 | M3 | auto-save al cerrar unidad + export/import portable | @regulus-worker |
-| M4 | M4 | minero envfacts (≥3 sesiones, descarte por contradicción, 0 modelo) | @regulus-worker |
+| M1 | M1 | spike + ADR SQLite-vs-stdlib + veredicto guardián | @regulus-worker |  |
+| M2 | M2 | migración del store según M1 (WAL+índice+locks, legacy legible) | @regulus-worker |  |
+| M3 | M3 | auto-save al cerrar unidad + export/import portable | @regulus-worker |  |
+| M4 | M4 | minero envfacts (≥3 sesiones, descarte por contradicción, 0 modelo) | @regulus-worker | done |
 
 ## Log
 
 - L1: Chart opened 2026-11-01 (programa macizo 1/3). Evidencia: Engram "Local SQLite memory remains default and authoritative source"; nuestro jsonl full-scan `almanac.go:262-290`, sin locks, zero-deps `go.mod:1-3`.
 - L2: M1 CLOSED 2026-11-01 (`ses_e6ae888aeffenkXXeJMWEbKsEm` + sello `@regulus-reviewer` `ses_e6adf2f88ffeKx8NCyEHvzA6Qf`): DECISIÓN stdlib (extender `retrieval.bin`, SQLite diferido); guardián APRUEBA CON CONDICIONES (flock→lockfile portable, tmp+Rename, IndexVersion=2, tripwires). Incidencia: el run original corrió con `bin/regulus.exe` stale (0.10.0 pre-fix) vía MCP → receipt sin pins; binario reconstruido (`go build`, 0.10.0, 2026-11-01 21:24) y re-run `run_f4093081aeda556a` 12/12 con verify limpio en run nuevo. `task close` bloqueado por manifest viejo (artifact cuarentenado; `prune` protege manifests/cuarentena por diseño) → cierre manual (precedente 0.10.0). ADR en `docs/adr/M1-01-sqlite-vs-stdlib.md` con veredicto registrado.
 - L3: M3 CLOSED 2026-11-01 (`ses_e6acef5f8ffeW91eriIWTiaY7I`): auto-save al cerrar (idempotente, dedup 0.92, best-effort sin cambiar veredicto) + export/import portable por dominio (bundle commiteable estilo `.engram/`, import idempotente). Run1 cayó en crap (ExportDomain cx26, señal real) → SPLIT en 6 + tests → re-run `run_b1123f9b069c33a5` 12/12, verify 19/19. `task close` exige historial todo-verde (incluye run1 fallido) → cierre manual documentado; historia fail→fix→pass es evidencia sana. Candidata mejora futura: close sobre último manifest verde.
+
+- CLOSED M4 COMPLEX spec OK + 12 receipt(s) PASS.
+- L4: M4 detail 2026-11-01 (`ses_e6ab8037fffeq72XjaTWxLwkdD`, cierre formal vía `task close`): minero envfacts determinista (`internal/envfacts/`: MinSessions=3, ventana contradicción 3, 0 modelo) + `memory mine [--apply]` (dry-run default) que admite lessons de dominio (inyectadas por hook existente) y descarta contradichos vía `invalidated_by`. Hecho real: `sextant/gate/crap` (16 sesiones, high). `gate run macizo-memory/M4` 12/12 primer run (`run_98dfa3b85a019ad9`), verify 12/12.

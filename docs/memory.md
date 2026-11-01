@@ -139,6 +139,20 @@ duplicates.
 | F3 | `regulus memory relate --id <a> --relation <r> --to <b>` / `--suggest <id>` | record a relation edge; `--suggest` prints top-5 vector candidates above the 0.5 floor (writes nothing, self-heals a stale index) |
 | F3 | `regulus memory doctor` | health report: counts, age, malformed lines, orphan pins/relations, index freshness (`fresh` = hybrid active, else reindex) |
 | v2 | `regulus memory reindex [--embedder <id>]` | rebuild the derived `retrieval.bin` as a pure function of the JSONL; header pins `{embedder, dim, version}`, stdout names the encoder |
+| M4 | `regulus memory mine [--domain <d>] [--apply]` | deterministic envfacts miner (zero model calls): per-domain series of repeated failures (same gate failing across receipts, same tool erroring across traces); a series failing in ≥3 sessions is mined as a domain lesson (topic `envfact/<d>/<kind>/<name>`, origin `envfacts-miner`, dimension `inv`); a mined series whose last 3 executions run clean is discarded as contradicted via an `invalidated_by` note (hides from default retrieval, resurfaces with `--include-stale`; recurrence re-mines a new revision on the same topic); dry run by default, `--apply` admits and discards (auto-rebuilds the index when it writes) |
+
+Envfacts (M4) close the loop between gauntlet evidence and session
+memory: receipts and traces already record every failure, and `mine`
+folds them into facts the domain injection picks up with no plugin
+change (`memory search --type lesson --domain` surfaces mined lessons
+like admitted ones). Receipt series group by the chart domain of the
+receipt task (the `Domain:` line, same parser as the plugin hook);
+trace series group by the entry task's domain — entries without a task
+predate attribution and never form domain facts (the scan counts them
+as unattributed). Legacy receipts without a run id count by file path
+(one receipt file is one gate execution). Nothing is ever deleted: the
+log stays append-only, discards are `invalidated_by` relations
+(reversible by recurrence or auditable via `--include-stale`).
 
 ## 6. Plugin integration (OpenCode V2)
 
@@ -154,7 +168,9 @@ duplicates.
   `Domain:` line of a chart cited in recent messages, else the lone
   chart's line, else the lone library domain) and injects that domain's
   lessons via `memory search --type lesson --domain`; with no signal it
-  keeps the newest-first behavior.
+  keeps the newest-first behavior. Mined envfacts ride the same hook:
+  they are domain lessons (source `core`, origin `envfacts-miner`), so a
+  mined fact surfaces at session start exactly when its domain resolves.
 - Agents write via the CLI — single writer, like every piece of Regulus
   state. Nothing but `regulus` mutates `.regulus/`.
 
