@@ -4,8 +4,8 @@
 # OpenCode plugin development
 node_modules/
 
-# Build output
-bin/
+# Build output (binaries stay ignored; the launcher source is tracked)
+bin/*
 !bin/regulus.js
 dist/
 
