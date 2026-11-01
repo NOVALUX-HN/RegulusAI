@@ -33,7 +33,7 @@ export function renderGuidanceDefaults(md: string): Record<string, string> {
   // identical to LF. trim()/\s+ already absorbed \r, this locks it in.
   // slice(1) drops the preamble before the first ## (title + intro) —
   // it is file-only by design, like the discipline header. The runtime
-  // parseToolGuidance must skip it the same way (see regulus.ts).
+  // parseToolGuidance must skip it the same way (see lib/domain.ts).
   for (const part of md.replace(/\r\n/g, "\n").split(/^##\s+/m).slice(1)) {
     const nl = part.indexOf("\n")
     if (nl < 0) continue
@@ -59,11 +59,46 @@ export function extractDisciplineLiteral(ts: string): string {
   const marker = "const DEFAULT_DISCIPLINE = `";
   const start = ts.indexOf(marker);
   if (start < 0) throw new Error("sync-plugin-defaults: DEFAULT_DISCIPLINE block not found")
-  const endLf = ts.indexOf("`\n\n// loadDiscipline", start + marker.length);
-  const endCrlf = ts.indexOf("`\r\n\r\n// loadDiscipline", start + marker.length);
-  const end = endLf >= 0 ? endLf : endCrlf;
-  if (end < 0) throw new Error("sync-plugin-defaults: DEFAULT_DISCIPLINE terminator not found")
-  return ts.slice(start + marker.length, end)
+  // Scan for the closing unescaped backtick (S4: no comment anchor —
+  // comments must stay freely editable; --write escapes ` as \`
+  // through tsBacktick, so a backtick behind an odd run of
+  // backslashes is literal text, not the terminator).
+  let i = start + marker.length;
+  for (;;) {
+    const q = ts.indexOf("`", i);
+    if (q < 0) throw new Error("sync-plugin-defaults: DEFAULT_DISCIPLINE terminator not found")
+    let bs = 0;
+    for (let k = q - 1; k >= start + marker.length && ts[k] === "\\"; k--) bs++;
+    if (bs % 2 === 0) return ts.slice(start + marker.length, q);
+    i = q + 1;
+  }
+}
+
+// extractGuidanceBlock slices the compiled-guidance literal (S4: brace
+// match with string awareness, no comment anchor — see above).
+export function extractGuidanceBlock(ts: string): string {
+  const marker = "const DEFAULT_TOOL_GUIDANCE";
+  const start = ts.indexOf(marker);
+  if (start < 0) throw new Error("sync-plugin-defaults: DEFAULT_TOOL_GUIDANCE block not found")
+  const open = ts.indexOf("{", start);
+  if (open < 0) throw new Error("sync-plugin-defaults: DEFAULT_TOOL_GUIDANCE terminator not found")
+  let depth = 0;
+  let inStr: string | null = null;
+  for (let k = open; k < ts.length; k++) {
+    const ch = ts[k];
+    if (inStr !== null) {
+      if (ch === "\\") k++;
+      else if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return ts.slice(start, k + 1);
+    }
+  }
+  throw new Error("sync-plugin-defaults: DEFAULT_TOOL_GUIDANCE terminator not found")
 }
 
 async function runCheck(tree: string): Promise<string[]> {
@@ -79,7 +114,7 @@ async function runCheck(tree: string): Promise<string[]> {
   }
   if (extractDisciplineLiteral(ts) !== want) problems.push("discipline: DEFAULT_DISCIPLINE differs from .md core (run --write)")
   const rendered = renderGuidanceDefaults(guidanceMd)
-  const block = ts.slice(ts.indexOf("const DEFAULT_TOOL_GUIDANCE"), ts.indexOf("// parseToolGuidance"))
+  const block = extractGuidanceBlock(ts)
   const compiled: Record<string, string> = {}
   for (const m of block.matchAll(/(\w+):\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) compiled[m[1]] = m[2]
   for (const [name, body] of Object.entries(rendered)) {

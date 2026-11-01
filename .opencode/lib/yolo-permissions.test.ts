@@ -9,6 +9,26 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Agent registry (S4 intentional): every agent file in
+// .opencode/agents/ is listed by name. Adding an agent means listing
+// it here — a bare count would let a new file slip through unreviewed,
+// and a dropped file must fail loudly. Sort order is normalized before
+// comparing so a pure rename/reorder of the directory never breaks the
+// registry itself (only membership does).
+const EXPECTED_AGENTS = [
+  "regulus-crap-analyst.md",
+  "regulus-evidence-auditor.md",
+  "regulus-gate-verifier.md",
+  "regulus-mutation-auditor.md",
+  "regulus-proposer.md",
+  "regulus-reviewer.md",
+  "regulus-scout.md",
+  "regulus-spec-keeper.md",
+  "regulus-verifier.md",
+  "regulus-worker.md",
+  "regulus.md",
+];
+
 // Every pattern that must stay denied under YOLO.
 const DENIES = [
   "rm *",
@@ -83,10 +103,10 @@ describe("yolo permissions", () => {
     }
   });
 
-  test("every agent file honors the guardrails (all 11 agents)", async () => {
+  test("every agent file honors the guardrails (registry + guardrails)", async () => {
     const dir = `${import.meta.dir}/../agents`;
     const files = (await readdir(dir)).filter((f) => f.endsWith(".md")).sort();
-    expect(files.length).toBe(11);
+    expect(files).toEqual([...EXPECTED_AGENTS].sort());
     const { json: global } = await projectConfig();
     const globalStar = global?.permission?.bash?.["*"];
     for (const file of files) {
