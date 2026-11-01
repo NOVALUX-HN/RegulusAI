@@ -46,6 +46,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"decide":   func(c CLI, args []string) int { return c.decideCmd(args) },
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
+	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
 }
 
 // Run executes one CLI invocation and returns the process exit code:
@@ -162,6 +163,7 @@ Commands:
   trace record|show|files|sessions|prune|cost   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
   task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
   decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
+  review [--task <t>] [--lens NAME]   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks)
   spec check <file|dir>  validate the acceptance contract of feature documents
   status             one look at the project: runtime, gauntlet, evolution, receipts
   yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)

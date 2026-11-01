@@ -59,3 +59,4 @@ Domain: sextant
 - L2: F1 CLOSED 2026-11-01 (`ses_e6af35090ffe0CvALVr75EIfNZ`, commit `30fa954`): `trace.Entry` + task/duration_ms/output_bytes/input+output_tokens (omitempty, cero=desconocido); proxy llamadas+tiempo+bytes (host no expone tokens); `trace cost [--task]` auditable contra JSONL; legacy→`(unattributed)`. `gate run macizo-flow/F1` 12/12 (`run_2c99daa3948e4f07`), verify 12/12, `task close` formal.
 
 - CLOSED F1 COMPLEX spec OK + 12 receipt(s) PASS.
+- L3: F2 CLOSED 2026-11-01 (`ses_e6aa50506ffesxDh5HXS3keOid`): `regulus review [--task] [--lens]` (congela head, clasifica riesgo, 1 lente, informativo, exit 0, cero escrituras; `regulus.json` intacto). Run1 cayó en crap (reviewRunMutation cx10/cov24%→53.90) → SPLIT+COVER → re-run `run_5fcb71c1d467a09e` 12/12, verify 19/19. `task close` exige historial todo-verde → cierre manual (4º caso; la candidata "close sobre último manifest" ya es deuda registrada).
