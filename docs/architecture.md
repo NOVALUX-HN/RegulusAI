@@ -27,6 +27,9 @@ OpenCode (host, TS/Bun runtime)
 │     hooks: tool.execute.after (trace capture), 2× session.context
 │            (discipline + domain lessons/skills), session.compaction (resume)
 │     duty: translate OpenCode events → Regulus contract; expose regulus tools
+│     toolsets (T2): full (16 defs, projects with charts/) vs minimal
+│            (doctor + memory_search + memory_context, simple sessions);
+│            selected at load by TE_TOOLSET=full|minimal|auto (default auto)
 ├── Guardian agents (.opencode/agents/*.md, read-only permissions)
 │     spec-keeper, gate-verifier, mutation-auditor, crap-analyst,
 │     evidence-auditor, reviewer (plus crew verifier for high-risk claims)
@@ -62,6 +65,15 @@ Evolution (Loop 3) edits this surface. Nothing else may.
   required major. Regulus maintains no V1 compatibility layer — one plugin
   surface against SDK v2 (V2 already broke V1 plugins; carrying two surfaces
   would double the maintenance for no user).
+- **Tool subsets by mode (T2):** registration is process-global per project
+  load — `setup` receives no session, the `transform` callback is sync
+  `(editor) => void` with no session, and `Tool.Options` has no
+  visibility flag (SDK 2.2.0) — so per-session switching is impossible
+  and subsets select at load: `TE_TOOLSET=full` (16 definitions),
+  `=minimal` (doctor + memory_search + memory_context), `=auto`/unset
+  (charts/ present → full, else minimal; unknown values and scan errors
+  fail closed to full). Reversal: `TE_TOOLSET=full` restores everything;
+  full mode is byte-identical to the previous unconditional registration.
 
 ## 5. State model — `.regulus/` (per project, gitignored)
 

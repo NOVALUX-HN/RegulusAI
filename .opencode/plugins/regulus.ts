@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { candidates, compactionContextArgs, dataBlock, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
+import { candidates, compactionContextArgs, dataBlock, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, resolveToolset, suggestSkills, toolsetTools, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -129,12 +129,31 @@ async function resolveRegulus(dir: string): Promise<string> {
   )
 }
 
+// hasChartFiles reports whether the project tree carries charts — the
+// T2 auto-toolset signal (charts present → full set). Fail-closed: any
+// scan error keeps the full set, so detection can never strip tools.
+function hasChartFiles(dir: string): boolean {
+  try {
+    for (const _entry of new Bun.Glob("charts/*.md").scanSync({ cwd: dir })) return true
+    return false
+  } catch {
+    return true
+  }
+}
+
 export default Plugin.define({
   id: "regulus",
   async setup(ctx) {
     const dir = ctx.location.directory
     const bin = await resolveRegulus(dir)
     const guidance = await loadToolGuidance(dir, DEFAULT_TOOL_GUIDANCE)
+    // T2 (macizo-tokens): load-time subset — a minimal-mode server
+    // exposes 3 definitions instead of 16. Per-session switching is
+    // impossible with this SDK (setup/transform carry no session; see
+    // TOOLSET_* in lib/domain.ts). Reversal: TE_TOOLSET=full restores
+    // all 16; unset restores auto (charts/ present → full).
+    const toolset = resolveToolset({ hasCharts: hasChartFiles(dir) })
+    console.error(`[regulus] toolset: ${toolset} (${toolsetTools(toolset).length}/16 tools, TE_TOOLSET=${process.env.TE_TOOLSET ?? ""})`)
 
     await ctx.tool.transform((editor) => {
       editor.namespace({
@@ -142,7 +161,14 @@ export default Plugin.define({
         description: guidance["regulus"],
       })
 
-      editor.add({
+      // T2: every registration below goes through this allowlist, so a
+      // minimal-mode server only pays the simple-session subset. Full
+      // mode is byte-identical to the previous unconditional adds.
+      const add = (tool: Parameters<typeof editor.add>[0]) => {
+        if (isToolEnabled(toolset, tool.name)) editor.add(tool)
+      }
+
+      add({
         name: "gate_run",
         description: guidance["gate_run"],
         input: {
@@ -171,7 +197,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "spec_check",
         description: guidance["spec_check"],
         input: {
@@ -190,7 +216,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "doctor",
         description: guidance["doctor"],
         input: { type: "object", properties: {}, additionalProperties: false },
@@ -201,7 +227,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "memory_note",
         description: guidance["memory_note"],
         input: {
@@ -220,7 +246,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "memory_show",
         description: guidance["memory_show"],
         input: { type: "object", properties: {}, additionalProperties: false },
@@ -231,7 +257,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "memory_save",
         description: guidance["memory_save"],
         input: {
@@ -257,7 +283,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "memory_search",
         description: guidance["memory_search"],
         input: {
@@ -284,7 +310,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "memory_context",
         description: guidance["memory_context"],
         input: { type: "object", properties: {}, additionalProperties: false },
@@ -299,7 +325,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "memory_history",
         description: guidance["memory_history"],
         input: {
@@ -318,7 +344,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "evolve_propose",
         description: guidance["evolve_propose"],
         input: {
@@ -341,7 +367,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "probe_contrast",
         description: guidance["probe_contrast"],
         input: {
@@ -371,7 +397,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "trace_show",
         description: guidance["trace_show"],
         input: {
@@ -390,7 +416,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "skills_list",
         description: guidance["skills_list"],
         input: { type: "object", properties: {}, additionalProperties: false },
@@ -401,7 +427,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "trace_sessions",
         description: guidance["trace_sessions"],
         input: { type: "object", properties: {}, additionalProperties: false },
@@ -412,7 +438,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "trace_files",
         description: guidance["trace_files"],
         input: {
@@ -431,7 +457,7 @@ export default Plugin.define({
         },
       })
 
-      editor.add({
+      add({
         name: "probe_compose",
         description: guidance["probe_compose"],
         input: {
