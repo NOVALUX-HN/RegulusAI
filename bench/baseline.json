@@ -1,0 +1,68 @@
+{
+  "suite": "macizo-bench-v1",
+  "surface": "tree",
+  "git_head": "d045f813721441a82ea263f7b9a794c8092d7886",
+  "started_at": "2026-11-01T05:33:58.9721442Z",
+  "tasks": [
+    {
+      "id": "B1",
+      "title": "cover-crap-formula",
+      "kind": "cover",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "formula holds on 3 points"
+    },
+    {
+      "id": "B2",
+      "title": "split-bounded-parse",
+      "kind": "split",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "2 bounded units, second carries spec"
+    },
+    {
+      "id": "B3",
+      "title": "prose-spec-gwt",
+      "kind": "prose",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "good accepted, Then-less refused"
+    },
+    {
+      "id": "B4",
+      "title": "veracity-receipt-roundtrip",
+      "kind": "veracity",
+      "pass": true,
+      "duration_ms": 7,
+      "detail": "receipt byte-identical with SHA pins"
+    },
+    {
+      "id": "B5",
+      "title": "gate-selection",
+      "kind": "gates",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "full=2, quick=1 required, unknown refused"
+    },
+    {
+      "id": "B6",
+      "title": "security-evidence-jail",
+      "kind": "security",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "scoped accepted, traversal refused"
+    },
+    {
+      "id": "B7",
+      "title": "honest-zero-cost",
+      "kind": "cost",
+      "pass": true,
+      "duration_ms": 7,
+      "detail": "1 call counted, tokens unknown (host exposes none)"
+    }
+  ],
+  "passed": 7,
+  "failed": 0,
+  "total_duration_ms": 14,
+  "output_bytes": 254
+}

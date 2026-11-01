@@ -44,6 +44,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"trace":    func(c CLI, args []string) int { return c.traceCmd(args) },
 	"task":     func(c CLI, args []string) int { return c.taskCmd(args) },
 	"decide":   func(c CLI, args []string) int { return c.decideCmd(args) },
+	"bench":    func(c CLI, args []string) int { return c.benchCmd(args) },
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
 	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
@@ -140,6 +141,7 @@ Usage:
 
 Commands:
   budget show|record   the evolution ledger (show; record a probe run)
+  bench list|run|baseline|compare   the self-benchmark: offline suite, baseline, contrast (regulus bench --help)
   chart init <name> | list             scaffold a Chart, list every Chart
   init [--stack go|node|smoke] [--harness-from <repo>]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
   contract           print the plugin<->core contract version
