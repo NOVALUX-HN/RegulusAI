@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1037,6 +1038,75 @@ func TestMemoryContextLimitAndIdentity(t *testing.T) {
 	}
 	if !strings.Contains(paged, "showing latest 5 of 7") {
 		t.Fatalf("paged context must name the truncation, got:\n%s", paged)
+	}
+}
+
+// T1 (macizo-tokens): the bare `memory context` is the compaction resume —
+// bounded by default (latest 20 notes, 20 items per long list, pins and
+// lessons intact); explicit --limit 0 --budget 0 keeps the full store.
+func TestMemoryContextDefaultsBounded(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	at := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	for i := 1; i <= 25; i++ {
+		if _, err := almanac.Save(root, &almanac.Observation{
+			Type: almanac.TypeSessionNote, Title: "note",
+			Content: fmt.Sprintf("bounded-note-%02d body", i),
+		}, at); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	for i := 1; i <= 25; i++ {
+		if _, err := almanac.Save(root, &almanac.Observation{
+			Type: almanac.TypeDecision, Title: "choice",
+			Content: fmt.Sprintf("bounded-decision-%02d body", i),
+		}, at); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Minute)
+	}
+	if _, err := almanac.Save(root, &almanac.Observation{
+		Type: almanac.TypeLesson, Title: "tuning", Content: "c", Domain: "go",
+		Lesson: &almanac.Lesson{Cue: "bounded-cue-go", Lesson: "bounded-lesson-go", Evidence: []string{"r.json"}, Confidence: "high"},
+	}, at); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "context"}); code != 0 {
+		t.Fatalf("context: exit = %d", code)
+	}
+	bounded := out.String()
+	if !strings.Contains(bounded, "scoped: budget=20") {
+		t.Fatalf("default context must announce its bound, got:\n%s", bounded)
+	}
+	if !strings.Contains(bounded, "showing latest 20 of 25") {
+		t.Fatalf("default context must cap the 25 notes with a pointer, got:\n%s", bounded)
+	}
+	if !strings.Contains(bounded, "narrow with --task/--path/--system") {
+		t.Fatalf("default context must cap the 25 decisions with a pointer, got:\n%s", bounded)
+	}
+	if strings.Contains(bounded, "bounded-note-01 body") || !strings.Contains(bounded, "bounded-note-25 body") {
+		t.Fatalf("default context must keep the latest notes, not the oldest, got:\n%s", bounded)
+	}
+	if strings.Contains(bounded, "bounded-decision-01 body") || !strings.Contains(bounded, "bounded-decision-25 body") {
+		t.Fatalf("default context must keep the latest decisions, not the oldest, got:\n%s", bounded)
+	}
+	for _, want := range []string{"bounded-cue-go", "bounded-lesson-go"} {
+		if !strings.Contains(bounded, want) {
+			t.Fatalf("default context must keep lesson content %q, got:\n%s", want, bounded)
+		}
+	}
+	cFull, outFull, _ := newCLI(nil)
+	if code := cFull.Run([]string{"memory", "context", "--limit", "0", "--budget", "0"}); code != 0 {
+		t.Fatalf("explicit-full context: exit = %d", code)
+	}
+	full := outFull.String()
+	if strings.Contains(full, "scoped:") || strings.Contains(full, "showing latest") {
+		t.Fatalf("explicit 0/0 must keep the full store unnamed, got:\n%s", full)
+	}
+	if !strings.Contains(full, "bounded-note-01 body") || !strings.Contains(full, "bounded-decision-01 body") {
+		t.Fatalf("explicit 0/0 must show every item, got:\n%s", full)
 	}
 }
 

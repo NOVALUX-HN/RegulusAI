@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { candidates, dataBlock, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, loadDiscipline, loadSkills, loadToolGuidance, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
+import { candidates, compactionContextArgs, dataBlock, extractPaths, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, loadDiscipline, loadSkills, loadToolGuidance, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, suggestSkills, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -566,8 +566,14 @@ export default Plugin.define({
       }
     })
 
+    // T1 (macizo-tokens): the compaction resume is BOUNDED — the hook
+    // injects the latest COMPACTION_CONTEXT_LIMIT notes and
+    // COMPACTION_CONTEXT_BUDGET items per long list (pins and lessons
+    // intact, every cap named with its repair) instead of the whole
+    // store. Reversal: REGULUS_COMPACTION_FULL=1 restores
+    // the explicit-full resume (--limit 0 --budget 0).
     await ctx.session.hook("compaction", async (event) => {
-      const context_ = await run(bin, ["memory", "context"], dir)
+      const context_ = await run(bin, compactionContextArgs(), dir)
       if (context_.exitCode === 0 && context_.output !== "") {
         event.system.push({ type: "text", text: dataBlock("regulus_almanac_context", context_.output) })
       }

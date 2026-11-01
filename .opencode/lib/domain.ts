@@ -509,6 +509,27 @@ export function memorySaveArgs(input: Record<string, string>): string[] {
   return args
 }
 
+// COMPACTION_CONTEXT_LIMIT/BUDGET bound the compaction resume block
+// (T1): the hook injects the latest 20 notes and 20 items per long
+// list instead of the whole store — mirroring the Go core's
+// DefaultContextLimit/DefaultContextBudget (parity pinned by the
+// compaction-args tests below and the Go parity test). Reversal: set
+// REGULUS_COMPACTION_FULL=1 for the explicit-full resume
+// (--limit 0 --budget 0); anything else stays bounded.
+export const COMPACTION_CONTEXT_LIMIT = 20;
+export const COMPACTION_CONTEXT_BUDGET = 20;
+
+// compactionContextArgs builds the compaction hook's `memory context`
+// argv: bounded by default, explicit-full when
+// REGULUS_COMPACTION_FULL=1. Pure (env injectable) so bun tests pin
+// the default and the reversal without spawning.
+export function compactionContextArgs(env?: string): string[] {
+  if ((env ?? process.env.REGULUS_COMPACTION_FULL ?? "") === "1") {
+    return ["memory", "context", "--limit", "0", "--budget", "0"];
+  }
+  return ["memory", "context", "--limit", String(COMPACTION_CONTEXT_LIMIT), "--budget", String(COMPACTION_CONTEXT_BUDGET)];
+}
+
 // memorySearchArgs builds the `memory search` argv, mirroring the MCP
 // coercion the tool schema advertises: limit is an integer (0 means
 // all), any/latest/include_superseded are booleans (flag iff truthy),

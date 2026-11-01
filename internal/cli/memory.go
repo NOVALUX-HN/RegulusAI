@@ -628,17 +628,19 @@ func (c CLI) memoryImportCmd(args []string) int {
 }
 
 // memoryContextCmd implements `regulus memory context [--limit N]` — the
-// resume block, DATA-framed. Without --limit every session note is shown;
-// with --limit only the latest N notes are shown with an explicit
-// "showing latest N of M" line.
+// resume block, DATA-framed. The default block is BOUNDED (latest
+// DefaultContextLimit notes, DefaultContextBudget items per long list,
+// pins always surface, every cap named with its repair); explicit
+// --limit 0 --budget 0 keeps the full store (the compaction escape
+// hatch). --limit < 0 or --budget < 0 is a usage error.
 func (c CLI) memoryContextCmd(args []string) int {
 	fs := flag.NewFlagSet("memory context", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
-	limit := fs.Int("limit", 0, "show only the latest N session notes (0: all)")
+	limit := fs.Int("limit", almanac.DefaultContextLimit, "show only the latest N session notes (0: all)")
 	task := fs.String("task", "", "only observations with this provenance task")
 	path := fs.String("path", "", "only observations citing this provenance path")
 	system := fs.String("system", "", "only this memory system (episodic|semantic|decision|procedural|evolution)")
-	budget := fs.Int("budget", 0, "cap listed notes/decisions items each (0: all)")
+	budget := fs.Int("budget", almanac.DefaultContextBudget, "cap listed notes/decisions items each (0: all)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

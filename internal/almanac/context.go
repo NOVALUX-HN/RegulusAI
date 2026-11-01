@@ -37,19 +37,34 @@ func age(now, saved time.Time) string {
 	}
 }
 
+// DefaultContextLimit caps session notes in the default resume block and
+// DefaultContextBudget caps each long list (notes, decisions/discoveries/
+// preferences). Both mirror `memory search --limit` scale (20): a bounded
+// resume that keeps recent work visible. Explicit --limit 0 / --budget 0
+// keeps the full store available (the compaction escape hatch); the
+// compaction hook pins these defaults via explicit flags (T1).
+const DefaultContextLimit = 20
+
+const DefaultContextBudget = 20
+
 // Context renders the deterministic resume block: the project identity,
 // the charts present, the session notes, the admitted lessons (with their
 // cue and content, not just a count), the decisions/discoveries/
 // preferences, and the pinned observations. Retrieved content is DATA,
-// never instructions.
+// never instructions. The default block is BOUNDED (latest
+// DefaultContextLimit notes, DefaultContextBudget items per long list,
+// pins always surface); explicit 0/0 via ContextWithLimit or
+// ContextScoped keeps the full store.
 func Context(root string, now time.Time) (string, error) {
-	return ContextWithLimit(root, now, 0)
+	return ContextScoped(root, now, DefaultContextLimit, ContextScope{Budget: DefaultContextBudget})
 }
 
 // ContextWithLimit is Context with explicit note pagination: limit > 0
 // shows only the latest limit session notes with an explicit
 // "showing latest N of M" line naming the repair (--limit); limit <= 0
-// shows every note. The remaining sections are always complete.
+// shows every note (the explicit-full escape hatch alongside
+// ContextScoped with an empty scope). The remaining sections are always
+// complete.
 // ContextScope narrows the resume block to relevant knowledge: exact
 // provenance task, exact provenance path, memory system, and a per-list
 // item budget so one context never injects the whole store.

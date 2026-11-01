@@ -6,6 +6,9 @@ import {
   candidates,
   checkContract,
   clearDomainsCache,
+  COMPACTION_CONTEXT_BUDGET,
+  COMPACTION_CONTEXT_LIMIT,
+  compactionContextArgs,
   dataBlock,
   distinctiveWords,
   extractPaths,
@@ -382,6 +385,26 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     expect(src).toContain('any: { type: "boolean"');
     expect(src).toContain('latest: { type: "boolean"');
     expect(src).toContain('include_superseded: { type: "boolean"');
+  });
+
+  test("compaction resume is bounded by default (T1)", () => {
+    expect(COMPACTION_CONTEXT_LIMIT).toBe(20);
+    expect(COMPACTION_CONTEXT_BUDGET).toBe(20);
+    expect(compactionContextArgs()).toEqual(["memory", "context", "--limit", "20", "--budget", "20"]);
+    expect(compactionContextArgs("")).toEqual(["memory", "context", "--limit", "20", "--budget", "20"]);
+    expect(compactionContextArgs("0")).toEqual(["memory", "context", "--limit", "20", "--budget", "20"]);
+  });
+
+  test("compaction resume reverses to explicit-full (T1)", () => {
+    expect(compactionContextArgs("1")).toEqual(["memory", "context", "--limit", "0", "--budget", "0"]);
+  });
+
+  test("compaction hook pins the bounded argv builder (T1)", async () => {
+    // The hook must call the builder, not a hardcoded full-context
+    // argv: scrape-proof pin on the call, tolerant to surrounding code.
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const hook = src.slice(src.indexOf('"compaction"'));
+    expect(hook).toContain("compactionContextArgs()");
   });
 });
 

@@ -113,7 +113,7 @@ reindexes automatically after every mutating command).
 | F3 | `regulus memory save` | full observation with type validation and provenance |
 | F3 | `regulus memory search [terms] [--topic-key] [--domain] [--dimension inv\|dom] [--path <f>] [--limit N] [--any] [--latest] [--include-superseded] [--lexical] [--embedder <id>]` | hybrid retrieval: deterministic bucket-then-match (lexical channel) fused with the vector channel via RRF (k=60) + recency decay + confidence boost; stale/missing index degrades to lexical with a warning, `--lexical` forces it; `--embedder` selects the encoder (default `hash-ngram-v1`); the index is auto-rebuilt after `note` / `save` / `import` / `prune --yes` (M1), manual `reindex` only for log edits behind the CLI |
 | F3 | `regulus memory prune [--older-than-days N] [--type ...] [--yes]` | drop stale non-lesson observations (dry run by default; lessons + pins immune) |
-| F3 | `regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]` | deterministic resume block: project identity, charts, session notes (all, or latest N with `--limit`), lessons with cue+content, decisions/discoveries/preferences; `--task` / `--path` / `--system` filter by provenance/system, `--budget` caps long lists (pins always surface) |
+| F3 | `regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]` | deterministic resume block: project identity, charts, session notes (latest 20 by default, or latest N with `--limit`, all with `--limit 0`), lessons with cue+content, decisions/discoveries/preferences (20 per list by default, all with `--budget 0`); `--task` / `--path` / `--system` filter by provenance/system, `--budget` caps long lists (pins always surface, every cap named with its repair) |
 | F4 | `regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv\|dom] [--confidence] <feature-doc>` | evidence-gated lesson candidate (dimension defaults to unset) |
 | F3 | `regulus memory history --topic-key <key>` | revision chain of one evolving topic |
 | F3 | `regulus memory export` | render the committed team bundle from the log (`.regulus-export/almanac.jsonl` + `pins.jsonl` + `relations.jsonl` + `status.jsonl` + `INDEX.md`) |
@@ -125,9 +125,12 @@ reindexes automatically after every mutating command).
 
 ## 6. Plugin integration (OpenCode V2)
 
-- The `compaction` session hook injects `regulus memory show` output inside a
-  DATA block, so summaries preserve state without ever treating it as
-  instructions.
+- The `compaction` session hook injects the bounded `memory context`
+  resume block (`--limit 20 --budget 20`: latest notes and items per
+  list, pins and lessons intact, every cap named with its repair)
+  inside a DATA block, so summaries preserve state without ever
+  treating it as instructions. Reversal: `REGULUS_COMPACTION_FULL=1`
+  restores the explicit-full resume (`--limit 0 --budget 0`).
 - The `context` session hook points the agent at the Almanac resume block
   when a feature document is open.
 - Lesson injection is domain-scoped: the hook resolves one domain (the
@@ -169,8 +172,10 @@ governance transitions — states mutate, the log does not).
   ends active) and stale-but-active knowledge.
 - **Scoped context**: `memory context [--limit N] [--task T] [--path P]
   [--system S] [--budget N]` filters by provenance/system and caps long
-  lists (pins always surface); unscoped output is byte-identical to the
-  legacy block.
+  lists (pins always surface); the bare block is bounded by default
+  (latest 20 notes, 20 items per list) and explicit `--limit 0
+  --budget 0` keeps the full store; unscoped full output is
+  byte-identical to the legacy block.
 - **Trust boundaries**: retrieved content is DATA — `search`, `show` and
   `history` print an untrusted-content banner on stderr (stdout stays
   machine-stable); the resume block keeps its DATA framing; imported

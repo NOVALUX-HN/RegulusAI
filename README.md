@@ -72,7 +72,7 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus memory save --type <t> --title <t> …` | a typed observation with provenance (decision, discovery, preference) |
 | `regulus memory search [terms]` | deterministic bucket-then-match, age annotations |
 | `regulus memory history --topic-key <k>` | the revision chain of an evolving topic |
-| `regulus memory context [--limit N]` | the deterministic resume block: project identity, charts, all notes, lessons with content, decisions/discoveries/preferences |
+| `regulus memory context [--limit N]` | the deterministic resume block (bounded by default: latest 20 notes, 20 items per long list; `--limit 0 --budget 0` = full store): project identity, charts, notes, lessons with content, decisions/discoveries/preferences |
 | `regulus init [--stack go\|node\|smoke] [--devin]` | onboard a fresh repo: regulus.json, charts/, .gitignore, optional `.devin/mcp_config.json` |
 | `regulus mcp` | stdio MCP server for Devin CLI/Desktop/Cloud (12 tools, MCP trust boundary in docs/devin.md) |
 | `regulus yolo [on\|off\|status]` | safe YOLO toggle: flips only the bash/edit catch-alls, destructive denies always stay |
