@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/receipts"
 )
 
@@ -27,7 +26,7 @@ func mustContain(t *testing.T, res CloseResult, want string) {
 func TestSplitContractMissing(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	writePassRun(t, root, "feat/T1", "run_splitcontract001", at, "build")
 	doc := "# F\n\nClass: STANDARD\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n\n## Tasks\n\n| ID | Spec | Work | Route |\n|----|------|------|-------|\n| T1 | s | w | inline |\n\n## Log\n\n- L1.\n"
 	res := CheckClose(doc, root, "feat", "T1")
 	mustContain(t, res, "no structured ## Contract")
@@ -36,7 +35,7 @@ func TestSplitContractMissing(t *testing.T) {
 func TestSplitSpecBroken(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	writePassRun(t, root, "feat/T1", "run_splitspec000001", at, "build")
 	broken := strings.Replace(closeChart("STANDARD", ""), "- Then c", "- And c", 1)
 	res := CheckClose(broken, root, "feat", "T1")
 	mustContain(t, res, "spec")
@@ -46,7 +45,7 @@ func TestSplitDepsBlocked(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
 	// T2 depends on T1 (see closeChart); T1 stays open so only deps blocks T2.
-	writePassReceipt(t, root, "feat/T2", "verify", at)
+	writePassRun(t, root, "feat/T2", "run_splitdeps00001", at, "verify")
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T2")
 	mustContain(t, res, "dependency T1 is not closed")
 }
@@ -59,28 +58,18 @@ func TestSplitEvidenceNone(t *testing.T) {
 
 func TestSplitEvidenceFailingGate(t *testing.T) {
 	root := t.TempDir()
-	dir := evidence.TaskDir(root, "feat/T1")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rec := receipts.Receipt{
-		Task: "feat/T1", Gate: "build", Layer: 1, Command: "echo ok",
-		ExitCode: 1, Verdict: receipts.VerdictFail, StartedAt: time.Unix(1700000000, 0).UTC(),
-	}
-	rec.Stdout, rec.StdoutSHA = receipts.Capture("boom")
-	rec.Stderr, rec.StderrSHA = receipts.Capture("")
-	if _, err := receipts.Write(dir, rec); err != nil {
-		t.Fatal(err)
-	}
+	at := time.Unix(1700000000, 0).UTC()
+	writeManifestRun(t, root, "feat/T1", "run_splitfail00001", at, []string{"build"}, receipts.VerdictFail, 1)
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T1")
 	mustContain(t, res, "failing gates: build (exit 1)")
 }
 
 func TestSplitEvidenceTampered(t *testing.T) {
 	root := t.TempDir()
-	path := writePassReceipt(t, root, "feat/T1", "build", time.Unix(1700000000, 0).UTC())
-	raw, _ := os.ReadFile(path)
-	os.WriteFile(path, []byte(strings.Replace(string(raw), `"stdout": "ok"`, `"stdout": "EVIL"`, 1)), 0o644)
+	at := time.Unix(1700000000, 0).UTC()
+	_, paths := writePassRun(t, root, "feat/T1", "run_splittamper001", at, "build")
+	raw, _ := os.ReadFile(paths[0])
+	os.WriteFile(paths[0], []byte(strings.Replace(string(raw), `"stdout": "ok-build"`, `"stdout": "EVIL"`, 1)), 0o644)
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T1")
 	mustContain(t, res, "evidence verify:")
 }
@@ -88,7 +77,7 @@ func TestSplitEvidenceTampered(t *testing.T) {
 func TestSplitVerifierMissing(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	writePassRun(t, root, "feat/T1", "run_splitverif0001", at, "build")
 	doc := closeChart("CRITICAL", "- Constraints: none\n- Verifier: T2\n- Completion: scenarios PROVEN\n")
 	res := CheckClose(doc, root, "feat", "T1")
 	mustContain(t, res, "verifier task T2 has no receipts")
@@ -97,29 +86,17 @@ func TestSplitVerifierMissing(t *testing.T) {
 func TestSplitVerifierFailingGate(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
-	dir := evidence.TaskDir(root, "feat/T2")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rec := receipts.Receipt{
-		Task: "feat/T2", Gate: "verify", Layer: 1, Command: "echo ok",
-		ExitCode: 1, Verdict: receipts.VerdictFail, StartedAt: at,
-	}
-	rec.Stdout, rec.StdoutSHA = receipts.Capture("boom")
-	rec.Stderr, rec.StderrSHA = receipts.Capture("")
-	if _, err := receipts.Write(dir, rec); err != nil {
-		t.Fatal(err)
-	}
+	writePassRun(t, root, "feat/T1", "run_splitverif0002", at, "build")
+	writeManifestRun(t, root, "feat/T2", "run_splitverif0003", at, []string{"verify"}, receipts.VerdictFail, 1)
 	doc := closeChart("CRITICAL", "- Constraints: none\n- Verifier: T2\n- Completion: scenarios PROVEN\n")
 	res := CheckClose(doc, root, "feat", "T1")
-	mustContain(t, res, "verifier gate verify did not pass")
+	mustContain(t, res, "verifier failing gates: verify (exit 1)")
 }
 
 func TestSplitCleanClose(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	writePassRun(t, root, "feat/T1", "run_splitclean0001", at, "build")
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T1")
 	if !res.Closed || res.Verdict != "PASS" {
 		t.Fatalf("proven task must close PASS, got %+v", res)

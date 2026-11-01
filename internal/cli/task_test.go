@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +10,7 @@ import (
 	"time"
 
 	"regulus-ai/internal/evidence"
+	"regulus-ai/internal/manifest"
 	"regulus-ai/internal/receipts"
 )
 
@@ -27,18 +30,44 @@ func writeTaskReceipt(t *testing.T, evidTask, gate string, pass bool) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, verdict := 0, receipts.VerdictPass
+	code, verdict, status, reason := 0, receipts.VerdictPass, "PASS", "ok"
 	if !pass {
-		code, verdict = 1, receipts.VerdictFail
+		code, verdict, status, reason = 1, receipts.VerdictFail, "FAIL", "deterministic_failure"
 	}
+	runID := "run_cli000000001"
+	mfile := manifest.FileName(runID)
+	at := time.Unix(1700000000, 0).UTC()
 	rec := receipts.Receipt{
 		Task: evidTask, Gate: gate, Layer: 1, Command: "echo ok",
-		ExitCode: code, Verdict: verdict, StartedAt: time.Unix(1700000000, 0).UTC(),
-		DurationMS: 3, GitHead: "abc",
+		ExitCode: code, Verdict: verdict, StartedAt: at,
+		DurationMS: 3, GitHead: "abc", Schema: receipts.ReceiptSchemaVersion,
+		Status: status, Reason: reason, RunID: runID, Manifest: mfile,
 	}
 	rec.Stdout, rec.StdoutSHA = receipts.Capture("ok")
 	rec.Stderr, rec.StderrSHA = receipts.Capture("")
-	if _, err := receipts.Write(dir, rec); err != nil {
+	path, err := receipts.Write(dir, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	back, err := receipts.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := manifest.Manifest{
+		Schema: manifest.SchemaVersion, RunID: runID,
+		Task: evidTask, CreatedAt: at,
+		Artifacts: []manifest.ArtifactRef{{
+			ReceiptID: back.ID, File: filepath.Base(path),
+			SHA256: hex.EncodeToString(sum[:]),
+			Gate:   gate, Status: status, Reason: reason,
+		}},
+	}
+	if _, err := manifest.Write(dir, m); err != nil {
 		t.Fatal(err)
 	}
 }

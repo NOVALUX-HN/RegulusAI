@@ -1,12 +1,16 @@
 package sextant
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"regulus-ai/internal/evidence"
+	"regulus-ai/internal/manifest"
 	"regulus-ai/internal/receipts"
 )
 
@@ -67,6 +71,70 @@ func writePassReceipt(t *testing.T, root, evidTask, gate string, at time.Time) s
 	return path
 }
 
+// writeManifestRun writes one manifest-backed run: receipts carrying
+// RunID/Manifest plus the manifest linking them (hash-verified). It is the
+// only green fixture: legacy receipts without a manifest never close.
+func writeManifestRun(t *testing.T, root, evidTask, runID string, at time.Time, gates []string, verdict string, exitCode int) (string, []string) {
+	t.Helper()
+	dir := evidence.TaskDir(root, evidTask)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mfile := manifest.FileName(runID)
+	status, reason := "PASS", "ok"
+	if verdict != receipts.VerdictPass {
+		status, reason = "FAIL", "deterministic_failure"
+	}
+	var paths []string
+	for i, gate := range gates {
+		rec := receipts.Receipt{
+			Task: evidTask, Gate: gate, Layer: 1, Command: "echo ok",
+			ExitCode: exitCode, Verdict: verdict, StartedAt: at.Add(time.Duration(i) * time.Second), DurationMS: 3,
+			GitHead: "abc", Schema: receipts.ReceiptSchemaVersion,
+			Status: status, Reason: reason,
+			RunID: runID, Manifest: mfile,
+		}
+		rec.Stdout, rec.StdoutSHA = receipts.Capture("ok-" + gate)
+		rec.Stderr, rec.StderrSHA = receipts.Capture("")
+		path, err := receipts.Write(dir, rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+	}
+	var refs []manifest.ArtifactRef
+	for i, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		back, err := receipts.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		refs = append(refs, manifest.ArtifactRef{
+			ReceiptID: back.ID, File: filepath.Base(p),
+			SHA256: hex.EncodeToString(sum[:]),
+			Gate:   gates[i], Status: status, Reason: reason,
+		})
+	}
+	m := manifest.Manifest{
+		Schema: manifest.SchemaVersion, RunID: runID,
+		Task: evidTask, CreatedAt: at, Artifacts: refs,
+	}
+	mpath, err := manifest.Write(dir, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mpath, paths
+}
+
+func writePassRun(t *testing.T, root, evidTask, runID string, at time.Time, gates ...string) (string, []string) {
+	t.Helper()
+	return writeManifestRun(t, root, evidTask, runID, at, gates, receipts.VerdictPass, 0)
+}
+
 func TestCloseUnknownTask(t *testing.T) {
 	root := t.TempDir()
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T9")
@@ -93,7 +161,7 @@ func TestCloseNoReceipts(t *testing.T) {
 func TestCloseSuccessMutatesDoc(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	_, want := writePassRun(t, root, "feat/T1", "run_closepass000001", at, "build")
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T1")
 	if !res.Closed {
 		t.Fatalf("proven task must close, got %v", res.Unmet)
@@ -101,9 +169,18 @@ func TestCloseSuccessMutatesDoc(t *testing.T) {
 	if len(res.Receipts) != 1 || res.Verdict != "PASS" {
 		t.Fatalf("result must cite evidence, got %+v", res)
 	}
+	if res.RunID != "run_closepass000001" {
+		t.Fatalf("result must cite run id, got %+v", res)
+	}
+	if res.Receipts[0] != want[0] {
+		t.Fatalf("receipts must be the latest manifest set, got %+v want %+v", res.Receipts, want)
+	}
 	updated := ApplyClose(closeChart("STANDARD", ""), "T1", res)
 	if !strings.Contains(updated, "CLOSED T1") {
 		t.Fatalf("close must record in Log, got:\n%s", updated)
+	}
+	if !strings.Contains(updated, "run_closepass000001") {
+		t.Fatalf("close record must cite the run id, got:\n%s", updated)
 	}
 	tasks, _ := ParseTasks(updated)
 	found := false
@@ -127,19 +204,8 @@ func TestCloseSuccessMutatesDoc(t *testing.T) {
 
 func TestCloseRefusesFailingReceipt(t *testing.T) {
 	root := t.TempDir()
-	dir := evidence.TaskDir(root, "feat/T1")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rec := receipts.Receipt{
-		Task: "feat/T1", Gate: "build", Layer: 1, Command: "echo ok",
-		ExitCode: 1, Verdict: receipts.VerdictFail, StartedAt: time.Unix(1700000000, 0).UTC(),
-	}
-	rec.Stdout, rec.StdoutSHA = receipts.Capture("boom")
-	rec.Stderr, rec.StderrSHA = receipts.Capture("")
-	if _, err := receipts.Write(dir, rec); err != nil {
-		t.Fatal(err)
-	}
+	at := time.Unix(1700000000, 0).UTC()
+	writeManifestRun(t, root, "feat/T1", "run_closefail000001", at, []string{"build"}, receipts.VerdictFail, 1)
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T1")
 	if res.Closed {
 		t.Fatal("failing gate must block close")
@@ -151,9 +217,10 @@ func TestCloseRefusesFailingReceipt(t *testing.T) {
 
 func TestCloseRefusesTamperedReceipt(t *testing.T) {
 	root := t.TempDir()
-	path := writePassReceipt(t, root, "feat/T1", "build", time.Unix(1700000000, 0).UTC())
-	raw, _ := os.ReadFile(path)
-	os.WriteFile(path, []byte(strings.Replace(string(raw), `"stdout": "ok"`, `"stdout": "EVIL"`, 1)), 0o644)
+	at := time.Unix(1700000000, 0).UTC()
+	_, paths := writePassRun(t, root, "feat/T1", "run_closetamper001", at, "build")
+	raw, _ := os.ReadFile(paths[0])
+	os.WriteFile(paths[0], []byte(strings.Replace(string(raw), `"stdout": "ok-build"`, `"stdout": "EVIL"`, 1)), 0o644)
 	res := CheckClose(closeChart("STANDARD", ""), root, "feat", "T1")
 	if res.Closed {
 		t.Fatal("tampered evidence must block close")
@@ -166,7 +233,7 @@ func TestCloseRefusesTamperedReceipt(t *testing.T) {
 func TestCloseCriticalRequiresVerifier(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	writePassRun(t, root, "feat/T1", "run_closecrit000001", at, "build")
 	doc := closeChart("CRITICAL", "- Constraints: none\n- Verifier: T2\n- Completion: scenarios PROVEN\n")
 	res := CheckClose(doc, root, "feat", "T1")
 	if res.Closed {
@@ -177,7 +244,7 @@ func TestCloseCriticalRequiresVerifier(t *testing.T) {
 	}
 	// The verifier gates by evidence: once feat/T2 receipts pass, T1 may
 	// close; T2 itself closes afterwards under the normal rules.
-	writePassReceipt(t, root, "feat/T2", "verify", at.Add(time.Second))
+	writePassRun(t, root, "feat/T2", "run_closecrit000002", at.Add(time.Second), "verify")
 	vd := ApplyClose(doc, "T1", CheckClose(doc, root, "feat", "T1"))
 	if !CheckClose(vd, root, "feat", "T1").Closed {
 		t.Fatalf("critical task with passing verifier evidence must close, got %v", CheckClose(vd, root, "feat", "T1").Unmet)
@@ -190,7 +257,7 @@ func TestCloseCriticalRequiresVerifier(t *testing.T) {
 func TestCloseRequiresSpecAndContract(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
-	writePassReceipt(t, root, "feat/T1", "build", at)
+	writePassRun(t, root, "feat/T1", "run_closespec00001", at, "build")
 	// Broken acceptance (missing Then) blocks close even with receipts.
 	broken := strings.Replace(closeChart("STANDARD", ""), "- Then c", "- And c", 1)
 	res := CheckClose(broken, root, "feat", "T1")

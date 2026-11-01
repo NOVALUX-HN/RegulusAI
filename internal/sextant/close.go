@@ -7,9 +7,13 @@ package sextant
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"regulus-ai/internal/evidence"
+	"regulus-ai/internal/manifest"
+	"regulus-ai/internal/receipts"
 	"regulus-ai/internal/spec"
 )
 
@@ -17,6 +21,7 @@ import (
 type CloseResult struct {
 	Closed   bool
 	TaskID   string
+	RunID    string
 	Class    Class
 	Verdict  string
 	Receipts []string
@@ -101,26 +106,17 @@ func checkDeps(doc string, task *Task, res *CloseResult) {
 }
 
 func checkEvidence(root, chartBase, taskID string, res *CloseResult) {
-	_, receipts, rep, found := taskEvidence(root, chartBase, taskID)
-	if !found {
-		res.Unmet = append(res.Unmet, fmt.Sprintf("no receipts for task: run the gauntlet as %s/%s", chartBase, taskID))
+	for _, cand := range []string{chartBase + "/" + taskID, taskID} {
+		m, _, paths, unmet, found := latestManifestEvidence(root, cand)
+		if !found {
+			continue
+		}
+		res.RunID = m.RunID
+		res.Receipts = append([]string(nil), paths...)
+		res.Unmet = append(res.Unmet, unmet...)
 		return
 	}
-	failed := []string{}
-	for _, e := range receipts {
-		if e.Receipt.Verdict != "pass" {
-			failed = append(failed, fmt.Sprintf("%s (exit %d)", e.Receipt.Gate, e.Receipt.ExitCode))
-		}
-	}
-	if len(failed) != 0 {
-		res.Unmet = append(res.Unmet, fmt.Sprintf("failing gates: %s", strings.Join(failed, ", ")))
-	}
-	for _, f := range rep.Failed {
-		res.Unmet = append(res.Unmet, fmt.Sprintf("evidence verify: %s: %s", f.File, f.Reason))
-	}
-	for _, e := range receipts {
-		res.Receipts = append(res.Receipts, e.Path)
-	}
+	res.Unmet = append(res.Unmet, fmt.Sprintf("no receipts for task: run the gauntlet as %s/%s (no manifest)", chartBase, taskID))
 }
 
 func checkVerifier(root, chartBase string, class Class, ct Contract, res *CloseResult) {
@@ -133,39 +129,102 @@ func checkVerifier(root, chartBase string, class Class, ct Contract, res *CloseR
 		return
 	}
 	// The verifier gates by evidence, not by its own closure: its
-	// receipts must exist and pass. Its closure follows the
-	// normal rules afterwards (no close-order deadlock).
-	_, vrecs, vrep, vfound := taskEvidence(root, chartBase, verifier)
-	if !vfound {
-		res.Unmet = append(res.Unmet, fmt.Sprintf("verifier task %s has no receipts", verifier))
+	// latest manifest must verify. Its closure follows afterwards.
+	for _, cand := range []string{chartBase + "/" + verifier, verifier} {
+		_, _, _, unmet, found := latestManifestEvidence(root, cand)
+		if !found {
+			continue
+		}
+		for _, u := range unmet {
+			res.Unmet = append(res.Unmet, "verifier "+u)
+		}
 		return
 	}
-	for _, e := range vrecs {
-		if e.Receipt.Verdict != "pass" {
-			res.Unmet = append(res.Unmet, fmt.Sprintf("verifier gate %s did not pass", e.Receipt.Gate))
-		}
-	}
-	if len(vrep.Failed) != 0 {
-		res.Unmet = append(res.Unmet, fmt.Sprintf("verifier evidence does not verify (%d problem(s))", len(vrep.Failed)))
-	}
+	res.Unmet = append(res.Unmet, fmt.Sprintf("verifier task %s has no receipts", verifier))
 }
 
-// taskEvidence resolves a chart task to its receipts: <chart>/<id> first,
-// then the bare id (probe and legacy layouts). The receipts are
-// hash-verified through evidence.Verify.
-func taskEvidence(root, chartBase, taskID string) (string, []evidence.Entry, evidence.Report, bool) {
-	for _, candidate := range []string{chartBase + "/" + taskID, taskID} {
-		entries, err := evidence.List(root, candidate)
-		if err != nil || len(entries) == 0 {
-			continue
-		}
-		rep, err := evidence.Verify(root, candidate, false)
-		if err != nil {
-			continue
-		}
-		return candidate, entries, rep, true
+// latestManifestEvidence selects the latest manifest of one evidence task:
+// max CreatedAt, tie-break lexicographic FileName(RunID). It fails closed
+// on any malformed candidate (no silent fallback), on Schema!=1, on empty
+// Artifacts or any Skipped (see gates/runtask_split.go:112-156: Artifacts
+// pin receipt bytes, Skipped records omitted gates — an empty or partial
+// run never proves the contract), and on any evidence.Verify failure whose
+// file (always via filepath.Base) belongs to the closed set {manifest plus
+// basenames of its Artifacts} in both directions (receipt→manifest link
+// and manifest→disk SHA256).
+func latestManifestEvidence(root, evidTask string) (manifest.Manifest, string, []string, []string, bool) {
+	dir, err := evidence.TaskDirSafe(root, evidTask)
+	if err != nil {
+		return manifest.Manifest{}, "", nil, []string{err.Error()}, true
 	}
-	return "", nil, evidence.Report{}, false
+	matches, err := filepath.Glob(filepath.Join(dir, "manifest-*.json"))
+	if err != nil {
+		return manifest.Manifest{}, "", nil, []string{err.Error()}, true
+	}
+	if len(matches) == 0 {
+		return manifest.Manifest{}, "", nil, nil, false
+	}
+	sort.Strings(matches)
+	mlist := make([]manifest.Manifest, 0, len(matches))
+	for _, p := range matches {
+		m, err := manifest.ReadFile(p)
+		if err != nil {
+			return manifest.Manifest{}, p, nil, []string{fmt.Sprintf("evidence verify: %s: manifest_malformed: %s", filepath.Base(p), err.Error())}, true
+		}
+		mlist = append(mlist, m)
+	}
+	idx := 0
+	for i := 1; i < len(mlist); i++ {
+		if mlist[i].CreatedAt.After(mlist[idx].CreatedAt) || (mlist[i].CreatedAt.Equal(mlist[idx].CreatedAt) && manifest.FileName(mlist[i].RunID) > manifest.FileName(mlist[idx].RunID)) {
+			idx = i
+		}
+	}
+	m := mlist[idx]
+	mpath := matches[idx]
+	base := filepath.Base(mpath)
+	if m.Schema != manifest.SchemaVersion {
+		return m, mpath, nil, []string{fmt.Sprintf("evidence verify: %s: unsupported_schema", base)}, true
+	}
+	if len(m.Artifacts) == 0 {
+		return m, mpath, nil, []string{fmt.Sprintf("evidence verify: %s: empty manifest: no artifacts", base)}, true
+	}
+	if len(m.Skipped) > 0 {
+		return m, mpath, nil, []string{fmt.Sprintf("evidence verify: %s: skipped gates: %s", base, strings.Join(m.Skipped, ", "))}, true
+	}
+	var paths []string
+	var unmet []string
+	var failed []string
+	for _, a := range m.Artifacts {
+		fpath := filepath.Join(dir, filepath.Base(a.File))
+		paths = append(paths, fpath)
+		rec, err := receipts.ReadFile(fpath)
+		if err != nil {
+			unmet = append(unmet, fmt.Sprintf("evidence verify: %s: artifact_missing: %s", filepath.Base(a.File), err.Error()))
+			continue
+		}
+		if rec.Verdict != "pass" {
+			failed = append(failed, fmt.Sprintf("%s (exit %d)", rec.Gate, rec.ExitCode))
+		}
+	}
+	if len(failed) != 0 {
+		unmet = append(unmet, fmt.Sprintf("failing gates: %s", strings.Join(failed, ", ")))
+	}
+	rep, err := evidence.Verify(root, evidTask, false)
+	if err != nil {
+		sort.Strings(paths)
+		return m, mpath, paths, append(unmet, err.Error()), true
+	}
+	closed := map[string]bool{base: true}
+	for _, a := range m.Artifacts {
+		closed[filepath.Base(a.File)] = true
+	}
+	for _, f := range rep.Failed {
+		if closed[filepath.Base(f.File)] {
+			unmet = append(unmet, fmt.Sprintf("evidence verify: %s: %s", filepath.Base(f.File), f.Reason))
+		}
+	}
+	sort.Strings(paths)
+	return m, mpath, paths, unmet, true
 }
 
 // ApplyClose records a verified closure: flips the task row Status to done
@@ -177,6 +236,9 @@ func ApplyClose(doc, taskID string, res CloseResult) string {
 	}
 	updated := flipStatusCell(doc, taskID)
 	record := fmt.Sprintf("- CLOSED %s %s spec OK + %d receipt(s) PASS.", taskID, res.Class, len(res.Receipts))
+	if res.RunID != "" {
+		record = fmt.Sprintf("- CLOSED %s %s spec OK + %d receipt(s) PASS (%s).", taskID, res.Class, len(res.Receipts), res.RunID)
+	}
 	updated = appendLogLine(updated, record)
 	return updated
 }
