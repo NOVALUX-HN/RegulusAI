@@ -50,7 +50,7 @@ Domain: sextant
 |----|------|------|-------|
 | F1 | F1 | contabilidad de coste por task en traces (tokens o proxy) | @regulus-worker | done |
 | F2 | F2 | modo review proporcional (diff congelado + 1 lente, opt-in) | @regulus-worker |  |
-| F3 | F3 | medir 5+ unidades/clase y publicar tabla trigger-rules | @regulus-worker |  |
+| F3 | F3 | medir 5+ unidades/clase y publicar tabla trigger-rules | @regulus-worker | done |
 | F4 | F4 | benchmark propio 5–10 tasks + runner offline + baseline | @regulus-worker |  |
 
 ## Log
@@ -60,3 +60,5 @@ Domain: sextant
 
 - CLOSED F1 COMPLEX spec OK + 12 receipt(s) PASS.
 - L3: F2 CLOSED 2026-11-01 (`ses_e6aa50506ffesxDh5HXS3keOid`): `regulus review [--task] [--lens]` (congela head, clasifica riesgo, 1 lente, informativo, exit 0, cero escrituras; `regulus.json` intacto). Run1 cayó en crap (reviewRunMutation cx10/cov24%→53.90) → SPLIT+COVER → re-run `run_5fcb71c1d467a09e` 12/12, verify 19/19. `task close` exige historial todo-verde → cierre manual (4º caso; la candidata "close sobre último manifest" ya es deuda registrada).
+- CLOSED F3 COMPLEX spec OK + 12 receipt(s) PASS.
+- L4: F3 detail 2026-11-01 (`ses_e6a6e5d8effeuXLC9cIMgh6u9t`, cierre formal): `docs/trigger-rules.md` con corpus 48 corridas 12/12 (COMPLEX n=38 med 187.8s, CRITICAL n=10 med 165.8s; TRIVIAL/STANDARD n=0 honesto con criterio de salida); capas 4+6 = 94.1% del wall; decisiones: review-primero en riesgo medio, verifier se mantiene, no recortar capas baratas. `gate run macizo-flow/F3` 12/12 (`run_059cb27169705479`), verify 12/12.
