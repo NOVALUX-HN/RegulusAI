@@ -16,6 +16,7 @@ import {
   formatResolveLog,
   GATE_RUN_TIMEOUT_MS_DEFAULT,
   GATE_RUN_TIMEOUT_MS_FLOOR,
+  GATE_RUN_OUTPUT_MAX,
   gateRunTimeoutMs,
   loadDiscipline,
   loadToolGuidance,
@@ -644,6 +645,28 @@ describe("gate_run content (D3)", () => {
     expect(got).toContain("timed out");
     expect(got).toContain("exit code: -1");
     expect(formatGateFailure("   ")).toContain("exit code: -1");
+  });
+  test("long output is bounded with sha, never cut to empty (G2)", () => {
+    const big = "x".repeat(GATE_RUN_OUTPUT_MAX * 2 + 100);
+    const h = new Bun.CryptoHasher("sha256");
+    h.update(big);
+    const got = formatGateResult(big, 0);
+    expect(got.length).toBeLessThan(big.length);
+    expect(got.length).toBeGreaterThan(0);
+    expect(got).toContain("truncated");
+    expect(got).toContain(`sha256: ${h.digest("hex")}`);
+    expect(got.slice(0, 50)).toBe("x".repeat(50));
+    expect(got).not.toContain("exit code");
+  });
+  test("bounded failure still carries the non-zero exit code (G2)", () => {
+    const big = "y".repeat(GATE_RUN_OUTPUT_MAX * 2 + 100);
+    const got = formatGateResult(big, 1);
+    expect(got.length).toBeLessThan(big.length);
+    expect(got.length).toBeGreaterThan(0);
+    expect(got).toContain("truncated");
+    expect(got).toContain("sha256:");
+    expect(got).toContain("exit code: 1");
+    expect(got.slice(0, 50)).toBe("y".repeat(50));
   });
 });
 

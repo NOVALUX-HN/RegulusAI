@@ -131,12 +131,33 @@ export function gateRunTimeoutMs(env?: string): number {
   return Math.max(GATE_RUN_TIMEOUT_MS_FLOOR, Math.floor(n));
 }
 
+// GATE_RUN_OUTPUT_MAX bounds the gate_run tool content verbatim,
+// mirroring receipts.MaxCapture (8192): a gauntlet run prints minutes
+// of per-gate output and would blow the tool context or get cut to
+// empty by the host. The full body is always pinned by its SHA-256 so
+// nothing is lost without a pointer.
+export const GATE_RUN_OUTPUT_MAX = 8192;
+
+// sha256Hex pins a string with its hex SHA-256 (Bun platform hash, no
+// dependency) so bounded tool content stays verifiable.
+function sha256Hex(s: string): string {
+  const h = new Bun.CryptoHasher("sha256");
+  h.update(s);
+  return h.digest("hex");
+}
+
 // formatGateResult turns a gate_run spawn outcome into tool content
-// that is never empty and never drops the exit code: empty binary
-// output becomes "(no output)" and a non-zero exit appends its code,
-// so a failing gate can never surface as a bare verdict or null.
+// that is never empty, never unbounded, and never drops the exit
+// code: empty binary output becomes "(no output)", output past
+// GATE_RUN_OUTPUT_MAX is cut to a prefix carrying its sha256, and a
+// non-zero exit appends its code — so a long or failing gate can
+// never surface as a bare verdict, an empty string, or null.
 export function formatGateResult(output: string, exitCode: number): string {
-  const body = output === "" ? "(no output)" : output;
+  const full = output === "" ? "(no output)" : output;
+  const body =
+    full.length > GATE_RUN_OUTPUT_MAX
+      ? `${full.slice(0, GATE_RUN_OUTPUT_MAX)}\n…[truncated; full output pinned by sha256]\nsha256: ${sha256Hex(full)}`
+      : full;
   return exitCode === 0 ? body : `${body}\nexit code: ${exitCode}`;
 }
 
