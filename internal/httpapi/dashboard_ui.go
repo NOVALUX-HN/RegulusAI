@@ -8,7 +8,7 @@ package httpapi
 // textContent (never innerHTML with data).
 const dashboardHTML = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Regulus — Qué hay guardado en tu proyecto</title>
 <style>
 :root{
@@ -111,7 +111,27 @@ a{color:var(--regulus-brand-bright)}
 @media (max-width:640px){
   .bar-row{grid-template-columns:1fr;gap:4px}
   .bar-row .v{text-align:left}
+  header.top{padding:20px 16px}
+  main{padding:16px}
+  #cards-grid{grid-template-columns:1fr}
+  .pager{flex-wrap:wrap}
+  .proj-row{flex-wrap:wrap}
+  #project{flex:1 1 200px;min-width:0}
+  button,input,select{min-height:44px;font-size:16px}
 }
+@media (pointer:coarse){
+  button,input,select{min-height:44px}
+}
+/* R1: tablas consultables a 360px sin scroll horizontal de página.
+   Técnica elegida (las 6 tablas): contención por tabla — cada tabla
+   vive en un .tbl-wrap con scroll horizontal propio, porque el apilado
+   por filas destruiría la comparación entre filas (recibos, sesiones,
+   presupuesto). El Then de R1 admite "apilado o scroll contenido". */
+html,body{max-width:100vw;overflow-x:hidden}
+main,header.top .wrap,section{max-width:100%;min-width:0}
+.tbl-wrap{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+th,td{overflow-wrap:anywhere}
+.tbl-wrap td{word-break:break-word}
 </style>
 </head><body>
 <header class="top"><div class="wrap">
@@ -133,32 +153,32 @@ a{color:var(--regulus-brand-bright)}
 <p class="err" id="graphs-error"></p></section>
 <section id="sec-evidencia"><h2>Evidencia — comprobantes de verificación</h2>
 <p class="plain">Cada fila es una vez que Regulus comprobó que el trabajo estaba bien. Es el ticket de la prueba: qué tarea, qué prueba y si salió bien.</p>
-<table><thead><tr><th>Tarea</th><th>Prueba</th><th>Resultado</th><th>Fecha</th></tr></thead><tbody id="tb-receipts"></tbody></table>
+<div class="tbl-wrap"><table><thead><tr><th>Tarea</th><th>Prueba</th><th>Resultado</th><th>Fecha</th></tr></thead><tbody id="tb-receipts"></tbody></table></div>
 <div class="pager"><button id="prev-receipts">Anterior</button><span id="info-receipts"></span><button id="next-receipts">Siguiente</button></div>
 <p class="err" id="err-receipts"></p></section>
 <section id="sec-memoria"><h2>Memoria — notas y decisiones</h2>
 <p class="plain">Lo que Regulus anotó para no olvidarlo: notas de trabajo, decisiones y descubrimientos. Usa el buscador para encontrar algo concreto.</p>
 <div class="controls"><input id="q-obs" type="search" placeholder="Buscar en memoria…" aria-label="Buscar en memoria"><select id="type-obs" aria-label="Tipo de recuerdo"><option value="">Todos los tipos</option><option value="session-note">Notas</option><option value="decision">Decisiones</option><option value="discovery">Descubrimientos</option><option value="lesson">Lecciones</option><option value="preference">Preferencias</option></select><button id="go-obs" class="primary">Buscar</button></div>
-<table><thead><tr><th>Título</th><th>Tipo</th><th>Fecha</th></tr></thead><tbody id="tb-obs"></tbody></table>
+<div class="tbl-wrap"><table><thead><tr><th>Título</th><th>Tipo</th><th>Fecha</th></tr></thead><tbody id="tb-obs"></tbody></table></div>
 <div class="pager"><button id="prev-obs">Anterior</button><span id="info-obs"></span><button id="next-obs">Siguiente</button></div>
 <p class="err" id="err-obs"></p></section>
 <section id="sec-aprendizaje"><h2>Aprendizaje — lecciones</h2>
 <p class="plain">Lo que Regulus ya aprendió (confirmado) y lo que cree haber aprendido pero aún está por confirmar (candidato).</p>
 <div class="controls"><select id="status-lessons" aria-label="Estado de la lección"><option value="all">Confirmadas + por confirmar</option><option value="admitted">Solo confirmadas</option><option value="candidate">Solo por confirmar</option></select><button id="go-lessons" class="primary">Filtrar</button></div>
-<table><thead><tr><th>Tarea</th><th>Estado</th><th>Lección</th></tr></thead><tbody id="tb-lessons"></tbody></table>
+<div class="tbl-wrap"><table><thead><tr><th>Tarea</th><th>Estado</th><th>Lección</th></tr></thead><tbody id="tb-lessons"></tbody></table></div>
 <div class="pager"><button id="prev-lessons">Anterior</button><span id="info-lessons"></span><button id="next-lessons">Siguiente</button></div>
 <p class="err" id="err-lessons"></p></section>
 <section id="sec-sesiones"><h2>Sesiones — el trabajo paso a paso</h2>
 <p class="plain">Cada sesión es una racha de trabajo seguida. Pulsa «Ver pasos» para leer qué hizo Regulus en cada paso, en orden.</p>
-<table><thead><tr><th>Sesión</th><th>Número de pasos</th><th></th></tr></thead><tbody id="tb-traces"></tbody></table>
+<div class="tbl-wrap"><table><thead><tr><th>Sesión</th><th>Número de pasos</th><th></th></tr></thead><tbody id="tb-traces"></tbody></table></div>
 <div class="pager"><button id="prev-traces">Anterior</button><span id="info-traces"></span><button id="next-traces">Siguiente</button></div>
 <h3 id="trace-title">Pasos de la sesión</h3>
-<table><thead><tr><th>Paso</th><th>Herramienta</th><th>Qué hizo</th></tr></thead><tbody id="tb-entries"></tbody></table>
+<div class="tbl-wrap"><table><thead><tr><th>Paso</th><th>Herramienta</th><th>Qué hizo</th></tr></thead><tbody id="tb-entries"></tbody></table></div>
 <div class="pager"><button id="prev-entries">Anterior</button><span id="info-entries"></span><button id="next-entries">Siguiente</button></div>
 <p class="err" id="err-traces"></p></section>
 <section id="sec-coste"><h2>Coste — presupuesto de mejora</h2>
 <p class="plain">Cada fila es un movimiento del presupuesto que Regulus usa para mejorar solo: qué día, de qué tipo, en qué tarea y cómo terminó.</p>
-<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Tarea</th><th>Resultado</th></tr></thead><tbody id="tb-budget"></tbody></table>
+<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Tarea</th><th>Resultado</th></tr></thead><tbody id="tb-budget"></tbody></table></div>
 <div class="pager"><button id="prev-budget">Anterior</button><span id="info-budget"></span><button id="next-budget">Siguiente</button></div>
 <p class="err" id="err-budget"></p></section>
 </main>
