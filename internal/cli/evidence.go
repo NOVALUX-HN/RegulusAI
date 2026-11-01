@@ -54,6 +54,11 @@ func (c CLI) evidenceCmd(args []string) int {
 		}
 		return 0
 	case "show":
+		// NOTE (S2 jail): <file> is an arbitrary path BY DESIGN — the
+		// auditor points at any receipt file to inspect it (read-only
+		// via receipts.ReadFile). It is not a task id and must not be
+		// jailed into the evidence dir; the jail applies to task
+		// resolution (List/Plan/Verify), not to this explicit path.
 		if len(args) != 2 {
 			fmt.Fprintln(c.Stderr, "usage: regulus evidence show <file>")
 			return 2

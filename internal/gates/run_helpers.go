@@ -71,15 +71,7 @@ func refusePolicy(g Gate, cfg Config) (refused bool, note, classification string
 		return true, "policy: destructive command refused", classification
 	}
 	if !refused && cfg.Execution != nil && len(cfg.Execution.Allowlist) > 0 {
-		ft := firstToken(g.Command)
-		allowed := false
-		for _, a := range cfg.Execution.Allowlist {
-			if ft == a {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+		if allowlistRefused(g.Command, cfg.Execution.Allowlist) {
 			return true, "policy: command not in allowlist", classification
 		}
 	}

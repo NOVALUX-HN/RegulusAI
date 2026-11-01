@@ -245,6 +245,256 @@ func isPrivilegedSegment(seg string) bool {
 	return false
 }
 
+// allowlistRefused reports whether any executable segment of command falls
+// outside the allowlist (S1: cada segmento contra allowlist).
+// Every `splitSegments` segment of the quote-stripped command contributes
+// its first token; command substitutions (`$(...)` outside single quotes
+// and backtick spans) are scanned recursively because the shell executes
+// them even when the outer token is allowlisted. A leading `$`
+// (variable/indirection such as `$RM`, `${RM}`) refuses closed: the shell
+// would expand it to an unresolved command name. Empty segments are
+// ignored. Matching stays exact (`firstToken` basename/`.exe` rules).
+func allowlistRefused(command string, allowlist []string) bool {
+	allowed := make(map[string]struct{}, len(allowlist))
+	for _, a := range allowlist {
+		allowed[a] = struct{}{}
+	}
+	// Command substitutions execute even when the outer token is allowed.
+	for _, inner := range extractSubstInners(command) {
+		if allowlistRefused(inner, allowlist) {
+			return true
+		}
+	}
+	masked := maskSubstitutions(command)
+	stripped := stripQuoted(masked)
+	segs := splitSegments(stripped)
+	// `splitSegments` splits `;`, `||`, `&&`, `|` and newlines; a lone `&`
+	// backgrounds too, so split it here without touching Classify's table.
+	var flat []string
+	for _, s := range segs {
+		for _, p := range strings.Split(s, "&") {
+			if t := strings.TrimSpace(p); t != "" {
+				flat = append(flat, t)
+			}
+		}
+	}
+	if len(flat) == 0 {
+		if strings.TrimSpace(command) == "" {
+			return false
+		}
+		// Fully-quoted or substitution-only input: fall back to the outer
+		// first token so `"hello"` still refuses when `hello` is not listed.
+		// (Substitution-only input was already judged via its inners above;
+		// the fallback keeps the verdict closed.)
+		ft := firstToken(command)
+		if ft == "" {
+			ft = firstToken(masked)
+		}
+		if ft == "" {
+			return false
+		}
+		if strings.HasPrefix(ft, "$") {
+			return true
+		}
+		_, ok := allowed[ft]
+		return !ok
+	}
+	for _, s := range flat {
+		ft := firstToken(s)
+		if ft == "" {
+			continue
+		}
+		if strings.HasPrefix(ft, "$") {
+			return true
+		}
+		if _, ok := allowed[ft]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+// substSpan is one `$(...)` or backtick span to mask (delimiters included).
+type substSpan struct{ start, end int }
+
+// substQuote tracks single/double-quote plus backslash state while scanning
+// shell text. The shell treats single-quoted text as literal but still
+// executes `$(...)` and backticks inside double quotes.
+type substQuote struct {
+	single, double, esc bool
+}
+
+// step consumes one byte inside `$(...)`; it reports quoted=true when the
+// byte must not participate in paren matching (escape, quote toggle, or
+// quoted text).
+func (q *substQuote) step(c byte) (quoted bool) {
+	if q.esc {
+		q.esc = false
+		return true
+	}
+	switch {
+	case c == '\\' && !q.single:
+		q.esc = true
+		return true
+	case c == '\'' && !q.double:
+		q.single = !q.single
+		return true
+	case c == '"' && !q.single:
+		q.double = !q.double
+		return true
+	}
+	return q.single || q.double
+}
+
+// consumeControl consumes s[i] when it is outer quote/escape control or
+// single-quoted literal text; the caller advances past it. It reports false
+// for bytes that may open a substitution (`$`, backtick, ordinary text).
+func (q *substQuote) consumeControl(c byte) bool {
+	if q.esc {
+		q.esc = false
+		return true
+	}
+	switch {
+	case c == '\\' && !q.single:
+		q.esc = true
+		return true
+	case c == '\'' && !q.double:
+		q.single = !q.single
+		return true
+	case c == '"' && !q.single:
+		q.double = !q.double
+		return true
+	case q.single:
+		return true
+	}
+	return false
+}
+
+// findSubstSpans locates command-substitution spans in s: `$(...)` (with
+// nesting) and backtick pairs. Single-quoted text is literal for the shell,
+// so spans inside single quotes are ignored; double-quoted `$(...)` and
+// backticks DO execute and are collected. `$((...))` arithmetic and
+// `${...}` parameter expansion are not commands and are skipped.
+func findSubstSpans(s string) []substSpan {
+	var spans []substSpan
+	var q substQuote
+	i := 0
+	for i < len(s) {
+		if q.consumeControl(s[i]) {
+			i++
+			continue
+		}
+		if end, ok := scanDollarEnd(s, i); ok {
+			spans = append(spans, substSpan{start: i, end: end})
+			i = end
+			continue
+		}
+		// Skip `${...}` / `$((...))` openers without scanning: they are not
+		// commands, and scanDollarEnd already refused them.
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '(' {
+			i += 2
+			continue
+		}
+		if end, ok := scanBacktickEnd(s, i); ok {
+			spans = append(spans, substSpan{start: i, end: end})
+			i = end
+			continue
+		}
+		i++
+	}
+	return spans
+}
+
+// scanDollarEnd scans a `$(...)` opener at s[i] (`$` followed by `(`) and
+// returns the exclusive end on a balanced close. It refuses `${...}` and
+// `$((...))` / `$()` (parameter/arithmetic/empty): those are not commands.
+func scanDollarEnd(s string, i int) (int, bool) {
+	if i+1 >= len(s) || s[i] != '$' || s[i+1] != '(' {
+		return 0, false
+	}
+	if i+2 < len(s) && (s[i+2] == '(' || s[i+2] == ')') {
+		return 0, false
+	}
+	var q substQuote
+	depth := 0
+	for j := i + 1; j < len(s); j++ {
+		if q.step(s[j]) {
+			continue
+		}
+		switch s[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return j + 1, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// scanBacktickEnd scans a backtick opener at s[i] and returns the exclusive
+// end on its unescaped close.
+func scanBacktickEnd(s string, i int) (int, bool) {
+	if i >= len(s) || s[i] != '`' {
+		return 0, false
+	}
+	j := i + 1
+	bEsc := false
+	for j < len(s) {
+		d := s[j]
+		if bEsc {
+			bEsc = false
+			j++
+			continue
+		}
+		if d == '\\' {
+			bEsc = true
+			j++
+			continue
+		}
+		if d == '`' {
+			return j + 1, true
+		}
+		j++
+	}
+	return 0, false
+}
+
+// extractSubstInners returns the payload inside each substitution span
+// (`$(`...`)` without the outer delimiters, backtick content as-is).
+func extractSubstInners(s string) []string {
+	spans := findSubstSpans(s)
+	out := make([]string, 0, len(spans))
+	for _, sp := range spans {
+		raw := s[sp.start:sp.end]
+		if strings.HasPrefix(raw, "$(") && strings.HasSuffix(raw, ")") {
+			out = append(out, raw[2:len(raw)-1])
+		} else if strings.HasPrefix(raw, "`") && strings.HasSuffix(raw, "`") && len(raw) >= 2 {
+			out = append(out, raw[1:len(raw)-1])
+		}
+	}
+	return out
+}
+
+// maskSubstitutions blanks substitution spans (spaces, same length) so the
+// outer quote-strip/split judges only the outer command; inners are judged
+// separately via recursion in allowlistRefused.
+func maskSubstitutions(s string) string {
+	spans := findSubstSpans(s)
+	if len(spans) == 0 {
+		return s
+	}
+	b := []byte(s)
+	for _, sp := range spans {
+		for k := sp.start; k < sp.end && k < len(b); k++ {
+			b[k] = ' '
+		}
+	}
+	return string(b)
+}
+
 func firstToken(command string) string {
 	fields := strings.Fields(command)
 	if len(fields) == 0 {

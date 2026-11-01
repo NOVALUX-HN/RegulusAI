@@ -124,7 +124,9 @@ func untar(data []byte, dest string) error {
 
 // extractTarEntry materializes one tar header under dest. Empty and dot
 // names skip; anything escaping dest is an error so the caller falls back
-// instead of writing outside tmp; unknown types skip.
+// instead of writing outside tmp; unknown types skip. Dir entries ignore
+// the tar mode and stay at MkdirAll 0755 (u+rwx,go+rx cap) so the tree
+// stays traversable; regular files go through the sanitized no-exec mode.
 func extractTarEntry(dest string, tr *tar.Reader, hdr *tar.Header) error {
 	name := filepath.FromSlash(hdr.Name)
 	if name == "" || name == "." {
@@ -158,8 +160,23 @@ func withinDir(dest, target string) bool {
 	return !filepath.IsAbs(rel)
 }
 
+// sanitizeTarFileMode maps a tar entry mode to a safe on-disk mode for
+// regular files: strip exec bits (user/group/other) and cap at 0o644 base,
+// preserving more restrictive modes. E.g. 0755->0644, 0777->0644 (strip
+// exec then cap group/other write), 0644->0644, 0600->0600. Perm() also
+// drops setuid/setgid/sticky. Directories are handled separately: they are
+// never chmoded from the tar and stay at MkdirAll 0755 (u+rwx,go+rx, capped
+// at 0755 max) so the tree stays traversable without executable files.
+func sanitizeTarFileMode(m os.FileMode) os.FileMode {
+	return m.Perm() & 0o644
+}
+
 // writeTarFile creates parents and streams one regular entry to disk,
-// keeping its mode bits on a best-effort chmod.
+// chmoding to the sanitized mode (no exec bits, 0o644 base) on a
+// best-effort basis. The tmp dir later hosts `gremlins`, so restoring
+// tar exec bits (e.g. 0755/0777 from `git archive`) would leave
+// executable files there; sanitize instead. Gremlins only reads sources,
+// so it runs the same on non-executable files.
 func writeTarFile(target string, tr *tar.Reader, hdr *tar.Header) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
@@ -176,7 +193,7 @@ func writeTarFile(target string, tr *tar.Reader, hdr *tar.Header) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	_ = os.Chmod(target, hdr.FileInfo().Mode())
+	_ = os.Chmod(target, sanitizeTarFileMode(hdr.FileInfo().Mode()))
 	return nil
 }
 

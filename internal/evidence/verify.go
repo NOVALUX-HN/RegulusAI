@@ -89,7 +89,11 @@ func Verify(root, task string, quarantine bool) (Report, error) {
 
 func verifyDirs(root, task string) ([]string, error) {
 	if task != "" {
-		return []string{TaskDir(root, task)}, nil
+		dir, err := TaskDirSafe(root, task)
+		if err != nil {
+			return nil, err
+		}
+		return []string{dir}, nil
 	}
 	pattern := filepath.Join(Dir(root), "*", "*.json")
 	matches, err := filepath.Glob(pattern)

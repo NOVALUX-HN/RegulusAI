@@ -46,7 +46,10 @@ func Plan(root, task string, keep int) (toDelete, toKeep []string, manifests int
 		return nil, nil, 0, fmt.Errorf("keep must be >= 0")
 	}
 	slug := receipts.Slug(task)
-	dir := TaskDir(root, slug)
+	dir, err := TaskDirSafe(root, task)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	fi, statErr := os.Stat(dir)
 	if statErr != nil || !fi.IsDir() {
 		return nil, nil, 0, fmt.Errorf("no evidence for task %s", slug)
