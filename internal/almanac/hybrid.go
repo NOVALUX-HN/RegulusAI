@@ -169,10 +169,21 @@ func (c hybridCorpus) supersededFor(q Query) map[string]bool {
 // hybridFresh fuses both channels; domain queries rank scoped hits before
 // the global fallback, deduped by ID, then Latest/Limit apply. The corpus
 // loads once here and is shared by every rank path below.
+//
+// M2: the entries are already known fresh (hybridAt pinned the sha), so
+// the corpus reads the scoped ∪ global coverable sets through the
+// offset table (bounded seeks) instead of parsing the JSONL again; any
+// skew falls back to the legacy single load. Same corpus, same fusion.
 func hybridFresh(root string, q Query, entries []IndexEntry, emb Embedder, now time.Time) ([]Observation, error) {
-	corpus, err := loadHybridCorpus(root, now)
+	corpus, served, err := indexedCorpusFor(root, q, entries, now)
 	if err != nil {
 		return nil, err
+	}
+	if !served {
+		corpus, err = loadHybridCorpus(root, now)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if q.Domain != "" {
 		scoped := fusedRankedWith(corpus, q, entries, emb, now)

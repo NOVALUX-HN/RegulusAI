@@ -90,7 +90,7 @@ func TestHeaderMismatchForcesReindex(t *testing.T) {
 	}
 	sum := sha256.Sum256(rawLog)
 	buf := newIndexBuffer("probe-encoder-v9", 1, sum)
-	writeEntry(buf, Observation{ID: saved.ID, Title: "a", Content: "b"}, emb)
+	writeRecord(buf, logLine{obs: Observation{ID: saved.ID, Title: "a", Content: "b"}}, emb)
 	if err := os.WriteFile(IndexPath(root), buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -34,50 +34,54 @@ func Prune(root string, keep func(Observation) bool) ([]Observation, error) {
 
 // ApplyPrune rewrites the log without exactly the given observations
 // (matched by id), atomically. Pins and relations are untouched:
-// pruning drops content, never provenance events.
+// pruning drops content, never provenance events. M2: the rewrite runs
+// under the store lock (serialized with Save/Import/Reindex); the file
+// still lands via tmp+Rename.
 func ApplyPrune(root string, removed []Observation) error {
 	if len(removed) == 0 {
 		return nil
 	}
-	drop := map[string]bool{}
-	for _, o := range removed {
-		drop[o.ID] = true
-	}
-	all, err := All(root)
-	if err != nil {
-		return err
-	}
-	var lines []string
-	for _, o := range all {
-		if drop[o.ID] {
-			continue
+	return withStoreLock(root, func() error {
+		drop := map[string]bool{}
+		for _, o := range removed {
+			drop[o.ID] = true
 		}
-		raw, err := json.Marshal(o)
+		all, err := All(root)
 		if err != nil {
 			return err
 		}
-		lines = append(lines, string(raw))
-	}
-	if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(File(root)), "observations-*.jsonl")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	body := strings.Join(lines, "\n")
-	if body != "" {
-		body += "\n"
-	}
-	if _, err := tmp.WriteString(body); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, File(root))
+		var lines []string
+		for _, o := range all {
+			if drop[o.ID] {
+				continue
+			}
+			raw, err := json.Marshal(o)
+			if err != nil {
+				return err
+			}
+			lines = append(lines, string(raw))
+		}
+		if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
+			return err
+		}
+		tmp, err := os.CreateTemp(filepath.Dir(File(root)), "observations-*.jsonl")
+		if err != nil {
+			return err
+		}
+		tmpName := tmp.Name()
+		body := strings.Join(lines, "\n")
+		if body != "" {
+			body += "\n"
+		}
+		if _, err := tmp.WriteString(body); err != nil {
+			tmp.Close()
+			os.Remove(tmpName)
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			os.Remove(tmpName)
+			return err
+		}
+		return os.Rename(tmpName, File(root))
+	})
 }

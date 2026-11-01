@@ -203,7 +203,6 @@ encoder (save path carries no flag — same encoder on the fly and on
 disk, no skew).
 
 ## M2 verification (2026-10-30) — M1 numbers re-checked, v2.1 still deferred
-
 Coherence check against the code (no M1 content changed): re-ran
 `TestMissRateParaphraseVsTypo` — sims 0.9603 / 0.9503 (paraphrase) and
 0.9350 / 0.9419 (typo), all vecRank 1, hybrid top-3, lexical-miss 4/4 —
@@ -214,3 +213,44 @@ Bars confirmed at their definitions: `DedupThreshold` 0.92
 registered encoder is `hash-ngram-v1` (`LookupEmbedder` refuses unknown
 ids, `TestZeroDepsGoMod` keeps `go.mod` at zero requires), and the index
 header keeps pinning `{hash-ngram-v1, 384, 1}`.
+
+## M2 stdlib store (2026-11-01) — retrieval.bin v2 + lockfile + bounded reads
+
+Per ADR `docs/adr/M1-01-sqlite-vs-stdlib.md` (stdlib wins, SQLite
+deferred) and the guardian's M1 conditions (no `flock`, atomic reindex,
+`IndexVersion=2` with friendly v1 refusal, measured write cost,
+tripwires, CLI-wall clarification):
+
+- **v2 layout** (`internal/almanac/vindex.go`, `IndexVersion = 2`):
+  header `{magic, version=2, embedder, dim, count, sha256}` + count ×
+  records **sorted by id** (id + file offset u64 + line length u32 +
+  topic/domain/type/lesson-dimension + 384 × int8 vector). A retired v1
+  file refuses with `ErrHeaderMismatch` naming the repair (`reindex`),
+  never "truncated" — the version gate runs before any record parse.
+- **No trigrams/postings**: offsets + exact verify (seek + re-parse +
+  id match) suffice at this scale; term postings stay deferred until a
+  tripwire says otherwise.
+- **Atomic reindex**: tmp + Rename, never direct WriteFile; no
+  fsync/WAL — tmp+Rename is the whole transaction. No tmp leftovers
+  (tested).
+- **Portable lock** (`store_lock.go`): lockfile `O_CREATE|O_EXCL`,
+  60s-stale stealing, 5s wait (writers serialize, none lost). No
+  `flock`, no `x/sys` (pinned by test). WAL writers (Save/Import/
+  ApplyPrune) + Reindex take it; pins/relations/status keep the
+  single-writer convention (documented, no second writer).
+- **Bounded reads** (`search_indexed.go`): Search, History and the
+  hybrid corpus prefilter buckets in memory and seek only candidate
+  lines; any skew falls back to the legacy full scan (identical order
+  by shared ranking code + parity tests). Measured 10k:
+  domain-scoped query reads **1429/10000 lines** (tripwire: < 1/4).
+- **Write cost at 10k** (tripwire, `TestWriteCostPerSave10k`):
+  Save 11.3ms (lock + indexed id check + append) + auto-reindex
+  185ms = **~197ms total** (budget 3s).
+- **CLI-wall vs in-process**: `memory search` ≈960ms wall is process
+  startup (ADR M1), not scan — in-process scoped search **12ms**,
+  hybrid p50 ≈30ms. Logged next to each other in
+  `TestPerfBoundedReads10k` so a future bottleneck move is visible.
+- **Legacy**: `observations.jsonl` parsing unchanged (tolerant);
+  `memory doctor` reports `fresh v2 (N entries, …)` as the format
+  tripwire; `IndexState` keeps reporting fresh/stale/missing/empty.
+- `go.mod` still zero requires (`TestZeroDepsGoMod` green).

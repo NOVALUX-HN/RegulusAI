@@ -211,6 +211,12 @@ func validate(o *Observation) error {
 
 // Save validates one observation, assigns its id and timestamp, and
 // appends it to the log. The returned copy carries the assigned fields.
+//
+// M2: the append runs under the portable store lock (serialized with
+// Reindex/Import/ApplyPrune), and the identity check reads the offset
+// index when fresh (binary search, no JSONL parse) instead of always
+// full-scanning — the per-write cost stays bounded by the reindex the
+// CLI runs after, not by an extra full parse.
 func Save(root string, o *Observation, now time.Time) (Observation, error) {
 	if err := validate(o); err != nil {
 		return Observation{}, err
@@ -223,35 +229,51 @@ func Save(root string, o *Observation, now time.Time) (Observation, error) {
 		saved.Source = SourceAgent
 	}
 	saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
-	// Identity must be unique even when the clock is coarse: advance the
-	// timestamp until the id is fresh (bounded; mirrors the receipts
-	// collision advance). Two observations must never share an id.
-	if taken, err := logIDs(root); err == nil && taken[saved.ID] {
-		for i := 0; i < 1000 && taken[saved.ID]; i++ {
-			saved.SavedAt = saved.SavedAt.Add(time.Nanosecond)
-			saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
+	if err := withStoreLock(root, func() error {
+		// Identity must be unique even when the clock is coarse: the
+		// check runs INSIDE the lock (no two writers can mint the same
+		// id between check and append). Bounded advance, mirroring the
+		// receipts collision advance.
+		if idTaken(root, saved.ID) {
+			for i := 0; i < 1000 && idTaken(root, saved.ID); i++ {
+				saved.SavedAt = saved.SavedAt.Add(time.Nanosecond)
+				saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
+			}
 		}
-	}
-	if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
-		return Observation{}, err
-	}
-	f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return Observation{}, err
-	}
-	line, err := json.Marshal(saved)
-	if err != nil {
-		f.Close()
-		return Observation{}, err
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
-		return Observation{}, err
-	}
-	if err := f.Close(); err != nil {
+		if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		line, err := json.Marshal(saved)
+		if err != nil {
+			f.Close()
+			return err
+		}
+		if _, err := f.Write(append(line, '\n')); err != nil {
+			f.Close()
+			return err
+		}
+		return f.Close()
+	}); err != nil {
 		return Observation{}, err
 	}
 	return saved, nil
+}
+
+// idTaken reports whether id already exists in the log: a binary search
+// over the offset table when the index is fresh (no JSONL parse), the
+// legacy full id scan otherwise. A read error counts as not-taken —
+// the append below surfaces real failures, exactly like before.
+func idTaken(root, id string) bool {
+	if entries, ok := freshEntriesIfPinned(root); ok {
+		i := sort.Search(len(entries), func(i int) bool { return entries[i].ID >= id })
+		return i < len(entries) && entries[i].ID == id
+	}
+	taken, err := logIDs(root)
+	return err == nil && taken[id]
 }
 
 // All returns every readable observation in file order (oldest first). A
@@ -290,7 +312,12 @@ func All(root string) ([]Observation, error) {
 }
 
 // History returns the revision chain of one topic key, oldest first.
+// M2: a fresh v2 index serves the chain from the offset table (bounded
+// seeks); otherwise the legacy full scan serves. Same order either way.
 func History(root, topicKey string) ([]Observation, error) {
+	if chain, served := historyIndexed(root, topicKey); served {
+		return chain, nil
+	}
 	all, err := All(root)
 	if err != nil {
 		return nil, err
@@ -477,11 +504,27 @@ func matchTerms(o Observation, terms []string, any bool) bool {
 // older one is pinned). Order: pinned first; among lessons of the same
 // pinned status, confidence (high > medium > low) before recency; ties
 // by id. q.Limit keeps the first N after sorting.
+//
+// M2: when the v2 index is fresh the candidates come from the offset
+// table (bounded seeks + exact verify); otherwise the legacy full scan
+// serves. Both iterate in file order through the shared rankFiltered,
+// so the order is identical either way.
 func Search(root string, q Query) ([]Observation, error) {
+	if hits, _, served := searchIndexed(root, q); served {
+		return hits, nil
+	}
 	all, err := All(root)
 	if err != nil {
 		return nil, err
 	}
+	return rankFiltered(all, root, q)
+}
+
+// rankFiltered is the shared Search tail over an already-loaded corpus
+// in file order: buckets + terms, Latest collapse, pinned-first sort,
+// Limit. The indexed and legacy paths both run it, so a bounded read
+// ranks exactly like a full scan.
+func rankFiltered(all []Observation, root string, q Query) ([]Observation, error) {
 	pins, err := PinnedIDs(root)
 	if err != nil {
 		return nil, err

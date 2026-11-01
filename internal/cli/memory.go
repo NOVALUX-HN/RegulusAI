@@ -129,7 +129,14 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 	case err != nil:
 		fmt.Fprintf(c.Stdout, "index:      unreadable — %v\n", err)
 	case state == "fresh":
-		fmt.Fprintln(c.Stdout, "index:      fresh (hybrid ranking active)")
+		// M2 tripwire: the fresh line names the index format version and
+		// entry count, so a format regression (or an un-reindexed v1)
+		// is visible in the canonical health report.
+		if ver, count, _, serr := almanac.IndexStats("."); serr == nil {
+			fmt.Fprintf(c.Stdout, "index:      fresh v%d (%d entries, hybrid ranking active)\n", ver, count)
+		} else {
+			fmt.Fprintln(c.Stdout, "index:      fresh (hybrid ranking active)")
+		}
 	case state == "empty":
 		fmt.Fprintln(c.Stdout, "index:      no observations yet — nothing to index")
 	default: // stale | missing

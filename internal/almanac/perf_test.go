@@ -172,7 +172,84 @@ func TestPerfHybridP95Budget10k(t *testing.T) {
 	}
 }
 
-// TestZeroDepsGoMod: v2.0 ships zero new go.mod deps (S9 invariant) —
+// TestWriteCostPerSave10k (M2 guardian condition (b)): the per-write
+// cost at 10k observations — one CLI-equivalent write (Save: lock +
+// indexed id check + WAL append, then the auto-reindex the CLI runs
+// after every note/save/import/prune). The tripwire is the total: a
+// per-write full-scan regression (or a lost fast path) trips it, while
+// the components stay visible in the log every run.
+func TestWriteCostPerSave10k(t *testing.T) {
+	root := perfSeedCorpus(t, 10000)
+	if _, _, err := Reindex(root); err != nil {
+		t.Fatal(err)
+	}
+	wstart := time.Now()
+	saved, err := Save(root, &Observation{
+		Type:    TypeDecision,
+		Title:   "write cost probe",
+		Content: "one more decision at ten thousand",
+		Domain:  "go",
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveElapsed := time.Since(wstart)
+	rstart := time.Now()
+	count, _, err := Reindex(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reindexElapsed := time.Since(rstart)
+	total := saveElapsed + reindexElapsed
+	t.Logf("write cost 10k: save=%v reindex=%v total=%v count=%d id=%s (budget: total < 3s; reindex alone < 2s per §5)",
+		saveElapsed, reindexElapsed, total, count, saved.ID)
+	if count != 10001 {
+		t.Fatalf("count = %d, want 10001", count)
+	}
+	if total >= 3*time.Second {
+		t.Fatalf("one write at 10k (save+auto-reindex) took %v, budget is < 3s", total)
+	}
+}
+
+// TestPerfBoundedReads10k (M2 spec: lecturas acotadas): on the 10k
+// corpus a bucket-scoped query reads only its candidates through the
+// offset table instead of full-scanning. The tripwire is the ratio:
+// candidates must stay a small fraction of the log.
+//
+// Scale note (guardian should-fix, ADR M1): the ~960ms `memory search`
+// CLI wall is process startup, not scan — in-process hybrid p50 here
+// is tens of ms (logged every run next to the CLI-wall figure). If the
+// in-process number ever approaches the CLI wall, the bottleneck moved
+// into the store and this test's neighborhood is where to look.
+func TestPerfBoundedReads10k(t *testing.T) {
+	root := perfSeedCorpus(t, 10000)
+	if _, _, err := Reindex(root); err != nil {
+		t.Fatal(err)
+	}
+	q := Query{Domain: "go", Terms: []string{"postgres"}, Limit: 20}
+	hits, lines, indexed, err := SearchWithStats(root, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !indexed {
+		t.Fatal("fresh 10k index must serve scoped queries indexed")
+	}
+	t.Logf("bounded reads 10k: lines=%d total=10000 hits=%d indexed=%v (CLI-wall ≈960ms startup-dominated per ADR M1; in-process below is scan+rank only)",
+		lines, len(hits), indexed)
+	if lines*4 >= 10000 {
+		t.Fatalf("bounded reads tripwire: scoped query read %d of 10000 lines, want << total", lines)
+	}
+	if len(hits) == 0 {
+		t.Fatal("scoped fixture must yield hits")
+	}
+	// In-process scan+rank for the same query, for the CLI-wall note.
+	start := time.Now()
+	if _, _, _, err := SearchWithStats(root, q); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("in-process scoped search: %v (vs ≈960ms CLI wall: startup dominates, store scan does not)", time.Since(start))
+}
+
 // the module file must carry no require directives.
 func TestZeroDepsGoMod(t *testing.T) {
 	mod := findGoMod(t)

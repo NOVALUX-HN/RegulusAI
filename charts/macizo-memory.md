@@ -49,7 +49,7 @@ Domain: almanac
 | ID | Spec | Work | Route | Status |
 |----|------|------|-------|
 | M1 | M1 | spike + ADR SQLite-vs-stdlib + veredicto guardián | @regulus-worker |  |
-| M2 | M2 | migración del store según M1 (WAL+índice+locks, legacy legible) | @regulus-worker |  |
+| M2 | M2 | migración del store según M1 (WAL+índice+locks, legacy legible) | @regulus-worker | done |
 | M3 | M3 | auto-save al cerrar unidad + export/import portable | @regulus-worker |  |
 | M4 | M4 | minero envfacts (≥3 sesiones, descarte por contradicción, 0 modelo) | @regulus-worker | done |
 
@@ -61,3 +61,5 @@ Domain: almanac
 
 - CLOSED M4 COMPLEX spec OK + 12 receipt(s) PASS.
 - L4: M4 detail 2026-11-01 (`ses_e6ab8037fffeq72XjaTWxLwkdD`, cierre formal vía `task close`): minero envfacts determinista (`internal/envfacts/`: MinSessions=3, ventana contradicción 3, 0 modelo) + `memory mine [--apply]` (dry-run default) que admite lessons de dominio (inyectadas por hook existente) y descarta contradichos vía `invalidated_by`. Hecho real: `sextant/gate/crap` (16 sesiones, high). `gate run macizo-memory/M4` 12/12 primer run (`run_98dfa3b85a019ad9`), verify 12/12.
+- L5: M2 CLOSED 2026-11-01 (`ses_e6a7d7b91ffex1gVfXWt6sshyt`, cierre formal): índice v2 (offsets ordenados + verify exacto, `IndexVersion=2`, `ErrHeaderMismatch` amable), lecturas acotadas con fallback legacy (scoped lee 14% a 10k), reindex atómico tmp+Rename, lockfile portable `O_EXCL` (cero flock), tripwires en perf_test + `memory doctor`. Trigramas diferidos (offsets bastan). `gate run macizo-memory/M2` 12/12 primer run (`run_6c45e5b6f19e4493`), verify 12/12. `go.mod` cero requires intacto.
+- CLOSED M2 COMPLEX spec OK + 12 receipt(s) PASS.

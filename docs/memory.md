@@ -45,12 +45,15 @@
                            session notes and lessons (almanac.go: File)
       pins.jsonl          pinned observation ids (pins survive prune)
       relations.jsonl     related / supersedes / conflicts_with edges
-      retrieval.bin       DERIVED semantic index, header {magic, version,
+      retrieval.bin       DERIVED semantic index v2, header {magic, version=2,
                           embedder, dim, count, sha256-of-source} + count ×
-                          (id + 384 × int8); a pure function of the JSONL,
-                          rebuilt by `regulus memory reindex` (vindex.go:
-                          IndexPath) — never edited by hand, never trusted
-                          on header mismatch (reindex, never read)
+                          ordered records (id + file offset + length +
+                          topic/domain/type/dimension + 384 × int8); a pure
+                          function of the JSONL, rebuilt by
+                          `regulus memory reindex` (vindex.go: IndexPath) —
+                          never edited by hand, never trusted on header
+                          mismatch (reindex, never read); readers seek only
+                          candidate lines (bounded) and verify exacto
 └── library/<domain>/    (F4) rendered lesson views (library.go: Dir)
             INDEX.md            domain digest, rebuilt by RebuildIndex
             lessons/<id>/LESSON.md     admitted lessons (evidence-gated)

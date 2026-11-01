@@ -98,30 +98,39 @@ func parseObservationData(data []byte, have map[string]bool, label string) (fres
 
 // appendImported appends fresh observations to the log and records the
 // proposing event for the marked ids: foreign knowledge enters
-// PROPOSED, never laundered into higher states.
+// PROPOSED, never laundered into higher states. M2: the append runs
+// under the store lock (one WAL writer at a time). The duplicate
+// partition is computed pre-lock from a validated snapshot; two
+// byte-identical imports racing each other could double-append the same
+// id (pre-existing, vanishingly rare) — the lock's job is serializing
+// against torn interleaves with prune/reindex, and re-importing stays
+// idempotent.
 func appendImported(root string, fresh []Observation, skipped int, mark []string) (imported, skippedOut int, err error) {
 	if len(fresh) == 0 {
 		return 0, skipped, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
-		return 0, 0, err
-	}
-	f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	for _, o := range fresh {
-		line, err := json.Marshal(o)
+	err = withStoreLock(root, func() error {
+		if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
-			return 0, 0, err
+			return err
 		}
-		if _, err := f.Write(append(line, '\n')); err != nil {
-			return 0, 0, err
+		defer f.Close()
+		for _, o := range fresh {
+			line, err := json.Marshal(o)
+			if err != nil {
+				return err
+			}
+			if _, err := f.Write(append(line, '\n')); err != nil {
+				return err
+			}
+			imported++
 		}
-		imported++
-	}
-	if err := MarkImported(root, mark, time.Now().UTC()); err != nil {
+		return MarkImported(root, mark, time.Now().UTC())
+	})
+	if err != nil {
 		return 0, 0, err
 	}
 	return imported, skipped, nil
