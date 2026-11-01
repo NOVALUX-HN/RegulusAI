@@ -51,7 +51,7 @@ Domain: sextant
 | D1 | D1 | API read-only paginada (receipts, observaciones, lessons, traces, budget) + redacción | @regulus-worker |  |
 | D2 | D2 | UI profesional embebida (tarjetas, tablas, gráficos sin deps, lenguaje simple) | @regulus-worker | done |
 | D3 | D3 | CSP + redacción en status + topes + aviso de bind | @regulus-worker | done |
-| D4 | D4 | autostart/documentación del panel con capturas | @regulus-worker |  |
+| D4 | D4 | autostart/documentación del panel con capturas | @regulus-worker | done |
 
 ## Log
 
@@ -62,3 +62,5 @@ Domain: sextant
 
 - CLOSED D2 COMPLEX spec OK + 12 receipt(s) PASS.
 - CLOSED D3 COMPLEX spec OK + 12 receipt(s) PASS.
+- CLOSED D4 COMPLEX spec OK + 12 receipt(s) PASS.
+- L5: D4 detail 2026-11-01 (`ses_e6a61812effegohCEynLhQ0OOT`, cierre formal): espejo POSIX `install-dashboard-autostart.bash` (systemd user + cron fallback; launchd + fallback en macOS; verificado en WSL incl. uninstall) + `docs/dashboard.md` como guía completa (secciones↔endpoints↔garantías + transcripciones reales en vivo; nota honesta sin PNGs). Dash completo (D1–D4). `gate run macizo-dash/D4` 12/12 (`run_fed44f81274e6003`), verify 12/12.
