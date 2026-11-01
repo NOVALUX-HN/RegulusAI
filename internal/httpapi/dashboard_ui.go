@@ -89,6 +89,9 @@ button:disabled{opacity:.45;cursor:default}
 button.primary{background:var(--regulus-brand);color:var(--regulus-bg);border-color:var(--regulus-brand)}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 input,select{border:var(--border-width) solid var(--regulus-border);border-radius:var(--radius-md);padding:6px 10px;font-size:14px;background:var(--regulus-surface-raised);color:var(--regulus-text);font-family:var(--font-body)}
+.proj-row{display:flex;gap:8px;align-items:center;margin-top:12px}
+.proj-row label{font-size:14px;color:var(--regulus-muted)}
+#project{min-width:200px}
 .verdict-pass,.ok{color:var(--status-pass);font-weight:600}
 .verdict-fail,.fail{color:var(--status-fail);font-weight:600}
 .verdict-blocked{color:var(--status-blocked);font-weight:600}
@@ -114,6 +117,7 @@ a{color:var(--regulus-brand-bright)}
 <header class="top"><div class="wrap">
 <h1 id="project-name">Regulus — Qué hay guardado en tu proyecto</h1>
 <p>Todo lo que Regulus guarda en tu ordenador, explicado en palabras sencillas. Esta página solo mira: nunca cambia ni borra nada.</p>
+<div class="proj-row" id="project-row" hidden><label for="project">Proyecto</label><select id="project" aria-label="Proyecto"></select></div>
 <div id="status">Estado del proyecto: cargando…</div>
 <div id="health">Salud del sistema: cargando…</div>
 <details><summary>Ver estado completo del proyecto</summary><pre id="status-full">cargando…</pre></details>
@@ -161,8 +165,11 @@ a{color:var(--regulus-brand-bright)}
 <footer>Se actualiza solo cada 30 segundos. <button id="refresh">Actualizar ahora</button></footer>
 <script>
 var PAGE = 10;
-var state = {receipts:0, obs:0, lessons:0, traces:0, entries:0, budget:0, session:''};
+var state = {receipts:0, obs:0, lessons:0, traces:0, entries:0, budget:0, session:'', project:''};
 function fetchData(path){
+  if(state.project && path !== '/v1/projects'){
+    path += (path.indexOf('?') >= 0 ? '&' : '?') + 'project=' + encodeURIComponent(state.project);
+  }
   return fetch(path).then(function(r){return r.json();}).then(function(env){
     if(!env || env.ok !== true || !env.data){throw new Error('respuesta inesperada');}
     return env.data;
@@ -442,6 +449,34 @@ bindPager('entries', 'prev-entries', 'next-entries', loadEntries);
 bindPager('budget', 'prev-budget', 'next-budget', loadBudget);
 document.getElementById('go-obs').addEventListener('click', function(){state.obs = 0;loadObs();});
 document.getElementById('go-lessons').addEventListener('click', function(){state.lessons = 0;loadLessons();});
+document.getElementById('project').addEventListener('change', function(){
+  state.project = document.getElementById('project').value;
+  state.receipts = 0;state.obs = 0;state.lessons = 0;state.traces = 0;state.entries = 0;state.budget = 0;state.session = '';
+  loadAll();
+});
 document.getElementById('refresh').addEventListener('click', loadAll);
-loadAll();setInterval(loadAll, 30000);
+function loadProjects(){
+  return fetchData('/v1/projects').then(function(list){
+    var items = Array.isArray(list) ? list : [];
+    var sel = document.getElementById('project');
+    var row = document.getElementById('project-row');
+    while(sel.firstChild){sel.removeChild(sel.firstChild);}
+    items.forEach(function(p){
+      var o = document.createElement('option');
+      o.value = p.name || '';
+      o.textContent = p.name || '';
+      sel.appendChild(o);
+    });
+    if(items.length > 1){
+      if(row){row.hidden = false;}
+      var ok = false;
+      for(var i = 0; i < items.length; i++){if(items[i].name === state.project){ok = true;}}
+      sel.value = ok ? state.project : (items[0].name || '');
+    }else{
+      if(row){row.hidden = true;}
+      state.project = '';
+    }
+  }).catch(function(){});
+}
+loadProjects().then(loadAll);setInterval(loadAll, 30000);
 </script></body></html>`

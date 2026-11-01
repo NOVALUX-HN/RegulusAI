@@ -27,7 +27,7 @@ func (c CLI) gateEvaluateCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus gate evaluate --task <t> --guardian <name> --verdict <PASS|FAIL|BLOCKED|INCONCLUSIVE> --note <text> [--evidence <id> ...]")
 		return 2
 	}
-	ev, err := guardians.Evaluate(".", *task, *guardian, *status, *note, evidences)
+	ev, err := guardians.Evaluate(c.dir(), *task, *guardian, *status, *note, evidences)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "%v\n", err)
 		return 1

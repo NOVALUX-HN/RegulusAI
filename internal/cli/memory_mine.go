@@ -28,12 +28,12 @@ func (c CLI) memoryMineCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory mine [--domain <d>] [--apply]")
 		return 2
 	}
-	series, stats, total, err := mineSeries(*domain)
+	series, stats, total, err := mineSeries(c.dir(), *domain)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory mine: %v\n", err)
 		return 1
 	}
-	decisions, err := envfacts.Plan(".", series)
+	decisions, err := envfacts.Plan(c.dir(), series)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory mine: %v\n", err)
 		return 1
@@ -43,7 +43,7 @@ func (c CLI) memoryMineCmd(args []string) int {
 		printMinePlan(c, decisions, stats, *domain, total)
 		return 0
 	}
-	results, err := envfacts.Apply(".", decisions, time.Now().UTC())
+	results, err := envfacts.Apply(c.dir(), decisions, time.Now().UTC())
 	if err != nil {
 		// H3 per-decision report: Apply keeps the successes and
 		// aggregates each failure ("apply: m/n failed: ..."). Show what
@@ -67,12 +67,12 @@ func (c CLI) memoryMineCmd(args []string) int {
 // mineSeries scans receipts and traces and keeps the requested domain.
 // Stats stay global (whole-tree coverage); total is the pre-filter
 // series count so the scan line can warn on domain typos.
-func mineSeries(domain string) ([]envfacts.Series, envfacts.Stats, int, error) {
-	rs, rst, err := envfacts.ReceiptSeries(".")
+func mineSeries(root, domain string) ([]envfacts.Series, envfacts.Stats, int, error) {
+	rs, rst, err := envfacts.ReceiptSeries(root)
 	if err != nil {
 		return nil, envfacts.Stats{}, 0, err
 	}
-	ts, tst, err := envfacts.TraceSeries(".")
+	ts, tst, err := envfacts.TraceSeries(root)
 	if err != nil {
 		return nil, envfacts.Stats{}, 0, err
 	}

@@ -30,7 +30,7 @@ func (c CLI) memoryVerifyCmd(args []string) int {
 	id := pos[0]
 	ref := *receipt
 	if !filepath.IsAbs(ref) {
-		ref = filepath.Join(".", ref)
+		ref = filepath.Join(c.dir(), ref)
 	}
 	if fi, err := os.Stat(ref); err != nil || fi.IsDir() {
 		fmt.Fprintf(c.Stderr, "memory verify: missing evidence %q\n", *receipt)
@@ -44,7 +44,7 @@ func (c CLI) memoryVerifyCmd(args []string) int {
 	if *accept {
 		to = almanac.StatusAccepted
 	}
-	current, err := almanac.EffectiveStatus(".", id)
+	current, err := almanac.EffectiveStatus(c.dir(), id)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory verify: %v\n", err)
 		return 1
@@ -57,7 +57,7 @@ func (c CLI) memoryVerifyCmd(args []string) int {
 	if *accept {
 		note = "accepted with evidence " + *receipt
 	}
-	if err := almanac.RecordStatus(".", id, to, who, note, time.Now().UTC()); err != nil {
+	if err := almanac.RecordStatus(c.dir(), id, to, who, note, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory verify: %v\n", err)
 		return 1
 	}
@@ -85,12 +85,12 @@ func (c CLI) memoryRejectCmd(args []string) int {
 	if who == "" {
 		who = "reviewer"
 	}
-	current, err := almanac.EffectiveStatus(".", id)
+	current, err := almanac.EffectiveStatus(c.dir(), id)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory reject: %v\n", err)
 		return 1
 	}
-	if err := almanac.RecordStatus(".", id, almanac.StatusRejected, who, *reason, time.Now().UTC()); err != nil {
+	if err := almanac.RecordStatus(c.dir(), id, almanac.StatusRejected, who, *reason, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory reject: %v\n", err)
 		return 1
 	}
@@ -112,13 +112,13 @@ func (c CLI) memoryStatusCmd(args []string) int {
 		return 2
 	}
 	id := pos[0]
-	st, err := almanac.EffectiveStatus(".", id)
+	st, err := almanac.EffectiveStatus(c.dir(), id)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory status: %v\n", err)
 		return 1
 	}
 	sys := ""
-	if all, err := almanac.All("."); err == nil {
+	if all, err := almanac.All(c.dir()); err == nil {
 		for _, o := range all {
 			if o.ID == id {
 				sys = almanac.SystemOf(o.Type)
@@ -126,7 +126,7 @@ func (c CLI) memoryStatusCmd(args []string) int {
 		}
 	}
 	fmt.Fprintf(c.Stdout, "%s: %s (system %s)\n", id, st, sys)
-	hist, err := almanac.StatusHistory(".", id)
+	hist, err := almanac.StatusHistory(c.dir(), id)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory status: %v\n", err)
 		return 1
@@ -152,7 +152,7 @@ func (c CLI) memoryCheckCmd(args []string) int {
 	}
 	now := time.Now().UTC()
 	problems := 0
-	conflicts, err := almanac.Contradictions(".", now)
+	conflicts, err := almanac.Contradictions(c.dir(), now)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory check: %v\n", err)
 		return 1
@@ -161,15 +161,15 @@ func (c CLI) memoryCheckCmd(args []string) int {
 		fmt.Fprintf(c.Stdout, "CONTRADICTION: %s conflicts_with %s (both active)\n", cf.A, cf.B)
 		problems++
 	}
-	all, err := almanac.All(".")
+	all, err := almanac.All(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory check: %v\n", err)
 		return 1
 	}
-	sup, _ := almanac.SupersededIDs(".")
-	inv, _ := almanac.InvalidatedIDs(".")
+	sup, _ := almanac.SupersededIDs(c.dir())
+	inv, _ := almanac.InvalidatedIDs(c.dir())
 	for _, o := range all {
-		st, err := almanac.EffectiveStatus(".", o.ID)
+		st, err := almanac.EffectiveStatus(c.dir(), o.ID)
 		if err != nil {
 			continue
 		}

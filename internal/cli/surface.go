@@ -29,7 +29,7 @@ func (c CLI) surfaceCmd(args []string) int {
 			fmt.Fprintln(c.Stderr, "usage: regulus surface propose --target <f> --content <c> --reason <r>")
 			return 2
 		}
-		e, err := surface.Propose(".", *target, *content, *reason, time.Now().UTC())
+		e, err := surface.Propose(c.dir(), *target, *content, *reason, time.Now().UTC())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "surface propose: %v\n", err)
 			return 1
@@ -38,7 +38,7 @@ func (c CLI) surfaceCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "guardian check, then: regulus surface apply --id "+e.ID+" --guardian <name>")
 		return 0
 	case "list":
-		edits, err := surface.List(".")
+		edits, err := surface.List(c.dir())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "surface list: %v\n", err)
 			return 1
@@ -63,7 +63,7 @@ func (c CLI) surfaceCmd(args []string) int {
 			fmt.Fprintln(c.Stderr, "usage: regulus surface apply --id <id> --guardian <name>")
 			return 2
 		}
-		e, err := surface.Apply(".", *id, *guardian, time.Now().UTC())
+		e, err := surface.Apply(c.dir(), *id, *guardian, time.Now().UTC())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "surface apply: %v\n", err)
 			return 1

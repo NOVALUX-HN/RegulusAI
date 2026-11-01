@@ -169,13 +169,17 @@ func (s Server) handleReceipts(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
 	limit, offset, bad := parsePagination(r)
 	if bad != "" {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("receipts: "+bad))
 		return
 	}
 	task := strings.TrimSpace(r.URL.Query().Get("task"))
-	entries, err := evidence.List(".", task)
+	entries, err := evidence.List(root, task)
 	if err != nil {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("receipts: "+observability.RedactText(err.Error())))
 		return
@@ -184,7 +188,7 @@ func (s Server) handleReceipts(w http.ResponseWriter, r *http.Request) {
 	items := make([]receiptItem, 0, hi-lo)
 	for _, e := range entries[lo:hi] {
 		rel := e.Path
-		if r, err := filepath.Rel(".", e.Path); err == nil {
+		if r, err := filepath.Rel(root, e.Path); err == nil {
 			rel = r
 		}
 		items = append(items, receiptItem{
@@ -208,6 +212,10 @@ func (s Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
 	limit, offset, bad := parsePagination(r)
 	if bad != "" {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("observations: "+bad))
@@ -224,7 +232,7 @@ func (s Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	hits, err := almanac.Search(".", almanac.Query{
+	hits, err := almanac.Search(root, almanac.Query{
 		Terms: strings.Fields(strings.TrimSpace(q.Get("q"))),
 		Type:  typ,
 	})
@@ -261,6 +269,10 @@ func (s Server) handleLessons(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
 	limit, offset, bad := parsePagination(r)
 	if bad != "" {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("lessons: "+bad))
@@ -271,7 +283,7 @@ func (s Server) handleLessons(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("lessons: "+detail))
 		return
 	}
-	all, storeErr := loadLessons(domain, status)
+	all, storeErr := loadLessons(root, domain, status)
 	if storeErr != "" {
 		writeEnvelope(w, http.StatusOK, Internal("lessons: "+observability.RedactText(storeErr)))
 		return
@@ -308,13 +320,14 @@ func parseLessonsQuery(r *http.Request) (domain, status, task string, needles []
 }
 
 // loadLessons reads admitted lessons and pending candidates for the
-// selected domains, oldest first. A non-empty storeErr names the store
-// failure for a 200 error envelope.
-func loadLessons(domain, status string) ([]library.Lesson, string) {
+// selected domains, oldest first, scoped to one allowlisted project
+// root. A non-empty storeErr names the store failure for a 200 error
+// envelope.
+func loadLessons(root, domain, status string) ([]library.Lesson, string) {
 	domains := []string{domain}
 	if domain == "" {
 		var err error
-		domains, err = library.Domains(".")
+		domains, err = library.Domains(root)
 		if err != nil {
 			return nil, err.Error()
 		}
@@ -322,7 +335,7 @@ func loadLessons(domain, status string) ([]library.Lesson, string) {
 	var all []library.Lesson
 	for _, d := range domains {
 		if status == "all" || status == "admitted" {
-			ls, err := library.List(".", d)
+			ls, err := library.List(root, d)
 			if err != nil {
 				return nil, err.Error()
 			}
@@ -332,7 +345,7 @@ func loadLessons(domain, status string) ([]library.Lesson, string) {
 			}
 		}
 		if status == "all" || status == "candidate" {
-			cs, err := library.Candidates(".", d)
+			cs, err := library.Candidates(root, d)
 			if err != nil {
 				return nil, err.Error()
 			}
@@ -393,6 +406,10 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
 	limit, offset, bad := parsePagination(r)
 	if bad != "" {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("traces: "+bad))
@@ -402,7 +419,7 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	session := strings.TrimSpace(q.Get("session"))
 	task := strings.TrimSpace(q.Get("task"))
 	if session == "" {
-		sessions, err := trace.Sessions(".")
+		sessions, err := trace.Sessions(root)
 		if err != nil {
 			writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
 			return
@@ -410,7 +427,7 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		lo, hi := paginate(len(sessions), limit, offset)
 		items := make([]traceSessionItem, 0, hi-lo)
 		for _, name := range sessions[lo:hi] {
-			entries, err := trace.List(".", name)
+			entries, err := trace.List(root, name)
 			if err != nil {
 				writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
 				return
@@ -436,7 +453,7 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		writePage(w, len(sessions), limit, offset, items)
 		return
 	}
-	entries, err := trace.List(".", session)
+	entries, err := trace.List(root, session)
 	if err != nil {
 		writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
 		return
@@ -469,13 +486,17 @@ func (s Server) handleBudget(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
 	limit, offset, bad := parsePagination(r)
 	if bad != "" {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("budget: "+bad))
 		return
 	}
 	task := strings.TrimSpace(r.URL.Query().Get("task"))
-	entries, err := budget.Show(".")
+	entries, err := budget.Show(root)
 	if err != nil {
 		writeEnvelope(w, http.StatusOK, Internal("budget: "+observability.RedactText(err.Error())))
 		return

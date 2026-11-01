@@ -57,7 +57,7 @@ func (c CLI) probeContrastCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "probe contrast: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')\n", *task)
 		return 2
 	}
-	diff, ran, err := probe.ContrastWithRunner(".", *task, *gate, *cmdA, *cmdB, time.Now().UTC(), c.runner())
+	diff, ran, err := probe.ContrastWithRunner(c.dir(), *task, *gate, *cmdA, *cmdB, time.Now().UTC(), c.runner())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "probe contrast: %v\n", err)
 		return 1
@@ -94,7 +94,7 @@ func (c CLI) probeComposeCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "probe compose: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')\n", *task)
 		return 2
 	}
-	report, _, ran, err := probe.ComposeWithRunner(".", *task, *gate, *base, *cmdA, *cmdB, time.Now().UTC(), c.runner())
+	report, _, ran, err := probe.ComposeWithRunner(c.dir(), *task, *gate, *base, *cmdA, *cmdB, time.Now().UTC(), c.runner())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "probe compose: %v\n", err)
 		return 1

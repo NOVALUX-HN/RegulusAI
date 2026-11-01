@@ -76,7 +76,7 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory doctor")
 		return 2
 	}
-	h, err := almanac.Doctor(".")
+	h, err := almanac.Doctor(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory doctor: %v\n", err)
 		return 1
@@ -125,14 +125,14 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 	// H3 (S5): doctor also surfaces index freshness with the repairing
 	// command — a save after the last reindex makes hybrid search fall
 	// back to lexical, and that must never surprise.
-	switch state, err := almanac.IndexState("."); {
+	switch state, err := almanac.IndexState(c.dir()); {
 	case err != nil:
 		fmt.Fprintf(c.Stdout, "index:      unreadable — %v\n", err)
 	case state == "fresh":
 		// M2 tripwire: the fresh line names the index format version and
 		// entry count, so a format regression (or an un-reindexed v1)
 		// is visible in the canonical health report.
-		if ver, count, _, serr := almanac.IndexStats("."); serr == nil {
+		if ver, count, _, serr := almanac.IndexStats(c.dir()); serr == nil {
 			fmt.Fprintf(c.Stdout, "index:      fresh v%d (%d entries, hybrid ranking active)\n", ver, count)
 		} else {
 			fmt.Fprintln(c.Stdout, "index:      fresh (hybrid ranking active)")
@@ -169,7 +169,7 @@ func (c CLI) memoryReindexCmd(args []string) int {
 	if id == "" {
 		id = almanac.EmbedderID
 	}
-	count, sha, err := almanac.ReindexWith(".", *embedder)
+	count, sha, err := almanac.ReindexWith(c.dir(), *embedder)
 	if errors.Is(err, almanac.ErrNoLog) {
 		fmt.Fprintln(c.Stderr, "memory reindex: no observations log yet — save an observation first")
 		return 1
@@ -211,7 +211,7 @@ func (c CLI) memoryPruneCmd(args []string) int {
 			filter[t] = true
 		}
 	}
-	removed, err := almanac.Prune(".", func(o almanac.Observation) bool {
+	removed, err := almanac.Prune(c.dir(), func(o almanac.Observation) bool {
 		if filter != nil && !filter[o.Type] {
 			return true
 		}
@@ -232,7 +232,7 @@ func (c CLI) memoryPruneCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "dry run: re-run with --yes to remove the above")
 		return 0
 	}
-	if err := almanac.ApplyPrune(".", removed); err != nil {
+	if err := almanac.ApplyPrune(c.dir(), removed); err != nil {
 		fmt.Fprintf(c.Stderr, "memory prune: %v\n", err)
 		return 1
 	}
@@ -249,7 +249,7 @@ func (c CLI) memoryPruneCmd(args []string) int {
 // to index) is silent, and any other failure warns on stderr without
 // failing the mutation that already succeeded.
 func (c CLI) refreshIndexBestEffort(op string) {
-	if _, _, err := almanac.Reindex("."); err != nil {
+	if _, _, err := almanac.Reindex(c.dir()); err != nil {
 		if errors.Is(err, almanac.ErrNoLog) {
 			return
 		}
@@ -273,11 +273,11 @@ func (c CLI) memoryNoteCmd(args []string) int {
 		Type: almanac.TypeSessionNote, Title: title, Content: text,
 		Provenance: &almanac.Provenance{GitHead: head},
 	}
-	if err := almanac.CheckDuplicate(".", obs); err != nil {
+	if err := almanac.CheckDuplicate(c.dir(), obs); err != nil {
 		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
 		return 1
 	}
-	if _, err := almanac.Save(".", obs, time.Now().UTC()); err != nil {
+	if _, err := almanac.Save(c.dir(), obs, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
 		return 1
 	}
@@ -292,7 +292,7 @@ func (c CLI) memoryShowCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory show")
 		return 2
 	}
-	notes, err := almanac.Notes(".")
+	notes, err := almanac.Notes(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory show: %v\n", err)
 		return 1
@@ -363,13 +363,13 @@ func (c CLI) memorySaveCmd(args []string) int {
 		Type: *typ, Title: *title, Content: content,
 		TopicKey: *topicKey, Domain: *domain,
 		Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: provenancePaths, Receipts: provenanceReceipts},
-		Source:     strings.TrimSpace(*source), Origin: almanac.ProjectName("."), ExpiresAt: expiry,
+		Source:     strings.TrimSpace(*source), Origin: almanac.ProjectName(c.dir()), ExpiresAt: expiry,
 	}
-	if err := almanac.CheckDuplicate(".", obs); err != nil {
+	if err := almanac.CheckDuplicate(c.dir(), obs); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 1
 	}
-	if _, err := almanac.Save(".", obs, time.Now().UTC()); err != nil {
+	if _, err := almanac.Save(c.dir(), obs, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 1
 	}
@@ -439,10 +439,10 @@ func (c CLI) memorySearchCmd(args []string) int {
 	q := almanac.Query{Terms: fs.Args(), TopicKey: *topicKey, Domain: *domain, Type: *typ, Dimension: *dimension, Path: *path, System: sys, Limit: *limit, Any: *any, Latest: *latest, IncludeSuperseded: *includeSuperseded, IncludeStale: *includeStale}
 	var hits []almanac.Observation
 	if *lexical {
-		hits, err = almanac.Search(".", q)
+		hits, err = almanac.Search(c.dir(), q)
 	} else {
 		var degraded bool
-		hits, degraded, err = almanac.HybridSearchWith(".", q, *embedder)
+		hits, degraded, err = almanac.HybridSearchWith(c.dir(), q, *embedder)
 		if err == nil && degraded {
 			fmt.Fprintln(c.Stderr, "warning: semantic index stale or missing — lexical only (run `regulus memory reindex` to restore hybrid ranking)")
 		}
@@ -458,7 +458,7 @@ func (c CLI) memorySearchCmd(args []string) int {
 	// Relation semantics in the output: conflicts mark both sides;
 	// superseded hits (only visible with --include-superseded) say
 	// who superseded them.
-	rels, _ := almanac.Relations(".")
+	rels, _ := almanac.Relations(c.dir())
 	conflicts := map[string][]string{}
 	supersededBy := map[string]string{}
 	for _, r := range rels {
@@ -498,7 +498,7 @@ func (c CLI) memoryHistoryCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory history --topic-key <key>")
 		return 2
 	}
-	chain, err := almanac.History(".", *topicKey)
+	chain, err := almanac.History(c.dir(), *topicKey)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory history: %v\n", err)
 		return 1
@@ -520,7 +520,7 @@ func (c CLI) memoryPinCmd(pin bool, args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory pin|unpin <id>")
 		return 2
 	}
-	if err := almanac.Pin(".", args[0], pin, time.Now().UTC()); err != nil {
+	if err := almanac.Pin(c.dir(), args[0], pin, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory: %v\n", err)
 		return 1
 	}
@@ -557,7 +557,7 @@ func (c CLI) memoryRelateCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory relate --id <a> --relation <r> --to <b> | --suggest <id>")
 		return 2
 	}
-	if err := almanac.Relate(".", *from, *relation, *to, time.Now().UTC()); err != nil {
+	if err := almanac.Relate(c.dir(), *from, *relation, *to, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory relate: %v\n", err)
 		return 1
 	}
@@ -571,7 +571,7 @@ func (c CLI) memoryRelateCmd(args []string) int {
 // note on stderr naming the repair — suggest never refuses a known id in
 // silence.
 func (c CLI) memoryRelateSuggest(id string) int {
-	sugs, rebuilt, err := almanac.SuggestRelated(".", id)
+	sugs, rebuilt, err := almanac.SuggestRelated(c.dir(), id)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory relate: %v\n", err)
 		return 1
@@ -614,7 +614,7 @@ func (c CLI) memoryExportCmd(args []string) int {
 		return 2
 	}
 	if *domain == "" && *out == ".regulus-export" {
-		paths, err := almanac.Export(".")
+		paths, err := almanac.Export(c.dir())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "memory export: %v\n", err)
 			return 1
@@ -625,7 +625,7 @@ func (c CLI) memoryExportCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "share .regulus-export/ with your team (generated artifact, not committed)")
 		return 0
 	}
-	paths, err := almanac.ExportDomain(".", *domain, *out)
+	paths, err := almanac.ExportDomain(c.dir(), *domain, *out)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory export: %v\n", err)
 		return 1
@@ -652,7 +652,7 @@ func (c CLI) memoryImportCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory import <file|dir>")
 		return 2
 	}
-	imported, skipped, err := almanac.Import(".", args[0])
+	imported, skipped, err := almanac.Import(c.dir(), args[0])
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory import: %v\n", err)
 		return 1
@@ -693,7 +693,7 @@ func (c CLI) memoryContextCmd(args []string) int {
 		return 2
 	}
 	scope := almanac.ContextScope{Task: *task, Path: *path, System: sys, Budget: *budget}
-	ctx, err := almanac.ContextScoped(".", time.Now().UTC(), *limit, scope)
+	ctx, err := almanac.ContextScoped(c.dir(), time.Now().UTC(), *limit, scope)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
 		return 1

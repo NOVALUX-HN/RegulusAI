@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -71,6 +72,14 @@ func TestParseServeFlags(t *testing.T) {
 		{"bind without equals", []string{"--bind"}, def, 2, false},
 		{"port+bind valid", []string{"--port=8080", "--bind=0.0.0.0"}, serveConfig{port: 8080, bind: "0.0.0.0"}, 0, true},
 		{"valid then bogus", []string{"--port=8080", "--bogus"}, serveConfig{port: 8080, bind: "127.0.0.1"}, 2, false},
+		{"projects single", []string{"--projects=/a"}, serveConfig{port: 17817, bind: "127.0.0.1", projects: []string{"/a"}}, 0, true},
+		{"projects pair", []string{"--projects=/a,/b"}, serveConfig{port: 17817, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
+		{"projects spaces trimmed", []string{"--projects= /a , /b "}, serveConfig{port: 17817, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
+		{"projects empty", []string{"--projects="}, def, 2, false},
+		{"projects blank", []string{"--projects=   "}, def, 2, false},
+		{"projects without equals", []string{"--projects"}, def, 2, false},
+		{"projects repeated accumulates", []string{"--projects=/a", "--projects=/b"}, serveConfig{port: 17817, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
+		{"projects with port", []string{"--port=8080", "--projects=/a,/b"}, serveConfig{port: 8080, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,7 +88,7 @@ func TestParseServeFlags(t *testing.T) {
 				t.Fatalf("parseServeFlags(%q) = (code %d, ok %v), want (code %d, ok %v)",
 					tc.args, code, ok, tc.wantCode, tc.wantOK)
 			}
-			if ok && got != tc.wantCfg {
+			if ok && !reflect.DeepEqual(got, tc.wantCfg) {
 				t.Errorf("parseServeFlags(%q) = %+v, want %+v", tc.args, got, tc.wantCfg)
 			}
 		})
@@ -124,6 +133,9 @@ func TestServeInvalidArgs(t *testing.T) {
 		{"port boundary over", []string{"--port=65536"}, 2},
 		{"bind empty", []string{"--bind="}, 2},
 		{"bind blank", []string{"--bind=   "}, 2},
+		{"projects empty", []string{"--projects="}, 2},
+		{"projects blank", []string{"--projects=  ,  "}, 2},
+		{"projects without equals", []string{"--projects"}, 2},
 		{"bind invalid", []string{"--bind=invalid-ip-xyz"}, 2},
 		{"bind hostname rejected", []string{"--bind=localhost"}, 2},
 		// Valid parses followed by an invalid arg: covers the

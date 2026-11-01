@@ -264,7 +264,7 @@ func TestReviewPickLensTable(t *testing.T) {
 		{"code default", []string{"pkg/a.go"}, "", "reviewer"},
 	}
 	for _, tc := range cases {
-		if got, _ := reviewPickLens(tc.files, tc.override); got != tc.want {
+		if got, _ := reviewPickLens(".", tc.files, tc.override); got != tc.want {
 			t.Fatalf("%s: pick = %q, want %q", tc.name, got, tc.want)
 		}
 	}

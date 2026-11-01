@@ -40,7 +40,7 @@ func (c CLI) reflectCmd(args []string) int {
 		r = gates.ShRunner{}
 	}
 	head := gitHeadBounded(r)
-	l, err := reflect.Run(".", reflect.Input{
+	l, err := reflect.Run(c.dir(), reflect.Input{
 		FeatureDoc: fs.Arg(0), Domain: *domain, Dimension: *dimension, Task: *task, Cue: *cue, Lesson: *lesson,
 		Confidence: *confidence, Now: time.Now().UTC(),
 	}, head)
@@ -92,7 +92,7 @@ func (c CLI) libraryDomainsCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library domains")
 		return 2
 	}
-	domains, err := library.Domains(".")
+	domains, err := library.Domains(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "library domains: %v\n", err)
 		return 1
@@ -116,7 +116,7 @@ func (c CLI) libraryListCmd(args []string) int {
 		return 2
 	}
 	if *domain != "" {
-		lessons, err := library.List(".", *domain)
+		lessons, err := library.List(c.dir(), *domain)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "library list: %v\n", err)
 			return 1
@@ -124,7 +124,7 @@ func (c CLI) libraryListCmd(args []string) int {
 		c.printLessons(*domain, lessons)
 		return 0
 	}
-	domains, err := library.Domains(".")
+	domains, err := library.Domains(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "library list: %v\n", err)
 		return 1
@@ -134,7 +134,7 @@ func (c CLI) libraryListCmd(args []string) int {
 		return 0
 	}
 	for _, d := range domains {
-		lessons, err := library.List(".", d)
+		lessons, err := library.List(c.dir(), d)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "library list: %v\n", err)
 			return 1
@@ -162,7 +162,7 @@ func (c CLI) libraryCandidatesCmd(args []string) int {
 	if *domain != "" {
 		domains = []string{*domain}
 	} else {
-		domains, err = library.Domains(".")
+		domains, err = library.Domains(c.dir())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "library candidates: %v\n", err)
 			return 1
@@ -170,7 +170,7 @@ func (c CLI) libraryCandidatesCmd(args []string) int {
 	}
 	any := false
 	for _, d := range domains {
-		cands, err := library.Candidates(".", d)
+		cands, err := library.Candidates(c.dir(), d)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "library candidates: %v\n", err)
 			return 1
@@ -203,7 +203,7 @@ func (c CLI) libraryShowCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library show --domain <name>")
 		return 2
 	}
-	data, err := os.ReadFile(library.IndexFile(".", *domain))
+	data, err := os.ReadFile(library.IndexFile(c.dir(), *domain))
 	if os.IsNotExist(err) {
 		fmt.Fprintln(c.Stdout, "(no lessons admitted yet)")
 		return 0
@@ -232,13 +232,13 @@ func (c CLI) libraryAdmitCmd(args []string) int {
 		return 2
 	}
 	head := gitHeadBounded(c.runner())
-	l, err := reflect.Admit(".", *domain, *candidate, *guardian, head, time.Now().UTC())
+	l, err := reflect.Admit(c.dir(), *domain, *candidate, *guardian, head, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "library admit: %v\n", err)
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "lesson admitted: %s (guardian %s)\n", l.ID, l.Guardian)
-	fmt.Fprintf(c.Stdout, "index: %s\n", library.IndexFile(".", l.Domain))
+	fmt.Fprintf(c.Stdout, "index: %s\n", library.IndexFile(c.dir(), l.Domain))
 	return 0
 }
 
@@ -257,7 +257,7 @@ func (c CLI) libraryForgetCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library forget --domain <d> --task <t>")
 		return 2
 	}
-	if err := library.Forget(".", *domain, *task); err != nil {
+	if err := library.Forget(c.dir(), *domain, *task); err != nil {
 		fmt.Fprintf(c.Stderr, "library forget: %v\n", err)
 		return 1
 	}
@@ -280,11 +280,11 @@ func (c CLI) libraryRetainCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus library retain --domain <d> --task <t>")
 		return 2
 	}
-	if err := library.Retain(".", *domain, *task); err != nil {
+	if err := library.Retain(c.dir(), *domain, *task); err != nil {
 		fmt.Fprintf(c.Stderr, "library retain: %v\n", err)
 		return 1
 	}
-	lessons, err := library.List(".", *domain)
+	lessons, err := library.List(c.dir(), *domain)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "library retain: %v\n", err)
 		return 1
@@ -326,7 +326,7 @@ func (c CLI) budgetCmd(args []string) int {
 			fmt.Fprintln(c.Stderr, "usage: regulus budget show")
 			return 2
 		}
-		entries, err := budget.Show(".")
+		entries, err := budget.Show(c.dir())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "budget show: %v\n", err)
 			return 1
@@ -359,21 +359,21 @@ func (c CLI) budgetCmd(args []string) int {
 			return 2
 		}
 		now := time.Now().UTC()
-		cap := reflect.EvolutionCap(".")
-		today, err := budget.TodayEvolutionCount(".", now)
+		cap := reflect.EvolutionCap(c.dir())
+		today, err := budget.TodayEvolutionCount(c.dir(), now)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "budget record: %v\n", err)
 			return 1
 		}
 		if today >= cap {
-			if err := budget.Record(".", budget.Entry{Kind: budget.KindProbe, Timestamp: now, Task: *task, Domain: *domain, Outcome: budget.OutcomeRefusedCap, Detail: fmt.Sprintf("cap %d reached", cap)}); err != nil {
+			if err := budget.Record(c.dir(), budget.Entry{Kind: budget.KindProbe, Timestamp: now, Task: *task, Domain: *domain, Outcome: budget.OutcomeRefusedCap, Detail: fmt.Sprintf("cap %d reached", cap)}); err != nil {
 				fmt.Fprintf(c.Stderr, "budget record: %v\n", err)
 				return 1
 			}
 			fmt.Fprintf(c.Stderr, "budget record: evolution cap reached: %d run(s) today, cap %d\n", today, cap)
 			return 1
 		}
-		if err := budget.Record(".", budget.Entry{Kind: budget.KindProbe, Timestamp: now, Task: *task, Domain: *domain, Outcome: budget.OutcomeProbeRun, Detail: *detail}); err != nil {
+		if err := budget.Record(c.dir(), budget.Entry{Kind: budget.KindProbe, Timestamp: now, Task: *task, Domain: *domain, Outcome: budget.OutcomeProbeRun, Detail: *detail}); err != nil {
 			fmt.Fprintf(c.Stderr, "budget record: %v\n", err)
 			return 1
 		}
@@ -419,7 +419,7 @@ func (c CLI) evolveProposeCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
 		return 2
 	}
-	pack, err := evolve.Assemble(".", *task, *domain)
+	pack, err := evolve.Assemble(c.dir(), *task, *domain)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "evolve propose: %v\n", err)
 		return 1

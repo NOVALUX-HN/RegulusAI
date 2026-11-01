@@ -56,7 +56,7 @@ func (c CLI) decideProposeCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "decide propose: %v\n", err)
 		return 1
 	}
-	d, err := decisions.Propose(".", ct)
+	d, err := decisions.Propose(c.dir(), ct)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "decide propose: %v\n", err)
 		return 1
@@ -105,12 +105,12 @@ func (c CLI) decideAssessCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus decide assess [--json] <id>")
 		return 2
 	}
-	d, err := decisions.Load(".", pos[0])
+	d, err := decisions.Load(c.dir(), pos[0])
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "decide assess: %v\n", err)
 		return 1
 	}
-	p := decisions.Assess(".", d, acceptedDecisions(".", d.ID))
+	p := decisions.Assess(c.dir(), d, acceptedDecisions(c.dir(), d.ID))
 	if *asJSON {
 		raw, err := json.MarshalIndent(p, "", "  ")
 		if err != nil {
@@ -182,7 +182,7 @@ func (c CLI) decideResolveCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus decide resolve [--accept|--reject|--inconclusive] [--supersede <id>] [--approve-by \"nick: reason\"] [--note <text>] <id>")
 		return 2
 	}
-	d, err := decisions.Resolve(".", pos[0], decisions.ResolveOptions{
+	d, err := decisions.Resolve(c.dir(), pos[0], decisions.ResolveOptions{
 		Accept: *accept, Reject: *reject, Inconclusive: *inconclusive,
 		Supersede: *supersede, ApproveBy: *approveBy, Note: *note,
 	})
@@ -208,7 +208,7 @@ func (c CLI) decideShowCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus decide show [--json] <id>")
 		return 2
 	}
-	d, err := decisions.Load(".", pos[0])
+	d, err := decisions.Load(c.dir(), pos[0])
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "decide show: %v\n", err)
 		return 1
@@ -253,7 +253,7 @@ func (c CLI) decideListCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus decide list [--state S]")
 		return 2
 	}
-	all, err := decisions.List(".")
+	all, err := decisions.List(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "decide list: %v\n", err)
 		return 1

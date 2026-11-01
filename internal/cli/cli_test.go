@@ -214,6 +214,7 @@ func (f *fakeGateRunner) Run(_ context.Context, command string) (string, string,
 }
 
 func TestDoctorSupportedOutputLine(t *testing.T) {
+	t.Chdir(t.TempDir()) // no package.json here: the "nothing to compare" branch (P4 resolves the project root first)
 	c, out, _ := newCLI(func() doctor.Result {
 		return doctor.Result{Detected: "opencode 2.1.0", Major: 2, Supported: true}
 	})

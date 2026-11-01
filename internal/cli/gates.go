@@ -58,7 +58,7 @@ func (c CLI) crapCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus crap --profile <coverprofile> [--max N] [--top N]")
 		return 2
 	}
-	rep, err := crap.Analyze(".", *profile)
+	rep, err := crap.Analyze(c.dir(), *profile)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "crap: %v\n", err)
 		return 1

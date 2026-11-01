@@ -76,12 +76,12 @@ func buildCloseNote(chart, id, doc string, res sextant.CloseResult, gitHead stri
 // warns on stderr.
 func (c CLI) autoSaveCloseNote(chart, id, doc string, res sextant.CloseResult) {
 	topic := closeNoteTopic(chart, id)
-	if hist, err := almanac.History(".", topic); err == nil && len(hist) != 0 {
+	if hist, err := almanac.History(c.dir(), topic); err == nil && len(hist) != 0 {
 		fmt.Fprintf(c.Stdout, "  memory: close observation already recorded (topic %s), skipping duplicate\n", topic)
 		return
 	}
 	obs := buildCloseNote(chart, id, doc, res, gitHeadBounded(c.runner()))
-	if err := almanac.CheckDuplicate(".", obs); err != nil {
+	if err := almanac.CheckDuplicate(c.dir(), obs); err != nil {
 		var dup *almanac.DuplicateError
 		if errors.As(err, &dup) {
 			fmt.Fprintf(c.Stdout, "  memory: close observation duplicates %s, skipping\n", dup.ID)
@@ -90,7 +90,7 @@ func (c CLI) autoSaveCloseNote(chart, id, doc string, res sextant.CloseResult) {
 		fmt.Fprintf(c.Stderr, "warning: close observation not checked (%v) — the CLOSED verdict stands\n", err)
 		return
 	}
-	saved, err := almanac.Save(".", obs, time.Now().UTC())
+	saved, err := almanac.Save(c.dir(), obs, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "warning: close observation not saved (%v) — the CLOSED verdict stands\n", err)
 		return

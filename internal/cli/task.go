@@ -156,7 +156,7 @@ func (c CLI) taskCloseCmd(args []string) int {
 	}
 	id := args[1]
 	chartBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	res := sextant.CheckClose(doc, ".", chartBase, id)
+	res := sextant.CheckClose(doc, c.dir(), chartBase, id)
 	if !res.Closed {
 		fmt.Fprintf(c.Stdout, "task %s cannot close:\n", id)
 		for _, u := range res.Unmet {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -50,7 +51,7 @@ func (c CLI) parseGateRunArgs(args []string) (gateRunArgs, int, bool) {
 	if r == nil {
 		r = gates.ShRunner{}
 	}
-	cfg, err := gates.Load("regulus.json")
+	cfg, err := gates.Load(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return gateRunArgs{}, 1, false
@@ -227,7 +228,7 @@ func preflightMissingTools(selected []gates.Gate, lookPath func(string) (string,
 // or gate failure; exit 0 when the gauntlet passes (advisory-only
 // failures also exit 0, exactly as before).
 func (c CLI) execAndReport(plan gateRunArgs) int {
-	cfgBytes, err := os.ReadFile("regulus.json")
+	cfgBytes, err := os.ReadFile(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1
@@ -250,7 +251,7 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 			return 1
 		}
 	}
-	res, mpath, err := gates.RunTask(context.Background(), plan.cfg, cfgBytes, ".", plan.task, c.Version, contract.Version, plan.profile, plan.runner)
+	res, mpath, err := gates.RunTask(context.Background(), plan.cfg, cfgBytes, c.dir(), plan.task, c.Version, contract.Version, plan.profile, plan.runner)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1

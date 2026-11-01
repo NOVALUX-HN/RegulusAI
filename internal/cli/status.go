@@ -20,7 +20,7 @@ import (
 
 func (c CLI) doctor() int {
 	res := c.Probe()
-	fmt.Fprintln(c.Stdout, doctor.VersionLine(".", c.Version))
+	fmt.Fprintln(c.Stdout, doctor.VersionLine(c.dir(), c.Version))
 	if res.Supported {
 		fmt.Fprintf(c.Stdout, "%s — supported (V2)\n", res.Detected)
 		fmt.Fprintln(c.Stdout, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
@@ -45,32 +45,32 @@ func (c CLI) statusCmd(args []string) int {
 	} else {
 		fmt.Fprintf(c.Stdout, "runtime:    NOT SUPPORTED — %s\n", res.Reason)
 	}
-	cfg, err := gates.Load("regulus.json")
+	cfg, err := gates.Load(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stdout, "gauntlet:   not configured — %v\n", err)
 	} else {
 		fmt.Fprintf(c.Stdout, "gauntlet:   %d gate(s) configured\n", len(cfg.Gates))
 	}
 	now := time.Now().UTC()
-	today, err := budget.TodayEvolutionCount(".", now)
+	today, err := budget.TodayEvolutionCount(c.dir(), now)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "status: budget: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(c.Stdout, "evolution:  %d/%d run(s) today\n", today, reflect.EvolutionCap("."))
-	domains, err := library.Domains(".")
+	fmt.Fprintf(c.Stdout, "evolution:  %d/%d run(s) today\n", today, reflect.EvolutionCap(c.dir()))
+	domains, err := library.Domains(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "status: library: %v\n", err)
 		return 1
 	}
 	pending, lessons := 0, 0
 	for _, d := range domains {
-		cands, err := library.Candidates(".", d)
+		cands, err := library.Candidates(c.dir(), d)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "status: candidates: %v\n", err)
 			return 1
 		}
-		ls, err := library.List(".", d)
+		ls, err := library.List(c.dir(), d)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "status: lessons: %v\n", err)
 			return 1
@@ -79,7 +79,7 @@ func (c CLI) statusCmd(args []string) int {
 		lessons += len(ls)
 	}
 	fmt.Fprintf(c.Stdout, "lessons:    %d admitted, %d candidate(s) pending\n", lessons, pending)
-	found, err := filepath.Glob(filepath.Join(".regulus", "evidence", "*", "*.json"))
+	found, err := filepath.Glob(filepath.Join(c.dir(), ".regulus", "evidence", "*", "*.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "status: evidence: %v\n", err)
 		return 1
@@ -88,7 +88,7 @@ func (c CLI) statusCmd(args []string) int {
 	// H3 (S5): the semantic index goes stale on any save after the last
 	// reindex — status says so with the repairing command instead of
 	// letting search surprise with a lexical-only warning.
-	switch memState, memErr := almanac.IndexState("."); {
+	switch memState, memErr := almanac.IndexState(c.dir()); {
 	case memErr != nil:
 		fmt.Fprintf(c.Stdout, "memory:     index unreadable — %v\n", memErr)
 	case memState == "fresh":

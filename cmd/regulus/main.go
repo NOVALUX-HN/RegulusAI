@@ -41,8 +41,9 @@ func main() {
 // import cycle: main already owns both sides.
 // serveConfig holds the parsed `regulus serve` flags.
 type serveConfig struct {
-	port int
-	bind string
+	port     int
+	bind     string
+	projects []string
 }
 
 // parseServeFlags validates the `regulus serve` flags. It prints usage (or
@@ -52,13 +53,13 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 	cfg := serveConfig{port: httpapi.DefaultDashboardPort, bind: "127.0.0.1"}
 	for _, a := range args {
 		if a == "--help" || a == "-h" {
-			fmt.Println("usage: regulus serve [--port N] [--bind ADDR]")
+			fmt.Println("usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
 			return cfg, 0, false
 		}
 		if v, ok := strings.CutPrefix(a, "--port="); ok {
 			n, err := strconv.Atoi(strings.TrimSpace(v))
 			if err != nil || n < 1 || n > 65535 {
-				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR]")
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
 				return cfg, 2, false
 			}
 			cfg.port = n
@@ -73,7 +74,21 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 			cfg.bind = bind
 			continue
 		}
-		fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] (use --port=N --bind=ADDR)")
+		if v, ok := strings.CutPrefix(a, "--projects="); ok {
+			var dirs []string
+			for _, d := range strings.Split(v, ",") {
+				if d = strings.TrimSpace(d); d != "" {
+					dirs = append(dirs, d)
+				}
+			}
+			if len(dirs) == 0 {
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+				return cfg, 2, false
+			}
+			cfg.projects = append(cfg.projects, dirs...)
+			continue
+		}
+		fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] (use --port=N --bind=ADDR --projects=dirA,dirB)")
 		return cfg, 2, false
 	}
 	return cfg, 0, true
@@ -100,9 +115,22 @@ func serve(args []string) int {
 	if !ok {
 		return code
 	}
+	// P4: resolve every served root (the default "." and each
+	// --projects entry) through the same auto-detection as the CLI, so
+	// serving from a subdirectory shares that checkout's stores instead
+	// of splitting .regulus/ per subdirectory. At the top level (or
+	// outside git/regulus.json) ResolveRoot returns the input verbatim,
+	// preserving today's allowlist exactly.
+	roots := make([]string, 0, len(cfg.projects))
+	for _, p := range cfg.projects {
+		roots = append(roots, cli.ResolveRoot(p))
+	}
+	if len(roots) == 0 {
+		roots = []string{cli.ResolveRoot(".")}
+	}
 	srv := httpapi.New(version, func() doctor.Result {
 		return doctor.Probe(context.Background(), doctor.DefaultRunner())
-	}, gates.ShRunner{})
+	}, gates.ShRunner{}, roots...)
 	return listenAndServe(cfg, srv.Handler(), http.ListenAndServe)
 }
 

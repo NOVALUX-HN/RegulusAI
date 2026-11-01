@@ -34,7 +34,7 @@ func (c CLI) evidenceCmd(args []string) int {
 			fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>]")
 			return 2
 		}
-		entries, err := evidence.List(".", *task)
+		entries, err := evidence.List(c.dir(), *task)
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "evidence list: %v\n", err)
 			return 1
@@ -126,12 +126,12 @@ func (c CLI) evidencePruneCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus evidence prune --task <task> [--keep N] [--yes] [--force]")
 		return 2
 	}
-	toDelete, _, manifests, err := evidence.Plan(".", *task, *keep)
+	toDelete, _, manifests, err := evidence.Plan(c.dir(), *task, *keep)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "evidence prune: %v\n", err)
 		return 1
 	}
-	closed, err := evidence.IsClosed(".", *task)
+	closed, err := evidence.IsClosed(c.dir(), *task)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "evidence prune: %v\n", err)
 		return 1
@@ -174,7 +174,7 @@ func (c CLI) evidenceVerifyCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus evidence verify [--task <task>]")
 		return 2
 	}
-	rep, err := evidence.Verify(".", *task, true)
+	rep, err := evidence.Verify(c.dir(), *task, true)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "evidence verify: %v\n", err)
 		return 1

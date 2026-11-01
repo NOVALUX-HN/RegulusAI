@@ -57,7 +57,7 @@ func (c CLI) reviewCmd(args []string) int {
 	head, files, deleted, gitOK := reviewFreeze(c)
 	class := sextant.Classify(reviewSignals(files, deleted, gitOK))
 	risk := reviewRisk(class)
-	name, reason := reviewPickLens(files, *lens)
+	name, reason := reviewPickLens(c.dir(), files, *lens)
 	fmt.Fprintf(c.Stdout, "review: frozen %s %d file(s) (candidate snapshot; read-only, nothing committed)\n",
 		reviewShortHead(head, gitOK), len(files))
 	fmt.Fprintf(c.Stdout, "review: risk=%s class=%s lens=%s (%s)\n", risk, class, name, reason)
@@ -251,7 +251,7 @@ func reviewRisk(class sextant.Class) string {
 // reviewPickLens selects exactly one lens. An explicit --lens always
 // wins (opt-in choice); otherwise the touched tree decides, docs and
 // config first, code last with reviewer as the default.
-func reviewPickLens(files []string, override string) (string, string) {
+func reviewPickLens(root string, files []string, override string) (string, string) {
 	if override != "" {
 		return override, "explicit --lens"
 	}
@@ -270,7 +270,7 @@ func reviewPickLens(files []string, override string) (string, string) {
 	if reviewTestHeavy(files) {
 		return "mutation", "test-heavy change"
 	}
-	if reviewHasGo(files) && reviewCoverageExists() {
+	if reviewHasGo(files) && reviewCoverageExists(root) {
 		return "crap", "go change with coverage at hand"
 	}
 	return "reviewer", "code change — senior read of touched files"
@@ -338,8 +338,8 @@ func reviewTestHeavy(files []string) bool {
 
 // reviewCoverageExists reports whether the gauntlet's coverage profile
 // is on disk for the crap lens to reuse.
-func reviewCoverageExists() bool {
-	fi, err := os.Stat(filepath.Join(".regulus", "coverage.out"))
+func reviewCoverageExists(root string) bool {
+	fi, err := os.Stat(filepath.Join(root, ".regulus", "coverage.out"))
 	return err == nil && !fi.IsDir()
 }
 
@@ -483,12 +483,12 @@ func reviewRunSpec(c CLI, files []string) {
 // files. Without a profile it says so instead of inventing numbers.
 func reviewRunCrap(c CLI) {
 	fmt.Fprintln(c.Stdout, "lens crap: CRAP risk of touched functions (informative; gate enforces max 30)")
-	profile := filepath.Join(".regulus", "coverage.out")
+	profile := filepath.Join(c.dir(), ".regulus", "coverage.out")
 	if _, err := os.Stat(profile); err != nil {
 		fmt.Fprintln(c.Stdout, "  no coverage profile on disk — run the gauntlet (layers 4+7) for CRAP numbers")
 		return
 	}
-	rep, err := crap.Analyze(".", profile)
+	rep, err := crap.Analyze(c.dir(), profile)
 	if err != nil {
 		fmt.Fprintf(c.Stdout, "  crap unavailable: %v\n", err)
 		return
@@ -512,7 +512,7 @@ func reviewRunCrap(c CLI) {
 func reviewRunEvidence(c CLI, task string) {
 	fmt.Fprintln(c.Stdout, "lens evidence: receipts behind the claim (informative; auditor decides)")
 	if task == "" {
-		entries, err := evidence.List(".", "")
+		entries, err := evidence.List(c.dir(), "")
 		if err != nil {
 			fmt.Fprintf(c.Stdout, "  evidence unavailable: %v\n", err)
 			return
@@ -520,7 +520,7 @@ func reviewRunEvidence(c CLI, task string) {
 		fmt.Fprintf(c.Stdout, "  %d receipt(s) on disk across tasks — pass --task <t> to scope\n", len(entries))
 		return
 	}
-	entries, err := evidence.List(".", task)
+	entries, err := evidence.List(c.dir(), task)
 	if err != nil {
 		fmt.Fprintf(c.Stdout, "  evidence unavailable: %v\n", err)
 		return
@@ -544,7 +544,7 @@ func reviewRunEvidence(c CLI, task string) {
 // running it: layers, cost surface, mandatory policy.
 func reviewRunGate(c CLI) {
 	fmt.Fprintln(c.Stdout, "lens gate: the gauntlet this candidate would face (listed, not run)")
-	cfg, err := gates.Load("regulus.json")
+	cfg, err := gates.Load(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stdout, "  gates unavailable: %v (not configured here)\n", err)
 		return
@@ -570,7 +570,7 @@ func reviewRunGate(c CLI) {
 // reviewMutationPolicy states the mutation gate command from the local
 // harness config, if one is configured here.
 func reviewMutationPolicy(c CLI) {
-	cfg, err := gates.Load("regulus.json")
+	cfg, err := gates.Load(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		return
 	}
@@ -583,8 +583,8 @@ func reviewMutationPolicy(c CLI) {
 }
 
 // reviewLatestMutation finds the task's newest mutation receipt, if any.
-func reviewLatestMutation(task string) (id, verdict string, efficacy *float64, found bool, listErr error) {
-	entries, err := evidence.List(".", task)
+func reviewLatestMutation(root, task string) (id, verdict string, efficacy *float64, found bool, listErr error) {
+	entries, err := evidence.List(root, task)
 	if err != nil {
 		return "", "", nil, false, err
 	}
@@ -607,7 +607,7 @@ func reviewRunMutation(c CLI, task string) {
 		fmt.Fprintln(c.Stdout, "  pass --task <t> to scope the latest mutation receipt")
 		return
 	}
-	id, verdict, efficacy, found, err := reviewLatestMutation(task)
+	id, verdict, efficacy, found, err := reviewLatestMutation(c.dir(), task)
 	if err != nil {
 		fmt.Fprintf(c.Stdout, "  evidence unavailable: %v\n", err)
 		return

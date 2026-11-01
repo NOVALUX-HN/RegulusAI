@@ -13,12 +13,33 @@ import (
 )
 
 // CLI holds the injected dependencies of one regulus invocation.
+// Dir scopes filesystem reads to one project root ("" means auto-detect:
+// git top-level, then the nearest regulus.json ancestor, then the
+// process cwd — preserving every existing caller). The HTTP adapter sets
+// it to the resolved ?project= root so `status` reads that project's
+// stores without a process-wide chdir.
 type CLI struct {
 	Version string
 	Probe   func() doctor.Result
 	Runner  gates.CmdRunner
 	Stdout  io.Writer
 	Stderr  io.Writer
+	Dir     string
+}
+
+// dir resolves the project root this invocation reads: Dir when set,
+// ResolveRoot("") (git top-level → regulus.json ancestor → cwd)
+// otherwise. HTTP sets Dir per ?project= request; Run resolves the
+// process cwd once per invocation, so this fallback only fires for
+// direct method calls (tests, MCP sub-invocations).
+func (c CLI) dir() string {
+	if c.Dir != "" {
+		return c.Dir
+	}
+	if r := ResolveRoot(""); r != "" {
+		return r
+	}
+	return "."
 }
 
 // cliDispatch routes subcommand names to their handlers. Pure routing
@@ -69,6 +90,16 @@ func (c CLI) Run(args []string) int {
 		return 0
 	}
 	if fn, ok := cliDispatch[args[0]]; ok {
+		// Single entry point for root resolution (P4): an explicit Dir
+		// (HTTP ?project= scoping, tests) wins; otherwise resolve once
+		// per invocation so every c.dir() below — Almanac, receipts,
+		// traces, budget, library — shares the project root instead of
+		// splitting stores per subdirectory.
+		if c.Dir == "" {
+			if r := ResolveRoot(""); r != "" {
+				c.Dir = r
+			}
+		}
 		return fn(c, args[1:])
 	}
 	fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])

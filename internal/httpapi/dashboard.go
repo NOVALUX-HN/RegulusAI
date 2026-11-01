@@ -39,17 +39,21 @@ func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
-	m, err := observability.Summarize(".", "")
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
+	m, err := observability.Summarize(root, "")
 	if err != nil {
 		writeEnvelope(w, http.StatusOK, Internal("metrics: "+observability.RedactText(err.Error())))
 		return
 	}
-	used, err := budget.TodayEvolutionCount(".", time.Now().UTC())
+	used, err := budget.TodayEvolutionCount(root, time.Now().UTC())
 	if err != nil {
 		writeEnvelope(w, http.StatusOK, Internal("metrics budget: "+observability.RedactText(err.Error())))
 		return
 	}
-	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(".")}, "", 0)
+	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(root)}, "", 0)
 	writeEnvelope(w, status, env)
 }
 
@@ -58,7 +62,11 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
 		return
 	}
-	all, err := almanac.All(".")
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
+	all, err := almanac.All(root)
 	if err != nil {
 		writeEnvelope(w, http.StatusOK, Internal("almanac: "+observability.RedactText(err.Error())))
 		return
@@ -75,17 +83,17 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	lessons, candidates := 0, 0
-	if domains, err := library.Domains("."); err == nil {
+	if domains, err := library.Domains(root); err == nil {
 		for _, d := range domains {
-			if ls, err := library.List(".", d); err == nil {
+			if ls, err := library.List(root, d); err == nil {
 				lessons += len(ls)
 			}
-			if cs, err := library.Candidates(".", d); err == nil {
+			if cs, err := library.Candidates(root, d); err == nil {
 				candidates += len(cs)
 			}
 		}
 	}
-	idx, _ := almanac.IndexState(".")
+	idx, _ := almanac.IndexState(root)
 	oldestS, newestS := "", ""
 	if !oldest.IsZero() {
 		oldestS = oldest.UTC().Format(time.RFC3339)

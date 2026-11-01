@@ -26,7 +26,7 @@ func (c CLI) gateVerdictCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "gate verdict: invalid task id %q\n", task)
 		return 2
 	}
-	con, err := guardians.Consolidate(".", task)
+	con, err := guardians.Consolidate(c.dir(), task)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate verdict: %v\n", err)
 		return 1

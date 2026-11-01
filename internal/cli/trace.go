@@ -71,7 +71,7 @@ func (c CLI) traceRecordCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N]")
 		return 2
 	}
-	if _, err := trace.Record(".", trace.Entry{
+	if _, err := trace.Record(c.dir(), trace.Entry{
 		Session: *session, Message: *message, Call: *call, Tool: *tool, Status: *status,
 		Files: splitList(*files), Task: *task,
 		DurationMS: *durationMS, OutputBytes: *outputBytes,
@@ -91,7 +91,7 @@ func (c CLI) traceSessionsCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace sessions")
 		return 2
 	}
-	sessions, err := trace.Sessions(".")
+	sessions, err := trace.Sessions(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace sessions: %v\n", err)
 		return 1
@@ -127,14 +127,14 @@ func (c CLI) tracePruneCmd(args []string) int {
 		return 2
 	}
 	if *all {
-		sessions, err := trace.Sessions(".")
+		sessions, err := trace.Sessions(c.dir())
 		if err != nil {
 			fmt.Fprintf(c.Stderr, "trace prune: %v\n", err)
 			return 1
 		}
 		total := 0
 		for _, s := range sessions {
-			n, err := trace.Prune(".", s, *keep)
+			n, err := trace.Prune(c.dir(), s, *keep)
 			if err != nil {
 				fmt.Fprintf(c.Stderr, "trace prune: %v\n", err)
 				return 1
@@ -149,7 +149,7 @@ func (c CLI) tracePruneCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N]")
 		return 2
 	}
-	n, err := trace.Prune(".", *session, *keep)
+	n, err := trace.Prune(c.dir(), *session, *keep)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace prune: %v\n", err)
 		return 1
@@ -173,11 +173,11 @@ func (c CLI) traceFilesCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace files --session <s>")
 		return 2
 	}
-	if _, err := os.Stat(trace.File(".", *session)); os.IsNotExist(err) {
+	if _, err := os.Stat(trace.File(c.dir(), *session)); os.IsNotExist(err) {
 		fmt.Fprintf(c.Stdout, "no trace file for session %s (never recorded)\n", *session)
 		return 0
 	}
-	entries, err := trace.List(".", *session)
+	entries, err := trace.List(c.dir(), *session)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace files: %v\n", err)
 		return 1
@@ -215,11 +215,11 @@ func (c CLI) traceShowCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace show --session <s>")
 		return 2
 	}
-	if _, err := os.Stat(trace.File(".", *session)); os.IsNotExist(err) {
+	if _, err := os.Stat(trace.File(c.dir(), *session)); os.IsNotExist(err) {
 		fmt.Fprintf(c.Stdout, "no trace file for session %s (never recorded)\n", *session)
 		return 0
 	}
-	entries, err := trace.List(".", *session)
+	entries, err := trace.List(c.dir(), *session)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace show: %v\n", err)
 		return 1
@@ -252,7 +252,7 @@ func (c CLI) traceCostCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace cost [--task <t>]")
 		return 2
 	}
-	costs, err := trace.CostByTask(".")
+	costs, err := trace.CostByTask(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace cost: %v\n", err)
 		return 1

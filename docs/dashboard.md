@@ -149,8 +149,93 @@ recarga sin perder la página de cada tabla.
 - `GET /v1/lessons?domain=&status=&task=&q=&limit=&offset=`: lecciones admitidas + candidatas (`status=admitted|candidate|all`), redactadas, paginadas.
 - `GET /v1/traces?session=&task=&limit=&offset=`: sin `?session=` lista sesiones con conteo; con `?session=` lista entradas en orden de llamada, redactadas, paginadas.
 - `GET /v1/budget?task=&limit=&offset=`: historial del ledger de evolution, redactado, paginado.
+- `GET /v1/projects`: la allowlist declarada en arranque (`[{name, root}]`, `name = almanac.ProjectName(dir)`); sin `--projects` devuelve solo el proyecto actual. Ver «Varios proyectos en un solo `serve`».
 - Paginación: `limit` default 50, máximo 200; `offset` default 0. Valores fuera de rango → 400 con el envelope compartido.
 - Solo GET: cualquier otro verbo en rutas conocidas → 405 con el envelope compartido.
+- Scoping por proyecto: toda ruta de datos acepta `?project=<name>` (el `name` que devuelve `GET /v1/projects`, verbatim aunque contenga `/` como `owner/repo`); sin `?project=` se sirve el primero de la allowlist (el actual si no hay `--projects`). `?project=` con forma de ruta (`..`, `/abs`, `C:\x`, con `/` o `\`) → 400 sin tocar disco; nombre plano desconocido → 404.
+
+## Varios proyectos en un solo `serve` (multi-proyecto)
+
+Por defecto todo funciona idéntico a hoy (P3): sin `--projects` el
+panel muestra solo el checkout actual, el desplegable de proyecto nace
+oculto (`<div id="project-row" hidden>`) y ningún fetch lleva
+`?project=` (`fetchData` solo lo añade cuando hay un proyecto elegido:
+`if(state.project && path !== '/v1/projects')`).
+
+```bash
+regulus serve --port=17817        # default intacto: un proyecto, sin selector visible
+curl 'http://localhost:17817/v1/projects'
+# {"ok":true,"data":[{"name":"mi-user/mi-repo","root":"."}],"contract":"regulus.http/v1"}
+```
+
+Un solo `serve` puede mostrar varios proyectos allowlistados (P1):
+
+```bash
+regulus serve --port=17817 --projects ../otro-repo,../tercero
+# --projects=dirA,dirB: coma-separado, repetible (--projects=a --projects=b acumula),
+# espacios recortados; cada entrada y el default "." pasan por auto-detect de raíz (P4).
+curl 'http://localhost:17817/v1/projects'
+# {"ok":true,"data":[
+#   {"name":"mi-user/mi-repo","root":"."},
+#   {"name":"mi-user/otro-repo","root":"../otro-repo"},
+#   {"name":"tercero","root":"../tercero"}]}
+```
+
+Selector (accesible: `<label for="project">` + `<select id="project"
+aria-label="Proyecto">`, teclado nativo, `:focus-visible` global): nace
+oculto con un solo proyecto y se muestra con más de uno. Al elegir otro
+proyecto, la UI resetea paginación/sesión y recarga TODO con
+`?project=<name>` por el único punto de salida (`fetchData` añade
+`project=` + `encodeURIComponent(state.project)` a cada ruta salvo a
+`/v1/projects`): cabecera (`GET /v1/status` campo `project`), tarjetas,
+gráficos y tablas pasan a los totales del otro `.regulus/`, y el `<h1>`
+y el `<title>` cambian al proyecto elegido. Las opciones del
+desplegable se crean con `textContent`, nunca `innerHTML`.
+
+```bash
+# Todas las tarjetas/gráficos/tablas recargan así al cambiar de proyecto:
+curl 'http://localhost:17817/v1/status?project=mi-user%2Fotro-repo'      # cabecera del otro proyecto
+curl 'http://localhost:17817/v1/receipts?limit=1&project=mi-user%2Fotro-repo'  # totales del otro .regulus/
+```
+
+Regla fail-closed (P2): la allowlist se declara en arranque y ningún
+`?project=` sale de ella. El valor nunca se interpreta como ruta: el
+lookup es por NOMBRE exacto contra la allowlist y el jail verifica que
+el path final quede dentro del root allowlistado.
+
+| `?project=` | Respuesta | Por qué |
+|---|---|---|
+| ausente | 200, proyecto default (primero de la allowlist) | comportamiento de hoy |
+| nombre allowlistado (`owner/repo` incluido) | 200, solo datos de ese root | jail + `cli.ResolveRoot` de ese root |
+| `..`, `../x`, `/abs`, `C:\x`, con `/` o `\` fuera de allowlist | 400 `invalid request` sin tocar disco | intento de ruta, fail-closed antes de disco |
+| nombre plano desconocido (`otro-fuera-de-allowlist`) | 404 `project <name>` | fuera de allowlist |
+
+Raíz auto-detectada (P4): cada root servido (el default `"."` y cada
+entrada de `--projects`) se resuelve igual que la CLI — git top-level
+(`git rev-parse --show-toplevel`, con timeout corto y tolerando fallo)
+→ primer ancestro con `regulus.json` → input tal cual (comportamiento de
+hoy fuera de git/regulus.json). Correr desde un subdirectorio comparte
+exactamente los mismos stores que desde la raíz:
+
+```bash
+cd /mi/repo/subdir/profundo
+regulus memory note "desde subdir"     # cae en /mi/repo/.regulus/, no en subdir/.regulus/
+regulus serve --port=17817             # sirve /mi/repo/.regulus/ aunque se lanzó desde subdir/
+```
+
+Aislamiento por proyecto: cada proyecto guarda en su propio
+`<raíz>/.regulus/` (Almanac, librería, evidencia, trazas, presupuesto;
+rutas exactas en «Por proyecto: aislamiento + export/import redondo»).
+El selector es solo lectura: nunca mueve datos entre proyectos, solo
+cambia a qué `.regulus/` mira cada fetch. Qué commitear (estilo
+`.engram/`, portable) y qué nunca — resumen, detalle abajo:
+
+- Nunca commitear runtime: `.regulus/` y `.regulus-export/` están en
+  `.gitignore` (generados, por proyecto, no viajan con el clon).
+- Sí commitear el bundle portable cuando quieras que la memoria viaje
+  con el clon: `regulus memory export --domain <d> --out <dir>`
+  (p. ej. `docs/engram/` o `.engram/`, formato de 5 ficheros); ese
+  `<dir>` sí se commitea.
 
 ## Garantías (qué NO llega nunca al navegador)
 

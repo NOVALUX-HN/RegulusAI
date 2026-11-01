@@ -17,7 +17,7 @@ func (c CLI) skillsCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus skills list")
 		return 2
 	}
-	all, err := skills.List(".")
+	all, err := skills.List(c.dir())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "skills list: %v\n", err)
 		return 1

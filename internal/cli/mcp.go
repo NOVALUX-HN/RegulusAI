@@ -193,10 +193,11 @@ func mcpCombine(stdout, stderr string) string {
 }
 
 // mcpExec runs one CLI code path with private buffers, inheriting the
-// server's version, probe and runner.
+// server's version, probe, runner and project root (Dir, so an explicit
+// ?project= scoping survives into MCP tool calls).
 func (c CLI) mcpExec(fn func(sub CLI) int) (string, string, int) {
 	var ob, eb bytes.Buffer
-	sub := CLI{Version: c.Version, Probe: c.Probe, Runner: c.Runner, Stdout: &ob, Stderr: &eb}
+	sub := CLI{Version: c.Version, Probe: c.Probe, Runner: c.Runner, Stdout: &ob, Stderr: &eb, Dir: c.Dir}
 	code := fn(sub)
 	return ob.String(), eb.String(), code
 }
