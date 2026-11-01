@@ -56,3 +56,4 @@ Domain: sextant
 ## Log
 
 - L1: Chart opened 2026-11-01 (programa macizo 4/4). Evidencia: UI 26 líneas `dashboard_ui.go:6-26`, endpoints `server.go:90-98`, verbatim sin redactar `server.go:111`, 122 traces y ~80 evidence dirs sin exponer.
+- L2: D1 CLOSED 2026-11-01 (`ses_e6ac0e2c6ffepW3KBDc2TWrTFR`): 5 endpoints GET read-only paginados (receipts, observations?q=, lessons+ candidates, traces, budget; limit 50/200, 405 a escritura, 400 a params malos) + `RedactText` nuevo aplicado en status/version y colecciones. Run1 cayó en crap (handleLessons cx29→31.13) → SPLIT → re-run `run_cbf07bd38ea319d8` 12/12, verify 19/19. `task close` exige historial todo-verde → cierre manual (3er caso M3/D1: refuerza candidata "close sobre último manifest verde").

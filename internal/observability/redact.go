@@ -75,6 +75,14 @@ func redactText(s string) string {
 	return s
 }
 
+// RedactText scrubs one free-text string for embedded credential
+// patterns (bearer tokens, deny-listed key=value pairs). HTTP and UI
+// surfaces must pass every free-text field through it before leaving
+// the process; numeric/enum fields pass untouched.
+func RedactText(s string) string {
+	return redactText(s)
+}
+
 // RedactMap returns a copy of in with deny-listed keys replaced by
 // Redacted. String values under benign keys are still scrubbed for
 // embedded credential patterns; nested maps and slices recurse.

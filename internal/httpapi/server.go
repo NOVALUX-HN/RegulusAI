@@ -26,6 +26,7 @@ import (
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/mcp"
+	"regulus-ai/internal/observability"
 )
 
 // DefaultDashboardPort is the fixed visual port (S1 "puerto especial",
@@ -93,6 +94,11 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/version", s.handleVersion)
 	mux.HandleFunc("/v1/metrics", s.handleMetrics)
 	mux.HandleFunc("/v1/almanac/summary", s.handleAlmanacSummary)
+	mux.HandleFunc("/v1/receipts", s.handleReceipts)
+	mux.HandleFunc("/v1/observations", s.handleObservations)
+	mux.HandleFunc("/v1/lessons", s.handleLessons)
+	mux.HandleFunc("/v1/traces", s.handleTraces)
+	mux.HandleFunc("/v1/budget", s.handleBudget)
 	mux.HandleFunc("/", s.handleDashboard)
 	return mux
 }
@@ -108,7 +114,9 @@ func (s Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stdout, stderr, exit := s.runCLI("status")
-	status, env := MapResult(statusData{Stdout: stdout, Stderr: stderr, Exit: exit}, stderr, exit)
+	stdout = observability.RedactText(stdout)
+	stderr = observability.RedactText(stderr)
+	status, env := MapResult(statusData{Stdout: stdout, Stderr: stderr, Exit: exit}, observability.RedactText(stderr), exit)
 	writeEnvelope(w, status, env)
 }
 
@@ -133,7 +141,7 @@ func (s Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, status, env)
 		return
 	}
-	status, env := MapResult(versionData{Version: versionOut, Contract: contractOut}, "", 0)
+	status, env := MapResult(versionData{Version: observability.RedactText(versionOut), Contract: observability.RedactText(contractOut)}, "", 0)
 	writeEnvelope(w, status, env)
 }
 
