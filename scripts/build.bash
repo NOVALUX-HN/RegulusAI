@@ -13,7 +13,22 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-version="${1:-$(node -p "require('./package.json').version")}"
+# G5: version without node — pure bash/grep/sed fallback.
+# Happy path unchanged: explicit $1 wins, node wins when present.
+pkg_version_fallback() {
+  grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' package.json 2>/dev/null \
+    | head -n 1 \
+    | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
+if [ "${1:-}" != "" ]; then
+  version="$1"
+elif command -v node >/dev/null 2>&1; then
+  version="$(node -p "require('./package.json').version")"
+else
+  version="$(pkg_version_fallback)"
+fi
+[ -n "${version:-}" ] || { echo "build: could not resolve a version from package.json (node not found and fallback found no version)." >&2; exit 1; }
 stamp="main.version=${version}"
 
 targets=(

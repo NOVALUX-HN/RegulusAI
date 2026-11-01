@@ -17,7 +17,9 @@
 #      with serverInfo.contract = regulus.contract/v1 (30s timeout).
 #
 # Pure bash + coreutils (timeout, grep -F, install). Exit 0 on success, 1
-# with a message on stderr otherwise. Requires Go and node on PATH.
+# with a message on stderr otherwise. Requires Go and timeout on PATH;
+# node is optional (used for the version when present, pure bash
+# grep/sed fallback otherwise).
 
 set -euo pipefail
 
@@ -29,15 +31,27 @@ fail() {
   exit 1
 }
 
-# 0. Go, node (package.json version) and timeout (30s MCP smoke) are
-# required; fail loud instead of producing a stale binary.
+# 0. Go (build) and timeout (30s MCP smoke) are required; fail loud
+# instead of producing a stale binary. node is optional: the version
+# comes from node when present, else the pure bash fallback below.
 command -v go >/dev/null 2>&1 || fail "Go toolchain not found on PATH. Install Go (https://go.dev/dl/) and re-run this script."
-command -v node >/dev/null 2>&1 || fail "node not found on PATH (needed to read the version from package.json)."
 command -v timeout >/dev/null 2>&1 || fail "timeout not found on PATH (GNU coreutils, needed for the 30s MCP smoke)."
 
+# G5: version without node — pure bash/grep/sed fallback.
+# Happy path unchanged: node wins when present.
+pkg_version_fallback() {
+  grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' package.json 2>/dev/null \
+    | head -n 1 \
+    | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
 # 1. Build with the package.json version stamped in.
-version="$(node -p "require('./package.json').version")"
-[ -n "$version" ] || fail "could not read a version from package.json."
+if command -v node >/dev/null 2>&1; then
+  version="$(node -p "require('./package.json').version")"
+else
+  version="$(pkg_version_fallback)"
+fi
+[ -n "${version:-}" ] || fail "could not read a version from package.json."
 echo "building bin/regulus (version ${version})"
 go build -trimpath -ldflags "-X main.version=${version}" -o "bin/regulus" ./cmd/regulus \
   || fail "go build failed."
