@@ -37,6 +37,33 @@ func TestCaptureLongTruncatesAndPinsFullHash(t *testing.T) {
 	}
 }
 
+func TestStoredSHAAndIsTruncated(t *testing.T) {
+	if IsTruncated("hello") {
+		t.Fatal("short output must not read as truncated")
+	}
+	if got := StoredSHA("hello"); got != shaOf("hello") {
+		t.Fatalf("StoredSHA must hash the stored text, got %q", got)
+	}
+	long := strings.Repeat("y", MaxCapture+5000)
+	text, fullSHA := Capture(long)
+	if !IsTruncated(text) {
+		t.Fatal("over-cap output must carry the truncation marker")
+	}
+	if fullSHA != shaOf(long) {
+		t.Fatal("Capture must still pin the FULL content")
+	}
+	if got := StoredSHA(text); got == fullSHA {
+		t.Fatal("stored-text pin must differ from the full-output pin on truncation")
+	} else if got != shaOf(text) {
+		t.Fatalf("StoredSHA must hash the stored prefix, got %q", got)
+	}
+}
+
+func shaOf(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
 func TestSlug(t *testing.T) {
 	if got := Slug("regulus-ai-v1/T2"); got != "regulus-ai-v1__T2" {
 		t.Fatalf("slug = %q, want regulus-ai-v1__T2", got)
@@ -100,6 +127,34 @@ func TestWriteAssignsIDAndSerializesFields(t *testing.T) {
 	}
 	if rec.Task != "t/x" || rec.Gate != "unit-tests" || rec.Verdict != VerdictPass {
 		t.Fatalf("round-tripped receipt = %+v", rec)
+	}
+}
+
+func TestWriteFillsStoredPins(t *testing.T) {
+	dir := t.TempDir()
+	long := strings.Repeat("z", MaxCapture+100)
+	stdout, fullSHA := Capture(long)
+	stderr, stderrSHA := Capture("")
+	p, err := Write(dir, Receipt{
+		Task: "t/x", Gate: "coverage-floor", Layer: 5, Command: "go tool cover -func x",
+		Verdict: VerdictPass, ExitCode: 0, StartedAt: time.Now().UTC(),
+		Stdout: stdout, StdoutSHA: fullSHA, Stderr: stderr, StderrSHA: stderrSHA,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.StdoutSHA != fullSHA {
+		t.Fatal("Write must preserve the full-output pin")
+	}
+	if got.StdoutStoredSHA != shaOf(stdout) {
+		t.Fatalf("Write must pin the stored prefix, got %q", got.StdoutStoredSHA)
+	}
+	if got.StderrStoredSHA != shaOf("") {
+		t.Fatalf("Write must pin stored stderr too, got %q", got.StderrStoredSHA)
 	}
 }
 

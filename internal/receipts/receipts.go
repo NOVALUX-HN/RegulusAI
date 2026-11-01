@@ -58,6 +58,14 @@ type Receipt struct {
 	MetricThreshold *float64 `json:"metric_threshold,omitempty"`
 	MetricOperator  string   `json:"metric_operator,omitempty"`
 
+	// Stored-output pins (gap-sweep/G6): when stdout/stderr exceed
+	// MaxCapture only a prefix is stored, so the full-output pin above can
+	// never be recomputed from the receipt. These pins cover the stored
+	// text itself, keeping truncated receipts verifiable (see
+	// evidence.Verify). Absent on legacy receipts.
+	StdoutStoredSHA string `json:"stdout_stored_sha256,omitempty"`
+	StderrStoredSHA string `json:"stderr_stored_sha256,omitempty"`
+
 	// Phase 1 trust fields (additive; absent means a legacy receipt).
 	// Verdict stays the derived pass/fail vocabulary for compatibility;
 	// Status/Reason carry the centralized verdict contract.
@@ -82,6 +90,20 @@ func Capture(s string) (text, sha string) {
 	return s, sha
 }
 
+// StoredSHA returns the SHA-256 of text exactly as stored in a receipt
+// (after truncation). Companion to Capture: Capture pins the full output,
+// StoredSHA pins the stored prefix.
+func StoredSHA(stored string) string {
+	sum := sha256.Sum256([]byte(stored))
+	return hex.EncodeToString(sum[:])
+}
+
+// IsTruncated reports whether stored text carries the truncation marker,
+// i.e. it is a prefix of a larger output pinned separately by its SHA-256.
+func IsTruncated(stored string) bool {
+	return strings.HasSuffix(stored, truncMarker)
+}
+
 // Slug turns a task id into a safe directory name ("/" becomes "__").
 func Slug(task string) string {
 	return strings.ReplaceAll(task, "/", "__")
@@ -90,7 +112,9 @@ func Slug(task string) string {
 // Write appends one receipt under dir as <gate>-<nanos>.json. It never
 // overwrites: a name collision advances to the next free nanosecond slot.
 // Write assigns the receipt ID (tied to the slot it landed on) when empty
-// and returns the file path.
+// and fills any absent stored-text pins (the SHA-256 of the stored stdout
+// and stderr, which keep truncated receipts verifiable), then returns the
+// file path.
 func Write(dir string, r Receipt) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -111,6 +135,12 @@ func Write(dir string, r Receipt) (string, error) {
 		}
 		if err != nil {
 			return "", err
+		}
+		if r.StdoutStoredSHA == "" {
+			r.StdoutStoredSHA = StoredSHA(r.Stdout)
+		}
+		if r.StderrStoredSHA == "" {
+			r.StderrStoredSHA = StoredSHA(r.Stderr)
 		}
 		enc := json.NewEncoder(f)
 		enc.SetIndent("", "  ")

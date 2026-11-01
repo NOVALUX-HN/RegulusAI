@@ -156,11 +156,11 @@ func checkReceipt(dir, name string, rep *Report) (bool, bool) {
 		rep.Failed = append(rep.Failed, Failure{File: path, Reason: ReasonUnsupportedSchema, Detail: "schema_version is newer than this verifier"})
 		return false, false
 	}
-	if _, text, sha := captureCheck(rec.Stdout, rec.StdoutSHA); !sha {
+	if _, text, sha := captureCheck(rec.Stdout, rec.StdoutSHA, rec.StdoutStoredSHA); !sha {
 		rep.Failed = append(rep.Failed, Failure{File: path, Reason: ReasonStdoutHashMismatch, Detail: "stored stdout does not match stdout_sha256 (" + text + ")"})
 		return false, true
 	}
-	if _, text, sha := captureCheck(rec.Stderr, rec.StderrSHA); !sha {
+	if _, text, sha := captureCheck(rec.Stderr, rec.StderrSHA, rec.StderrStoredSHA); !sha {
 		rep.Failed = append(rep.Failed, Failure{File: path, Reason: ReasonStderrHashMismatch, Detail: "stored stderr does not match stderr_sha256 (" + text + ")"})
 		return false, true
 	}
@@ -181,9 +181,29 @@ func checkReceipt(dir, name string, rep *Report) (bool, bool) {
 	return false, false
 }
 
-func captureCheck(text, wantSHA string) (string, string, bool) {
+func captureCheck(text, wantSHA, storedSHA string) (string, string, bool) {
+	// A truncated capture stores only a prefix of the full output, so the
+	// full-output pin (wantSHA) can never be recomputed from it: naively
+	// re-running Capture over the stored text always mismatches (gap-sweep
+	// G6 root cause — every gate with stdout over receipts.MaxCapture
+	// failed verify with stdout_hash_mismatch). Receipts carrying a
+	// stored-text pin verify against that pin instead; legacy truncated
+	// receipts without one stay unverifiable and fail closed.
+	if receipts.IsTruncated(text) {
+		if storedSHA == "" {
+			return text, shortSHA(wantSHA), false
+		}
+		got := receipts.StoredSHA(text)
+		return text, shortSHA(got), got == storedSHA
+	}
 	_, sha := receipts.Capture(text)
-	return text, shortSHA(sha), sha == wantSHA
+	if sha != wantSHA {
+		return text, shortSHA(sha), false
+	}
+	if storedSHA != "" && receipts.StoredSHA(text) != storedSHA {
+		return text, shortSHA(receipts.StoredSHA(text)), false
+	}
+	return text, shortSHA(sha), true
 }
 
 func checkManifestLink(dir, name string, rec receipts.Receipt, rep *Report) bool {

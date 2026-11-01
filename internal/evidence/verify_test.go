@@ -125,6 +125,105 @@ func TestVerifyDetectsStdoutTamperAndQuarantines(t *testing.T) {
 	}
 }
 
+func TestVerifyTruncatedReceiptWithStoredPinsPasses(t *testing.T) {
+	root := t.TempDir()
+	dir := TaskDir(root, "feat/T1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A gate whose stdout exceeds receipts.MaxCapture stores a truncated
+	// prefix (gap-sweep/G6: `go tool cover -func` always does). receipts.Write
+	// fills the stored-text pins, and Verify must accept the receipt.
+	long := strings.Repeat("f", receipts.MaxCapture+3000)
+	rec := receipts.Receipt{
+		Task: "t", Gate: "coverage-floor", Layer: 5, Command: "go tool cover -func x",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: t0, DurationMS: 3,
+		GitHead: "abc",
+	}
+	rec.Stdout, rec.StdoutSHA = receipts.Capture(long)
+	rec.Stderr, rec.StderrSHA = receipts.Capture("")
+	path, err := receipts.Write(dir, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := receipts.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.StdoutStoredSHA == "" || stored.StdoutStoredSHA == stored.StdoutSHA {
+		t.Fatalf("truncated receipt must carry a distinct stored-text pin: %+v", stored)
+	}
+	rep, err := Verify(root, "feat/T1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Checked != 1 || rep.Passed != 1 || len(rep.Failed) != 0 {
+		t.Fatalf("truncated receipt with stored pins must verify: %+v", rep)
+	}
+}
+
+func TestVerifyTruncatedTamperDetectedAndQuarantined(t *testing.T) {
+	root := t.TempDir()
+	dir := TaskDir(root, "feat/T1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("f", receipts.MaxCapture+3000)
+	rec := receipts.Receipt{
+		Task: "t", Gate: "coverage-floor", Layer: 5, Command: "go tool cover -func x",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: t0, DurationMS: 3,
+		GitHead: "abc",
+	}
+	rec.Stdout, rec.StdoutSHA = receipts.Capture(long)
+	rec.Stderr, rec.StderrSHA = receipts.Capture("")
+	path, err := receipts.Write(dir, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tamper the stored prefix without touching either pin.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := strings.Replace(string(raw), "ffff", "ffffEVIL", 1)
+	if tampered == string(raw) {
+		t.Fatal("fixture must contain the planted output")
+	}
+	if err := os.WriteFile(path, []byte(tampered), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Verify(root, "feat/T1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Passed != 0 || len(rep.Failed) != 1 {
+		t.Fatalf("tampered truncated receipt must fail: %+v", rep)
+	}
+	if rep.Failed[0].Reason != "stdout_hash_mismatch" {
+		t.Fatalf("want stdout_hash_mismatch, got %+v", rep.Failed[0])
+	}
+	if len(rep.Quarantined) != 1 {
+		t.Fatalf("tampered truncated receipt must be quarantined: %+v", rep)
+	}
+}
+
+func TestCaptureCheckLegacyTruncatedFailsClosed(t *testing.T) {
+	// A truncated capture written before stored-text pins existed carries
+	// no stored pin: the full output is unrecoverable, so verification
+	// must refuse (fail closed) rather than accept blindly.
+	long := strings.Repeat("g", receipts.MaxCapture+100)
+	text, fullSHA := receipts.Capture(long)
+	if !receipts.IsTruncated(text) {
+		t.Fatal("fixture must be truncated")
+	}
+	if _, _, ok := captureCheck(text, fullSHA, ""); ok {
+		t.Fatal("legacy truncated receipt without stored pin must not verify")
+	}
+	if _, _, ok := captureCheck(text, "deadbeef", ""); ok {
+		t.Fatal("wrong full pin must not verify either")
+	}
+}
+
 func TestVerifyMalformedReceipt(t *testing.T) {
 	root := t.TempDir()
 	dir := TaskDir(root, "feat/T1")

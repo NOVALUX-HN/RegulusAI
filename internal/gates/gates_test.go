@@ -178,6 +178,12 @@ func TestRunReceiptFieldsAndHashes(t *testing.T) {
 	if rec.StdoutSHA != hex.EncodeToString(sum[:]) {
 		t.Fatal("stdout sha must pin the FULL output")
 	}
+	if want := sha256.Sum256([]byte(rec.Stdout)); rec.StdoutStoredSHA != hex.EncodeToString(want[:]) {
+		t.Fatalf("stdout stored pin must hash the stored prefix, got %q", rec.StdoutStoredSHA)
+	}
+	if want := sha256.Sum256(nil); rec.StderrStoredSHA != hex.EncodeToString(want[:]) {
+		t.Fatalf("stderr stored pin must hash the stored text, got %q", rec.StderrStoredSHA)
+	}
 }
 
 func TestRunGateCouldNotRun(t *testing.T) {
