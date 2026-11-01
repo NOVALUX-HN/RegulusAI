@@ -1919,6 +1919,11 @@ func TestEvolveProposeRefusals(t *testing.T) {
 }
 
 func TestInitScaffoldsFreshRepo(t *testing.T) {
+	wantGates := map[string][]string{
+		"go":    {"typecheck", "lint", "build", "unit-tests", "coverage-floor", "crap", "spec", "gofmt"},
+		"node":  {"ts-typecheck", "ts-unit-tests", "spec"},
+		"smoke": {"presence"},
+	}
 	for _, stack := range []string{"go", "node", "smoke"} {
 		root := t.TempDir()
 		t.Chdir(root)
@@ -1944,6 +1949,37 @@ func TestInitScaffoldsFreshRepo(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "initialized:") {
 			t.Fatalf("[%s] output = %q", stack, out.String())
+		}
+		// S3 floors: expected gates present, evolution block pinned,
+		// execution allowlist present and covering.
+		got := map[string]bool{}
+		for _, g := range cfg.Gates {
+			got[g.Name] = true
+		}
+		for _, want := range wantGates[stack] {
+			if !got[want] {
+				t.Fatalf("[%s] regulus.json must contain gate %q, got %v", stack, want, cfg.Gates)
+			}
+		}
+		if cfg.Evolution == nil || cfg.Evolution.MaxPerDay != 10 {
+			t.Fatalf("[%s] regulus.json must carry evolution{max_per_day:10}, got %+v", stack, cfg.Evolution)
+		}
+		if cfg.Execution == nil || len(cfg.Execution.Allowlist) == 0 {
+			t.Fatalf("[%s] regulus.json must carry execution{allowlist}, got %+v", stack, cfg.Execution)
+		}
+		if stack == "go" {
+			var cov *gates.Gate
+			for i, g := range cfg.Gates {
+				if g.Name == "coverage-floor" {
+					cov = &cfg.Gates[i]
+				}
+			}
+			if cov == nil || cov.Metric == nil || cov.Metric.Threshold != 80 || cov.Metric.Operator != ">=" {
+				t.Fatalf("[go] coverage-floor must carry metric threshold 80 >=, got %+v", cov)
+			}
+		}
+		if stack == "smoke" && len(cfg.Gates) != 1 {
+			t.Fatalf("[smoke] must stay a single presence gate, got %v", cfg.Gates)
 		}
 	}
 }
@@ -2124,11 +2160,12 @@ func TestInitHarnessFromCopiesConfigNotEnvironment(t *testing.T) {
 		filepath.Join(oc, "plugins", "regulus.ts"),
 		filepath.Join(oc, "node_modules", "junk.js"),
 		filepath.Join(oc, "package.json"),
+		filepath.Join(src, "scripts", "sync-plugin-defaults.ts"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte("content"), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte("content:"+filepath.Base(p)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -2158,6 +2195,19 @@ func TestInitHarnessFromCopiesConfigNotEnvironment(t *testing.T) {
 		if _, err := os.Stat(p); err == nil {
 			t.Fatalf("environment %s must NOT be copied", p)
 		}
+	}
+	// S3: the repo-root codegen script travels with --harness-from.
+	syncDst := filepath.Join("scripts", "sync-plugin-defaults.ts")
+	syncSrc, err := os.ReadFile(filepath.Join(src, "scripts", "sync-plugin-defaults.ts"))
+	if err != nil {
+		t.Fatalf("src sync script: %v", err)
+	}
+	syncGot, err := os.ReadFile(syncDst)
+	if err != nil {
+		t.Fatalf("scripts/sync-plugin-defaults.ts must be copied: %v", err)
+	}
+	if string(syncGot) != string(syncSrc) {
+		t.Fatalf("sync script content must match source, got %q", syncGot)
 	}
 }
 

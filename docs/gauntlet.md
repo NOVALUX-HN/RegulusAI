@@ -6,12 +6,15 @@ consolidates. Decisions: `docs/adr/T3-01`, `T3-02`.
 
 ## 1. Deterministic gates
 
-Every gate declares `name`, `layer`, `command`, `timeout` — plus, since
-Phase 3, `id` (stable identity), `category` (build, test, analysis,
-security, proof), `when` (changed-file globs), `on_fail` (`halt` or
-`advisory`), `required` (default true) and `profiles` (expensive-gate
-membership). All new keys are optional: an undecorated gate behaves
-exactly as before.
+Every gate declares `name`, `layer`, `command` — plus `category`
+(build, test, analysis, security, proof) and `required` (default true),
+both present on every gate in `regulus.json`. Optional keys:
+`timeout_sec`, `metric{extract, threshold, operator}`, `profiles`
+(expensive-gate membership) and, since Phase 3, `id` (stable identity),
+`when` (changed-file globs), `on_fail` (`halt` or `advisory`, default
+`halt`), `reproducibility` and `isolate`. An unset optional key keeps
+the historical behavior (required unless opted out, halt on failure,
+no profile).
 
 Execution is progressive by layer and stops at the first mandatory
 failure. An `advisory` failure is written honestly as FAIL, then the run

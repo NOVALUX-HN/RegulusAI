@@ -56,7 +56,7 @@ Evolution (Loop 3) edits this surface. Nothing else may.
 - **Plugin ↔ core:** JSON over stdio. The plugin spawns `regulus <subcommand>`
   and pipes a request; the core prints a typed response and exits. Stateless
   per invocation; the core owns all on-disk state. Schema owned by Regulus,
-  semver'd (`regulus contract --version`).
+  semver'd (`regulus contract`; `regulus --version` prints the stamped binary version).
 - **OpenCode V2 only:** the plugin probes `opencode --version` at most once
   per session; V1 and unknown runtimes refuse with a message naming the
   required major. Regulus maintains no V1 compatibility layer — one plugin
@@ -83,7 +83,7 @@ Evolution (Loop 3) edits this surface. Nothing else may.
 
 Committed, never under `.regulus/`:
 
-- `regulus.json` — project config: gates (`name`/`layer`/`command`/`timeout_sec`), evolution caps (`max_per_day`, `max_per_task`)
+- `regulus.json` — project config: gates (`name`/`layer`/`command`/`category`/`required`, plus `timeout_sec`/`profiles`/`metric{extract, threshold, operator}` where applicable and optional `id`/`when`/`on_fail`/`reproducibility`/`isolate` — `internal/gates/gates.go:29-43`) and `execution{max_timeout_sec, allowlist}` (`internal/gates/policy.go:8-15`); `evolution{max_per_day, max_per_task}` is optional and absent from this repo's root `regulus.json` (defaults apply).
 - `charts/<feature>.md` — Charts: the committed feature documents
 - `.opencode/discipline.md`, `.opencode/tool-guidance.md` — the editable system prompt and tool descriptions (harness surface; compiled fallbacks in the plugin)
 
@@ -129,10 +129,15 @@ code.
 | 1 | typecheck | static | compiles / not |
 | 2 | lint | static | clean / violations |
 | 3 | build | static | artifact / failure |
-| 4 | unit tests (anchored on acceptance criteria) | dynamic | pass / fail |
-| 5 | coverage floor | metric | ≥ threshold / below |
-| 6 | mutation score | metric | ≥ threshold / below — proves tests catch wrong behavior |
-| 7 | CRAP score | metric | risky functions listed / none — coverage × complexity |
+| 4 | unit-tests | dynamic | pass / fail |
+| 5 | coverage-floor | metric | ≥ threshold / below |
+| 6 | mutation | metric | ≥ threshold / below — proves tests catch wrong behavior |
+| 7 | crap | metric | risky functions listed / none — coverage × complexity |
+| 8 | vulncheck | static | clean / vulnerabilities |
+| 9 | spec | proof | spec OK / violations |
+| 10 | ts-typecheck | static | compiles / not |
+| 11 | ts-unit-tests | dynamic | pass / fail |
+| 12 | gofmt | static | clean / violations |
 
 Cheap and binary up front; expensive and semantic behind (Uncle Bob's
 ordering). A failing layer stops the gauntlet — no gate runs after a failure.

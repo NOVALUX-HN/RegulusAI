@@ -29,7 +29,7 @@
 |---|---|---|
 | 1 | Observations are free-text claims — nothing records the conditions under which they were true | **Provenance is first-class**: every save records the task id, git HEAD, referenced receipts and affected paths at save time |
 | 2 | `topic_key` upserts silently replace content — the previous version is lost | **Append-only revision chains**: a topic key groups entries; a new version appends, never overwrites; `memory history <key>` shows the whole chain |
-| 3 | Recall is keyword search over one store, precision by luck | **Deterministic retrieval by construction**: project (git remote) → topic key / domain bucket → exact match inside the bucket. No embedding dependency in v1 — precision before cleverness; a reranker can plug in later without touching the contract |
+| 3 | Recall is keyword search over one store, precision by luck | **Deterministic retrieval by construction, hybrid ranking vigente**: project (git remote) → topic key / domain bucket → exact match inside the bucket (lexical channel) fused with the vector channel via RRF (k=60) + recency decay + confidence boost (`hash-ngram-v1` encoder, derived `retrieval.bin` pinning the log sha256); stale or missing index degrades to lexical with a warning, `--lexical` forces it; `note` / `save` / `import` / `prune --yes` auto-rebuild the index (M1), so `doctor` reports `fresh` without a manual `reindex` |
 | 4 | No staleness awareness — old advice misleads silently | **Staleness annotations**: hits report their age and, when cheaply computable, the git distance ("saved 214 commits ago; cited paths may have changed since") |
 | 5 | Two memory systems for the same agent: session continuity (Engram) and harness lessons (Harness² Library R) | **One substrate, typed views**: every entry is an observation; `lesson` observations carry cue/lesson/evidence/confidence/domain and render into per-domain INDEX.md views — Harness²'s library structure, made persistent and unified with session memory |
 | 6 | Stored text is injected into prompts as if it were instructions — an injection vector | **Evidence is data, not instructions** (Harness²'s invariant): retrieval renders entries inside a clearly delimited DATA block; nothing retrieved is executed or followed |
@@ -111,9 +111,9 @@ reindexes automatically after every mutating command).
 | F1 | `regulus memory note <text>` | append one timestamped session note |
 | F1 | `regulus memory show` | print the session notes (what the compaction hook injects) |
 | F3 | `regulus memory save` | full observation with type validation and provenance |
-| F3 | `regulus memory search [terms] [--topic-key] [--domain] [--dimension inv\|dom] [--path <f>] [--limit N] [--any] [--latest] [--include-superseded] [--lexical] [--embedder <id>]` | hybrid retrieval: deterministic bucket-then-match (lexical channel) fused with the vector channel via RRF (k=60) + recency decay + confidence boost; stale/missing index degrades to lexical with a warning, `--lexical` forces it; `--embedder` selects the encoder (default `hash-ngram-v1`) |
+| F3 | `regulus memory search [terms] [--topic-key] [--domain] [--dimension inv\|dom] [--path <f>] [--limit N] [--any] [--latest] [--include-superseded] [--lexical] [--embedder <id>]` | hybrid retrieval: deterministic bucket-then-match (lexical channel) fused with the vector channel via RRF (k=60) + recency decay + confidence boost; stale/missing index degrades to lexical with a warning, `--lexical` forces it; `--embedder` selects the encoder (default `hash-ngram-v1`); the index is auto-rebuilt after `note` / `save` / `import` / `prune --yes` (M1), manual `reindex` only for log edits behind the CLI |
 | F3 | `regulus memory prune [--older-than-days N] [--type ...] [--yes]` | drop stale non-lesson observations (dry run by default; lessons + pins immune) |
-| F3 | `regulus memory context [--limit N]` | deterministic resume block: project identity, charts, session notes (all, or latest N with `--limit`), lessons with cue+content, decisions/discoveries/preferences |
+| F3 | `regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]` | deterministic resume block: project identity, charts, session notes (all, or latest N with `--limit`), lessons with cue+content, decisions/discoveries/preferences; `--task` / `--path` / `--system` filter by provenance/system, `--budget` caps long lists (pins always surface) |
 | F4 | `regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv\|dom] [--confidence] <feature-doc>` | evidence-gated lesson candidate (dimension defaults to unset) |
 | F3 | `regulus memory history --topic-key <key>` | revision chain of one evolving topic |
 | F3 | `regulus memory export` | render the committed team bundle from the log (`.regulus-export/almanac.jsonl` + `pins.jsonl` + `relations.jsonl` + `status.jsonl` + `INDEX.md`) |
@@ -167,7 +167,7 @@ governance transitions — states mutate, the log does not).
   from `supersedes` edges. `memory status` shows state + trail;
   `memory check` reports live contradictions (`conflicts_with` with both
   ends active) and stale-but-active knowledge.
-- **Scoped context**: `memory context [--task T] [--path P]
+- **Scoped context**: `memory context [--limit N] [--task T] [--path P]
   [--system S] [--budget N]` filters by provenance/system and caps long
   lists (pins always surface); unscoped output is byte-identical to the
   legacy block.

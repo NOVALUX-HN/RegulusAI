@@ -12,9 +12,10 @@ import (
 
 // initCmd implements `regulus init [--stack go|node|smoke]`: onboard a
 // fresh repo (cross-project S8). Writes regulus.json (evolution budget
-// + one stack preset), creates charts/, and ensures .gitignore covers
-// .regulus/. Refuses when regulus.json already exists — init never
-// overwrites a configured project.
+// + execution allowlist + one stack preset with floors), creates
+// charts/, and ensures .gitignore covers .regulus/. Refuses when
+// regulus.json already exists — init never overwrites a configured
+// project.
 func (c CLI) initCmd(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -37,11 +38,18 @@ func (c CLI) initCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "init: unknown stack %q (go | node | smoke)\n", *stack)
 		return 2
 	}
+	allowlist, ok := initAllowlists[*stack]
+	if !ok {
+		fmt.Fprintf(c.Stderr, "init: unknown stack %q (go | node | smoke)\n", *stack)
+		return 2
+	}
 	cfg := struct {
 		Evolution map[string]int   `json:"evolution"`
+		Execution map[string]any   `json:"execution"`
 		Gates     []map[string]any `json:"gates"`
 	}{
 		Evolution: map[string]int{"max_per_day": 10},
+		Execution: map[string]any{"allowlist": allowlist},
 		Gates:     gates,
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -115,9 +123,13 @@ func scaffoldDevinMcpConfig() error {
 
 // copyHarnessConfig copies the harness configuration (discipline.md,
 // tool-guidance.md, agents/, skills/, plugins/) from <from>/.opencode
-// into the fresh repo. The environment (node_modules, package.json,
-// lockfiles) is deliberately NOT copied — the target project installs
-// its own. Refuses when the target already has an .opencode directory.
+// into the fresh repo, plus the repo-root codegen script
+// scripts/sync-plugin-defaults.ts (the plugin fallback literals are
+// generated from the .md sources — a fresh checkout needs the script
+// for `bun scripts/sync-plugin-defaults.ts --check` to run). The
+// environment (node_modules, package.json, lockfiles) is deliberately
+// NOT copied — the target project installs its own. Refuses when the
+// target already has an .opencode directory.
 func copyHarnessConfig(from string) error {
 	src := filepath.Join(from, ".opencode")
 	if st, err := os.Stat(src); err != nil || !st.IsDir() {
@@ -132,6 +144,24 @@ func copyHarnessConfig(from string) error {
 			continue
 		}
 		if err := copyPath(s, filepath.Join(".opencode", item)); err != nil {
+			return err
+		}
+	}
+	// Repo-root codegen script (outside .opencode): copy when the source
+	// harness repo carries it, skip when it does not. Never overwrite a
+	// target-owned file.
+	if _, err := os.Stat(filepath.Join(from, "scripts", "sync-plugin-defaults.ts")); err == nil {
+		if _, err := os.Stat(filepath.Join("scripts", "sync-plugin-defaults.ts")); err == nil {
+			return errors.New("scripts/sync-plugin-defaults.ts already exists here — refusing to overwrite")
+		}
+		data, err := os.ReadFile(filepath.Join(from, "scripts", "sync-plugin-defaults.ts"))
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll("scripts", 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join("scripts", "sync-plugin-defaults.ts"), data, 0o644); err != nil {
 			return err
 		}
 	}
@@ -174,16 +204,37 @@ func copyPath(src, dst string) error {
 	})
 }
 
+// initAllowlists are the execution allowlists per stack: every gate
+// command's first token must be listed, otherwise the gauntlet refuses
+// the gate as policy (see internal/gates/policy.go allowlistRefused).
+// Small and closed: each stack lists only the tools its gates use.
+var initAllowlists = map[string][]string{
+	"go":    {"go", "gofmt", "regulus"},
+	"node":  {"bun", "bunx", "regulus"},
+	"smoke": {"echo"},
+}
+
 // initPresets are the starter gates per stack. Small and honest: each
 // command runs on a fresh checkout of that stack; replace them with the
-// project's real gates as the harness takes over.
+// project's real gates as the harness takes over. Every stack carries
+// floors from birth: coverage with a threshold, the CRAP and spec gates
+// where they apply, and gofmt for Go — so a new project never starts
+// without a quality floor.
 var initPresets = map[string][]map[string]any{
 	"go": {
 		{"name": "typecheck", "layer": 1, "command": "go build ./..."},
-		{"name": "unit-tests", "layer": 2, "command": "go test ./..."},
+		{"name": "lint", "layer": 2, "command": "go vet ./..."},
+		{"name": "build", "layer": 3, "command": "go build -o bin/app ./..."},
+		{"name": "unit-tests", "layer": 4, "command": "go test ./... -coverprofile .regulus/coverage.out"},
+		{"name": "coverage-floor", "layer": 5, "command": "go tool cover -func .regulus/coverage.out", "metric": map[string]any{"extract": "last-line-percent", "threshold": 80, "operator": ">="}},
+		{"name": "crap", "layer": 6, "command": "go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --top 5"},
+		{"name": "spec", "layer": 7, "command": "regulus spec check charts/"},
+		{"name": "gofmt", "layer": 8, "command": "gofmt -l ."},
 	},
 	"node": {
-		{"name": "unit-tests", "layer": 1, "command": "npm test --if-present"},
+		{"name": "ts-typecheck", "layer": 1, "command": "bunx tsc --noEmit -p .opencode/tsconfig.json"},
+		{"name": "ts-unit-tests", "layer": 2, "command": "bun test ./.opencode/lib/"},
+		{"name": "spec", "layer": 3, "command": "regulus spec check charts/"},
 	},
 	"smoke": {
 		{"name": "presence", "layer": 1, "command": "echo repo-present"},

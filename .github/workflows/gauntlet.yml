@@ -8,18 +8,25 @@ on:
 
 jobs:
   gauntlet:
-    runs-on: ubuntu-latest
+    # S2 (docs-ci-hygiene/C2): job acotado — `timeout-minutes` cubre el
+    # gate (~4min) con margen; runner pineado en vez de `latest` flotante.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     # the receipts-trail commit (S8) writes docs/EVIDENCE.md back to main
     permissions:
       contents: write
     steps:
-      # S4: actions stay on vendor-maintained major tags (checkout v4, setup-go v5
-      # with go 1.27, setup-bun v2) — GitHub/Oven keep these majors
-      # backwards-compatible, so a floating major is intentional here.
+      # S4: actions stay on vendor-maintained major tags (checkout v5,
+      # setup-go v6 with go 1.27, setup-bun v2) — GitHub/Oven keep these
+      # majors backwards-compatible, so a floating major is intentional here.
       # Exact pins are required only for the Go tool installs below.
-      - uses: actions/checkout@v4
+      # S2 (docs-ci-hygiene/C2): checkout v4 -> v5 y setup-go v5 -> v6
+      # porque los majors viejos corren en node20 (aviso de deprecación) y
+      # los nuevos en node24 (verificado 2026-11-01 en sus action.yml).
+      # setup-bun@v2 ya corre en node24, se queda.
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
           # Zero-dep module (no go.sum by invariant TestZeroDepsGoMod):
@@ -64,9 +71,11 @@ jobs:
       # (next step) and locally via `regulus evidence list --task <t>`.
 
       # S4: un gate rojo deja evidencia — sube los receipts siempre,
-      # incluso en fallo, para diagnóstico sin adivinar. v4 coherente
-      # con checkout@v4 (majors vendor intencionales, ver nota S4 arriba);
-      # v5 no verificado como major vigente, no se adopta.
+      # incluso en fallo, para diagnóstico sin adivinar.
+      # S2 (docs-ci-hygiene/C2): upload-artifact se queda en v4 a propósito:
+      # v5 también declara `using: node20` (verificado 2026-11-01) — hoy no
+      # existe un major con node24 al que subir, y cambiar de major sin
+      # beneficio solo añade churn.
       # warn (no error) si no hay ficheros: capas tempranas pueden no
       # dejar receipts del task si falla typecheck.
       - name: Upload gate receipts
