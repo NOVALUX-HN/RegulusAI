@@ -4,6 +4,7 @@ package evidence
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -103,11 +104,11 @@ func isWindowsAbsolute(s string) bool {
 	return len(s) >= 2 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) && s[1] == ':'
 }
 
-// List returns receipts ordered by path (task slug, then the nanosecond
-// slot — chronological). A task of "" lists every task's receipts.
-// Candidate manifests (manifest-*.json) live in the same directories but
-// are indexes, not receipts, and are skipped here.
-func List(root, task string) ([]Entry, error) {
+// listPaths returns receipt candidate paths ordered by path (task slug,
+// then the nanosecond slot — chronological). Candidate manifests
+// (manifest-*.json) live in the same directories but are indexes, not
+// receipts, and callers skip them.
+func listPaths(root, task string) ([]string, error) {
 	var paths []string
 	var err error
 	if task == "" {
@@ -124,6 +125,22 @@ func List(root, task string) ([]Entry, error) {
 		return nil, err
 	}
 	sort.Strings(paths)
+	return paths, nil
+}
+
+// List returns receipts ordered by path (task slug, then the nanosecond
+// slot — chronological). A task of "" lists every task's receipts.
+// Candidate manifests (manifest-*.json) live in the same directories but
+// are indexes, not receipts, and are skipped here.
+//
+// List is strict: the first malformed receipt aborts with an error.
+// Tolerant readers (the envfacts miner, H2) use ListSkipping instead,
+// which skips corrupt files with a stderr warning and counts them.
+func List(root, task string) ([]Entry, error) {
+	paths, err := listPaths(root, task)
+	if err != nil {
+		return nil, err
+	}
 	entries := make([]Entry, 0, len(paths))
 	for _, p := range paths {
 		if strings.HasPrefix(filepath.Base(p), "manifest-") {
@@ -136,4 +153,43 @@ func List(root, task string) ([]Entry, error) {
 		entries = append(entries, Entry{Path: p, Receipt: rec})
 	}
 	return entries, nil
+}
+
+// isMalformedReceipt reports whether err came from a corrupt receipt
+// document (receipts.ReadFile wraps JSON failures as "malformed
+// receipt"). I/O failures are not malformed: they still abort the
+// caller.
+func isMalformedReceipt(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "malformed receipt")
+}
+
+// ListSkipping is the tolerant H2 reader for the envfacts miner: like
+// List but a malformed receipt file is skipped — counted in the
+// returned corrupt total with a "path:line" warning on stderr — while
+// healthy receipts keep flowing. Non-malformed failures (I/O, jail
+// refusal, glob) still abort. Line is always 1: one receipt file holds
+// one JSON document.
+func ListSkipping(root, task string) ([]Entry, int, error) {
+	paths, err := listPaths(root, task)
+	if err != nil {
+		return nil, 0, err
+	}
+	entries := make([]Entry, 0, len(paths))
+	corrupt := 0
+	for _, p := range paths {
+		if strings.HasPrefix(filepath.Base(p), "manifest-") {
+			continue
+		}
+		rec, err := receipts.ReadFile(p)
+		if err != nil {
+			if !isMalformedReceipt(err) {
+				return nil, corrupt, err
+			}
+			corrupt++
+			fmt.Fprintf(os.Stderr, "evidence: skipping corrupt receipt %s:1: %v\n", p, err)
+			continue
+		}
+		entries = append(entries, Entry{Path: p, Receipt: rec})
+	}
+	return entries, corrupt, nil
 }

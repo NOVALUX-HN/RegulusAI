@@ -39,47 +39,71 @@ func main() {
 // serve runs the always-on visual (S1-S2): read-only dashboard on a fixed
 // local port. It lives in main (not internal/cli) to avoid a cli<->httpapi
 // import cycle: main already owns both sides.
-func serve(args []string) int {
-	port := httpapi.DefaultDashboardPort
-	bind := "127.0.0.1"
+// serveConfig holds the parsed `regulus serve` flags.
+type serveConfig struct {
+	port int
+	bind string
+}
+
+// parseServeFlags validates the `regulus serve` flags. It prints usage (or
+// the bind error) itself and reports the process exit code; ok=false means
+// the caller must return code without serving.
+func parseServeFlags(args []string) (serveConfig, int, bool) {
+	cfg := serveConfig{port: httpapi.DefaultDashboardPort, bind: "127.0.0.1"}
 	for _, a := range args {
 		if a == "--help" || a == "-h" {
 			fmt.Println("usage: regulus serve [--port N] [--bind ADDR]")
-			return 0
+			return cfg, 0, false
 		}
 		if v, ok := strings.CutPrefix(a, "--port="); ok {
 			n, err := strconv.Atoi(strings.TrimSpace(v))
 			if err != nil || n < 1 || n > 65535 {
 				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR]")
-				return 2
+				return cfg, 2, false
 			}
-			port = n
+			cfg.port = n
 			continue
 		}
 		if v, ok := strings.CutPrefix(a, "--bind="); ok {
-			bind = strings.TrimSpace(v)
+			bind := strings.TrimSpace(v)
 			if bind == "" || net.ParseIP(bind) == nil {
 				fmt.Fprintf(os.Stderr, "regulus serve: invalid bind address %q\n", bind)
-				return 2
+				return cfg, 2, false
 			}
+			cfg.bind = bind
 			continue
 		}
 		fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] (use --port=N --bind=ADDR)")
-		return 2
+		return cfg, 2, false
 	}
-	addr := net.JoinHostPort(bind, strconv.Itoa(port))
-	srv := httpapi.New(version, func() doctor.Result {
-		return doctor.Probe(context.Background(), doctor.DefaultRunner())
-	}, gates.ShRunner{})
-	fmt.Printf("regulus dashboard: http://localhost:%d/ (bind %s, read-only)\n", port, addr)
-	if warn := nonLoopbackWarning(bind); warn != "" {
+	return cfg, 0, true
+}
+
+// listenAndServe announces the dashboard, warns on non-loopback binds and
+// blocks serving. serveFn is http.ListenAndServe in production; tests
+// substitute a fake so both the ready and the failure paths stay covered.
+func listenAndServe(cfg serveConfig, handler http.Handler, serveFn func(addr string, h http.Handler) error) int {
+	addr := net.JoinHostPort(cfg.bind, strconv.Itoa(cfg.port))
+	fmt.Printf("regulus dashboard: http://localhost:%d/ (bind %s, read-only)\n", cfg.port, addr)
+	if warn := nonLoopbackWarning(cfg.bind); warn != "" {
 		fmt.Fprintln(os.Stderr, warn)
 	}
-	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
+	if err := serveFn(addr, handler); err != nil {
 		fmt.Fprintf(os.Stderr, "regulus serve: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+func serve(args []string) int {
+	cfg, code, ok := parseServeFlags(args)
+	if !ok {
+		return code
+	}
+	srv := httpapi.New(version, func() doctor.Result {
+		return doctor.Probe(context.Background(), doctor.DefaultRunner())
+	}, gates.ShRunner{})
+	return listenAndServe(cfg, srv.Handler(), http.ListenAndServe)
 }
 
 // nonLoopbackWarning reports a visible exposure warning when serve binds

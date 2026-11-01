@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -30,6 +32,77 @@ func TestNonLoopbackWarning(t *testing.T) {
 		if !strings.Contains(got, open) {
 			t.Errorf("nonLoopbackWarning(%q) = %q, want it to name the address", open, got)
 		}
+	}
+}
+
+// H6: parseServeFlags carries the serve flag grammar (defaults, valid
+// parses, every invalid branch and --help short-circuit) without binding
+// any port, so the full branch matrix runs in milliseconds.
+func TestParseServeFlags(t *testing.T) {
+	def := serveConfig{port: 17817, bind: "127.0.0.1"}
+	cases := []struct {
+		name     string
+		args     []string
+		wantCfg  serveConfig
+		wantCode int
+		wantOK   bool
+	}{
+		{"defaults", nil, def, 0, true},
+		{"help long", []string{"--help"}, def, 0, false},
+		{"help short", []string{"-h"}, def, 0, false},
+		{"port valid", []string{"--port=8080"}, serveConfig{port: 8080, bind: "127.0.0.1"}, 0, true},
+		{"port spaces trimmed", []string{"--port= 8080 "}, serveConfig{port: 8080, bind: "127.0.0.1"}, 0, true},
+		{"port min", []string{"--port=1"}, serveConfig{port: 1, bind: "127.0.0.1"}, 0, true},
+		{"port max", []string{"--port=65535"}, serveConfig{port: 65535, bind: "127.0.0.1"}, 0, true},
+		{"port abc", []string{"--port=abc"}, def, 2, false},
+		{"port empty", []string{"--port="}, def, 2, false},
+		{"port zero", []string{"--port=0"}, def, 2, false},
+		{"port negative", []string{"--port=-1"}, def, 2, false},
+		{"port over max", []string{"--port=65536"}, def, 2, false},
+		{"bind valid", []string{"--bind=0.0.0.0"}, serveConfig{port: 17817, bind: "0.0.0.0"}, 0, true},
+		{"bind ipv6", []string{"--bind=::1"}, serveConfig{port: 17817, bind: "::1"}, 0, true},
+		{"bind spaces trimmed", []string{"--bind= 127.0.0.1 "}, def, 0, true},
+		{"bind empty", []string{"--bind="}, def, 2, false},
+		{"bind invalid", []string{"--bind=invalid-ip-xyz"}, def, 2, false},
+		{"bind hostname rejected", []string{"--bind=localhost"}, def, 2, false},
+		{"unknown flag", []string{"--foo"}, def, 2, false},
+		{"bare positional", []string{"extra"}, def, 2, false},
+		{"port without equals", []string{"--port"}, def, 2, false},
+		{"bind without equals", []string{"--bind"}, def, 2, false},
+		{"port+bind valid", []string{"--port=8080", "--bind=0.0.0.0"}, serveConfig{port: 8080, bind: "0.0.0.0"}, 0, true},
+		{"valid then bogus", []string{"--port=8080", "--bogus"}, serveConfig{port: 8080, bind: "127.0.0.1"}, 2, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, code, ok := parseServeFlags(tc.args)
+			if code != tc.wantCode || ok != tc.wantOK {
+				t.Fatalf("parseServeFlags(%q) = (code %d, ok %v), want (code %d, ok %v)",
+					tc.args, code, ok, tc.wantCode, tc.wantOK)
+			}
+			if ok && got != tc.wantCfg {
+				t.Errorf("parseServeFlags(%q) = %+v, want %+v", tc.args, got, tc.wantCfg)
+			}
+		})
+	}
+}
+
+// H6: listenAndServe announces and delegates; the fake serveFn proves both
+// the ready path (nil error → 0) and the failure path (error → 1) without
+// binding any port.
+func TestListenAndServe(t *testing.T) {
+	h := http.NewServeMux()
+	if got := listenAndServe(serveConfig{port: 17817, bind: "127.0.0.1"}, h,
+		func(addr string, _ http.Handler) error {
+			if addr != "127.0.0.1:17817" {
+				t.Errorf("serveFn addr = %q, want %q", addr, "127.0.0.1:17817")
+			}
+			return nil
+		}); got != 0 {
+		t.Errorf("listenAndServe ready = %d, want 0", got)
+	}
+	if got := listenAndServe(serveConfig{port: 8080, bind: "0.0.0.0"}, h,
+		func(string, http.Handler) error { return errors.New("boom") }); got != 1 {
+		t.Errorf("listenAndServe failure = %d, want 1", got)
 	}
 }
 

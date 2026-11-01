@@ -52,6 +52,15 @@ and `done` without a CLOSED record is flagged — self-report closes
 nothing. Rescopes append `REPLAN: <what changed> — <why>` to the Log;
 bare `REPLAN:` lines are flagged.
 
+Ejemplo de uso correcto (`<chart>` es obligatorio, ver
+`go run ./cmd/regulus task --help` →
+`usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]`):
+
+```bash
+go run ./cmd/regulus task check charts/<feature>.md
+go run ./cmd/regulus task status charts/<feature>.md
+```
+
 ## 5. Completion is core-verified
 
 `regulus task close <chart> <id>` checks the contract, the spec, the

@@ -147,6 +147,11 @@ func Record(root string, e Entry, now time.Time) (Entry, error) {
 
 // List returns every entry of a session trace in call order. A missing
 // trace is empty.
+//
+// List is strict: the first malformed JSONL line aborts with a
+// "malformed trace at line N" error and no partial data. Tolerant
+// readers (the envfacts miner, H2) use ListSkipping instead, which
+// skips corrupt lines with a stderr warning and counts them.
 func List(root, session string) ([]Entry, error) {
 	f, err := os.Open(File(root, session))
 	if os.IsNotExist(err) {
@@ -173,6 +178,46 @@ func List(root, session string) ([]Entry, error) {
 		out = append(out, e)
 	}
 	return out, sc.Err()
+}
+
+// ListSkipping is the tolerant H2 reader for the envfacts miner: like
+// List but a malformed JSONL line is skipped — counted in the returned
+// corrupt total with a "path:line" warning on stderr — while healthy
+// entries keep flowing. A missing trace still reads as empty; I/O or
+// scanner failures still abort.
+func ListSkipping(root, session string) ([]Entry, int, error) {
+	path := File(root, session)
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	var out []Entry
+	corrupt := 0
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	ln := 0
+	for sc.Scan() {
+		ln++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var e Entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			corrupt++
+			fmt.Fprintf(os.Stderr, "trace: skipping corrupt entry %s:%d: %v\n", path, ln, err)
+			continue
+		}
+		out = append(out, e)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, corrupt, err
+	}
+	return out, corrupt, nil
 }
 
 // Sessions lists the session ids with trace logs on disk, sorted.

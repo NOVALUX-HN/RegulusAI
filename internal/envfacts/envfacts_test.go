@@ -372,7 +372,11 @@ func TestContradictionEdges(t *testing.T) {
 	if IsContradicted(clean) {
 		t.Fatal("a window holding a failure is not contradicted")
 	}
-	if ConfidenceFor(2) != "medium" || ConfidenceFor(3) != "medium" || ConfidenceFor(5) != "high" {
-		t.Fatal("confidence must scale deterministically with failing sessions")
+	// H4: confidence is fixed at medium; topics are slugified.
+	if (Key{Kind: KindGate, Name: "a/b", Domain: "sextant"}).Topic() != "envfact/sextant/gate/a-b" {
+		t.Fatalf("topic must slugify unsafe chars, got %q", (Key{Kind: KindGate, Name: "a/b", Domain: "sextant"}).Topic())
+	}
+	if (Key{Kind: KindTool, Name: "", Domain: "x y"}).Topic() != "envfact/x-y/tool/unknown" {
+		t.Fatalf("empty segments must fall back to unknown, got %q", (Key{Kind: KindTool, Name: "", Domain: "x y"}).Topic())
 	}
 }

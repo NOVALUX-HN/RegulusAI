@@ -43,10 +43,6 @@ const TopicPrefix = "envfact/"
 // MinerBy names the actor on discard notes.
 const MinerBy = "envfacts-miner"
 
-// ConfidenceHighAt is the failing-session count promoting a fact from
-// medium to high confidence. Deterministic, zero model.
-const ConfidenceHighAt = 5
-
 // LessonDimension is the harness² dimension of mined facts: they say
 // how the agent's environment behaves, not what a practitioner knows.
 const LessonDimension = "inv"
@@ -59,14 +55,42 @@ type Key struct {
 	Domain string
 }
 
-// Topic returns the revision-chain topic of the key's fact.
-func (k Key) Topic() string {
-	return TopicPrefix + k.Domain + "/" + k.Kind + "/" + k.Name
+// slugSegment sanitizes one topic path segment: only [A-Za-z0-9_.-]
+// survive, anything else becomes "-", runs collapse to one, outer
+// dashes trim, empty falls back to "unknown" so every Topic stays a
+// safe slash-separated path even with typos or odd chart domains.
+func slugSegment(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-' {
+			if r == '-' {
+				if dash {
+					continue
+				}
+				dash = true
+			} else {
+				dash = false
+			}
+			b.WriteRune(r)
+			continue
+		}
+		if dash {
+			continue
+		}
+		b.WriteByte('-')
+		dash = true
+	}
+	out := strings.Trim(b.String(), "-")
+	if strings.TrimSpace(out) == "" {
+		return "unknown"
+	}
+	return out
 }
 
-// String renders the key for reports.
-func (k Key) String() string {
-	return k.Domain + "/" + k.Kind + "/" + k.Name
+// Topic returns the revision-chain topic of the key's fact.
+func (k Key) Topic() string {
+	return TopicPrefix + slugSegment(k.Domain) + "/" + slugSegment(k.Kind) + "/" + slugSegment(k.Name)
 }
 
 // Execution is one chronological observation of a key: a gate run
@@ -142,14 +166,6 @@ func EvidenceFor(s Series) []string {
 		out = out[:MaxEvidence]
 	}
 	return out
-}
-
-// ConfidenceFor maps the failing-session count to lesson confidence.
-func ConfidenceFor(failing int) string {
-	if failing >= ConfidenceHighAt {
-		return "high"
-	}
-	return "medium"
 }
 
 // CueFor renders the deterministic fact cue (zero model).
