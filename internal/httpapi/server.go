@@ -22,6 +22,7 @@ import (
 	"context"
 	"net/http"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/cli"
 	"regulus-ai/internal/doctor"
 	"regulus-ai/internal/gates"
@@ -70,12 +71,15 @@ func (s Server) runCLI(args ...string) (stdout, stderr string, exit int) {
 	return ob.String(), eb.String(), code
 }
 
-// statusData is the verbatim `regulus status` readout: both buffers and
-// the exit code, forwarded without transformation.
+// statusData is the verbatim `regulus status` readout (both buffers and
+// the exit code, forwarded without transformation) plus the serving
+// project identity (D3): ProjectName(".") — git remote or dirname — so
+// the dashboard header names the real project without a new endpoint.
 type statusData struct {
-	Stdout string `json:"stdout"`
-	Stderr string `json:"stderr"`
-	Exit   int    `json:"exit"`
+	Stdout  string `json:"stdout"`
+	Stderr  string `json:"stderr"`
+	Exit    int    `json:"exit"`
+	Project string `json:"project"`
 }
 
 // versionData aggregates the two version readouts verbatim: the stdout
@@ -116,7 +120,8 @@ func (s Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	stdout, stderr, exit := s.runCLI("status")
 	stdout = observability.RedactText(stdout)
 	stderr = observability.RedactText(stderr)
-	status, env := MapResult(statusData{Stdout: stdout, Stderr: stderr, Exit: exit}, observability.RedactText(stderr), exit)
+	project := observability.RedactText(almanac.ProjectName("."))
+	status, env := MapResult(statusData{Stdout: stdout, Stderr: stderr, Exit: exit, Project: project}, observability.RedactText(stderr), exit)
 	writeEnvelope(w, status, env)
 }
 

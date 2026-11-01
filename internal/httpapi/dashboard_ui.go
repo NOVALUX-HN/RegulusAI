@@ -11,45 +11,108 @@ const dashboardHTML = `<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Regulus — Qué hay guardado en tu proyecto</title>
 <style>
-:root{--bg:#f4f6fb;--card:#ffffff;--ink:#1c2333;--muted:#5b6577;--line:#e2e8f2;--accent:#2456d6;--good:#157f3d;--warn:#a86a00;--bad:#b3261e}
+:root{
+  /* Brand */
+  --regulus-brand:#D9A441;
+  --regulus-brand-bright:#F2C66D;
+  --regulus-brand-dark:#B96C32;
+  /* Backgrounds */
+  --regulus-bg:#0C1018;
+  --regulus-surface:#171E29;
+  --regulus-surface-raised:#202A38;
+  /* Typography */
+  --regulus-text:#E7EAF0;
+  --regulus-muted:#8290A3;
+  /* Borders */
+  --regulus-border:#303B4B;
+  /* Modules */
+  --module-sextant:#5B9BD5;
+  --module-gauntlet:#E69A42;
+  --module-guardians:#55B889;
+  --module-decision:#A78BFA;
+  --module-almanac:#48BFC0;
+  --module-evolution:#F2C66D;
+  --module-observability:#8290A3;
+  /* Semantic statuses */
+  --status-pass:#55B889;
+  --status-fail:#E16B68;
+  --status-blocked:#E69A42;
+  --status-inconclusive:#8290A3;
+  /* Typography (con fallbacks del sistema) */
+  --font-heading:"Space Grotesk","Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* Shape */
+  --radius-sm:4px;
+  --radius-md:8px;
+  --radius-lg:12px;
+  --radius-xl:16px;
+  /* Borders */
+  --border-width:1px;
+  /* Motion */
+  --transition-fast:150ms ease;
+  --transition-normal:220ms ease;
+}
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;background:var(--bg);color:var(--ink)}
-header.top{background:#16213a;color:#fff;padding:28px 24px}
+body{font-family:var(--font-body);margin:0;background:var(--regulus-bg);color:var(--regulus-text)}
+header.top{background:var(--regulus-bg);color:var(--regulus-text);padding:28px 24px;border-bottom:2px solid var(--regulus-brand)}
 header.top .wrap,main{max-width:1100px;margin:0 auto}
-header.top h1{margin:0 0 8px;font-size:28px}
-header.top p{margin:4px 0;color:#c6d2ea}
-#status,#health{margin-top:12px;display:inline-block;background:#0e1830;border:1px solid #33456b;border-radius:8px;padding:8px 14px;font-size:14px;margin-right:8px}
+header.top h1{margin:0 0 8px;font-size:28px;font-family:var(--font-heading);color:var(--regulus-brand-bright);letter-spacing:.01em}
+header.top p{margin:4px 0;color:var(--regulus-muted)}
+#status,#health{margin-top:12px;display:inline-block;background:var(--regulus-surface);border:var(--border-width) solid var(--regulus-border);border-radius:var(--radius-md);padding:8px 14px;font-size:14px;margin-right:8px;color:var(--regulus-text)}
 main{padding:24px}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin:0 0 20px}
-h2{margin:0 0 4px;font-size:20px}
-p.plain{color:var(--muted);margin:6px 0 14px;font-size:14px}
+section{background:var(--regulus-surface);border:var(--border-width) solid var(--regulus-border);border-radius:var(--radius-lg);padding:20px;margin:0 0 20px}
+h2,h3{font-family:var(--font-heading)}
+h2{margin:0 0 4px;font-size:20px;color:var(--regulus-text)}
+p.plain{color:var(--regulus-muted);margin:6px 0 14px;font-size:14px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.card{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fbfcff}
-.card h3{margin:0 0 4px;font-size:15px}
-.card .num{font-size:32px;font-weight:700;color:var(--accent)}
-.card p{margin:6px 0 0;font-size:13px;color:var(--muted)}
+.card{border:var(--border-width) solid var(--regulus-border);border-radius:var(--radius-md);padding:14px;background:var(--regulus-surface-raised)}
+.card h3{margin:0 0 4px;font-size:15px;color:var(--regulus-text)}
+.card .num{font-size:32px;font-weight:700;color:var(--regulus-brand-bright);font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.card p{margin:6px 0 0;font-size:13px;color:var(--regulus-muted)}
 .bar-row{display:grid;grid-template-columns:180px 1fr 60px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
-.bar-track{background:#e9edf5;border-radius:6px;height:14px;overflow:hidden}
-.bar-fill{height:100%;background:var(--accent);border-radius:6px}
-.bar-row .v{text-align:right;font-variant-numeric:tabular-nums}
+.bar-track{background:var(--regulus-bg);border:var(--border-width) solid var(--regulus-border);border-radius:var(--radius-sm);height:14px;overflow:hidden}
+.bar-fill{height:100%;background:var(--regulus-brand);border-radius:var(--radius-sm);transition:width var(--transition-normal)}
+.bar-fill.fill-pass{background:var(--status-pass)}
+.bar-fill.fill-fail{background:var(--status-fail)}
+.bar-fill.fill-blocked{background:var(--status-blocked)}
+.bar-fill.fill-inconclusive{background:var(--status-inconclusive)}
+.bar-row .v{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--font-mono)}
 table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{background:#f1f4fa;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-.pager{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;color:var(--muted)}
-button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px}
+th,td{text-align:left;padding:8px;border-bottom:var(--border-width) solid var(--regulus-border);vertical-align:top}
+th{background:var(--regulus-surface-raised);font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--regulus-muted);font-family:var(--font-body)}
+td.num,.t-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.pager{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;color:var(--regulus-muted)}
+button{border:var(--border-width) solid var(--regulus-border);background:var(--regulus-surface-raised);color:var(--regulus-text);border-radius:var(--radius-md);padding:6px 12px;cursor:pointer;font-size:14px;font-family:var(--font-body);transition:background var(--transition-fast),border-color var(--transition-fast)}
+button:hover{border-color:var(--regulus-brand)}
 button:disabled{opacity:.45;cursor:default}
-button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.primary{background:var(--regulus-brand);color:var(--regulus-bg);border-color:var(--regulus-brand)}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-input,select{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:14px;background:#fff}
-.ok{color:var(--good);font-weight:600}.fail{color:var(--bad);font-weight:600}
-.err{color:var(--bad);font-size:13px}
-footer{color:var(--muted);font-size:13px;text-align:center;padding:0 0 28px}
+input,select{border:var(--border-width) solid var(--regulus-border);border-radius:var(--radius-md);padding:6px 10px;font-size:14px;background:var(--regulus-surface-raised);color:var(--regulus-text);font-family:var(--font-body)}
+.verdict-pass,.ok{color:var(--status-pass);font-weight:600}
+.verdict-fail,.fail{color:var(--status-fail);font-weight:600}
+.verdict-blocked{color:var(--status-blocked);font-weight:600}
+.verdict-inconclusive{color:var(--status-inconclusive);font-weight:600}
+.verdict-pass,.verdict-fail,.verdict-blocked,.verdict-inconclusive,.ok,.fail{display:inline-block;border:var(--border-width) solid currentColor;border-radius:var(--radius-xl);padding:1px 10px;font-size:13px}
+.err{color:var(--status-fail);font-size:13px}
+footer{color:var(--regulus-muted);font-size:13px;text-align:center;padding:0 0 28px}
 details{margin-top:8px;font-size:13px}
-pre{background:#0e1830;color:#d7e1f5;padding:12px;border-radius:8px;overflow:auto;font-size:12px}
+summary{cursor:pointer}
+pre{background:var(--regulus-bg);color:var(--regulus-text);border:var(--border-width) solid var(--regulus-border);padding:12px;border-radius:var(--radius-md);overflow:auto;font-size:12px;font-family:var(--font-mono)}
+a{color:var(--regulus-brand-bright)}
+:focus-visible{outline:2px solid var(--regulus-brand-bright);outline-offset:2px;border-radius:var(--radius-sm)}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none;animation:none}
+  .bar-fill{transition:none}
+}
+@media (max-width:640px){
+  .bar-row{grid-template-columns:1fr;gap:4px}
+  .bar-row .v{text-align:left}
+}
 </style>
 </head><body>
 <header class="top"><div class="wrap">
-<h1>Regulus — Qué hay guardado en tu proyecto</h1>
+<h1 id="project-name">Regulus — Qué hay guardado en tu proyecto</h1>
 <p>Todo lo que Regulus guarda en tu ordenador, explicado en palabras sencillas. Esta página solo mira: nunca cambia ni borra nada.</p>
 <div id="status">Estado del proyecto: cargando…</div>
 <div id="health">Salud del sistema: cargando…</div>
@@ -122,35 +185,55 @@ function card(title, value, what){
   var p = document.createElement('p');p.textContent = what;a.appendChild(p);
   return a;
 }
+function verdictFill(label){
+  var v = String(label || '').toLowerCase();
+  if(v === 'pass' || v === 'confirmadas' || v === 'confirmada'){return ' fill-pass';}
+  if(v === 'fail'){return ' fill-fail';}
+  if(v === 'blocked' || v === 'bloqueado' || v === 'por confirmar'){return ' fill-blocked';}
+  if(v === 'sin datos' || v === 'inconclusive'){return ' fill-inconclusive';}
+  return '';
+}
 function barRow(box, label, value, max){
   var row = document.createElement('div');row.className = 'bar-row';
   var l = document.createElement('span');l.textContent = label;row.appendChild(l);
   var track = document.createElement('div');track.className = 'bar-track';
-  var fill = document.createElement('div');fill.className = 'bar-fill';
+  var fill = document.createElement('div');fill.className = 'bar-fill' + verdictFill(label);
   fill.style.width = (max > 0 ? Math.round(100 * value / max) : 0) + '%';
   track.appendChild(fill);row.appendChild(track);
   var v = document.createElement('span');v.className = 'v';v.textContent = String(value);row.appendChild(v);
   box.appendChild(row);
 }
-function barGroup(box, title, pairs){
+function barGroup(box, title, pairs, source){
   var h = document.createElement('h3');h.textContent = title;box.appendChild(h);
+  if(source){var src = document.createElement('p');src.className = 'plain';src.textContent = source;box.appendChild(src);}
   var max = 0;
   pairs.forEach(function(p){if(p[1] > max){max = p[1];}});
   if(pairs.length === 0){
-    var e = document.createElement('p');e.className = 'plain';e.textContent = 'Sin datos todavía.';box.appendChild(e);return;
+    var e = document.createElement('p');e.className = 'plain';e.textContent = 'Sin datos todavía: proyecto vacío o filtro sin resultados.';box.appendChild(e);return;
   }
   pairs.forEach(function(p){barRow(box, p[0], p[1], max);});
+}
+function emptyRow(tb, cols, msg){
+  var tr = document.createElement('tr');
+  var c = document.createElement('td');c.colSpan = cols;c.textContent = msg;tr.appendChild(c);
+  tb.appendChild(tr);
 }
 function loadHeader(){
   Promise.all([fetchData('/v1/status'), fetchData('/v1/version'), fetchData('/v1/metrics')]).then(function(r){
     var st = r[0], ver = r[1], me = r[2];
     var ok = st.exit === 0;
-    setText('status', 'Estado del proyecto: ' + (ok ? 'bien' : 'revisar (código ' + st.exit + ')') + ' · ' + (ver.version || '').trim());
+    var project = String(st.project || '').trim();
+    if(project){
+      document.title = 'Regulus — ' + project;
+      var h1 = document.getElementById('project-name');
+      if(h1){h1.textContent = 'Regulus — Qué hay guardado en ' + project;}
+    }
+    setText('status', 'Estado del proyecto ' + (project ? project + ' ' : '') + '(GET /v1/status campos exit/project + GET /v1/version): ' + (ok ? 'bien' : 'revisar (código ' + st.exit + ')') + ' · ' + (ver.version || '').trim());
     setText('status-full', (st.stdout || '') + (st.stderr ? '\n' + st.stderr : ''));
     var m = me.metrics || {};
-    var evo = 'Mejoras usadas hoy: ' + me.evolution_used + ' de ' + me.evolution_cap;
+    var evo = 'Mejoras usadas hoy (GET /v1/metrics evolution_used/cap): ' + me.evolution_used + ' de ' + me.evolution_cap;
     var pass = m.verification_pass_rate;
-    setText('health', 'Salud del sistema: ' + m.tasks + ' tareas, ' + m.receipts_pass + ' de ' + m.receipts_total + ' comprobaciones bien' + (pass ? ' (' + Math.round(pass * 100) + '%)' : '') + ' · ' + evo);
+    setText('health', 'Salud del sistema (GET /v1/metrics: tasks, receipts_pass/receipts_total): ' + m.tasks + ' tareas, ' + m.receipts_pass + ' de ' + m.receipts_total + ' comprobaciones bien' + (pass ? ' (' + Math.round(pass * 100) + '%)' : '') + ' · ' + evo);
   }).catch(function(e){
     setText('status', 'Estado del proyecto: no disponible');
     setText('health', 'Salud del sistema: no disponible');
@@ -167,19 +250,18 @@ function loadCards(){
   ]).then(function(r){
     var box = document.getElementById('cards-grid');
     while(box.firstChild){box.removeChild(box.firstChild);}
-    box.appendChild(card('Guardado', r[0].total, 'Cosas guardadas en total: notas, decisiones y recuerdos que Regulus conserva de tu proyecto.'));
-    box.appendChild(card('Evidencia', r[1].total, 'Comprobantes de verificación: veces que se comprobó que el trabajo estaba bien.'));
-    box.appendChild(card('Memoria', r[2].total, 'Recuerdos anotados: notas y decisiones para no olvidar lo importante.'));
+    box.appendChild(card('Guardado', r[0].total, 'Cosas guardadas en total. Fuente: GET /v1/almanac/summary campo total, sin filtro.'));
+    box.appendChild(card('Evidencia', r[1].total, 'Comprobantes de verificación. Fuente: GET /v1/receipts campo total, sin filtro (la tarjeta pide ?limit=1 pero el total es global).'));
+    box.appendChild(card('Memoria', r[2].total, 'Recuerdos anotados. Fuente: GET /v1/observations campo total, sin filtro q/type (la tabla sí filtra).'));
     var lt = (r[3].total !== undefined) ? r[3].total : 0;
-    box.appendChild(card('Aprendizaje', lt, 'Lecciones: lo ya confirmado más lo que está por confirmar.'));
-    box.appendChild(card('Coste', r[4].total, 'Movimientos del presupuesto de mejora: cuánto trabajo de mejora se ha usado.'));
+    box.appendChild(card('Aprendizaje', lt, 'Lecciones confirmadas + por confirmar. Fuente: GET /v1/lessons?status=all campo total (admitidas + candidatas).'));
+    box.appendChild(card('Coste', r[4].total, 'Movimientos del presupuesto. Fuente: GET /v1/budget campo total, sin filtro (la tarjeta pide ?limit=1 pero el total es global).'));
     setError('cards-error', null);
   }).catch(function(e){setError('cards-error', e);});
 }
 function loadGraphs(){
   Promise.all([
     fetchData('/v1/almanac/summary'),
-    fetchData('/v1/lessons?limit=1'),
     fetchData('/v1/budget?limit=200'),
     fetchData('/v1/receipts?limit=200')
   ]).then(function(r){
@@ -188,21 +270,20 @@ function loadGraphs(){
     var byType = [];
     var bt = r[0].by_type || {};
     Object.keys(bt).sort().forEach(function(k){byType.push([k, bt[k]]);});
-    barGroup(box, 'Recuerdos por tipo', byType);
+    barGroup(box, 'Recuerdos por tipo', byType, 'Fuente: GET /v1/almanac/summary campo by_type (conteo global, sin límite).');
     var adm = r[0].lessons_admitted || 0, cand = r[0].candidates_pending || 0;
-    void r[1];
-    barGroup(box, 'Lecciones confirmadas frente a por confirmar', [['Confirmadas', adm], ['Por confirmar', cand]]);
+    barGroup(box, 'Lecciones confirmadas frente a por confirmar', [['Confirmadas', adm], ['Por confirmar', cand]], 'Fuente: GET /v1/almanac/summary campos lessons_admitted + candidates_pending (global).');
     var byKind = {};
-    (r[2].items || []).forEach(function(e){var k = e.kind || '?';byKind[k] = (byKind[k] || 0) + 1;});
+    (r[1].items || []).forEach(function(e){var k = e.kind || '?';byKind[k] = (byKind[k] || 0) + 1;});
     var kinds = Object.keys(byKind).sort().map(function(k){return [k, byKind[k]];});
-    barGroup(box, 'Presupuesto usado por tipo', kinds);
+    barGroup(box, 'Presupuesto usado por tipo', kinds, 'Fuente: GET /v1/budget?limit=200 — agrupa kind de los primeros 200 de ' + r[1].total + ' (total). Si el total supera 200 el gráfico es parcial.');
     var byVerdict = {};
-    (r[3].items || []).forEach(function(it){
+    (r[2].items || []).forEach(function(it){
       var v = (it.receipt && it.receipt.verdict) || '?';
       byVerdict[v] = (byVerdict[v] || 0) + 1;
     });
     var verdicts = Object.keys(byVerdict).sort().map(function(k){return [k, byVerdict[k]];});
-    barGroup(box, 'Comprobaciones por resultado', verdicts);
+    barGroup(box, 'Comprobaciones por resultado', verdicts, 'Fuente: GET /v1/receipts?limit=200 — agrupa receipt.verdict de los primeros 200 de ' + r[2].total + ' (total, los más antiguos primero). Si el total supera 200 el gráfico es parcial.');
     setError('graphs-error', null);
   }).catch(function(e){setError('graphs-error', e);});
 }
@@ -217,13 +298,17 @@ function loadReceipts(){
       tr.appendChild(td(rc.gate || ''));
       var v = document.createElement('td');
       var s = document.createElement('span');
-      s.textContent = rc.verdict || '';
-      s.className = rc.verdict === 'pass' ? 'ok' : 'fail';
+      var raw = String(rc.verdict || '').toLowerCase();
+      if(raw === 'pass'){s.textContent = 'PASS';s.className = 'verdict-pass';}
+      else if(raw === 'fail'){s.textContent = 'FAIL';s.className = 'verdict-fail';}
+      else if(raw === 'blocked'){s.textContent = 'BLOCKED';s.className = 'verdict-blocked';}
+      else{s.textContent = rc.verdict ? String(rc.verdict).toUpperCase() : 'Sin dato';s.className = 'verdict-inconclusive';}
       v.appendChild(s);tr.appendChild(v);
       var started = rc.started_at || rc.startedAt || '';
       tr.appendChild(td(String(started).slice(0, 19).replace('T', ' ')));
       tb.appendChild(tr);
     });
+    if((d.items || []).length === 0){emptyRow(tb, 4, 'Sin comprobantes todavía: proyecto vacío o filtro sin resultados (GET /v1/receipts, total 0).');}
     pageInfo('info-receipts', 'prev-receipts', 'next-receipts', d.total, d.limit, d.offset);
     setError('err-receipts', null);
   }).catch(function(e){setError('err-receipts', e);});
@@ -244,6 +329,7 @@ function loadObs(){
       tr.appendChild(td(String(o.saved_at || o.savedAt || '').slice(0, 10)));
       tb.appendChild(tr);
     });
+    if((d.items || []).length === 0){emptyRow(tb, 3, 'Sin recuerdos todavía: proyecto vacío o búsqueda sin resultados (GET /v1/observations, total 0).');}
     pageInfo('info-obs', 'prev-obs', 'next-obs', d.total, d.limit, d.offset);
     setError('err-obs', null);
   }).catch(function(e){setError('err-obs', e);});
@@ -259,12 +345,13 @@ function loadLessons(){
       var st = document.createElement('td');
       var tag = document.createElement('span');
       tag.textContent = l.status === 'candidate' ? 'Por confirmar' : 'Confirmada';
-      tag.className = l.status === 'candidate' ? 'fail' : 'ok';
+      tag.className = l.status === 'candidate' ? 'verdict-blocked' : 'verdict-pass';
       st.appendChild(tag);tr.appendChild(st);
       var txt = l.lesson || l.cue || '';
       tr.appendChild(td(txt.length > 140 ? txt.slice(0, 140) + '…' : txt));
       tb.appendChild(tr);
     });
+    if((d.items || []).length === 0){emptyRow(tb, 3, 'Sin lecciones todavía: proyecto vacío o filtro sin resultados (GET /v1/lessons, total 0; filtro status=' + s + ').');}
     pageInfo('info-lessons', 'prev-lessons', 'next-lessons', d.total, d.limit, d.offset);
     setError('err-lessons', null);
   }).catch(function(e){setError('err-lessons', e);});
@@ -288,11 +375,19 @@ function loadTraces(){
       act.appendChild(b);tr.appendChild(act);
       tb.appendChild(tr);
     });
+    if((d.items || []).length === 0){emptyRow(tb, 3, 'Sin sesiones todavía: proyecto sin trazas (GET /v1/traces, total 0).');}
     pageInfo('info-traces', 'prev-traces', 'next-traces', d.total, d.limit, d.offset);
     setError('err-traces', null);
     var items = d.items || [];
     if(!state.session && items.length > 0){state.session = items[0].session;state.entries = 0;}
     if(state.session){loadEntries();}
+    else{
+      setText('trace-title', 'Pasos de la sesión — sin sesión (proyecto vacío o sin trazas)');
+      var etb = document.getElementById('tb-entries');
+      while(etb.firstChild){etb.removeChild(etb.firstChild);}
+      emptyRow(etb, 3, 'Sin pasos: no hay sesión seleccionada (GET /v1/traces?session=..., total 0).');
+      pageInfo('info-entries', 'prev-entries', 'next-entries', 0, PAGE, 0);
+    }
   }).catch(function(e){setError('err-traces', e);});
 }
 function loadEntries(){
@@ -309,6 +404,7 @@ function loadEntries(){
       tr.appendChild(td(msg.length > 140 ? msg.slice(0, 140) + '…' : msg));
       tb.appendChild(tr);
     });
+    if((d.items || []).length === 0){emptyRow(tb, 3, 'Sin pasos en esta sesión (GET /v1/traces?session=' + state.session + ', total 0).');}
     pageInfo('info-entries', 'prev-entries', 'next-entries', d.total, d.limit, d.offset);
   }).catch(function(e){setError('err-traces', e);});
 }
@@ -324,6 +420,7 @@ function loadBudget(){
       tr.appendChild(td(e.outcome || ''));
       tb.appendChild(tr);
     });
+    if((d.items || []).length === 0){emptyRow(tb, 4, 'Sin movimientos todavía: presupuesto sin usar (GET /v1/budget, total 0).');}
     pageInfo('info-budget', 'prev-budget', 'next-budget', d.total, d.limit, d.offset);
     setError('err-budget', null);
   }).catch(function(e){setError('err-budget', e);});

@@ -66,52 +66,73 @@ regulus serve --port=17817
 
 ## Guía por sección (qué muestra cada parte)
 
-Cabecera — estado del proyecto y salud del sistema. Lee `/v1/status`
-(salida de `regulus status`: bien si `exit` es 0) y `/v1/version`, más
-`/v1/metrics` (tareas, comprobaciones superadas de `receipts_pass` /
-`receipts_total` y mejoras usadas hoy `evolution_used` / `evolution_cap`).
+Cabecera — nombre real del proyecto + estado y salud. El `<h1 id="project-name">`
+y el `<title>` se rellenan desde `GET /v1/status` campo `project`
+(`almanac.ProjectName(".")`: remote `origin` normalizado a `owner/repo`
+o minúsculas del dirname, `internal/almanac/export.go:14-54`; sin JS queda
+el fallback genérico, con JS dice «Regulus — Qué hay guardado en
+<project>», siempre por `textContent`). Lee además `GET /v1/status`
+(salida de `regulus status`: bien si `exit` es 0) y `GET /v1/version`
+(campo `version`), más `GET /v1/metrics` (objeto `metrics` con `tasks`,
+`receipts_pass` / `receipts_total` de `evidence.List` y
+`verification_pass_rate = pass/total`; mejoras usadas hoy
+`evolution_used` de `budget.TodayEvolutionCount` frente a
+`evolution_cap`). Con proyecto vacío: `tasks 0`, `0 de 0` sin porcentaje
+(cero, nunca NaN: `observability/metrics.go` solo divide si hay datos).
 El desplegable «Ver estado completo» muestra el stdout tal cual. Todo
 texto libre llega ya redactado (D3).
 
-Resumen por áreas — 5 tarjetas con número + explicación simple:
+Resumen por áreas — 5 tarjetas con número + explicación + fuente exacta
+(cada tarjeta pide su endpoint con `?limit=1` pero pinta el campo
+`total` global, no el único item):
 
-- Guardado: todo lo conservado (`/v1/almanac/summary`, campo `total`).
-- Evidencia: comprobantes de verificación (`/v1/receipts`, `total`).
-- Memoria: recuerdos anotados (`/v1/observations`, `total`).
-- Aprendizaje: lecciones confirmadas + por confirmar (`/v1/lessons`).
-- Coste: movimientos del presupuesto (`/v1/budget`, `total`).
+- Guardado: todo lo conservado (`GET /v1/almanac/summary`, campo `total`, sin filtro).
+- Evidencia: comprobantes de verificación (`GET /v1/receipts?limit=1`, campo `total`, sin `?task=`).
+- Memoria: recuerdos anotados (`GET /v1/observations?limit=1`, campo `total`, sin `?q=`/`?type=`; la tabla sí filtra).
+- Aprendizaje: lecciones confirmadas + por confirmar (`GET /v1/lessons?status=all&limit=1`, campo `total` = admitidas + candidatas).
+- Coste: movimientos del presupuesto (`GET /v1/budget?limit=1`, campo `total`, sin `?task=`).
 
 De un vistazo — 4 mini gráficos de barras CSS puros (sin JS externo):
 
-- Recuerdos por tipo (`almanac/summary.by_type`).
-- Lecciones confirmadas frente a por confirmar (`lessons_admitted` frente
-  a `candidates_pending`).
-- Presupuesto usado por tipo (agrupando `budget.items[].kind`).
-- Comprobaciones por resultado (agrupando `receipts[].receipt.verdict`).
+- Recuerdos por tipo (`GET /v1/almanac/summary`, campo `by_type`; conteo global, sin límite).
+- Lecciones confirmadas frente a por confirmar (campos `lessons_admitted` / `candidates_pending` del mismo summary, global).
+- Presupuesto usado por tipo (agrupa `budget.items[].kind` de `GET /v1/budget?limit=200`: los primeros 200 de `total`, los más antiguos primero; si `total > 200` el gráfico es parcial y la etiqueta lo dice).
+- Comprobaciones por resultado (agrupa `receipts[].receipt.verdict` de `GET /v1/receipts?limit=200`: los primeros 200 de `total`, los más antiguos primero; si `total > 200` el gráfico es parcial y la etiqueta lo dice).
+- Proyecto vacío: cada grupo pinta «Sin datos todavía: proyecto vacío o filtro sin resultados» (barras a 0, nunca NaN: ancho `0%` cuando `max` es 0).
 
 Evidencia — comprobantes de verificación. Cada fila es una vez que
 Regulus comprobó que el trabajo estaba bien: tarea, prueba (`gate`),
 resultado y fecha. Fuente: `GET /v1/receipts?limit=&offset=&task=`,
-10 por página con Anterior/Siguiente.
+10 por página con Anterior/Siguiente. Vacío: fila «Sin comprobantes
+todavía ... (GET /v1/receipts, total 0)» y «Mostrando 0–0 de 0».
 
 Memoria — notas y decisiones. Lo que Regulus anotó para no olvidarlo.
 Buscador de texto (`q` en título/contenido) + filtro por tipo. Fuente:
 `GET /v1/observations?q=&type=&task=&limit=&offset=`, 10 por página.
+Vacío/búsqueda sin resultados: fila «Sin recuerdos todavía ... (GET
+/v1/observations, total 0)».
 
 Aprendizaje — lecciones. Lo ya confirmado (`Confirmada`) y lo que cree
 haber aprendido pero está por confirmar (`Por confirmar`). Filtro por
 estado. Fuente: `GET /v1/lessons?status=admitted|candidate|all&limit=`,
-10 por página, texto truncado a 140 caracteres en la tabla.
+10 por página, texto truncado a 140 caracteres en la tabla. La tarjeta
+usa `status=all`; la tabla usa el filtro elegido (la etiqueta de vacío lo
+nombra). Vacío: fila «Sin lecciones todavía ... (GET /v1/lessons, total
+0)».
 
 Sesiones — el trabajo paso a paso. Cada sesión es una racha de trabajo
-seguida con su nº de pasos; «Ver pasos» lista qué hizo Regulus en cada
+seguida con su n.º de pasos; «Ver pasos» lista qué hizo Regulus en cada
 paso, en orden (llamada, herramienta, resumen). Fuentes:
 `GET /v1/traces?limit=&offset=` (sesiones) y
 `GET /v1/traces?session=&limit=&offset=` (entradas), 10 por página.
+Vacío: fila «Sin sesiones todavía ... (GET /v1/traces, total 0)», título
+«Pasos de la sesión — sin sesión (proyecto vacío o sin trazas)» y fila
+«Sin pasos ... (total 0)».
 
 Coste — presupuesto de mejora. Cada fila es un movimiento del presupuesto
 que Regulus usa para mejorar solo: fecha, tipo, tarea y resultado.
-Fuente: `GET /v1/budget?task=&limit=&offset=`, 10 por página.
+Fuente: `GET /v1/budget?task=&limit=&offset=`, 10 por página. Vacío:
+fila «Sin movimientos todavía ... (GET /v1/budget, total 0)».
 
 Pie — se actualiza solo cada 30 segundos + botón «Actualizar ahora» que
 recarga sin perder la página de cada tabla.
@@ -146,6 +167,67 @@ recarga sin perder la página de cada tabla.
 - Loopback por defecto con aviso: `regulus serve` escucha en `127.0.0.1`
   salvo `--bind` explícito, y bindear fuera de loopback escribe un aviso
   en stderr (D3).
+
+## Por proyecto: aislamiento + export/import redondo (D3)
+
+Todo el dashboard sirve `root="."`: cada checkout lee solo su
+`.regulus/` y servir dos checkouts distintos nunca mezcla datos (cada
+`regulus serve` responde con lo que hay bajo su propio directorio).
+
+Dónde vive cada store (rutas por proyecto):
+
+- Almanac: `<root>/.regulus/almanac/observations.jsonl` (+ `pins.jsonl`,
+  `relations.jsonl`, `status.jsonl`) (`almanac.go:137-160`,
+  `status.go:40-42`).
+- Librería: `<root>/.regulus/library/<domain>/...` (lecciones admitidas
+  + candidatas).
+- Evidencia: `<root>/.regulus/evidence/<tarea>/*.json`
+  (`evidence.go:22-32`).
+- Trazas: `<root>/.regulus/traces/<sesion>.jsonl` (`trace.go:64-72`).
+- Presupuesto: `<root>/.regulus/budget.json` (`budget.go:96-98`).
+
+Qué commitear y qué nunca (estilo `.engram/` portable):
+
+- Nunca commitear runtime: `.regulus/` y `.regulus-export/` están en
+  `.gitignore:1-2,19-20` (generados, por proyecto, no viajan con el clon).
+- Sí commitear el bundle portable cuando quieras que la memoria viaje con
+  el clon: `regulus memory export --domain <d> --out <dir>` escribe el
+  mismo formato de 5 ficheros (`almanac.jsonl` + `pins.jsonl` +
+  `relations.jsonl` + `status.jsonl` + `INDEX.md`,
+  `export_domain.go:3-110`) en el `<dir>` que elijas (p. ej.
+  `docs/engram/` o `.engram/`); ese dir sí se commitea, como en Engram.
+  El export escueto (`memory export` sin flags) mantiene el histórico en
+  `.regulus-export/` como artefacto generado, no commiteado
+  (`memory.go:596-627`).
+
+Redondo por proyecto (probado):
+
+```bash
+# 1. Anota algo en este proyecto
+regulus memory save --type decision --title "elige X" --domain demo "porque Y"
+
+# 2. Exporta (todo o un dominio) a un bundle portable
+regulus memory export --out /tmp/mi-bundle
+regulus memory export --domain demo --out /tmp/mi-bundle-demo
+
+# 3. En otro checkout limpio (otro .regulus/ vacío), restaura
+regulus memory import /tmp/mi-bundle
+regulus memory import /tmp/mi-bundle-demo
+
+# 4. Re-importar es seguro: es idempotente por id
+regulus memory import /tmp/mi-bundle   # imported 0, skipped N (already present)
+```
+
+`memory import <file|dir>` restaura observaciones (fuerza
+`Source=import`, `PROPOSED` salvo que el bundle ya gobierne el id) y los
+eventos de pins/relations/status solo con líneas aún no presentes;
+re-importar es no-op y los eventos huérfanos se saltan con aviso, nunca
+fallan (`import.go:34-137`). Cubierto por `TestExportWritesBundle`,
+`TestExportBundleCarriesPinsRelationsStatus`,
+`TestExportDomainScopesBundle` y `TestImportRoundTripIsIdempotent`, más
+`TestProjectNameRealGit` / `TestNormalizeProjectName` para la identidad
+y `TestProjectIsolationTwoRootsNeverMix` + `TestStatusCarriesProjectName`
++ `TestDashboardHeaderShowsRealProject` para cabecera y aislamiento.
 
 ## Evidencia en vivo (panel corriendo, 2026-11-01)
 
