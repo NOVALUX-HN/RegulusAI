@@ -79,6 +79,13 @@ func redactText(s string) string {
 // patterns (bearer tokens, deny-listed key=value pairs). HTTP and UI
 // surfaces must pass every free-text field through it before leaving
 // the process; numeric/enum fields pass untouched.
+//
+// Deliberate non-coverage (D3, precedes D1): bare Windows/posix home
+// paths (C:\Users\<name>, /home/<name>) and space-separated secrets
+// (no = or : separator) are NOT scrubbed. Both live in the shared
+// redactor: generic patterns there would over-redact benign words
+// (notably the deny-listed "prompt"/"token") and break the verbatim
+// status/version parity tests, so the surface stays as-is.
 func RedactText(s string) string {
 	return redactText(s)
 }

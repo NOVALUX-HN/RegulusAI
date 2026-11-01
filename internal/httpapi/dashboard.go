@@ -1,6 +1,8 @@
 // Dashboard read-only JSON (T1, S1; D2 visual): metrics + almanac summary over
-// EXISTING stores. No producer rewrites. Free-text passes through
-// observability redaction before leaving the process.
+// EXISTING stores. No producer rewrites. Aggregates return counts only,
+// never collections. Free-text passes through observability.RedactText
+// before leaving the process (D1 status/version/collections, D3 error
+// details); the visual HTML is served with a restrictive CSP (D3).
 package httpapi
 
 import (
@@ -39,12 +41,12 @@ func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := observability.Summarize(".", "")
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("metrics: "+err.Error()))
+		writeEnvelope(w, http.StatusOK, Internal("metrics: "+observability.RedactText(err.Error())))
 		return
 	}
 	used, err := budget.TodayEvolutionCount(".", time.Now().UTC())
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("metrics budget: "+err.Error()))
+		writeEnvelope(w, http.StatusOK, Internal("metrics budget: "+observability.RedactText(err.Error())))
 		return
 	}
 	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(".")}, "", 0)
@@ -58,7 +60,7 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	all, err := almanac.All(".")
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("almanac: "+err.Error()))
+		writeEnvelope(w, http.StatusOK, Internal("almanac: "+observability.RedactText(err.Error())))
 		return
 	}
 	byType := map[string]int{}
@@ -99,6 +101,13 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	writeEnvelope(w, status, env)
 }
 
+// dashboardCSP is the restrictive policy for the embedded visual (D3):
+// same-origin only, no external scripts/styles/images/objects. The UI
+// uses inline <style> and one inline <script> (stdlib fetch only, all
+// dynamic text via textContent), so exactly 'unsafe-inline' for scripts
+// and styles is allowed — nothing else.
+const dashboardCSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+
 // handleDashboard serves the embedded visual (D2): header with the
 // project state, cards per area, plain-language explanations, paginated
 // tables and dependency-free mini charts with 30s auto-refresh. Unknown
@@ -118,6 +127,8 @@ func (s Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(dashboardHTML))
 }

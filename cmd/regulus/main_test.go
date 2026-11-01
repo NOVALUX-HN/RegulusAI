@@ -1,11 +1,34 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestServeHelp(t *testing.T) {
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		if got := serve(args); got != 0 {
 			t.Errorf("serve(%q) = %d, want 0", args, got)
+		}
+	}
+}
+
+// D3: serve warns visibly when the bind leaves loopback (the read-only
+// dashboard still exposes project data), and stays quiet on loopback.
+func TestNonLoopbackWarning(t *testing.T) {
+	for _, loop := range []string{"127.0.0.1", "::1"} {
+		if got := nonLoopbackWarning(loop); got != "" {
+			t.Errorf("nonLoopbackWarning(%q) = %q, want empty", loop, got)
+		}
+	}
+	for _, open := range []string{"0.0.0.0", "::", "192.168.1.10"} {
+		got := nonLoopbackWarning(open)
+		if got == "" {
+			t.Errorf("nonLoopbackWarning(%q) = empty, want a warning", open)
+			continue
+		}
+		if !strings.Contains(got, open) {
+			t.Errorf("nonLoopbackWarning(%q) = %q, want it to name the address", open, got)
 		}
 	}
 }

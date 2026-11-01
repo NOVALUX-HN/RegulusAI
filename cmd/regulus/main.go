@@ -72,9 +72,22 @@ func serve(args []string) int {
 		return doctor.Probe(context.Background(), doctor.DefaultRunner())
 	}, gates.ShRunner{})
 	fmt.Printf("regulus dashboard: http://localhost:%d/ (bind %s, read-only)\n", port, addr)
+	if warn := nonLoopbackWarning(bind); warn != "" {
+		fmt.Fprintln(os.Stderr, warn)
+	}
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		fmt.Fprintf(os.Stderr, "regulus serve: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// nonLoopbackWarning reports a visible exposure warning when serve binds
+// beyond loopback: the dashboard is read-only but still shows project
+// data, so a LAN/public bind exposes it. Empty for loopback binds.
+func nonLoopbackWarning(bind string) string {
+	if ip := net.ParseIP(bind); ip != nil && ip.IsLoopback() {
+		return ""
+	}
+	return "warning: regulus serve binds a non-loopback address (" + bind + "): the read-only dashboard exposes project data to that network; keep firewall rules tight"
 }
