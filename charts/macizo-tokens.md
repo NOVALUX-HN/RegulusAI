@@ -51,7 +51,7 @@ Domain: sextant
 | T1 | T1 | defaults budget/limit en compaction+context + test fidelidad | @regulus-worker | done |
 | T2 | T2 | probe registro condicional + subsets por modo o alternativa | @regulus-worker | done |
 | T3 | T3 | loop guard determinista (×3→redirect, reversible) + tests | @regulus-worker | done |
-| T4 | T4 | medición antes/después + reporte honesto por mecanismo | @regulus-worker |  |
+| T4 | T4 | medición antes/después + reporte honesto por mecanismo | @regulus-worker | done |
 
 ## Log
 
@@ -59,7 +59,10 @@ Domain: sextant
 - L2: T1 CLOSED 2026-11-01 (`ses_e6ad65998ffe2uTJJ1z9kg9CBp`, commit `f7f3a2a`, cierre formal vía `task close`): defaults budget/limit 20/20 (escape 0/0 + `REGULUS_COMPACTION_FULL=1`); resume −58% tokens (−9227 chars, 70 vs 100 líneas) con pins/lecciones intactos + fidelity test acotado-vs-completo. Gate `go run` exclusivo (binario MCP iba stale). `gate run macizo-tokens/T1` 12/12 (`run_ddfb17963f662209`), verify 12/12.
 - L3: T3 CLOSED 2026-11-01 (`ses_e6aac9bd0ffeAkkkXy7k3rLBk8`, cierre formal): loop guard determinista en plugin (firma tool+mensaje normalizado, ×3→redirect 1 línea, sesiones aisladas, mapa acotado 200, kill switch `TE_LOOPGUARD`, nunca throw) + 21 tests (`loopguard.test.ts`, bun 105/105 en lib). `gate run macizo-tokens/T3` 12/12 (`run_d5ab198f161cabaf`), verify 12/12.
 - L4: T2 CLOSED 2026-11-01 (`ses_e6a95dec0ffe3dI6u4VJ14SArc`, cierre formal): probe SDK (`@opencode/plugin@2.2.0` sin sesión en setup, sin flag visibilidad) → subsets load-time `TE_TOOLSET=full|minimal|auto` (auto: charts→16, sin charts→3 `doctor/memory_search/memory_context`; fail-closed full). Pin coste: 3/16 defs, guidance minimal<full/2. `gate run macizo-tokens/T2` 12/12 (`run_825a6a8e32d770c3`), verify 12/12.
+- L5: T4 medido 2026-11-01 (PENDIENTE de cierre — el orchestrator cierra): `docs/token-savings.md` con antes/después por mecanismo + coste propio + reversión: T1 −10403 chars (−40.4%, 25767→15364, 226→187 líneas, neto con coste de cap incluido) PAGA; T2 16→3 defs (−81.25%), guidance 1362→334 chars (−75.5%) PAGA en minimal / 0 en este repo (auto→full por diseño); T3 escenario SINTÉTICO etiquetado (10 fallos→3 nudges de 209 chars) con beneficio real NO MEDIBLE y coste ~0. Proxy honesto F1 (3410 llamadas todas `(unattributed)`, tokens unknown). Sin baseline inventada.
 
 - CLOSED T1 COMPLEX spec OK + 12 receipt(s) PASS.
 - CLOSED T3 COMPLEX spec OK + 12 receipt(s) PASS.
 - CLOSED T2 COMPLEX spec OK + 12 receipt(s) PASS.
+- CLOSED T4 COMPLEX spec OK + 12 receipt(s) PASS.
+- L5: T4 detail 2026-11-01 (`ses_e6a54c522ffevp4jiqH7j5shKj`, cierre formal): `docs/token-savings.md` — T1 PAGA (−40.4% chars resume hoy; −58% pin histórico), T2 PAGA en minimal (−81.25% defs; 0 aquí por diseño auto→full), T3 beneficio no medible coste ~0 (sintético etiquetado: 3 nudges/10 fallos). Coste medición <1s incluido; reversión por mecanismo; nada inventado. Tokens completo (T1–T4). `gate run macizo-tokens/T4` 12/12 (`run_951c985c1c80e463`), verify 12/12. PROGRAMA MACIZO COMPLETO: 16/16.
