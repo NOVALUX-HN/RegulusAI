@@ -46,13 +46,16 @@ Domain: sextant
 
 ## Tasks
 
-| ID | Spec | Work | Route |
+| ID | Spec | Work | Route | Status |
 |----|------|------|-------|
-| T1 | T1 | defaults budget/limit en compaction+context + test fidelidad | @regulus-worker |
-| T2 | T2 | probe registro condicional + subsets por modo o alternativa | @regulus-worker |
-| T3 | T3 | loop guard determinista (×3→redirect, reversible) + tests | @regulus-worker |
-| T4 | T4 | medición antes/después + reporte honesto por mecanismo | @regulus-worker |
+| T1 | T1 | defaults budget/limit en compaction+context + test fidelidad | @regulus-worker | done |
+| T2 | T2 | probe registro condicional + subsets por modo o alternativa | @regulus-worker |  |
+| T3 | T3 | loop guard determinista (×3→redirect, reversible) + tests | @regulus-worker |  |
+| T4 | T4 | medición antes/después + reporte honesto por mecanismo | @regulus-worker |  |
 
 ## Log
 
 - L1: Chart opened 2026-11-01 (programa macizo 3/3). Evidencia: fuga compaction `regulus.ts:569-574`, 16 tools `regulus.ts:138-456`, fingerprint `trace.go:212-217`, TE settings/coste-con-cache.
+- L2: T1 CLOSED 2026-11-01 (`ses_e6ad65998ffe2uTJJ1z9kg9CBp`, commit `f7f3a2a`, cierre formal vía `task close`): defaults budget/limit 20/20 (escape 0/0 + `REGULUS_COMPACTION_FULL=1`); resume −58% tokens (−9227 chars, 70 vs 100 líneas) con pins/lecciones intactos + fidelity test acotado-vs-completo. Gate `go run` exclusivo (binario MCP iba stale). `gate run macizo-tokens/T1` 12/12 (`run_ddfb17963f662209`), verify 12/12.
+
+- CLOSED T1 COMPLEX spec OK + 12 receipt(s) PASS.
