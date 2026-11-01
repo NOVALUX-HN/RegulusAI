@@ -30,6 +30,16 @@ const (
 // Entry is one recorded tool execution. Files lists touched paths
 // (summaries only — never values); it is a hint for relevance, and
 // Fingerprint deliberately ignores it so diffs stay stable.
+//
+// Cost accounting (F1): Task links the call to the task it served
+// (empty on legacy lines); DurationMS and OutputBytes are the measured
+// proxy cost (wall time, output size); InputTokens and OutputTokens
+// carry host-exposed token counts only. The host (OpenCode) exposes no
+// token counts, so token fields stay 0 unless a caller supplies
+// reliable figures — never estimated. Zero means unknown, not zero:
+// lines written before these fields existed decode as all-zero and
+// must read as unattributed/unknown, never as measured zero.
+// Fingerprint ignores every cost field so contrast diffs stay stable.
 type Entry struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`
@@ -38,6 +48,12 @@ type Entry struct {
 	Tool    string    `json:"tool"`
 	Status  string    `json:"status"` // completed | error
 	Files   []string  `json:"files,omitempty"`
+
+	Task         string `json:"task,omitempty"`
+	DurationMS   int64  `json:"duration_ms,omitempty"`
+	OutputBytes  int64  `json:"output_bytes,omitempty"`
+	InputTokens  int64  `json:"input_tokens,omitempty"`
+	OutputTokens int64  `json:"output_tokens,omitempty"`
 }
 
 // maxFiles caps the touched-path hints per entry: relevance needs a
@@ -82,6 +98,17 @@ func validate(e Entry) error {
 		}
 		if strings.ContainsAny(f, "\n\r") {
 			return fmt.Errorf("file path must be a single line, got %q", f)
+		}
+	}
+	if strings.ContainsAny(e.Task, "\n\r") {
+		return fmt.Errorf("task must be a single line, got %q", e.Task)
+	}
+	for field, v := range map[string]int64{
+		"duration_ms": e.DurationMS, "output_bytes": e.OutputBytes,
+		"input_tokens": e.InputTokens, "output_tokens": e.OutputTokens,
+	} {
+		if v < 0 {
+			return fmt.Errorf("%s must not be negative, got %d", field, v)
 		}
 	}
 	return nil

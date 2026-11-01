@@ -28,13 +28,33 @@ never invented.
 ## 3. Metrics and budgets
 
 `Summarize` aggregates the S3 rates read-only; empty input yields zeros,
-never NaN. Honest gap, pinned by tests: guardian disagreement has no
-backing store, so it reports 0 with a coverage note (same honesty rule
-as the T2 span projections) — a real guardian-decision log would be
-needed to measure it. `BudgetUsage` marks every item measured or estimated with a
+never NaN. Honest gap, pinned by tests: guardian disagreement had no
+backing store until the guardian decision log landed (now measured
+from it when present). `BudgetUsage` marks every item measured or estimated with a
 reason: execution time (receipt durations) and tool usage (trace counts)
 are measured; tokens and model costs are unmeasured unless the caller
 supplies reliable figures — no cost is ever invented.
+
+## 3b. Per-task cost accounting (F1)
+
+Every trace entry optionally carries its proxy cost: the task it
+served plus `duration_ms` (wall time), `output_bytes` (output size),
+and `input_tokens`/`output_tokens` — token fields only when the host
+exposes counts (OpenCode exposes none, so they stay 0 = unknown,
+never estimated). Zero means unknown, not zero: lines written before
+these fields existed decode as unattributed/unknown and keep reading.
+
+`trace.CostByTask` folds every session log into per-task totals
+(unattributed legacy lines bucket together); `regulus trace record`
+accepts `--task/--duration-ms/--output-bytes/--input-tokens/--output-tokens`
+and `regulus trace cost [--task <t>]` reports the fold. The report is
+auditable: it recomputes from the same JSONL lines `trace show`
+reads, so re-listing any session reproduces every number. `Summarize`
+adds the proxy sums (`trace_duration_ms`, `trace_output_bytes`,
+`tokens_total` only when traces carry counts); `BudgetUsage` extends
+the tool-usage line with the proxy sums and measures tokens from
+traces when present (caller figures take precedence). Token counts
+never become money: model costs stay honest zero.
 
 ## 4. Security: redaction and retention
 

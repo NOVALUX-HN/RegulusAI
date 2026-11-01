@@ -3,10 +3,13 @@
 // invention. Execution time is measured from receipt duration_ms, tool
 // usage from trace entry counts, experiment budgets from evolve Budget
 // MaxRuns plus strategy probe-attempt history, resource consumption
-// from receipt cpu_time_ms. Tokens and model costs have no backing
-// store: they stay unmeasured (Measured false with a reason) unless the
-// caller supplies reliable figures, which are then recorded as measured
-// caller-supplied values.
+// from receipt cpu_time_ms. F1 adds the trace proxy cost (wall time,
+// output bytes) to the tool-usage line; token counts are measured from
+// trace input/output token fields when any entry carries host-exposed
+// counts, else from caller-supplied figures, else unmeasured. Model
+// costs have no backing store: they stay unmeasured (Measured false
+// with a reason) unless the caller supplies reliable figures, which
+// are then recorded as measured caller-supplied values.
 package observability
 
 import (
@@ -107,6 +110,7 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 		}
 	}
 	calls, failed := 0, 0
+	var proxyMS, proxyBytes, traceIn, traceOut int64
 	for _, s := range sessions {
 		got, err := trace.List(root, s)
 		if err != nil {
@@ -117,6 +121,10 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 			if e.Status == trace.StatusError {
 				failed++
 			}
+			proxyMS += e.DurationMS
+			proxyBytes += e.OutputBytes
+			traceIn += e.InputTokens
+			traceOut += e.OutputTokens
 		}
 	}
 	scope := fmt.Sprintf("session %s", session)
@@ -128,8 +136,8 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 		Measured: true,
 		Value:    float64(calls),
 		Unit:     "calls",
-		Detail:   fmt.Sprintf("%d call(s), %d error(s) across %s", calls, failed, scope),
-		Reason:   "trace entry count; entries carry names and order only, never values",
+		Detail:   fmt.Sprintf("%d call(s), %d error(s) across %s; proxy %dms wall time, %dB output (zero = unknown, never estimated)", calls, failed, scope, proxyMS, proxyBytes),
+		Reason:   "trace entry count; entries carry names and order plus F1 proxy cost (duration_ms, output_bytes), never values",
 	})
 
 	exps, err := listExperiments(root)
@@ -151,12 +159,18 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 	})
 
 	tokens := BudgetItem{Name: BudgetTokens, Unit: "tokens"}
-	if figs != nil && figs.Tokens != nil {
+	switch {
+	case figs != nil && figs.Tokens != nil:
 		tokens.Measured = true
 		tokens.Value = float64(*figs.Tokens)
 		tokens.Reason = "caller-supplied reliable figure"
-	} else {
-		tokens.Reason = "no token-count store; caller supplied no reliable figures"
+	case traceIn+traceOut > 0:
+		tokens.Measured = true
+		tokens.Value = float64(traceIn + traceOut)
+		tokens.Detail = fmt.Sprintf("%d in + %d out across %s", traceIn, traceOut, scope)
+		tokens.Reason = "sum of trace input_tokens+output_tokens; host-exposed counts only, never estimated"
+	default:
+		tokens.Reason = "no token-count store and no trace token figures (host exposes none); caller supplied no reliable figures"
 	}
 	u.Items = append(u.Items, tokens)
 

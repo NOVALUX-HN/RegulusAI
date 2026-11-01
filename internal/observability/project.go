@@ -74,7 +74,8 @@ func ReceiptSpan(r receipts.Receipt, traceID, correlationID string) (Span, error
 // ToolCallSpan projects one trace entry as a tool-call span,
 // correlated by session into the caller's timeline (S2 tool calls).
 // Trace entries deliberately exclude values (see trace package), so
-// projected attributes carry names and order only — never content.
+// projected attributes carry names and order — never content — plus
+// the F1 proxy cost (task, duration_ms, output_bytes) when measured.
 func ToolCallSpan(e trace.Entry, taskID, traceID, correlationID string) (Span, error) {
 	s, err := StartSpan("agent", "tool."+e.Tool, taskID, correlationID, e.At)
 	if err != nil {
@@ -96,6 +97,20 @@ func ToolCallSpan(e trace.Entry, taskID, traceID, correlationID string) (Span, e
 	s.Attributes["message"] = e.Message
 	s.Attributes["session"] = e.Session
 	s.Attributes["files"] = append([]string{}, e.Files...)
+	// F1 proxy cost rides along when measured (zero = unknown, so
+	// unmeasured costs stay out of the span). Token counts stay out:
+	// the redaction deny-list scrubs every key containing "token",
+	// which would silently destroy them here — they live on in the
+	// trace entries, CostByTask, metrics and budgets instead.
+	if e.Task != "" {
+		s.Attributes["task"] = e.Task
+	}
+	if e.DurationMS > 0 {
+		s.Attributes["duration_ms"] = e.DurationMS
+	}
+	if e.OutputBytes > 0 {
+		s.Attributes["output_bytes"] = e.OutputBytes
+	}
 	return RedactSpan(s), nil
 }
 

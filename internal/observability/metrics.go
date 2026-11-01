@@ -38,7 +38,8 @@ import (
 //	total/mean_duration_ms       sum/mean of receipt duration_ms
 //	total_cpu_time_ms            sum of receipt cpu_time_ms (resource consumption, lower bound)
 //	tool_calls                   trace entries across all sessions (names+order only)
-//	tokens_total                 NO STORE: honest zero, never estimated
+//	trace_duration_ms/output_bytes  F1 proxy cost: sums of trace duration_ms/output_bytes (zero = unknown)
+//	tokens_total                 trace input+output tokens when any entry carries host-exposed counts; else honest zero, never estimated
 //	cost_per_successful_task     NO STORE: honest zero, never estimated
 const (
 	unmeasuredGuardian = "guardian_disagreement_rate"
@@ -65,6 +66,8 @@ type Metrics struct {
 	MeanDurationMS           float64           `json:"mean_duration_ms"`
 	TotalCPUTimeMS           int64             `json:"total_cpu_time_ms"`
 	ToolCalls                int               `json:"tool_calls"`
+	TraceDurationMS          int64             `json:"trace_duration_ms"`
+	TraceOutputBytes         int64             `json:"trace_output_bytes"`
 	TokensTotal              int64             `json:"tokens_total"`
 	CostPerSuccessfulTask    float64           `json:"cost_per_successful_task"`
 	Coverage                 map[string]string `json:"coverage"`
@@ -210,18 +213,40 @@ func summarizeExperiments(root string, m *Metrics) error {
 }
 
 // summarizeToolCalls folds trace tool-call volume across all sessions
-// (names and order only, never values).
+// (names and order only, never values) plus the F1 proxy cost totals
+// (wall time, output bytes) and host-exposed token counts when any
+// entry carries them. Token totals stay honest: 0 with the unmeasured
+// note unless traces actually carry counts — never estimated.
 func summarizeToolCalls(root string, m *Metrics) error {
 	sessions, err := trace.Sessions(root)
 	if err != nil {
 		return err
 	}
+	tokensKnown := false
 	for _, s := range sessions {
 		got, err := trace.List(root, s)
 		if err != nil {
 			return err
 		}
-		m.ToolCalls += len(got)
+		for _, e := range got {
+			m.ToolCalls++
+			m.TraceDurationMS += e.DurationMS
+			m.TraceOutputBytes += e.OutputBytes
+			m.TokensTotal += e.InputTokens + e.OutputTokens
+			if e.InputTokens > 0 || e.OutputTokens > 0 {
+				tokensKnown = true
+			}
+		}
+	}
+	if tokensKnown {
+		m.Coverage[unmeasuredTokens] = "sum of trace input_tokens+output_tokens; host-exposed counts only, never estimated"
+		kept := m.Unmeasured[:0]
+		for _, u := range m.Unmeasured {
+			if u != unmeasuredTokens {
+				kept = append(kept, u)
+			}
+		}
+		m.Unmeasured = kept
 	}
 	return nil
 }
@@ -266,8 +291,10 @@ func finishCoverage(m *Metrics) {
 	m.Coverage["regression_rate"] = "receipts: fail verdicts carrying a metric value / total receipts; non-metric failures excluded"
 	m.Coverage["execution_duration"] = "sum/mean of receipt duration_ms"
 	m.Coverage["resource_consumption"] = "sum of receipt cpu_time_ms (gates omitting the field contribute 0) plus trace tool-call count"
-	m.Coverage["tool_calls"] = "trace entries across all sessions; entries carry names and order only, never values"
-	m.Coverage[unmeasuredTokens] = "no token-count store; honest zero — supply reliable figures via budgets Figures for measured token usage"
+	m.Coverage["tool_calls"] = "trace entries across all sessions; entries carry names and order plus F1 proxy cost (duration_ms, output_bytes); zero cost = unknown"
+	if _, ok := m.Coverage[unmeasuredTokens]; !ok {
+		m.Coverage[unmeasuredTokens] = "no token-count store; honest zero — supply reliable figures via budgets Figures for measured token usage"
+	}
 	m.Coverage[unmeasuredCosts] = "no model-cost store; honest zero, never estimated — supply reliable figures via budgets Figures for measured costs"
 }
 

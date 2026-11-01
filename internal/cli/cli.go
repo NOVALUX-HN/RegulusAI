@@ -159,7 +159,7 @@ Commands:
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   skills list        trigger registry: skills with their one-line triggers
-  trace record|show|files|sessions|prune   capture and inspect per-session tool traces (regulus trace --help)
+  trace record|show|files|sessions|prune|cost   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
   task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
   decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
   spec check <file|dir>  validate the acceptance contract of feature documents
