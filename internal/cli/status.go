@@ -1,9 +1,11 @@
 package cli
 
 import (
-	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"time"
 
@@ -125,13 +127,39 @@ func (c CLI) statusCmd(args []string) int {
 	for _, t := range tasks {
 		fmt.Fprintf(c.Stdout, "time:       %s %s (%d receipt(s))\n", t, formatDurationMS(byTask[t].ms), byTask[t].n)
 	}
-	// gremlins availability for the mutation gate
-	if _, _, code, _ := c.runner().Run(context.Background(), "command -v gremlins || command -v \"$HOME/go/bin/gremlins\""); code == 0 {
+	// gremlins availability for the mutation gate (pure Go probe: see below)
+	if gremlinsAvailableForStatus() {
 		fmt.Fprintln(c.Stdout, "mutation:    gremlins available")
 	} else {
-		fmt.Fprintln(c.Stdout, "mutation:    gremlins NOT found — the mutation gate will fail; go install github.com/go-gremlins/gremlins/cmd/gremlins@latest")
+		fmt.Fprintln(c.Stdout, "mutation:    gremlins NOT found — the mutation gate will fail; go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0")
 	}
 	return 0
+}
+
+// gremlinsAvailableForStatus reports whether the mutation gate's binary
+// resolves: PATH first, then the default Go bin dir of this OS
+// ($HOME/go/bin on unix, %USERPROFILE%\go\bin on Windows). Pure Go, no
+// shell: `command -v` does not exist in pwsh/cmd, so a shell probe
+// always fails on Windows without sh (false "NOT found").
+func gremlinsAvailableForStatus() bool {
+	if _, err := exec.LookPath("gremlins"); err == nil {
+		return true
+	}
+	var dir string
+	if runtime.GOOS == "windows" {
+		dir = filepath.Join(os.Getenv("USERPROFILE"), "go", "bin")
+	} else if home, err := os.UserHomeDir(); err == nil {
+		dir = filepath.Join(home, "go", "bin")
+	}
+	if dir == "" {
+		return false
+	}
+	name := "gremlins"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	fi, err := os.Stat(filepath.Join(dir, name))
+	return err == nil && !fi.IsDir()
 }
 
 // formatDurationMS renders a wall-time span compactly for status:
