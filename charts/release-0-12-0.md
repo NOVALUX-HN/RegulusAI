@@ -44,7 +44,7 @@ Domain: sextant
 | ID | Spec | Work | Route | Status |
 |----|------|-------|-------|--------|
 | V1 | S1–S2 | bump 0.12.0 + versioninfo/manifest + rebuild + commit batch + release gauntlet | @regulus-worker | open |
-| V2 | S1–S2 | verificación independiente: versión match, receipts V1 pasan, endpoints nuevos vivos | @regulus-verifier | open |
+| V2 | S1–S2 | verificación independiente: versión match, receipts V1 pasan, endpoints nuevos vivos | @regulus-verifier | done |
 | V3 | S3 | merge develop→main + tag v0.12.0 + push + CI watch — ejecuta lead inline | inline | open |
 
 ## Log
