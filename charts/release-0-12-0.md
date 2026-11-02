@@ -45,8 +45,11 @@ Domain: sextant
 |----|------|-------|-------|--------|
 | V1 | S1–S2 | bump 0.12.0 + versioninfo/manifest + rebuild + commit batch + release gauntlet | @regulus-worker | open |
 | V2 | S1–S2 | verificación independiente: versión match, receipts V1 pasan, endpoints nuevos vivos | @regulus-verifier | done |
-| V3 | S3 | merge develop→main + tag v0.12.0 + push + CI watch — ejecuta lead inline | inline | open |
+| V3 | S3 | merge develop→main + tag v0.12.0 + push + CI watch — ejecuta lead inline | inline | done |
 
 ## Log
 
 - L1: Chart opened 2026-11-02 (batch: win-publisher, win-localtrust, dashboard-ux, dashboard-vision V1-V4, learn-backfill, README imágenes; `develop==main==3af4fba`, árbol dirty). Deuda a saldar: version hardcodeada 0.11.0.0 en versioninfo/manifest.
+- CLOSED V1 CRITICAL spec OK + 12 receipt(s) PASS (run_8b14bf7638db29d7, develop 92c3457, doctor 0.12.0 matches).
+- CLOSED V2 CRITICAL spec OK (verifier PASS lectura + lead completó huecos vivos: doctor/binary 0.12.0.0 NOVALUX-HN, /v1/executions + /v1/git vivos, git limpio).
+- CLOSED V3 CRITICAL: ff 3af4fba..2c20698 + tag v0.12.0 + push main+tag, CI 41456952866 success; serves 17817/9/31 reiniciados con binario final 0.12.0 (versión + executions vivos).
