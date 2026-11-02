@@ -322,7 +322,7 @@ comando; el binario de este repo en `bin/regulus`) y pedir cada ruta con
 
 ```jsonc
 // GET /v1/version -> cabecera "versión"
-{"ok":true,"data":{"version":"regulus 0.10.0\n","contract":"regulus.contract/v1\n"},"contract":"regulus.http/v1"}
+{"ok":true,"data":{"version":"regulus 0.11.0\n","contract":"regulus.contract/v1\n"},"contract":"regulus.http/v1"}
 
 // GET /v1/almanac/summary -> tarjeta Guardado + gráfico "Recuerdos por tipo"
 {"ok":true,"data":{"total":66,"by_type":{"decision":2,"discovery":2,"lesson":2,"session-note":60},

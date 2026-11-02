@@ -24,24 +24,18 @@ Domain: sextant
 ### Scenario: S1
 
 - Given `package.json` en 0.10.0 y `develop` en `61490c2` con el batch (versión 0.11.0 consistente)
-
-- Given `package.json` en 0.10.0 y `develop` en `61490c2` con el batch de arriba
 - When se sube a 0.11.0
 - Then `package.json`, `README.md` status, `CHANGELOG.md` entrada 0.11.0, `bin/regulus.exe` + `binaries/` stampleados 0.11.0 y `doctor` reporta `matches package.json`
 
 ### Scenario: S2
 
 - Given el árbol con versión 0.11.0 (release gauntlet verde)
-
-- Given el árbol con versión 0.11.0
 - When corre `gate run release-0-11-0/V1`
 - Then 12/12 pass con receipts append-only
 
 ### Scenario: S3
 
 - Given `develop` verde y `origin/main` en `1ca0a0a` (merge a main + tag + CI)
-
-- Given `develop` verde y `origin/main` en `1ca0a0a`
 - When se mergea a `main` y se taguea `v0.11.0`
 - Then `main` avanza con merge limpio, el push incluye tag, y el workflow gauntlet en main queda verde
 

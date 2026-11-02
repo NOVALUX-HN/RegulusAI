@@ -14,7 +14,7 @@ Class: COMPLEX
 - Dependencies: P1 tras P2 es usable; P3 es regresión (no rompe lo actual); P4 independiente del UI (toca resolución de root en CLI+serve). Orden: P2 (jail+scoping), P1 (lista+selector), P4 (auto-detect), P3 (default intacto + docs) al final con todo.
 - Risk: complex
 - Verification: `spec check` + `gate run dashboard-projects/P*` 12/12 + @regulus-verifier intenta traversal (`..`, absoluto, fuera de allowlist) y confirma 400 + prueba viva dos proyectos.
-- Completion: P1–P3 CLOSED vía `task close`.
+- Completion: P1–P4 CLOSED vía `task close`.
 
 ## Acceptance
 
@@ -26,7 +26,7 @@ Class: COMPLEX
 
 ### Scenario: P2
 
-- Given todos los handlers leen stores con root fijo `"."` (`server.go:63-71` `runCLI`, `collections.go:165-501` `evidence.List(".",…)`, `almanac.Search(".",…)`, `trace.*(".",…)`, `budget.Show(".",…)`)
+- Given todos los handlers leen stores con root fijo `"."` (`server.go:68-90` `New()` allowlist, `collections.go:165-501` `evidence.List(".",…)`, `almanac.Search(".",…)`, `trace.*(".",…)`, `budget.Show(".",…)`)
 - When se pide `/v1/receipts?project=..`, `?project=/abs`, `?project=otro-fuera-de-allowlist` o falta `project` con allowlist activa
 - Then traversal y absolutos responden 400 sin tocar disco fuera de allowlist, proyecto desconocido responde 404, y `project` válido se resuelve solo dentro de su root (jail: el path final debe quedar dentro del root allowlistado); ningún test nuevo escribe fuera de `t.TempDir`
 

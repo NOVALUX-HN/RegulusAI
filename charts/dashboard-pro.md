@@ -21,7 +21,7 @@ Class: COMPLEX
 ### Scenario: D1
 
 - Given el panel embebido en `internal/httpapi/dashboard_ui.go:3-8` (tarjetas `#cards-grid`, gráficos `#graphs`, 6 tablas, fetch a 8 `GET /v1/*` en `dashboard_ui.go:145-329`) con estilos previos fuera de `design.md` (tokens: `brand-gold #D9A441`, `bg #0C1018/#171E29/#202A38`, semánticos PASS `#55B889`/FAIL `#E16B68`/BLOCKED `#E69A42` en `design.md:100-154`, tipografías §4, radios/moción §5)
-- When se abre `/` o `/dashboard` (CSP `dashboard.go:104-109`, solo `GET` en `dashboard.go:116-133`)
+- When se abre `/` o `/dashboard` (CSP `dashboard.go:112-117`, solo `GET` + handler en `dashboard.go:124-136`)
 - Then todo color sale de variables `:root` Obsidian & Lion Gold (cero hex hardcodeados fuera de tokens), veredictos usan color semántico + etiqueta de texto (nunca color solo), headings Space Grotesk / cuerpo Inter / datos JetBrains Mono, y `gofmt`+`crap` del paquete siguen ≤ umbrales
 
 ### Scenario: D2

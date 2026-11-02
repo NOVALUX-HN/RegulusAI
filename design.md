@@ -1,6 +1,6 @@
 # REGULUS — Design System &amp; Visual Identity
 
-**Document:** [`design.md`](http://design.md)  
+**Document:** [`design.md`](./design.md)  
 **Status:** Approved Design Direction  
 **Design System:** Obsidian &amp; Lion Gold  
 **Brand:** REGULUS  
