@@ -43,10 +43,13 @@ Domain: sextant
 
 | ID | Spec | Work | Route | Status |
 |----|------|-------|-------|--------|
-| V1 | S1 | commit F1/F2 a develop + push origin/develop | @regulus-worker | open |
-| V2 | S2 | verificación independiente: diff solo-docs + spec + receipts | @regulus-verifier | open |
-| V3 | S3 | merge develop→main + push + CI watch — ejecuta lead inline | inline | open |
+| V1 | S1 | commit F1/F2 a develop + push origin/develop | @regulus-worker | done |
+| V2 | S2 | verificación independiente: diff solo-docs + spec + receipts | @regulus-verifier | done |
+| V3 | S3 | merge develop→main + push + CI watch — ejecuta lead inline | inline | done |
 
 ## Log
 
 - L1: Chart opened 2026-11-01 (F1/F2 done 2×12/12, 5M+1U en `main`, `develop==main==82f03ff`). Sin tag.
+- CLOSED V1 CRITICAL S1 commit+push develop 49f22b2 (7 files +102/−11, develop==origin/develop).
+- CLOSED V2 CRITICAL S2 verifier 2-4 PASS + lead completa punto 1 (diff 7 solo-docs, cero internal/bin/cmd; spec OK 2+3; F1/F2 12/12 vigentes; develop==origin/develop). Verifier FAIL inicial solo por falta de shell en su entorno, subsanado por lead con `git diff` en claro.
+- CLOSED V3 CRITICAL S3 fast-forward 82f03ff..49f22b2 + push main + CI 41366341825 success (headSha 49f22b2). main==develop==origin/main.
