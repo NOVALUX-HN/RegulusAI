@@ -3,6 +3,14 @@
 Página local read-only en puerto fijo para ver lo importante del harness,
 lo guardado y cómo aprende el Almanac. Abrirla y entenderla no requiere
 leer código: cada sección dice qué significa en lenguaje simple.
+Desde V1/V4 el panel replica el mockup `docs/assets/dashboard-vision.png`
+(tema Obsidian & Gold): sidebar con 7 secciones, pill del último ciclo,
+5 KPIs, 2 gráficos y 2 tablas con datos reales del backend.
+
+![Panel del harness — vista completa](assets/dashboard-v4-desktop.png)
+
+Captura real del panel nuevo a 1280px (página completa). En móvil la
+sidebar colapsa arriba: ver `assets/dashboard-v4-mobile.png`.
 
 ## Abrir el panel
 
@@ -65,6 +73,82 @@ regulus serve --port=17817
 ```
 
 ## Guía por sección (qué muestra cada parte)
+
+### Vista visión (réplica del mockup, arriba del todo)
+
+Sidebar — navegación lateral con 7 entradas con icono:
+Resumen, Evidencia, Compuertas, Agentes, Métricas, Almanaque y
+Configuración (Agentes y Configuración saltan a sus secciones reales más
+abajo). Debajo, tarjeta «Proyecto» con nombre real (`GET /v1/status`
+campo `project`), rama actual (`GET /v1/git`, `—` fuera de git) y última
+ejecución en relativo («Hace 5 min», `sin actividad` sin ciclos). En
+móvil (360px) la sidebar colapsa arriba en fila horizontal con scroll
+propio, sin scroll horizontal de página.
+
+Pill del último ciclo — en la cabecera, junto al título: `Último ciclo:
+PASS #N · fecha` (borde verde) o `FAIL #N` (borde rojo), `sin datos` sin
+ciclos. Fuente: el ciclo con `#` mayor de `GET /v1/executions`
+(1 = más antiguo); la fecha sale de su campo `date`.
+
+5 KPIs — las cinco cifras del mockup, cada una con qué significa en
+lenguaje simple y su fuente exacta (el número es global, el delta compara
+últimos 7 días contra los 7 previos):
+
+- Evidencias: comprobantes guardados. Fuente `GET /v1/metrics` campo
+  `receipts_total` (formato `1,248`); delta % 7 días desde `started_at`
+  de los receipts (`nuevo en 7 días` si antes era 0, `sin cambios` si
+  ambos son 0).
+- Ejecuciones: ciclos numerados del harness (#1 el más antiguo). Fuente
+  `GET /v1/executions` campo `total`; delta % 7 días desde `date`.
+- Compuertas (PASS): de cada 100 pruebas, cuántas salieron bien. Fuente
+  `GET /v1/metrics` campo `verification_pass_rate` (formato `98.8%`) más
+  `receipts_pass/receipts_total`; delta en puntos (pp) 7 días desde los
+  veredictos (`sin datos` sin receipts en ventana).
+- Lecciones: cosas que Regulus ya aprendió. Fuente
+  `GET /v1/almanac/summary` campo `lessons_admitted`; delta `N nuevas
+  (7 días)` desde `CreatedAt`.
+- Ramas activas: ramas vistas en los ciclos más la actual. Fuente
+  `GET /v1/executions` campo `branch` + `GET /v1/git` (rama actual);
+  muestra el conteo y hasta 5 nombres. Límite honesto: los ciclos sin
+  manifest (o con manifest anterior a V3, sin rama) muestran `—` y no
+  cuentan; si solo se ve este checkout avisa `solo se ve este checkout`.
+- Deltas parciales: las ventanas de 7 días se calculan en cliente con
+  tope de 1000 por colección (lo más nuevo); si algún total lo supera,
+  aparece `Cifras de 7 días parciales (límite 1000 por colección): ….
+  Los totales de las tarjetas son globales`.
+
+2 gráficos (Métricas) — actividad diaria de los últimos 7 días y tasa de
+éxito diaria, con ejes. Sin barras ni puntos cuando un día no tiene
+datos (`Sin datos todavía: no hay comprobantes en los últimos 7 días`).
+Fuentes: `GET /v1/receipts` paginado (tope 1000, agrupa `started_at` por
+día) para barras; `pass/total` por día para la línea con banda. La línea
+usa escala 90–100% cuando todo va alto.
+
+2 tablas (Compuertas) — últimas ejecuciones y compuertas del último ciclo:
+
+- Últimas ejecuciones: una fila por ciclo numerado (#N), las más nuevas
+  primero (máx. 8). Columnas `#/Rama/Resultado/Compuertas/Duración/Fecha`.
+  Fuente `GET /v1/executions` (rama del manifest, `—` sin manifest o sin
+  rama; el título de la rama lleva la task). Vacío: `Sin ejecuciones
+  todavía (GET /v1/executions, total 0)`.
+- Compuertas del último ciclo: abre el último ciclo prueba por prueba.
+  Columnas `#/Compuerta/Estado/Tiempo/Evidencia` (la evidencia es la ruta
+  del receipt, truncada a 140 con `title` completo). Fuente: los receipts
+  de la task del último ciclo (`GET /v1/receipts?task=`) agrupados igual
+  que el backend (mismo `run_id`, o misma task + hora UTC sin `run_id`),
+  ordenados por `started_at` (máx. 12 + fila `… N compuertas más`).
+  `Sin compuertas` si el último ciclo no tiene comprobantes. La lista de
+  Configuración (las 12 puertas fijas de `regulus.json`: typecheck, lint,
+  build, unit-tests, coverage-floor, mutation, crap, vulncheck, spec,
+  ts-typecheck, ts-unit-tests, gofmt) pinta al lado el estado vivo de ese
+  ciclo (`PASS`/`FAIL`/`— en este ciclo`).
+
+Agentes — quién hace qué: lista fija del repo (`docs/agents.md`), no
+inventada por el panel. Guardianes (solo miran): gate-verifier,
+spec-keeper, mutation-auditor, crap-analyst, evidence-auditor, reviewer.
+Tripulación (sí edita): scout, worker, verifier, proposer.
+
+### Secciones clásicas (debajo de la vista visión)
 
 Cabecera — nombre real del proyecto + estado y salud. El `<h1 id="project-name">`
 y el `<title>` se rellenan desde `GET /v1/status` campo `project`
@@ -134,8 +218,21 @@ que Regulus usa para mejorar solo: fecha, tipo, tarea y resultado.
 Fuente: `GET /v1/budget?task=&limit=&offset=`, 10 por página. Vacío:
 fila «Sin movimientos todavía ... (GET /v1/budget, total 0)».
 
+Leyenda, paginadores y textos largos — bajo «De un vistazo» hay una
+leyenda con el significado de cada veredicto (PASS/FAIL/BLOCKED,
+Confirmada/Por confirmar/Sin dato). Cada paginador muestra
+«Mostrando lo–hi de total · página N de M · GET /v1/…» y, en las
+tablas con filtro (Memoria, Aprendizaje, pasos de sesión), nombra el
+filtro activo (`q`/`type`, `status`, `session`). Las celdas largas
+truncadas a 140 caracteres muestran el texto completo al pasar el
+cursor (`title`). Con proyecto vacío, bajo las tarjetas aparece
+«Sin datos todavía: proyecto vacío (...)». Si `GET /v1/projects`
+falla, la cabecera muestra «No se pudo cargar la lista de proyectos
+(GET /v1/projects)…» en lugar de silenciarlo.
+
 Pie — se actualiza solo cada 30 segundos + botón «Actualizar ahora» que
-recarga sin perder la página de cada tabla.
+recarga sin perder la página de cada tabla. Muestra
+«Última actualización HH:MM:SS».
 
 ## Rutas
 
@@ -145,6 +242,8 @@ recarga sin perder la página de cada tabla.
 - `GET /v1/metrics`: `Summarize` + evolution hoy vs cap.
 - `GET /v1/almanac/summary`: conteos por tipo, admitidas, pendientes, índice.
 - `GET /v1/receipts?task=&limit=&offset=`: receipts del gauntlet, redactados, paginados.
+- `GET /v1/executions?limit=&offset=`: ciclos numerados (1 = más antiguo) con task, resultado, compuertas pass/total, duración, fecha y rama del manifest (`—` sin manifest o sin rama), paginados.
+- `GET /v1/git`: rama + head corto del checkout servido (`—` fuera de git).
 - `GET /v1/observations?q=&task=&type=&limit=&offset=`: observaciones del Almanac con búsqueda (`q` en título/contenido), redactadas, paginadas.
 - `GET /v1/lessons?domain=&status=&task=&q=&limit=&offset=`: lecciones admitidas + candidatas (`status=admitted|candidate|all`), redactadas, paginadas.
 - `GET /v1/traces?session=&task=&limit=&offset=`: sin `?session=` lista sesiones con conteo; con `?session=` lista entradas en orden de llamada, redactadas, paginadas.
@@ -349,6 +448,13 @@ comando; el binario de este repo en `bin/regulus`) y pedir cada ruta con
 // GET /v1/budget?limit=1 -> tabla Coste (24 movimientos)
 {"total":24,...,"items":[{"kind":"reflect","task":"regulus-ai-v1/T2",
  "outcome":"candidate-admitted",...}]}
+
+// GET /v1/executions?limit=1 -> tablas visión (ciclos #N con rama del manifest; sin manifest = —)
+{"ok":true,"data":{"total":199,"limit":1,"offset":0,"items":[{"n":1,"task":"","result":"pass",
+ "gates_pass":1,"gates_total":1,"date":"","branch":"—"}]},"contract":"regulus.http/v1"}
+
+// GET /v1/git -> tarjeta Proyecto + KPI Ramas (rama actual del checkout)
+{"ok":true,"data":{"branch":"main","head":"3af4fba"},"contract":"regulus.http/v1"}
 ```
 
 Cabeceras y errores verificados contra el panel en marcha:
@@ -364,11 +470,16 @@ regulus serve --bind=0.0.0.0 -> stderr: "warning: regulus serve binds a non-loop
 address (0.0.0.0): the read-only dashboard exposes project data to that network; ..."
 ```
 
-Nota honesta sobre capturas: en este entorno no hay navegador ni motor
-headless disponible (sin chromium/chrome/edge/firefox/playwright; solo
-`curl.exe`/HTTP), así que no hay PNGs del panel. En su lugar, esta
-sección trae transcripciones reales del panel sirviendo este mismo repo
-(ver comandos arriba): mismos números que pintan las tarjetas, tablas y
-gráficos, mismas cabeceras CSP y mismos errores 405/400. La UI no tiene
-dependencias externas, así que lo que devuelve `GET /` + estos JSON es
-exactamente lo que ve quien abre `http://localhost:17817/`.
+Nota honesta sobre capturas: `docs/assets/dashboard-v4-desktop.png`
+(1280px, página completa) y `docs/assets/dashboard-v4-mobile.png` (360px,
+página completa) son capturas reales del panel nuevo sirviendo este repo,
+con datos vivos — no el mockup `docs/assets/dashboard-vision.png` (que
+sigue siendo la referencia de diseño). Las ventanas de 7 días y deltas
+pueden salir parciales si alguna colección supera el tope de 1000, y las
+ramas históricas sin manifest muestran `—`; la UI lo avisa en el propio
+panel. Esta sección además trae transcripciones reales del panel
+sirviendo este mismo repo (ver comandos arriba): mismos números que
+pintan las tarjetas, tablas y gráficos, mismas cabeceras CSP y mismos
+errores 405/400. La UI no tiene dependencias externas, así que lo que
+devuelve `GET /` + estos JSON es exactamente lo que ve quien abre
+`http://localhost:17817/`.

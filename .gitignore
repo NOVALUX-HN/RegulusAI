@@ -9,6 +9,10 @@ bin/*
 !bin/regulus.js
 dist/
 
+# Generated Windows version resources (goversioninfo .syso; rebuilt by
+# scripts/build.ps1 and scripts/build.bash on every build, never committed)
+*.syso
+
 # Tool cache directories
 .atl/
 binaries/

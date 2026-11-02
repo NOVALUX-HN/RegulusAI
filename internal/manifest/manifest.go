@@ -139,6 +139,7 @@ type Manifest struct {
 	RunID            string        `json:"run_id"`
 	Task             string        `json:"task"`
 	CreatedAt        time.Time     `json:"created_at"`
+	Branch           string        `json:"branch,omitempty"`
 	Git              GitState      `json:"git"`
 	Config           ConfigState   `json:"config"`
 	Tools            ToolState     `json:"tools"`
@@ -208,6 +209,7 @@ func Build(ctx context.Context, r Runner, p Params) (Manifest, error) {
 		RunID:     p.RunID,
 		Task:      p.Task,
 		CreatedAt: time.Now().UTC(),
+		Branch:    BranchOf(p.Root),
 		Config: ConfigState{
 			Fingerprint: sha256Hex(p.ConfigBytes),
 			Gates:       gates,

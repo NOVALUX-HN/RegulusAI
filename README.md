@@ -1,8 +1,10 @@
 # Regulus AI
 
+![Regulus AI — hero](docs/assets/hero.png)
+
 **An OpenCode-native, self-improving engineering harness: a guardian gauntlet over the code, the Sextant workflow over the work, and evidence-driven evolution of the harness itself.**
 
-> Status: v0.11.0 — Gauntlet · Discipline · self-improving Evolution, now with win-hardening, crap-paydown a max 29.46, retention-gc, memory-hybrid, toolchain-gates, plus the 12-gate gauntlet (health/live/polish gaps closed), almanac robustez + g1-g4 retrieval, doctor V2 refusals, regulus-health-fix, close-latest-manifest, design.md, dashboard-pro, dashboard-projects — proven by the suite (Go + bun) on this very repository.
+> Status: v0.12.0 — Gauntlet · Discipline · self-improving Evolution, now with win-hardening, crap-paydown a max 29.46, retention-gc, memory-hybrid, toolchain-gates, plus the 12-gate gauntlet (health/live/polish gaps closed), almanac robustez + g1-g4 retrieval, doctor V2 refusals, regulus-health-fix, close-latest-manifest, design.md, dashboard-pro, dashboard-projects, dashboard visión (réplica mockup Obsidian & Gold + endpoints executions/git), firma local autofirmada — proven by the suite (Go + bun) on this very repository.
 
 Regulus AI fuses four proven ideas into one harness for [OpenCode](https://opencode.ai) V2:
 
@@ -10,6 +12,8 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 - **Recursive harnessing** (inspired by [Harness²](https://github.com/google-research/harness2), Google Research): the harness treats its own components (prompts, guardrails, memory, skills, agents) as an editable surface and improves them from execution evidence, under an explicit budget.
 - **The right not to read the code** (Uncle Bob's gauntlet): the human approves acceptance criteria and audits evidence receipts — never line-by-line diffs. Read-only guardian agents verify that the code meets the spec contract through layered deterministic gates (typecheck → lint → build → tests → mutation testing → CRAP analysis).
 - **The Necessity Ladder** (craft doctrine adapted from [Ponytail](https://github.com/DietrichGebert/ponytail), MIT): solve the whole problem with the least new code — reuse first, and never cut validation, security or accessibility; a sixth guardian, the reviewer, reads the code the change touches, not just the diff.
+
+![The three loops](docs/assets/loops.png)
 
 ## Quickstart
 
@@ -46,6 +50,8 @@ regulus status
 
 Then open `opencode` in the project: the plugin registers the regulus tools, the guardians (`@regulus-gate-verifier`, `@regulus-spec-keeper`, `@regulus-mutation-auditor`, `@regulus-crap-analyst`, `@regulus-evidence-auditor`, `@regulus-reviewer`) and the Crew (`@regulus-scout`, `@regulus-worker`, `@regulus-verifier`), and the `regulus-workflow` skill runs the Sextant.
 
+![Guardians and Crew](docs/assets/crew.png)
+
 ## The Sextant — five movements
 
 | Movement | What it means | The evidence it leaves |
@@ -55,6 +61,8 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | **BUILD** | the Necessity Ladder; never cut validation, security, accessibility | gauntlet receipts per step |
 | **PROVE** | all gates green, receipts cited (`rec_…`) | `gate run` receipts |
 | **LEARN** | notes to the Almanac; the lesson admitted through the guardian | ledger + INDEX |
+
+![The Sextant](docs/assets/sextant.png)
 
 ## Commands
 
@@ -81,10 +89,20 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus trace show/sessions/files` | session tool-execution fingerprints and touched paths |
 | `regulus reflect --domain --task --cue --lesson <doc>` | propose an evidence-gated lesson candidate (nothing admitted without a guardian) |
 | `regulus library candidates` | pending candidates |
+
+![The 12-gate gauntlet](docs/assets/gauntlet.png)
 | `regulus library admit --domain --candidate --guardian` | complete the admission: INDEX + Almanac + ledger |
 | `regulus library list / show` | admitted lessons / the domain INDEX, verbatim |
 | `regulus budget show` | the evolution ledger, oldest first |
 | `regulus budget record --kind probe` | record an opt-in probe run (budget-gated, k=1) |
+
+## Dashboard
+
+![Dashboard](docs/assets/dashboard-v4-desktop.png)
+
+Panel read-only del harness: sidebar, KPIs, gráficos y tablas con datos reales del backend, sin editar nada.
+Ábrelo con `regulus serve --port=17817` y visita http://localhost:17817/ (también vale `/dashboard`).
+La imagen de arriba es captura real del panel nuevo (tema Obsidian & Gold que replica el mockup), no el mockup.
 
 ## Documentation
 

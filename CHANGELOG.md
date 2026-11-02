@@ -4,6 +4,35 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.12.0] - 2026-11-02
+
+Same branch (`develop`); tags cut on main at merge.
+
+Batch delivered since 0.11.0 (HEAD `3af4fba`):
+
+### Added
+- win-publisher (T1–T2): `versioninfo.json` + `cmd/regulus/regulus.manifest`
+  (CompanyName NOVALUX-HN, ProductName Regulus AI, asInvoker) + wiring en
+  `scripts/build.ps1`/`scripts/build.bash` (`.syso` vía goversioninfo
+  v1.4.0, git-ignorado) + sección Windows en `docs/troubleshooting.md`.
+- win-localtrust (L1–L2): `scripts/sign-local.ps1` idempotente
+  (cert code-signing autofirmado CurrentUser, Root+TrustedPublisher,
+  signtool + verificación) + sección firma local en troubleshooting
+  (uso, alcance solo-PCs-con-cert, límite honesto).
+- dashboard-ux (U1–U2): jerarquía visual (espaciado, secciones, tarjetas,
+  gráficos) + claridad info (cada cifra con qué-cuenta-y-fuente, vacíos
+  útiles); fix `id="graphs"` duplicado → `sec-graphs` (0 errores consola).
+- dashboard-vision (V1–V4): réplica mockup Obsidian & Gold con datos reales
+  (sidebar 7 entradas, topbar + pill, 5 KPIs, barras 7 días + línea tasa,
+  tablas ejecuciones/compuertas, tarjeta proyecto) + backend
+  `/v1/executions` (ciclos numerados desde manifests+receipts) +
+  `/v1/git` (rama+head) + `branch` en manifest + `docs/dashboard.md` al día.
+- learn-backfill (R1–R2): 2 lecciones admitidas (ids duplicados HTML;
+  exit −1 + todo-ok = timeout infra, re-lanza en caliente).
+- README: sección `## Dashboard` con captura real
+  (`docs/assets/dashboard-v4-desktop.png`, no el mockup) + 6 imágenes
+  (hero, loops, crew, sextant, gauntlet, dashboard) + status a v0.12.0.
+
 ## [0.11.0] - 2026-11-01
 
 Same branch (`develop`); tags cut on main at merge.

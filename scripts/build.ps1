@@ -34,6 +34,25 @@ $targets = @(
 
 New-Item -ItemType Directory -Force -Path (Join-Path $root "binaries") | Out-Null
 $env:CGO_ENABLED = "0"
+
+# win-publisher T1: stamp Windows EXEs with Company/Product metadata.
+# goversioninfo runs via `go run` pinned (@v1.4.0) — no go.mod dependency,
+# no blobs in git (*.syso is git-ignored and regenerated every build).
+# The .syso files only affect GOOS=windows builds; other targets ignore them.
+# If `go run <pkg>@<version>` cannot resolve (offline), fallback:
+#   go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
+# then `goversioninfo -64 ...` / `goversioninfo -arm -64 ...` with the same args.
+# NOTE: keep versioninfo.json FileVersion/ProductVersion in sync with package.json
+# (0.11.0 -> 0.11.0.0) on every version bump.
+Write-Host "generating Windows version resources (goversioninfo v1.4.0)"
+& go run "github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0" -64 -o (Join-Path $root "cmd/regulus/resource_windows_amd64.syso") (Join-Path $root "versioninfo.json")
+if ($LASTEXITCODE -ne 0) {
+  throw "goversioninfo failed for windows/amd64 (exit ${LASTEXITCODE})"
+}
+& go run "github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0" -arm -64 -o (Join-Path $root "cmd/regulus/resource_windows_arm64.syso") (Join-Path $root "versioninfo.json")
+if ($LASTEXITCODE -ne 0) {
+  throw "goversioninfo failed for windows/arm64 (exit ${LASTEXITCODE})"
+}
 foreach ($target in $targets) {
   $os, $arch = $target.Split("/")
   $ext = ""

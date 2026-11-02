@@ -24,6 +24,75 @@ marks its children via `internal/executil.HideWindow` (doctor probe,
 gate runner, project-name lookup). If flashes return, a spawn site is
 missing the marking — grep for `exec.Command` and route it through
 `executil`.
+
+## Windows marca el EXE como desconocido
+
+Si Windows muestra el EXE como de publicador desconocido, o
+SmartScreen / Defender avisa al ejecutarlo, la causa es que los EXEs
+se construyen localmente sin firma Authenticode: no hay ningún
+certificado público incluido en el repo, así que
+`Get-AuthenticodeSignature → NotSigned` es esperado y no indica por
+sí solo un binario manipulado. Desde T1 los EXEs llevan identidad en
+Propiedades (pestaña Detalles): CompanyName NOVALUX-HN y ProductName
+Regulus AI — eso identifica el binario pero no equivale a una firma.
+
+Cómo permitir (elige solo lo que necesites):
+
+- Si el archivo trae Mark-of-the-Web (descargado o copiado con marca
+  de internet), desbloquéalo:
+  ```powershell
+  Unblock-File bin/regulus.exe
+  ```
+- SmartScreen en ejecutables descargados: en el aviso pulsa
+  "Más información → Ejecutar de todas formas", solo si el hash
+  coincide con tu build.
+- Exclusión de Defender solo para la carpeta del repo y solo si
+  confías en tu propio build:
+  ```powershell
+  Add-MpPreference -ExclusionPath 'C:\ruta\a\tu\repo'
+  ```
+  Revisa la exclusión con `Get-MpPreference` y retírala cuando ya no
+  la necesites.
+- Alternativa sin EXE (no dispara SmartScreen/Defender porque no hay
+  binario que reputar):
+  ```bash
+  go run ./cmd/regulus ...
+  ```
+
+Límite honesto: la firma completa verificable por Windows
+(Authenticode `Signed` con cadena a una CA pública) requiere un
+certificado de firma de código público, no incluido en este repo. El
+VersionInfo (CompanyName / ProductName) identifica el origen en
+Propiedades pero no equivale a firma y no convierte `NotSigned` en
+`Signed`.
+
+## Firmar los EXEs en tus PCs (autofirmado local)
+
+Si `Get-AuthenticodeSignature` sigue en `NotSigned` (ver la sección
+"Windows marca el EXE como desconocido" arriba), puedes firmarlos para
+tus propias PCs con un certificado autofirmado local, sin comprar nada:
+
+```powershell
+powershell -File scripts/sign-local.ps1
+```
+
+Requiere el Windows SDK instalado (por `signtool`): si falta, el script
+falla con un mensaje claro y no toca nada.
+
+Alcance: vale solo en las PCs donde se instaló el cert. El script genera
+el cert code-signing NOVALUX-HN en `CurrentUser\My` y lo instala en
+`Root` + `TrustedPublisher` del usuario actual (`CurrentUser`, nunca
+`LocalMachine`): en esas PCs el `Status` pasa a `Valid` (firmado y
+confiable). En cualquier otra PC sin el cert, el EXE sigue sin ser
+confiable.
+
+Límite honesto: esto no es un publisher verificado global — eso requiere
+un certificado de firma de código público (una CA pública), no incluido
+en este repo. La firma local quita el aviso en tus PCs, no ante el mundo.
+
+Re-ejecutable sin miedo: el script es idempotente — si el cert ya existe
+y los EXEs ya están firmados con él, re-correrlo es no-op.
+
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
