@@ -2,11 +2,12 @@
 // a fixed suite of 5-10 micro-tasks with hidden checks plus an offline
 // runner. The worker sees only the prompt (Title + Prompt); the runner
 // knows the answer (the check function). Every check is machine-checked
-// (PASS/FAIL, no judgment) and runs offline: no network, no model, no
-// tokens — wall time is the honest proxy cost (F1: the host exposes no
-// token counts).
+// (PASS/FAIL, no judgment) and runs offline: no network, no model —
+// wall time is the proxy cost plus the measured-local token proxy
+// (chars/4 per trace entry; the host exposes no token counts, so host
+// totals stay honestly unknown).
 //
-// The task list is fixed (v1, 7 tasks) so a baseline report and a
+// The task list is fixed (v2, 10 tasks) so a baseline report and a
 // candidate report stay comparable task by task: future ADOPT/REJECT
 // decisions read the contrast table, not opinions.
 package bench
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/crap"
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/gates"
@@ -31,7 +33,7 @@ import (
 
 // SuiteVersion pins the task list: reports compare only within one
 // version. Adding a task bumps the version and re-baselines.
-const SuiteVersion = "macizo-bench-v1"
+const SuiteVersion = "macizo-bench-v2"
 
 // BaselinePath is the tracked baseline report (committed, not runtime
 // state): the current tree's numbers future surfaces contrast against.
@@ -48,7 +50,8 @@ type Task struct {
 }
 
 // TaskResult is one executed check: PASS/FAIL plus the honest proxy
-// cost (wall time; the host exposes no tokens).
+// cost (wall time plus the measured-local token proxy; host token
+// counts stay unknown).
 type TaskResult struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
@@ -93,10 +96,14 @@ type Comparison struct {
 	Reason       string
 }
 
-// Suite returns the fixed v1 task list (7 tasks, within the 5-10 band):
+// Suite returns the fixed v2 task list (10 tasks, within the 5-10 band):
 // representative of repo work (COVER formula, SPLIT-bounded parse,
 // prose spec, veracity round-trip, gate selection, security jail,
-// honest-zero cost) with hidden machine checks.
+// honest-zero cost) with hidden machine checks, plus the P1 golden
+// additions: real retrieval over a golden corpus (B8), the real
+// twelve-gate profile contract (B9), and golden T1 token-proxy values
+// (B10). B1–B7 keep their IDs, titles, kinds and prompts so the v1
+// baseline rows stay comparable.
 func Suite() []Task {
 	return []Task{
 		{ID: "B1", Title: "cover-crap-formula", Kind: "cover",
@@ -120,6 +127,15 @@ func Suite() []Task {
 		{ID: "B7", Title: "honest-zero-cost", Kind: "cost",
 			Prompt: "Report trace cost honestly when the host exposes no tokens.",
 			Check:  checkHonestZero},
+		{ID: "B8", Title: "retrieval-golden-roundtrip", Kind: "retrieval",
+			Prompt: "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
+			Check:  checkRetrievalGolden},
+		{ID: "B9", Title: "gates-real-profile", Kind: "gates",
+			Prompt: "Select the full and quick gate profiles over a realistic twelve-gate gauntlet and refuse unknown profiles.",
+			Check:  checkRealGateProfile},
+		{ID: "B10", Title: "token-proxy-golden", Kind: "tokens",
+			Prompt: "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
+			Check:  checkTokenProxyGolden},
 	}
 }
 
@@ -283,8 +299,9 @@ func checkSplitBounded() (string, error) {
 	return "2 bounded units, second carries spec", nil
 }
 
-// checkSpecGWT accepts a complete scenario and refuses one missing
-// its Then step.
+// checkSpecGWT accepts a complete scenario and refuses a Then-less one,
+// a one-word step (`Given a` states no criterion), and out-of-order
+// phases — the P1 hardening, machine-checked.
 func checkSpecGWT() (string, error) {
 	good := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When the check runs\n- Then it passes\n"
 	if n, errs := spec.Check(good); n != 1 || len(errs) != 0 {
@@ -294,7 +311,15 @@ func checkSpecGWT() (string, error) {
 	if _, errs := spec.Check(bad); len(errs) == 0 {
 		return "", fmt.Errorf("bad scenario accepted: missing Then not refused")
 	}
-	return "good accepted, Then-less refused", nil
+	thin := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When the check runs\n- Then it passes\n"
+	if _, errs := spec.Check(thin); len(errs) == 0 {
+		return "", fmt.Errorf("thin scenario accepted: one-word Given not refused")
+	}
+	disordered := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- Then it passes\n- When the check runs\n"
+	if _, errs := spec.Check(disordered); len(errs) == 0 {
+		return "", fmt.Errorf("disordered scenario accepted: Given→When→Then order not enforced")
+	}
+	return "good accepted, Then-less/single-word/disordered refused", nil
 }
 
 // checkReceiptRoundTrip writes one receipt to a temp dir and reads it
@@ -365,7 +390,8 @@ func checkEvidenceJail() (string, error) {
 }
 
 // checkHonestZero folds one unattributed-cost entry: calls counted,
-// tokens honestly unknown (never estimated to zero).
+// host tokens honestly unknown (never estimated to zero) with the
+// measured-local proxy (chars/4) summed alongside.
 func checkHonestZero() (string, error) {
 	root, err := os.MkdirTemp("", "bench-cost-*")
 	if err != nil {
@@ -376,10 +402,11 @@ func checkHonestZero() (string, error) {
 	if err != nil || len(empty) != 0 {
 		return "", fmt.Errorf("empty root: got %d buckets (%v)", len(empty), err)
 	}
-	if _, err := trace.Record(root, trace.Entry{
+	recorded := trace.Entry{
 		Session: "s", Message: "m", Call: "c", Tool: "t",
 		Status: trace.StatusCompleted, Task: "bench/B7",
-	}, time.Now().UTC()); err != nil {
+	}
+	if _, err := trace.Record(root, recorded, time.Now().UTC()); err != nil {
 		return "", err
 	}
 	costs, err := trace.CostByTask(root)
@@ -393,5 +420,176 @@ func checkHonestZero() (string, error) {
 	if got.TokensKnown || got.TotalInputTokens != 0 || got.TotalOutputTokens != 0 {
 		return "", fmt.Errorf("tokens not honestly unknown: %+v", got)
 	}
-	return "1 call counted, tokens unknown (host exposes none)", nil
+	wantLocal := trace.EstimateLocalTokens(recorded)
+	if !got.LocalTokensKnown || got.TotalLocalTokens != wantLocal || got.TotalLocalTokens <= 0 {
+		return "", fmt.Errorf("local proxy tokens not measured: %+v (want %d)", got, wantLocal)
+	}
+	return fmt.Sprintf("1 call counted, host tokens unknown + %d local proxy tokens (chars/4)", got.TotalLocalTokens), nil
+}
+
+// checkRetrievalGolden pins the real retrieval path on a golden corpus:
+// three field notes in a fresh store, one golden query, exact hits.
+// The golden query (AND over two terms) must surface exactly the
+// rollback drill; the shared term must hit two notes; an unknown term
+// must hit none.
+func checkRetrievalGolden() (string, error) {
+	root, err := os.MkdirTemp("", "bench-retrieval-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(root)
+	now := time.Now().UTC()
+	notes := []struct{ title, content string }{
+		{"harbor rollback drill", "Drill the harbor rollback path until restoring service is routine. Rollback first, questions later."},
+		{"harbor deploy checklist", "Checklist before every harbor deploy: freeze, snapshot, canary, watch."},
+		{"ledger pruning routine", "Prune the evidence ledger on Fridays; retention never touches quarantine."},
+	}
+	for _, n := range notes {
+		if _, err := almanac.Save(root, &almanac.Observation{
+			Type: almanac.TypeDiscovery, Title: n.title, Content: n.content,
+		}, now); err != nil {
+			return "", err
+		}
+		now = now.Add(time.Second)
+	}
+	golden, err := almanac.Search(root, almanac.Query{Terms: []string{"harbor", "rollback"}})
+	if err != nil {
+		return "", err
+	}
+	if len(golden) != 1 || golden[0].Title != "harbor rollback drill" {
+		return "", fmt.Errorf("golden query: got %d hit(s), want exactly the rollback drill", len(golden))
+	}
+	harbor, err := almanac.Search(root, almanac.Query{Terms: []string{"harbor"}})
+	if err != nil {
+		return "", err
+	}
+	if len(harbor) != 2 {
+		return "", fmt.Errorf("shared term: got %d hit(s), want 2", len(harbor))
+	}
+	none, err := almanac.Search(root, almanac.Query{Terms: []string{"zebracorn"}})
+	if err != nil {
+		return "", err
+	}
+	if len(none) != 0 {
+		return "", fmt.Errorf("unknown term: got %d hit(s), want 0", len(none))
+	}
+	return "golden query pins the rollback drill (1/2/0 hits)", nil
+}
+
+// realGateNames mirrors the shipped twelve-gate gauntlet in declaration
+// order. The mirror is deliberate: the bench stays hermetic (no
+// repo-root lookup, green in any temp dir) while pinning the real
+// profile contract — full and quick select every required gate in
+// order, unknown profiles refuse. Commands are shape-only; selection
+// is what the check pins.
+func realGateConfig() gates.Config {
+	names := []string{"typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt"}
+	cmds := []string{
+		"go build ./...", "go vet ./...", "go build -o bin/regulus ./cmd/regulus",
+		"go test ./...", "go tool cover -func .regulus/coverage.out",
+		"gremlins unleash ./internal/receipts", "regulus crap --max 30",
+		"govulncheck ./...", "regulus spec check charts/",
+		"bunx tsc --noEmit", "bun test ./.opencode/lib/", "gofmt -l .",
+	}
+	cfg := gates.Config{}
+	for i, name := range names {
+		cfg.Gates = append(cfg.Gates, gates.Gate{
+			Name: name, Layer: i + 1, Command: cmds[i],
+		})
+	}
+	return cfg
+}
+
+// checkRealGateProfile pins the real gauntlet shape through profile
+// selection: full and quick keep all twelve required gates in
+// declaration order with halt policy, and an unknown profile refuses.
+func checkRealGateProfile() (string, error) {
+	cfg := realGateConfig()
+	full, err := gates.SelectGates(cfg, "")
+	if err != nil {
+		return "", err
+	}
+	if len(full) != 12 {
+		return "", fmt.Errorf("full profile: got %d gates, want 12", len(full))
+	}
+	for i, g := range full {
+		if g.Name != cfg.Gates[i].Name {
+			return "", fmt.Errorf("full profile order broke at %d: got %q, want %q", i, g.Name, cfg.Gates[i].Name)
+		}
+		if g.Command == "" || g.EffectiveOnFail() != gates.OnFailHalt {
+			return "", fmt.Errorf("gate %q lost its command or halt policy", g.Name)
+		}
+	}
+	quick, err := gates.SelectGates(cfg, "quick")
+	if err != nil {
+		return "", err
+	}
+	if len(quick) != 12 {
+		return "", fmt.Errorf("quick profile: got %d gates, want 12 required", len(quick))
+	}
+	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
+		return "", fmt.Errorf("unknown profile accepted")
+	}
+	return "full=12, quick=12 required in order, unknown refused", nil
+}
+
+// checkTokenProxyGolden pins the T1 local-token proxy on golden values:
+// exact chars/4 estimates over fixed entries plus the per-task fold
+// (calls, errors, summed proxy) with host tokens honestly unknown.
+func checkTokenProxyGolden() (string, error) {
+	base := trace.Entry{Session: "s", Message: "hello", Call: "c1", Tool: "read", Task: "bench/B10"}
+	// Tool(4) + Message(5) + Call(2) + Task(9) = 20 chars → (20+3)/4 = 5.
+	if got := trace.EstimateLocalTokens(base); got != 5 {
+		return "", fmt.Errorf("base estimate = %d, want 5", got)
+	}
+	withOut := base
+	withOut.OutputBytes = 12
+	// 20 + 12 = 32 chars → (32+3)/4 = 8.
+	if got := trace.EstimateLocalTokens(withOut); got != 8 {
+		return "", fmt.Errorf("output-bytes estimate = %d, want 8", got)
+	}
+	withFiles := base
+	withFiles.Files = []string{"main.go"}
+	// 20 + 7 = 27 chars → (27+3)/4 = 7.
+	if got := trace.EstimateLocalTokens(withFiles); got != 7 {
+		return "", fmt.Errorf("files estimate = %d, want 7", got)
+	}
+	if got := trace.EstimateLocalTokens(trace.Entry{}); got != 0 {
+		return "", fmt.Errorf("empty entry estimate = %d, want 0", got)
+	}
+	root, err := os.MkdirTemp("", "bench-token-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(root)
+	now := time.Now().UTC()
+	okEntry := base
+	okEntry.Status = trace.StatusCompleted
+	if _, err := trace.Record(root, okEntry, now); err != nil {
+		return "", err
+	}
+	errEntry := withOut
+	errEntry.Message = "boom"
+	errEntry.Call = "c2"
+	errEntry.Status = trace.StatusError
+	if _, err := trace.Record(root, errEntry, now.Add(time.Second)); err != nil {
+		return "", err
+	}
+	costs, err := trace.CostByTask(root)
+	if err != nil || len(costs) != 1 {
+		return "", fmt.Errorf("two entries one task: got %d buckets (%v)", len(costs), err)
+	}
+	got := costs[0]
+	// "boom"(4) replaces "hello"(5): 4+4+2+9 = 19 chars + 12 output bytes
+	// = 31 → (31+3)/4 = 8. Fold: 5 + 8 = 13.
+	if got.Calls != 2 || got.Errors != 1 || got.TotalLocalTokens != 13 {
+		return "", fmt.Errorf("fold miscounted: %+v (want 2 calls, 1 error, 13 proxy tokens)", got)
+	}
+	if got.TokensKnown || got.TotalInputTokens != 0 || got.TotalOutputTokens != 0 {
+		return "", fmt.Errorf("tokens not honestly unknown: %+v", got)
+	}
+	if !got.LocalTokensKnown {
+		return "", fmt.Errorf("local proxy not marked measured: %+v", got)
+	}
+	return "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown", nil
 }

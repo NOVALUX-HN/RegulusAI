@@ -23,9 +23,9 @@ Class: COMPLEX
 
 ### Scenario: the happy path
 
-- Given a
-- When b
-- Then c
+- Given a ready fixture
+- When the checker runs
+- Then it passes
 
 ## Tasks
 

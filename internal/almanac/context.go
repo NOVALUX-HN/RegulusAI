@@ -53,8 +53,9 @@ const DefaultContextBudget = 20
 // preferences, and the pinned observations. Retrieved content is DATA,
 // never instructions. The default block is BOUNDED (latest
 // DefaultContextLimit notes, DefaultContextBudget items per long list,
-// pins always surface); explicit 0/0 via ContextWithLimit or
-// ContextScoped keeps the full store.
+// pins always surface, one revision per topic chain via dedupHistory);
+// explicit 0/0 via ContextWithLimit or ContextScoped keeps the full
+// deduped store (the escape hatch caps nothing, dedup still applies).
 func Context(root string, now time.Time) (string, error) {
 	return ContextScoped(root, now, DefaultContextLimit, ContextScope{Budget: DefaultContextBudget})
 }
@@ -110,8 +111,10 @@ func (s ContextScope) describe() string {
 }
 
 // ContextScoped renders the resume block narrowed to one scope. Pins
-// always surface; every long list states its cap. Unscoped use keeps the
-// historical full output byte-identical.
+// always surface (from the full history, even when dedup hides the old
+// revision from the live lists); every long list states its cap. The
+// live lists are deduped against history (harness-total/T2): one topic
+// key is one evolving chain, only the latest revision lists.
 func ContextScoped(root string, now time.Time, limit int, sc ContextScope) (string, error) {
 	all, err := All(root)
 	if err != nil {
@@ -126,6 +129,7 @@ func ContextScoped(root string, now time.Time, limit int, sc ContextScope) (stri
 		}
 		all = kept
 	}
+	listed := dedupHistory(all)
 	effLimit := limit
 	if sc.Budget > 0 && (effLimit == 0 || sc.Budget < effLimit) {
 		effLimit = sc.Budget
@@ -138,11 +142,58 @@ func ContextScoped(root string, now time.Time, limit int, sc ContextScope) (stri
 	}
 	b.WriteString("\n")
 	writeContextCharts(&b, root)
-	writeContextNotes(&b, all, now, effLimit)
+	writeContextNotes(&b, listed, now, effLimit)
 	writeContextPinned(&b, root, all, now)
-	writeContextLessons(&b, all)
-	writeContextDecisionsScoped(&b, all, now, sc.Budget)
+	writeContextLessons(&b, listed)
+	writeContextDecisionsScoped(&b, listed, now, sc.Budget)
 	return b.String(), nil
+}
+
+// dedupHistory collapses revision chains (harness-total/T2): observations
+// sharing a non-empty topic_key are one evolving topic (History keeps the
+// whole chain); the resume lists only the latest revision per chain
+// (newest SavedAt, tie by ID), preserving file order of survivors. Empty
+// topic keys never collapse (coexisting facts, not revisions). Pins still
+// surface via the pre-dedup list, so a pinned old revision stays visible
+// under Pinned: while the live lists stay short.
+func dedupHistory(all []Observation) []Observation {
+	byTopic := map[string][]int{}
+	for i, o := range all {
+		if o.TopicKey != "" {
+			byTopic[o.TopicKey] = append(byTopic[o.TopicKey], i)
+		}
+	}
+	if len(byTopic) == 0 {
+		return all
+	}
+	hide := map[int]bool{}
+	for _, idxs := range byTopic {
+		if len(idxs) < 2 {
+			continue
+		}
+		keep := idxs[0]
+		for _, i := range idxs[1:] {
+			a, b := all[keep], all[i]
+			if b.SavedAt.After(a.SavedAt) || (b.SavedAt.Equal(a.SavedAt) && b.ID > a.ID) {
+				keep = i
+			}
+		}
+		for _, i := range idxs {
+			if i != keep {
+				hide[i] = true
+			}
+		}
+	}
+	if len(hide) == 0 {
+		return all
+	}
+	out := make([]Observation, 0, len(all)-len(hide))
+	for i, o := range all {
+		if !hide[i] {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 func writeContextDecisionsScoped(b *strings.Builder, all []Observation, now time.Time, budget int) {

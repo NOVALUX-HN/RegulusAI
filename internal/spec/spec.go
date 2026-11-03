@@ -17,6 +17,9 @@ type scenario struct {
 	when         int
 	then         int
 	lastStepType string
+	// maxRank is the highest Given→When→Then phase seen so far
+	// (Given=1, When=2, Then=3): steps must never step back.
+	maxRank int
 }
 
 // violations returns the missing-step violations of a closed scenario,
@@ -50,26 +53,58 @@ func parseScenarioHeading(ln int, line string) (name, violation string) {
 	return name, ""
 }
 
+// minStepWords is the anti-empty floor: every step must carry at least
+// two words of text. A bare article (`Given a`) states no criterion.
+const minStepWords = 2
+
+// stepRank orders the Given→When→Then phases: steps must advance
+// through 1→2→3 and never step back.
+func stepRank(stepType string) int {
+	switch stepType {
+	case "Given":
+		return 1
+	case "When":
+		return 2
+	case "Then":
+		return 3
+	}
+	return 0
+}
+
 // parseStepLine classifies one step line ("- …") inside a scenario and
-// updates its counters. It returns a violation when the step is invalid.
+// updates its counters. It returns a violation when the step is invalid:
+// unknown keyword, And without a preceding step, a step out of
+// Given→When→Then order, or a step shorter than minStepWords. Invalid
+// steps are never counted, so a rejected step also reads as missing.
 func parseStepLine(ln int, body string, sc *scenario) string {
-	var stepType string
+	var stepType, label, text string
 	switch {
 	case strings.HasPrefix(body, "Given "):
-		stepType = "Given"
+		stepType, label = "Given", "Given"
+		text = strings.TrimSpace(strings.TrimPrefix(body, "Given "))
 	case strings.HasPrefix(body, "When "):
-		stepType = "When"
+		stepType, label = "When", "When"
+		text = strings.TrimSpace(strings.TrimPrefix(body, "When "))
 	case strings.HasPrefix(body, "Then "):
-		stepType = "Then"
+		stepType, label = "Then", "Then"
+		text = strings.TrimSpace(strings.TrimPrefix(body, "Then "))
 	case body == "Given" || body == "When" || body == "Then":
 		return fmt.Sprintf("line %d: %s step needs text", ln, body)
 	case strings.HasPrefix(body, "And "):
 		if sc.lastStepType == "" {
 			return fmt.Sprintf("line %d: And step has no preceding Given/When/Then step", ln)
 		}
-		stepType = sc.lastStepType
+		stepType, label = sc.lastStepType, "And"
+		text = strings.TrimSpace(strings.TrimPrefix(body, "And "))
 	default:
 		return fmt.Sprintf("line %d: unrecognized step (want Given/When/Then/And): %s", ln, truncate(body, 40))
+	}
+	rank := stepRank(stepType)
+	if rank < sc.maxRank || (sc.maxRank == 0 && rank != stepRank("Given")) {
+		return fmt.Sprintf("line %d: %s step out of order (want Given→When→Then order)", ln, label)
+	}
+	if n := len(strings.Fields(text)); n < minStepWords {
+		return fmt.Sprintf("line %d: %s step needs at least %d words (got %d)", ln, label, minStepWords, n)
 	}
 	switch stepType {
 	case "Given":
@@ -80,6 +115,9 @@ func parseStepLine(ln int, body string, sc *scenario) string {
 		sc.then++
 	}
 	sc.lastStepType = stepType
+	if rank > sc.maxRank {
+		sc.maxRank = rank
+	}
 	return ""
 }
 

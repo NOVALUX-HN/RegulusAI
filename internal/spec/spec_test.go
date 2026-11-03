@@ -99,7 +99,7 @@ func TestCheckAndWithoutPrecedingStep(t *testing.T) {
 }
 
 func TestCheckAndCountsAsPreviousType(t *testing.T) {
-	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- And another given\n- When b\n- Then c\n- And another then\n"
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a seeded fixture\n- And another seeded precondition\n- When the checker runs\n- Then it passes\n- And another outcome holds\n"
 	n, errs := Check(doc)
 	if len(errs) != 0 || n != 1 {
 		t.Fatalf("want one clean scenario (And continues the previous type), got %d scenarios, errs %v", n, errs)
@@ -119,5 +119,93 @@ func TestCheckNonScenarioHeading(t *testing.T) {
 	_, errs := Check(doc)
 	if !strings.Contains(strings.Join(errs, "\n"), "only Scenario headings") {
 		t.Fatalf("want only-Scenario-headings violation, got %v", errs)
+	}
+}
+
+// P1: one-word steps state no criterion (`Given a` is the anti-example
+// from the chart). Each short step is rejected with its line, and a
+// rejected step also reads as missing.
+func TestCheckRejectsOneWordSteps(t *testing.T) {
+	doc := "# F\n\n## Acceptance\n\n### Scenario: thin\n\n- Given a\n- When the check runs\n- Then it passes\n"
+	_, errs := Check(doc)
+	joined := strings.Join(errs, "\n")
+	if !strings.Contains(joined, "Given step needs at least 2 words") {
+		t.Fatalf("want min-length violation for `Given a`, got %v", errs)
+	}
+	if !strings.Contains(joined, "line 7") {
+		t.Fatalf("length violation must cite the step line, got %v", errs)
+	}
+	if !strings.Contains(joined, `scenario "thin"`) || !strings.Contains(joined, "missing Given step") {
+		t.Fatalf("a rejected Given must also read as missing, got %v", errs)
+	}
+}
+
+// P1: the two-word floor is inclusive — a step with exactly two words
+// is a criterion and passes.
+func TestCheckTwoWordBoundaryPasses(t *testing.T) {
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When it runs\n- Then it passes\n"
+	n, errs := Check(doc)
+	if len(errs) != 0 || n != 1 {
+		t.Fatalf("want one clean scenario at the two-word floor, got %d scenarios, errs %v", n, errs)
+	}
+}
+
+// P1: a scenario must open with Given — a leading When or Then is out
+// of Given→When→Then order.
+func TestCheckRejectsFirstStepNotGiven(t *testing.T) {
+	for _, first := range []string{"When the check runs", "Then it passes"} {
+		doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- " + first + "\n- Given a fixture\n- Then it passes\n"
+		_, errs := Check(doc)
+		if !strings.Contains(strings.Join(errs, "\n"), "out of order (want Given→When→Then order)") {
+			t.Fatalf("first step %q: want out-of-order violation, got %v", first, errs)
+		}
+	}
+}
+
+// P1: phases never step back — Then before When, or Given after the
+// action started, is rejected with its line.
+func TestCheckRejectsOutOfOrder(t *testing.T) {
+	docs := []string{
+		"# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- Then it passes\n- When the check runs\n",
+		"# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When the check runs\n- Then it passes\n- Given another fixture\n",
+		"# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When the check runs\n- Then it passes\n- When it runs again\n",
+	}
+	for i, doc := range docs {
+		_, errs := Check(doc)
+		joined := strings.Join(errs, "\n")
+		if !strings.Contains(joined, "out of order (want Given→When→Then order)") {
+			t.Fatalf("doc %d: want out-of-order violation, got %v", i, errs)
+		}
+		if !strings.Contains(joined, "line ") {
+			t.Fatalf("doc %d: violation must cite its line, got %v", i, errs)
+		}
+	}
+}
+
+// P1: And continues the previous phase — And after Then is a Then, so a
+// When after it steps back and is rejected.
+func TestCheckRejectsAndBreakingOrder(t *testing.T) {
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- When the check runs\n- Then it passes\n- And another outcome holds\n- When it runs again\n"
+	_, errs := Check(doc)
+	if !strings.Contains(strings.Join(errs, "\n"), "out of order (want Given→When→Then order)") {
+		t.Fatalf("want out-of-order violation after Then-phase And, got %v", errs)
+	}
+}
+
+// P1: the length floor covers And steps too.
+func TestCheckRejectsShortAndStep(t *testing.T) {
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- And more\n- When the check runs\n- Then it passes\n"
+	_, errs := Check(doc)
+	if !strings.Contains(strings.Join(errs, "\n"), "And step needs at least 2 words") {
+		t.Fatalf("want min-length violation for the And step, got %v", errs)
+	}
+}
+
+// P1: full ordered phases with And continuations stay clean.
+func TestCheckAcceptsOrderedMultiStep(t *testing.T) {
+	doc := "# F\n\n## Acceptance\n\n### Scenario: s\n\n- Given a fixture\n- Given a second precondition\n- When the check runs\n- And the hook fires\n- Then it passes\n- Then the receipt lands\n"
+	n, errs := Check(doc)
+	if len(errs) != 0 || n != 1 {
+		t.Fatalf("want one clean ordered scenario, got %d scenarios, errs %v", n, errs)
 	}
 }

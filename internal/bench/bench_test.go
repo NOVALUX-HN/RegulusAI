@@ -30,11 +30,33 @@ func TestSuiteBand(t *testing.T) {
 func TestSuitePromptsHideAnswers(t *testing.T) {
 	for _, task := range Suite() {
 		lower := strings.ToLower(task.Prompt)
-		for _, leak := range []string{"want 2", "2.5", "traversal", "sha"} {
+		for _, leak := range []string{"want 2", "2.5", "traversal", "sha", "rollback", "estimatelocaltokens", "local proxy"} {
 			if strings.Contains(lower, leak) {
 				t.Fatalf("task %s prompt leaks its check %q", task.ID, leak)
 			}
 		}
+	}
+}
+
+// P1: the B8-B10 prompts are golden — fixed reference strings. Any edit
+// must update this pin deliberately, never drift silently.
+func TestSuiteGoldenPromptsPinned(t *testing.T) {
+	golden := map[string]string{
+		"B8":  "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
+		"B9":  "Select the full and quick gate profiles over a realistic twelve-gate gauntlet and refuse unknown profiles.",
+		"B10": "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
+	}
+	for _, task := range Suite() {
+		want, ok := golden[task.ID]
+		if !ok {
+			continue
+		}
+		if task.Prompt != want {
+			t.Fatalf("task %s prompt drifted from its golden:\n got: %q\nwant: %q", task.ID, task.Prompt, want)
+		}
+	}
+	if len(golden) != 3 {
+		t.Fatalf("golden pin covers %d tasks, want 3", len(golden))
 	}
 }
 
@@ -142,6 +164,127 @@ func TestEachCheckPasses(t *testing.T) {
 		}
 		if strings.TrimSpace(detail) == "" {
 			t.Fatalf("task %s check returned empty detail", task.ID)
+		}
+	}
+}
+
+// P1: B8 pins the real retrieval path on its golden corpus.
+func TestB8RetrievalGolden(t *testing.T) {
+	detail, err := checkRetrievalGolden()
+	if err != nil {
+		t.Fatalf("B8 check failed: %v", err)
+	}
+	for _, want := range []string{"rollback drill", "1/2/0"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B8 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: B9 pins the real twelve-gate profile contract.
+func TestB9RealGateProfile(t *testing.T) {
+	detail, err := checkRealGateProfile()
+	if err != nil {
+		t.Fatalf("B9 check failed: %v", err)
+	}
+	for _, want := range []string{"full=12", "quick=12", "unknown refused"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B9 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: B10 pins golden T1 proxy values plus the per-task fold.
+func TestB10TokenProxyGolden(t *testing.T) {
+	detail, err := checkTokenProxyGolden()
+	if err != nil {
+		t.Fatalf("B10 check failed: %v", err)
+	}
+	for _, want := range []string{"5/8/7", "13 tokens", "host unknown"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B10 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: B3 now machine-checks the spec hardening — Then-less,
+// single-word and disordered scenarios all refuse.
+func TestB3RefusesHardenedShapes(t *testing.T) {
+	detail, err := checkSpecGWT()
+	if err != nil {
+		t.Fatalf("B3 check failed: %v", err)
+	}
+	for _, want := range []string{"Then-less", "single-word", "disordered"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B3 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: the v2 suite keeps Compare ADOPT semantics — zero regressions and
+// no pass-count drop across green runs, now over 10 tasks.
+func TestCompareAdoptV2(t *testing.T) {
+	base := Run("tree", "a")
+	cand := Run("candidate", "b")
+	if len(base.Tasks) != 10 || base.Passed != 10 {
+		t.Fatalf("v2 suite = %d tasks %d passed, want 10/10", len(base.Tasks), base.Passed)
+	}
+	cmp := Compare(base, cand)
+	if cmp.Verdict != "ADOPT" {
+		t.Fatalf("identical green runs: verdict = %s (%s)", cmp.Verdict, cmp.Reason)
+	}
+}
+
+// P1: B1-B7 keep their IDs, titles and kinds so v1 baseline rows stay
+// comparable task by task.
+func TestLegacyTasksUnchanged(t *testing.T) {
+	want := map[string][2]string{
+		"B1": {"cover-crap-formula", "cover"},
+		"B2": {"split-bounded-parse", "split"},
+		"B3": {"prose-spec-gwt", "prose"},
+		"B4": {"veracity-receipt-roundtrip", "veracity"},
+		"B5": {"gate-selection", "gates"},
+		"B6": {"security-evidence-jail", "security"},
+		"B7": {"honest-zero-cost", "cost"},
+	}
+	for _, task := range Suite() {
+		w, ok := want[task.ID]
+		if !ok {
+			continue
+		}
+		if task.Title != w[0] || task.Kind != w[1] {
+			t.Fatalf("task %s drifted: got title %q kind %q, want %q %q",
+				task.ID, task.Title, task.Kind, w[0], w[1])
+		}
+		delete(want, task.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("legacy tasks missing from the suite: %v", want)
+	}
+}
+
+// T1 honesty: B7 keeps host tokens unknown (0-regresiones semantics:
+// Compare still ADOPTs on green runs) while reporting the
+// measured-local proxy in its detail.
+func TestB7HonestLocalProxy(t *testing.T) {
+	var b7 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B7" {
+			b7 = &tasks[i]
+			break
+		}
+	}
+	if b7 == nil {
+		t.Fatal("B7 task absent from the suite")
+	}
+	detail, err := b7.Check()
+	if err != nil {
+		t.Fatalf("B7 check failed: %v", err)
+	}
+	for _, want := range []string{"host tokens unknown", "local proxy"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B7 detail must contain %q, got %q", want, detail)
 		}
 	}
 }

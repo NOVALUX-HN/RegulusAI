@@ -16,8 +16,9 @@ import (
 // (G2.7); `files` prints the distinct touched paths in call order;
 // `sessions` lists sessions with traces; `prune` rotates a session
 // trace keeping the last N entries; `cost` reports the per-task proxy
-// cost (calls, wall time, output bytes; tokens only when the host
-// exposes them) folded auditably from the trace logs on disk (F1).
+// cost (calls, wall time, output bytes; host tokens only when the host
+// exposes them, plus the always-measured local token proxy chars/4)
+// folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>]")
@@ -236,11 +237,12 @@ func (c CLI) traceShowCmd(args []string) int {
 
 // traceCostCmd implements `regulus trace cost [--task <t>]`: reports
 // the per-task proxy cost (F1) folded auditably from the trace logs
-// on disk — calls, errors, wall time, output bytes, and host-exposed
-// token counts when any entry carries them. Every number recomputes
+// on disk — calls, errors, wall time, output bytes, host-exposed
+// token counts when any entry carries them, plus the always-measured
+// local token proxy (chars/4 per entry). Every number recomputes
 // from the same JSONL lines `trace show` and `trace files` read, so
 // the report squares with the traces. Costs the host never measured
-// read as unknown, never zero.
+// read as unknown, never zero; the local proxy reads as measured.
 func (c CLI) traceCostCmd(args []string) int {
 	fs := flag.NewFlagSet("trace cost", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -275,11 +277,12 @@ func (c CLI) traceCostCmd(args []string) int {
 		return 0
 	}
 	for _, tc := range costs {
-		fmt.Fprintf(c.Stdout, "task %s: %d call(s), %d error(s), %s, %s, tokens %s across %d session(s), %d entr(y/ies)\n",
+		fmt.Fprintf(c.Stdout, "task %s: %d call(s), %d error(s), %s, %s, tokens %s, local %s across %d session(s), %d entr(y/ies)\n",
 			tc.Task, tc.Calls, tc.Errors,
 			costKnown(tc.TotalDurationMS, "ms", tc.DurationKnown),
 			costKnown(tc.TotalOutputBytes, "B", tc.BytesKnown),
 			tokensKnown(tc),
+			localTokensKnown(tc),
 			len(tc.Sessions), tc.Entries)
 	}
 	return 0
@@ -294,11 +297,20 @@ func costKnown(total int64, unit string, known bool) string {
 	return fmt.Sprintf("%d%s", total, unit)
 }
 
-// tokensKnown renders the token totals, or unknown when no entry
+// tokensKnown renders the host token totals, or unknown when no entry
 // carried host-exposed counts.
 func tokensKnown(tc trace.TaskCost) string {
 	if !tc.TokensKnown {
 		return "unknown (host exposes none)"
 	}
 	return fmt.Sprintf("%d in + %d out", tc.TotalInputTokens, tc.TotalOutputTokens)
+}
+
+// localTokensKnown renders the measured-local token proxy (chars/4),
+// always measured once the bucket holds any entry.
+func localTokensKnown(tc trace.TaskCost) string {
+	if !tc.LocalTokensKnown {
+		return "unknown (nothing measured locally)"
+	}
+	return fmt.Sprintf("~%d proxy tokens (chars/4, measured-local)", tc.TotalLocalTokens)
 }

@@ -40,6 +40,7 @@ import (
 //	tool_calls                   trace entries across all sessions (names+order only)
 //	trace_duration_ms/output_bytes  F1 proxy cost: sums of trace duration_ms/output_bytes (zero = unknown)
 //	tokens_total                 trace input+output tokens when any entry carries host-exposed counts; else honest zero, never estimated
+//	tokens_local_total           measured-local token proxy: sum of trace.EstimateLocalTokens (chars/4) over every entry; host counts stay unknown
 //	cost_per_successful_task     NO STORE: honest zero, never estimated
 const (
 	unmeasuredGuardian = "guardian_disagreement_rate"
@@ -69,6 +70,7 @@ type Metrics struct {
 	TraceDurationMS          int64             `json:"trace_duration_ms"`
 	TraceOutputBytes         int64             `json:"trace_output_bytes"`
 	TokensTotal              int64             `json:"tokens_total"`
+	TokensLocalTotal         int64             `json:"tokens_local_total"`
 	CostPerSuccessfulTask    float64           `json:"cost_per_successful_task"`
 	Coverage                 map[string]string `json:"coverage"`
 	Unmeasured               []string          `json:"unmeasured"`
@@ -216,7 +218,10 @@ func summarizeExperiments(root string, m *Metrics) error {
 // (names and order only, never values) plus the F1 proxy cost totals
 // (wall time, output bytes) and host-exposed token counts when any
 // entry carries them. Token totals stay honest: 0 with the unmeasured
-// note unless traces actually carry counts — never estimated.
+// note unless traces actually carry counts — never estimated. The
+// measured-local proxy (TokensLocalTotal, chars/4 per entry) is always
+// summed alongside, with its own coverage note, so the report
+// distinguishes measured-local proxy tokens from unknown host counts.
 func summarizeToolCalls(root string, m *Metrics) error {
 	sessions, err := trace.Sessions(root)
 	if err != nil {
@@ -233,6 +238,7 @@ func summarizeToolCalls(root string, m *Metrics) error {
 			m.TraceDurationMS += e.DurationMS
 			m.TraceOutputBytes += e.OutputBytes
 			m.TokensTotal += e.InputTokens + e.OutputTokens
+			m.TokensLocalTotal += trace.EstimateLocalTokens(e)
 			if e.InputTokens > 0 || e.OutputTokens > 0 {
 				tokensKnown = true
 			}
@@ -247,6 +253,9 @@ func summarizeToolCalls(root string, m *Metrics) error {
 			}
 		}
 		m.Unmeasured = kept
+	}
+	if m.ToolCalls > 0 {
+		m.Coverage["token_usage_local"] = "measured-local proxy: sum of trace.EstimateLocalTokens (chars/4 over Tool/Message/Call/Task/Files/OutputBytes); host-exposed counts stay unknown"
 	}
 	return nil
 }
@@ -294,6 +303,9 @@ func finishCoverage(m *Metrics) {
 	m.Coverage["tool_calls"] = "trace entries across all sessions; entries carry names and order plus F1 proxy cost (duration_ms, output_bytes); zero cost = unknown"
 	if _, ok := m.Coverage[unmeasuredTokens]; !ok {
 		m.Coverage[unmeasuredTokens] = "no token-count store; honest zero — supply reliable figures via budgets Figures for measured token usage"
+	}
+	if _, ok := m.Coverage["token_usage_local"]; !ok {
+		m.Coverage["token_usage_local"] = "no traces; local proxy 0 (nothing measured locally)"
 	}
 	m.Coverage[unmeasuredCosts] = "no model-cost store; honest zero, never estimated — supply reliable figures via budgets Figures for measured costs"
 }

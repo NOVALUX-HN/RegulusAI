@@ -108,6 +108,16 @@ export function suggestSkills(skills: Skill[], messagesText: string): Skill[] {
     .sort((a, b) => b.score - a.score || (a.skill.name < b.skill.name ? -1 : 1));
   return scored.slice(0, 2).map((e) => e.skill);
 }
+
+// filterSeenSkills dedups suggestions against history (harness-total/T2):
+// drop any suggested skill whose name already appears in recent messages
+// (case-insensitive substring). The agent already saw it; re-injecting
+// costs context without new signal. Pure so bun tests pin it without a
+// host; empty names never match.
+export function filterSeenSkills(suggested: Skill[], messagesText: string): Skill[] {
+  const hay = messagesText.toLowerCase();
+  return suggested.filter((s) => s.name !== "" && !hay.includes(s.name.toLowerCase()));
+}
 // RunBin runs the regulus binary; injected so tests can fake it.
 export type RunBin = (args: string[]) => Promise<{ exitCode: number; output: string }>
 
@@ -437,20 +447,113 @@ async function getDomains(dir: string, runBin: RunBin): Promise<string[] | null>
   return domains
 }
 
+// TraceBatcher (harness-total/V1): the trace-hook queue. The hook no
+// longer pays one awaited `trace record` spawn per tool call on its
+// critical path: records enqueue and drain in a single-flight background
+// flush (cola+flush). flush() drains until empty — every queued record is
+// attempted exactly once, in FIFO order — so items enqueued mid-flush
+// (concurrent hooks) ride the same drain instead of starting a second
+// spawn train. A failed record is reported in its result but never skips
+// the rest; the queue is empty afterwards even when every spawn fails.
+// Durability matches the old hook (best-effort, failures logged by the
+// caller, never thrown); behavior pinned by lib/v1-batch.test.ts.
+export interface TraceEntry {
+  argv: string[];
+  label: string;
+}
+
+export interface TraceFlushResult {
+  argv: string[];
+  label: string;
+  ok: boolean;
+  error: string;
+}
+
+export class TraceBatcher {
+  private readonly queue: TraceEntry[] = [];
+
+  enqueue(entry: TraceEntry): void {
+    this.queue.push(entry);
+  }
+
+  pending(): number {
+    return this.queue.length;
+  }
+
+  async flush(runBin: RunBin): Promise<TraceFlushResult[]> {
+    const results: TraceFlushResult[] = [];
+    while (this.queue.length > 0) {
+      const entry = this.queue.shift()!;
+      try {
+        const res = await runBin(entry.argv);
+        if (res.exitCode !== 0) {
+          results.push({ argv: entry.argv, label: entry.label, ok: false, error: res.output });
+        } else {
+          results.push({ argv: entry.argv, label: entry.label, ok: true, error: "" });
+        }
+      } catch (err) {
+        results.push({ argv: entry.argv, label: entry.label, ok: false, error: (err as Error)?.message ?? String(err) });
+      }
+    }
+    return results;
+  }
+}
+
+// domainHitCache (harness-total/V1): memoizes (domain, path) lesson-hit
+// lookups for 60s per OpenCode process. Session trace files change as the
+// session progresses (new paths still spawn), but repeat assemblies over
+// the same files skip the `memory search` spawn. Same staleness class as
+// the domains list above (an admit shows up after the TTL); reversal:
+// restart the host process, or clearDomainHitCache() in tests.
+const DOMAIN_HIT_TTL_MS = 60000;
+const domainHitCache = new TtlCache<boolean>(DOMAIN_HIT_TTL_MS);
+
+export function clearDomainHitCache(): void {
+  domainHitCache.clear();
+}
+
+function domainHitKey(domain: string, path: string): string {
+  return `${domain}\n${path}`;
+}
+
 // domainFromFiles matches session trace files against lesson
 // provenance paths: the first (file, domain) pair with a lesson hit
 // wins. Bounded (3 files) and fully defensive.
+//
+// harness-total/V1: every (file, domain) pair probes concurrently
+// (Promise.all) and the winner is still the first pair in (file,
+// domain) order with a hit — parallelism changes latency, never the
+// decision. Cache hits skip the spawn entirely.
 async function domainFromFiles(runBin: RunBin, sessionID: string, domains: string[]): Promise<string> {
   if (sessionID === "") return ""
   const tf = await runBin(["trace", "files", "--session", sessionID])
   if (tf.exitCode !== 0) return ""
   const files = tf.output.split("\n").map((f) => f.trim()).filter((f) => f !== "" && !f.startsWith("(")).slice(0, 3)
   if (files.length === 0) return ""
+  const pairs: Array<{ file: string; domain: string }> = []
   for (const f of files) {
     for (const d of domains) {
-      const hit = await runBin(["memory", "search", "--type", "lesson", "--domain", d, "--path", f])
-      if (hit.exitCode === 0 && hit.output !== "" && !hit.output.startsWith("no matching")) return d
+      pairs.push({ file: f, domain: d })
     }
+  }
+  const hits = await Promise.all(
+    pairs.map(async (p) => {
+      const key = domainHitKey(p.domain, p.file)
+      const cached = domainHitCache.get(key)
+      if (cached !== undefined) return cached
+      let hit = false
+      try {
+        const res = await runBin(["memory", "search", "--type", "lesson", "--domain", p.domain, "--path", p.file])
+        hit = res.exitCode === 0 && res.output !== "" && !res.output.startsWith("no matching")
+      } catch {
+        hit = false
+      }
+      domainHitCache.set(key, hit)
+      return hit
+    }),
+  )
+  for (let i = 0; i < pairs.length; i++) {
+    if (hits[i]) return pairs[i].domain
   }
   return ""
 }

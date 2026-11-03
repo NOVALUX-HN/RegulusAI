@@ -1,8 +1,8 @@
 {
-  "suite": "macizo-bench-v1",
+  "suite": "macizo-bench-v2",
   "surface": "tree",
-  "git_head": "d045f813721441a82ea263f7b9a794c8092d7886",
-  "started_at": "2026-11-01T05:33:58.9721442Z",
+  "git_head": "a8ab1e9d2a1b8481179e0fa1d9ba2b3ca0bbc163",
+  "started_at": "2026-11-03T06:46:31.4221954Z",
   "tasks": [
     {
       "id": "B1",
@@ -26,14 +26,14 @@
       "kind": "prose",
       "pass": true,
       "duration_ms": 0,
-      "detail": "good accepted, Then-less refused"
+      "detail": "good accepted, Then-less/single-word/disordered refused"
     },
     {
       "id": "B4",
       "title": "veracity-receipt-roundtrip",
       "kind": "veracity",
       "pass": true,
-      "duration_ms": 7,
+      "duration_ms": 1,
       "detail": "receipt byte-identical with SHA pins"
     },
     {
@@ -57,12 +57,36 @@
       "title": "honest-zero-cost",
       "kind": "cost",
       "pass": true,
-      "duration_ms": 7,
-      "detail": "1 call counted, tokens unknown (host exposes none)"
+      "duration_ms": 2,
+      "detail": "1 call counted, host tokens unknown + 3 local proxy tokens (chars/4)"
+    },
+    {
+      "id": "B8",
+      "title": "retrieval-golden-roundtrip",
+      "kind": "retrieval",
+      "pass": true,
+      "duration_ms": 3,
+      "detail": "golden query pins the rollback drill (1/2/0 hits)"
+    },
+    {
+      "id": "B9",
+      "title": "gates-real-profile",
+      "kind": "gates",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "full=12, quick=12 required in order, unknown refused"
+    },
+    {
+      "id": "B10",
+      "title": "token-proxy-golden",
+      "kind": "tokens",
+      "pass": true,
+      "duration_ms": 2,
+      "detail": "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown"
     }
   ],
-  "passed": 7,
+  "passed": 10,
   "failed": 0,
-  "total_duration_ms": 14,
-  "output_bytes": 254
+  "total_duration_ms": 8,
+  "output_bytes": 460
 }

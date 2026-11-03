@@ -98,10 +98,11 @@ func ToolCallSpan(e trace.Entry, taskID, traceID, correlationID string) (Span, e
 	s.Attributes["session"] = e.Session
 	s.Attributes["files"] = append([]string{}, e.Files...)
 	// F1 proxy cost rides along when measured (zero = unknown, so
-	// unmeasured costs stay out of the span). Token counts stay out:
-	// the redaction deny-list scrubs every key containing "token",
-	// which would silently destroy them here — they live on in the
-	// trace entries, CostByTask, metrics and budgets instead.
+	// unmeasured costs stay out of the span). Token counts stay out
+	// (host counts and the local proxy alike): the redaction deny-list
+	// scrubs every key containing "token", which would silently destroy
+	// them here — they live on in the trace entries, CostByTask,
+	// metrics and budgets instead.
 	if e.Task != "" {
 		s.Attributes["task"] = e.Task
 	}

@@ -105,7 +105,7 @@ func TestV07MemoryLevels(t *testing.T) {
 	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"smoke","layer":1,"command":"true"}],"evolution":{"max_per_day":10,"max_per_task":1}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile("feature.md", []byte("# F\n\n## Acceptance\n\n### Scenario: x\n\n- Given a\n- When b\n- Then c\n"), 0o644); err != nil {
+	if err := os.WriteFile("feature.md", []byte("# F\n\n## Acceptance\n\n### Scenario: x\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(".regulus", "evidence", "cap__T9"), 0o755); err != nil {

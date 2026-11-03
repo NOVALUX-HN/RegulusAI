@@ -1,10 +1,11 @@
 // Committed checks for the plugin's pure domain logic (G1.4, V5.2).
 // Run with `bun test` from .opencode/ (also in CI). No OpenCode host
 // needed: lib/domain.ts has zero host imports by design.
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test, beforeEach } from "bun:test";
 import {
   candidates,
   checkContract,
+  clearDomainHitCache,
   clearDomainsCache,
   COMPACTION_CONTEXT_BUDGET,
   COMPACTION_CONTEXT_LIMIT,
@@ -81,6 +82,12 @@ describe("extractPaths", () => {
 });
 
 describe("resolveDomain", () => {
+  // harness-total/V1 added the (domain, path) hit cache: every test
+  // starts uncached so one test's hits never leak into the next.
+  beforeEach(() => {
+    clearDomainsCache();
+    clearDomainHitCache();
+  });
   const fake = (domains: string[], pathHits: Record<string, string>): RunBin => async (a) => {
     if (a[0] === "library" && a[1] === "domains")
       return { exitCode: 0, output: domains.join("\n") + (domains.length ? "\n" : "") };

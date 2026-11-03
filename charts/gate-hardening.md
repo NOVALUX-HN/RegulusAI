@@ -40,7 +40,7 @@ Domain: sextant
 
 ### Scenario: S4 LCS cubierto
 
-- Given `mergeSegments`/`walkClusters`/`lcsTable`/`lcsWalk`/`replaceTail`/`extendRun`
+- Given helpers `mergeSegments`/`walkClusters`/`lcsTable`/`lcsWalk`/`replaceTail`/`extendRun` without cover
 - When corren casos inserción-abutting-cambio + bordes
 - Then veredictos exactos y `go test ./internal/probe/` verde
 

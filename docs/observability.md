@@ -32,8 +32,12 @@ never NaN. Honest gap, pinned by tests: guardian disagreement had no
 backing store until the guardian decision log landed (now measured
 from it when present). `BudgetUsage` marks every item measured or estimated with a
 reason: execution time (receipt durations) and tool usage (trace counts)
-are measured; tokens and model costs are unmeasured unless the caller
-supplies reliable figures — no cost is ever invented.
+are measured; host tokens and model costs are unmeasured unless the caller
+supplies reliable figures — no cost is ever invented. A second token
+line (`token_usage_local`, plus `tokens_local_total` in `Summarize`
+and `total_local_tokens` in `trace.CostByTask`) always measures the
+local proxy (chars/4 per entry) whenever traces exist, so budgets show
+measured-local tokens while host counts stay honestly unknown.
 
 ## 3b. Per-task cost accounting (F1)
 
@@ -41,19 +45,28 @@ Every trace entry optionally carries its proxy cost: the task it
 served plus `duration_ms` (wall time), `output_bytes` (output size),
 and `input_tokens`/`output_tokens` — token fields only when the host
 exposes counts (OpenCode exposes none, so they stay 0 = unknown,
-never estimated). Zero means unknown, not zero: lines written before
-these fields existed decode as unattributed/unknown and keep reading.
+never estimated). Every entry also measures a local token proxy
+(`trace.EstimateLocalTokens`: chars/4 rounded up over the stored
+Tool/Message/Call/Task/Files plus OutputBytes), summed per task as
+`total_local_tokens` with `local_tokens_known` marking the
+measurement. Zero means unknown, not zero: lines written before
+these fields existed decode as unattributed/unknown host costs and
+keep reading (their descriptor chars still measure a local proxy).
 
 `trace.CostByTask` folds every session log into per-task totals
 (unattributed legacy lines bucket together); `regulus trace record`
 accepts `--task/--duration-ms/--output-bytes/--input-tokens/--output-tokens`
-and `regulus trace cost [--task <t>]` reports the fold. The report is
+and `regulus trace cost [--task <t>]` reports the fold (host tokens
+plus the measured-local proxy on one line). The report is
 auditable: it recomputes from the same JSONL lines `trace show`
 reads, so re-listing any session reproduces every number. `Summarize`
 adds the proxy sums (`trace_duration_ms`, `trace_output_bytes`,
-`tokens_total` only when traces carry counts); `BudgetUsage` extends
-the tool-usage line with the proxy sums and measures tokens from
-traces when present (caller figures take precedence). Token counts
+`tokens_total` only when traces carry counts, plus the always-measured
+`tokens_local_total`); `BudgetUsage` extends
+the tool-usage line with the proxy sums, measures tokens from
+traces when present (caller figures take precedence), and always adds
+the measured-local `token_usage_local` line when traces exist in
+scope. Token counts
 never become money: model costs stay honest zero.
 
 ## 4. Security: redaction and retention

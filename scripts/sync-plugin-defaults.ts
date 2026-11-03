@@ -116,7 +116,9 @@ async function runCheck(tree: string): Promise<string[]> {
   const rendered = renderGuidanceDefaults(guidanceMd)
   const block = extractGuidanceBlock(ts)
   const compiled: Record<string, string> = {}
-  for (const m of block.matchAll(/(\w+):\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) compiled[m[1]] = m[2]
+  // Quoted-key tolerant: hyphenated sections (e.g. ## search-default)
+  // compile to "name": "..." entries, which bare (\w+): never matches.
+  for (const m of block.matchAll(/["']?([\w-]+)["']?\s*:\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) compiled[m[1]] = m[2]
   for (const [name, body] of Object.entries(rendered)) {
     if (!(name in compiled)) problems.push(`guidance: section ## ${name} missing from compiled defaults`)
     else if (compiled[name] !== tsDq(body)) problems.push(`guidance: ## ${name} differs from compiled default`)
@@ -139,7 +141,7 @@ async function runWrite(tree: string): Promise<void> {
   )
   const rendered = renderGuidanceDefaults(guidanceMd)
   for (const [name, body] of Object.entries(rendered)) {
-    const re = new RegExp(`(${name}:\\s*\\n?\\s*\")((?:[^\"\\\\]|\\\\.)*)(\")`)
+    const re = new RegExp(`(["']?${name}["']?\\s*:\\s*\\n?\\s*\")((?:[^\"\\\\]|\\\\.)*)(\")`)
     if (re.test(ts)) ts = ts.replace(re, (_m, pre, _old, post) => `${pre}${tsDq(body)}${post}`)
   }
   await Bun.write(tsPath, ts)

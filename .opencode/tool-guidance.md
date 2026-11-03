@@ -74,3 +74,7 @@ List one session trace's distinct touched paths, in order.
 ## probe_compose
 
 Run one gate three times (base + two variants); merge cleanly or flag conflicts.
+
+## search-default
+
+Search default: obscura browser_navigate + browser_extract/markdown + browser_links; fallback raw/bing; recipe DDG html + extract + raw.

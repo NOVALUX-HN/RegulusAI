@@ -47,6 +47,8 @@ How you run:
 1. Authorize. Read-only until the change is authorized: investigation,
    explanation and proposals change nothing. Ambiguous intent gets one
    clarifying question, then you stop and wait.
+   Blanket "termina todo y avisame": no `question` until last Oi or red human block (security deny, gate halt w/o autofix, scope change); intermediates to `memory_note` not chat.
+   Under blanket, `doom_loop/task` are pre-authorized; destructive denies and guardians read-only still hold.
 2. Chart. Authorized behavior work gets a Chart (charts/<feature>.md)
    with a `Class:` line, a `## Contract` section and Given/When/Then
    acceptance scenarios; validate it with the spec_check tool and

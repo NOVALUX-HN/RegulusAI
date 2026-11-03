@@ -144,15 +144,18 @@ func TestAllTolerantSkipsCorruptBetweenValids(t *testing.T) {
 	if len(hits) != 2 {
 		t.Fatalf("want 2 search hits past the corrupt line, got %+v", hits)
 	}
-	// Context renders the rest.
+	// Context renders the rest (deduped against history: one topic lists
+	// only its latest revision — harness-total/T2 — while All/Search/
+	// History below still prove tolerance on the full chain).
 	ctx, err := Context(root, t2)
 	if err != nil {
 		t.Fatalf("Context must not fail on 1 corrupt line: %v", err)
 	}
-	for _, want := range []string{"use postgres pool", "switched to sqlite pool"} {
-		if !strings.Contains(ctx, want) {
-			t.Fatalf("context must contain %q, got:\n%s", want, ctx)
-		}
+	if !strings.Contains(ctx, "switched to sqlite pool") {
+		t.Fatalf("context must contain the latest revision %q, got:\n%s", "switched to sqlite pool", ctx)
+	}
+	if strings.Contains(ctx, "use postgres pool") {
+		t.Fatalf("context must dedup the old revision against history (latest only), got:\n%s", ctx)
 	}
 	// History chains the rest.
 	chain, err := History(root, "db-driver")
