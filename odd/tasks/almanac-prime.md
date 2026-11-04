@@ -17,7 +17,7 @@ productizado — más el portability pendiente de pro-harness.
 - A1 (S1,S3): support-status en retrieval — `SupportOf` en almanac + anotación en `memory search` (rot hunde con motivo) — ruta: inline — commit: 4dfda3c
 - A2 (S1,S3): contradicciones visibles — notas de conflicto en `memory context` — ruta: inline — commit: 42b1b20
 - A3 (S1,S3): miss log + miss-rate en doctor — ruta: inline — commit: 43095db
-- A4 (S2,S3): portability Git-Bash (bashPosixPath detecta /c/) — ruta: inline — commit: A4-pendiente-hash
+- A4 (S2,S3): portability Git-Bash (bashPosixPath detecta /c/) — ruta: inline — commit: f3cafba
 
 ## Log
 
@@ -27,3 +27,4 @@ productizado — más el portability pendiente de pro-harness.
 - L4 (A2 evidencia): `writeContextConflicts` — pares conflicts_with con ambos lados listados rinden una línea con títulos; unilaterales en silencio; fallo de lectura enmudece la sección, nunca el bloque. Search ya lo tenía (descubierto, no duplicado). Almanac verde.
 - L5 (A3 evidencia): miss log (`misses.jsonl`, best-effort) + `MissStats` + línea en doctor (conteo + top). Cero-hits que antes se encogían de hombros ahora enseñan qué guardar. CLI+almanac verdes (A3 commit 43095db).
 - L6 (A4 evidencia): dialecto del bash en uso (`--version`: msys/mingw/cygwin→/c/, linux→/mnt/c) + fallback wrapper en vez de copiar binarios (msys sin su DLL no arranca). Paquete portability entero verde incl. los 2 preexistentes.
+- L7 (cierre): oleada WDAC intermitente toda la noche (Temp y .gotmp, binarios de test recién compilados; todo lo que ejecuta pasa en re-run). Diagnóstico de yolo extendido a los pasos de run (edición solo-test en yolo-permissions.test.ts, SIN commitear — respeta L2 de pro-harness: el archivo previo sigue intacto en git). Suite final: 30 pkgs ok; bun 147/147 con un flake; tsc limpio.
