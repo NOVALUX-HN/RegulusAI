@@ -342,16 +342,18 @@ func CitedFailures(root, task string, cited []string) (failed []string, checked 
 	if err != nil {
 		return nil, false
 	}
-	files, err := filepath.Glob(filepath.Join(taskDir, "*.json"))
-	if err != nil || len(files) == 0 {
+	// Quarantined receipts count as evidence too: when every receipt
+	// of a task already rotted away into corrupt/, the live glob is
+	// empty but there IS something to say. Dogfood case: a lesson
+	// citing only quarantined files must read rot, not unchecked.
+	live, _ := filepath.Glob(filepath.Join(taskDir, "*.json"))
+	quarantined, _ := filepath.Glob(filepath.Join(taskDir, "corrupt", "*.json"))
+	if len(live)+len(quarantined) == 0 {
 		return nil, false
 	}
 	rep, err := Verify(root, task, false)
 	if err != nil {
 		return nil, false
-	}
-	if len(rep.Failed) == 0 {
-		return nil, true
 	}
 	bad := map[string]bool{}
 	for _, f := range rep.Failed {
@@ -360,7 +362,8 @@ func CitedFailures(root, task string, cited []string) (failed []string, checked 
 	}
 	// Quarantined citations count as failed: corrupt/ preserves the
 	// bytes but concedes the integrity check that put them there.
-	quarantined, _ := filepath.Glob(filepath.Join(taskDir, "corrupt", "*.json"))
+	// Reached independently of rep.Failed: verification skips
+	// corrupt/, so a fully-quarantined task verifies "clean".
 	for _, q := range quarantined {
 		bad[q] = true
 		bad[filepath.Base(q)] = true

@@ -46,8 +46,9 @@ func TestCitedRotGrades(t *testing.T) {
 	if rot, checked := CitedRot(root, "", []string{okPath}); rot || checked {
 		t.Errorf("empty task = rot=%v checked=%v, want false/false", rot, checked)
 	}
-	// Quarantined citations count as failed: the bytes survive under
-	// corrupt/ but the integrity check already condemned them.
+	// Fully-quarantined task: the live dir holds no receipts, but the
+	// cited bytes sit condemned under corrupt/ — that is rot with
+	// something to say, not unchecked silence.
 	corrupt := filepath.Join(taskDir, "corrupt")
 	if err := os.MkdirAll(corrupt, 0o755); err != nil {
 		t.Fatal(err)
@@ -55,7 +56,14 @@ func TestCitedRotGrades(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(corrupt, "rec_old.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rot, checked := CitedRot(root, "t1", []string{filepath.Join(corrupt, "rec_old.json")}); !rot || !checked {
-		t.Errorf("quarantined citation = rot=%v checked=%v, want true/true", rot, checked)
+	if err := os.Remove(filepath.Join(taskDir, "rec_bad.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(taskDir, "rec_ok.json")); err != nil {
+		t.Fatal(err)
+	}
+	quarantine := filepath.Join(corrupt, "rec_old.json")
+	if rot, checked := CitedRot(root, "t1", []string{quarantine}); !rot || !checked {
+		t.Errorf("quarantined-only citation = rot=%v checked=%v, want true/true", rot, checked)
 	}
 }
