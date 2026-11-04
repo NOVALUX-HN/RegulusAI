@@ -9,8 +9,11 @@ import (
 
 func TestSuiteBand(t *testing.T) {
 	tasks := Suite()
-	if len(tasks) < 5 || len(tasks) > 10 {
-		t.Fatalf("suite has %d tasks, want 5-10", len(tasks))
+	// 8 behavior tasks within the 5-10 band, plus reported-never-judged
+	// cost tasks (B7, B10, B11): measurement rides along, judgment stays
+	// on behavior.
+	if len(tasks) < 5 || len(tasks) > 12 {
+		t.Fatalf("suite has %d tasks, want 5-12", len(tasks))
 	}
 	seen := map[string]bool{}
 	for _, task := range tasks {
@@ -57,6 +60,36 @@ func TestSuiteGoldenPromptsPinned(t *testing.T) {
 	}
 	if len(golden) != 3 {
 		t.Fatalf("golden pin covers %d tasks, want 3", len(golden))
+	}
+}
+
+// T0 (pro-harness): B11 pins the lesson-context cost golden — the
+// deterministic proxy-token price of one Almanac resume assembly over
+// a fixed fixture store. Fase 4 diffs this number per lesson; the
+// check reports, never judges (like wall-clock durations).
+func TestB11LessonContextCostGolden(t *testing.T) {
+	var b11 *Task
+	for i, task := range Suite() {
+		if task.ID == "B11" {
+			b11 = &Suite()[i]
+			break
+		}
+	}
+	if b11 == nil {
+		t.Fatal("suite has no B11 lesson-context-cost task")
+	}
+	wantPrompt := "Assemble one Almanac resume block over a fixed fixture store and report its token-proxy cost."
+	if b11.Prompt != wantPrompt {
+		t.Fatalf("B11 prompt drifted:\n got: %q\nwant: %q", b11.Prompt, wantPrompt)
+	}
+	detail, err := b11.Check()
+	if err != nil {
+		t.Fatalf("B11 check failed: %v", err)
+	}
+	for _, want := range []string{"fixture lessons", "proxy tokens"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B11 detail must contain %q, got %q", want, detail)
+		}
 	}
 }
 
@@ -221,13 +254,13 @@ func TestB3RefusesHardenedShapes(t *testing.T) {
 	}
 }
 
-// P1: the v2 suite keeps Compare ADOPT semantics — zero regressions and
-// no pass-count drop across green runs, now over 10 tasks.
+// P1: the v3 suite keeps Compare ADOPT semantics — zero regressions and
+// no pass-count drop across green runs, now over 11 tasks.
 func TestCompareAdoptV2(t *testing.T) {
 	base := Run("tree", "a")
 	cand := Run("candidate", "b")
-	if len(base.Tasks) != 10 || base.Passed != 10 {
-		t.Fatalf("v2 suite = %d tasks %d passed, want 10/10", len(base.Tasks), base.Passed)
+	if len(base.Tasks) != 11 || base.Passed != 11 {
+		t.Fatalf("v3 suite = %d tasks %d passed, want 11/11", len(base.Tasks), base.Passed)
 	}
 	cmp := Compare(base, cand)
 	if cmp.Verdict != "ADOPT" {

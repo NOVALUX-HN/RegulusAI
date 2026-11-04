@@ -1,8 +1,8 @@
 {
-  "suite": "macizo-bench-v2",
+  "suite": "macizo-bench-v3",
   "surface": "tree",
-  "git_head": "a8ab1e9d2a1b8481179e0fa1d9ba2b3ca0bbc163",
-  "started_at": "2026-11-03T06:46:31.4221954Z",
+  "git_head": "f19ea93074efc7002590ab675c208a8b23a901a8",
+  "started_at": "2026-11-04T03:56:52.8847944Z",
   "tasks": [
     {
       "id": "B1",
@@ -33,7 +33,7 @@
       "title": "veracity-receipt-roundtrip",
       "kind": "veracity",
       "pass": true,
-      "duration_ms": 1,
+      "duration_ms": 2,
       "detail": "receipt byte-identical with SHA pins"
     },
     {
@@ -65,7 +65,7 @@
       "title": "retrieval-golden-roundtrip",
       "kind": "retrieval",
       "pass": true,
-      "duration_ms": 3,
+      "duration_ms": 4,
       "detail": "golden query pins the rollback drill (1/2/0 hits)"
     },
     {
@@ -83,10 +83,18 @@
       "pass": true,
       "duration_ms": 2,
       "detail": "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown"
+    },
+    {
+      "id": "B11",
+      "title": "lesson-context-cost",
+      "kind": "tokens",
+      "pass": true,
+      "duration_ms": 33,
+      "detail": "fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble 550 chars = 138 proxy tokens, host unknown"
     }
   ],
-  "passed": 10,
+  "passed": 11,
   "failed": 0,
-  "total_duration_ms": 8,
-  "output_bytes": 460
+  "total_duration_ms": 43,
+  "output_bytes": 571
 }
