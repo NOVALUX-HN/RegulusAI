@@ -473,7 +473,26 @@ func (c CLI) memorySearchCmd(args []string) int {
 	fmt.Fprintln(c.Stderr, trustBanner)
 	fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
 	now := time.Now().UTC()
-	for _, h := range hits {
+	// Support grading (almanac-prime A1): every hit carries its cited
+	// support — supported, rot, unchecked — and rot sinks below the
+	// rest (stable). Engram ranks by similarity plus model judgments;
+	// Almanac grades by evidence and says so on the line. Unchecked is
+	// the default state (nothing cited), not a demotion.
+	support := make([]string, len(hits))
+	for i, h := range hits {
+		support[i] = almanac.SupportOf(c.dir(), h)
+	}
+	order := make([]int, len(hits))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		ri := support[order[i]] == almanac.SupportRot
+		rj := support[order[j]] == almanac.SupportRot
+		return !ri && rj
+	})
+	for _, oi := range order {
+		h := hits[oi]
 		suffix := c.commitsBehindSuffix(h)
 		if by := supersededBy[h.ID]; by != "" {
 			suffix += fmt.Sprintf(" [superseded by %s]", by)
@@ -481,6 +500,7 @@ func (c CLI) memorySearchCmd(args []string) int {
 		if partners := conflicts[h.ID]; len(partners) > 0 {
 			suffix += fmt.Sprintf(" [conflicts: %s]", strings.Join(partners, ", "))
 		}
+		suffix += fmt.Sprintf(" [%s]", support[oi])
 		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s%s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt), suffix)
 	}
 	return 0
