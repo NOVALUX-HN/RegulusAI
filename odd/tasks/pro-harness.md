@@ -16,8 +16,8 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 - T1 (S1,S2,S4): Fase 1 texto — ladder 6 peldaños + reviewer 4 campos en agents — ruta: inline — commit: 707d745
 - T2 (S1,S2,S4): Fase 1 audit — comando rankeado repo-wide sobre CRAP/traces — ruta: inline — commit: 15cf4fc
 - T3 (S1,S2,S4): Fase 2 — poda de toolset por uso medido en traces — ruta: inline — commit: 341b289
-- T4 (S1,S2,S4): Fase 3 — hook proposer cada k sesiones + supersede por contradicción — ruta: inline — commit: T4-pendiente-hash
-- T5 (S1,S2,S4): Fase 4 — evolution report con delta por lección — ruta: inline — commit: pendiente
+- T4 (S1,S2,S4): Fase 3 — hook proposer cada k sesiones + supersede por contradicción — ruta: inline — commit: 7dee40c
+- T5 (S1,S2,S4): Fase 4 — evolution report con delta por lección — ruta: inline — commit: T5-pendiente-hash
 - T6 (S1,S4): Fase 5 diseño — chart RDD (lineage, lenses, budget, burn, consent) — ruta: inline — commit: pendiente
 - T7 (S1,S2,S4): Fase 5 core Go — transacción de review — ruta: inline — commit: pendiente
 - T8 (S1,S2,S4): Fase 5 plugin + migración guardians→lenses — ruta: inline — commit: pendiente
@@ -31,3 +31,4 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 - L5 (T2 evidencia): `regulus audit --profile --top --max` — entry points (cmd/*) + tiers must-fix (>max compuerta)/should-fix (cov 0 + cx≥5)/nice + veredicto "fix X first", exit 0 informativo. Dogfood real: 0 must-fix | 0 should-fix | 8 nice, top loadLiveCache CRAP 29.91 (bajo el max 30, consistente con la compuerta). Pin de dispatch actualizado deliberadamente. Go verde salvo portability preexistente; bun 140/140.
 - L6 (T3 evidencia): `trace usage [--json]` (fold llamadas+sesiones por tool, hermético) + `applyUsagePruning`/`parseTraceUsage` en TS (piso de evidencia 3 sesiones, minimal nunca poda, explícito salta medición, malformado abre a full) + cableado en setup (un spawn best-effort, log de podadas, TE_TOOLSET=full restaura). Go trace+cli verde; bun 144/144; tsc limpio.
 - L7 (T4 evidencia): `evolve tick [--every 3] [--dry-run]` — ComputeTick (lectura) + ApplyTick (candidatos + cursor). Señales: errores repetidos (≥3 en ≥2 sesiones, dominio harness, máx 3/tick) + lecciones con evidencia que ya no verifica (retiro propuesto, dominio propio). Dry-run no escribe; no-due no avanza. Hook de compaction lo corre best-effort. Guardián sigue admitiendo todo. Go evolve+cli verde; bun 144/144; tsc limpio.
+- L8 (T5 evidencia): `evolve report [--domain]` — precio proxy (chars/4) + estado ok/rot/unchecked por lección, totales, líneas retire. Dogfood real: 4 admitidas, 1188 proxy tokens, 3 rot con retiro propuesto. Rebuild 0.12.0 reinstalado en ~/bin (con backup) para probar en opencode. Go evolve+cli verde.

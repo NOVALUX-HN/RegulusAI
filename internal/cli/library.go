@@ -391,7 +391,7 @@ func (c CLI) budgetCmd(args []string) int {
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>]")
 		return 2
 	}
 	switch args[0] {
@@ -399,9 +399,11 @@ func (c CLI) evolveCmd(args []string) int {
 		return c.evolveProposeCmd(args[1:])
 	case "tick":
 		return c.evolveTickCmd(args[1:])
+	case "report":
+		return c.evolveReportCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>]")
 		return 2
 	}
 }
@@ -470,5 +472,37 @@ func (c CLI) evolveTickCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "tick: %d finding(s), %d candidate(s) proposed\n", len(res.Findings), len(res.Findings))
+	return 0
+}
+
+// evolveReportCmd implements `regulus evolve report [--domain <d>]`:
+// the lesson economics (T5) — proxy-token price plus evidence state
+// per admitted lesson, totals, and retire lines for rot. Read-only:
+// it proposes nothing, advances nothing, judges nothing. Exit 0 with
+// the numbers; the guardian decides with them.
+func (c CLI) evolveReportCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve report", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only this domain's lessons")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>]")
+		return 2
+	}
+	rep, err := evolve.BuildReport(c.dir(), *domain)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve report: %v\n", err)
+		return 1
+	}
+	for _, l := range rep.Lessons {
+		fmt.Fprintf(c.Stdout, "  - [%s] %s: %s (~%d proxy tokens, evidence %s)\n",
+			l.Domain, l.ID, l.Cue, l.ProxyTokens, l.Evidence)
+	}
+	fmt.Fprintf(c.Stdout, "admitted: %d, proxy tokens: %d, rot: %d\n", rep.Admitted, rep.TotalProxy, rep.Rot)
+	for _, id := range rep.Retire {
+		fmt.Fprintf(c.Stdout, "retire: %s — evidence rot, re-validate or retire it\n", id)
+	}
 	return 0
 }
