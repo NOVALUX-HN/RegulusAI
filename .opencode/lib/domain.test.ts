@@ -12,6 +12,7 @@ import {
   compactionContextArgs,
   dataBlock,
   distinctiveWords,
+  explainSpawnError,
   extractPaths,
   findChartRefs,
   findDomainInChart,
@@ -544,6 +545,74 @@ describe("binary resolution (S2/S3 behavior)", () => {
       if (prev !== undefined) process.env.REGULUS_BIN = prev;
     }
   });
+
+  test("candidates: primary uses node platform spelling", () => {
+    const prev = process.env.REGULUS_BIN;
+    delete process.env.REGULUS_BIN;
+    try {
+      const platform = process.platform;
+      const arch = process.arch === "x64" ? "amd64" : process.arch;
+      const ext = platform === "win32" ? ".exe" : "";
+      const list = candidates("/proj");
+      expect(list).toContain(`/proj/binaries/regulus-${platform}-${arch}${ext}`);
+    } finally {
+      if (prev !== undefined) process.env.REGULUS_BIN = prev;
+    }
+  });
+
+  test("candidates: win32 probes windows alias in the same slot, right after primary", () => {
+    const prev = process.env.REGULUS_BIN;
+    delete process.env.REGULUS_BIN;
+    try {
+      const list = candidates("/proj");
+      if (process.platform === "win32") {
+        const arch = process.arch === "x64" ? "amd64" : process.arch;
+        const primary = `/proj/binaries/regulus-win32-${arch}.exe`;
+        const alias = `/proj/binaries/regulus-windows-${arch}.exe`;
+        const pi = list.indexOf(primary);
+        const ai = list.indexOf(alias);
+        expect(pi).toBeGreaterThanOrEqual(0);
+        expect(ai).toBe(pi + 1);
+      } else {
+        expect(list.some((c) => c.includes("regulus-windows-"))).toBe(false);
+      }
+    } finally {
+      if (prev !== undefined) process.env.REGULUS_BIN = prev;
+    }
+  });
+
+  test("candidates: launcher order 1-6 with alias in binaries slot, PATH last", () => {
+    const prev = process.env.REGULUS_BIN;
+    process.env.REGULUS_BIN = "/fake/regulus";
+    try {
+      const list = candidates("/proj");
+      const platform = process.platform;
+      const arch = process.arch === "x64" ? "amd64" : process.arch;
+      const ext = platform === "win32" ? ".exe" : "";
+      const iEnv = list.indexOf("/fake/regulus");
+      const iBinExe = list.indexOf("/proj/bin/regulus.exe");
+      const iBin = list.indexOf("/proj/bin/regulus");
+      const iPrimary = list.indexOf(`/proj/binaries/regulus-${platform}-${arch}${ext}`);
+      expect(iEnv).toBe(0);
+      expect(iBinExe).toBeGreaterThan(iEnv);
+      expect(iBin).toBe(iBinExe + 1);
+      expect(iPrimary).toBe(iBin + 1);
+      if (platform === "win32") {
+        const iAlias = list.indexOf(`/proj/binaries/regulus-windows-${arch}.exe`);
+        expect(iAlias).toBe(iPrimary + 1);
+      }
+      expect(list[list.length - 1]).toBe("regulus");
+      const home = process.env.HOME || process.env.USERPROFILE || "";
+      if (home) {
+        const iHome = list.indexOf(`${home}/.regulus/bin/regulus${ext}`);
+        expect(iHome).toBeGreaterThan(iPrimary);
+        expect(iHome).toBeLessThan(list.length - 1);
+      }
+    } finally {
+      if (prev === undefined) delete process.env.REGULUS_BIN;
+      else process.env.REGULUS_BIN = prev;
+    }
+  });
 });
 
 describe("gate_run timeout (D3)", () => {
@@ -697,6 +766,118 @@ describe("gate_run content (D3)", () => {
     expect(got).toContain("sha256:");
     expect(got).toContain("exit code: 1");
     expect(got.slice(0, 50)).toBe("y".repeat(50));
+  });
+});
+
+describe("blocked-spawn diagnosis (EUNKNOWN/uv_spawn)", () => {
+  // On Windows libuv surfaces a Device Guard / App Control (WDAC)
+  // denial as EUNKNOWN: unknown error, uv_spawn (errno -4094) — never
+  // as ENOENT. The raw text alone sends the reader after PATH and
+  // cwd ghosts; the diagnosis must name the OS block, how to confirm
+  // it, and the real outs instead.
+  test("EUNKNOWN uv_spawn explains the OS block with confirmation steps", () => {
+    const err = Object.assign(new Error("EUNKNOWN: unknown error, uv_spawn"), {
+      code: "EUNKNOWN",
+      errno: -4094,
+    });
+    const got = explainSpawnError(err, "C:/proj/bin/regulus.exe");
+    expect(got).toContain("EUNKNOWN");
+    expect(got).toContain("C:/proj/bin/regulus.exe");
+    expect(got).toContain("Device Guard");
+    expect(got).toContain("3033");
+  });
+  test("Node-style bare UNKNOWN (spawnSync, same errno) is also diagnosed", () => {
+    const err = Object.assign(
+      new Error("spawnSync C:/proj/bin/regulus.exe UNKNOWN"),
+      { code: "UNKNOWN", errno: -4094 },
+    );
+    const got = explainSpawnError(err, "C:/proj/bin/regulus.exe");
+    expect(got).toContain("Device Guard");
+    expect(got).toContain("3033");
+  });
+  test("Bun-style ENOENT carrying the uv_spawn token passes through", () => {
+    // Regression pin: Bun renders a missing file as
+    // "ENOENT: no such file or directory, uv_spawn '...'" — the
+    // token alone must never read as an OS block (that misdiagnosis
+    // shipped briefly and blamed Device Guard for absent files).
+    const err = Object.assign(
+      new Error("ENOENT: no such file or directory, uv_spawn '/nope'"),
+      { code: "ENOENT", errno: -4058 },
+    );
+    const got = explainSpawnError(err, "/nope");
+    expect(got).toContain("ENOENT");
+    expect(got).not.toContain("Device Guard");
+  });
+  test("plain ENOENT keeps the old message without the block hint", () => {
+    const got = explainSpawnError(new Error("spawn ENOENT"), "/b/regulus");
+    expect(got).toContain("spawn ENOENT");
+    expect(got).not.toContain("Device Guard");
+  });
+  test("timeout keeps the old message without the block hint", () => {
+    const got = explainSpawnError("timed out after 3600000ms", "");
+    expect(got).toContain("timed out");
+    expect(got).not.toContain("Device Guard");
+  });
+  test("gate_run failure carries the block diagnosis with exit -1", () => {
+    const got = formatGateFailure("EUNKNOWN: unknown error, uv_spawn");
+    expect(got).toContain("exit code: -1");
+    expect(got).toContain("Device Guard");
+  });
+});
+
+describe("stale-core refusal (version skew, same contract)", () => {
+  // A runnable core whose doctor reports "binary says X but
+  // package.json says Y" answers the contract but runs an older
+  // surface (0.8.1 prints usage for `memory context --limit/--budget`,
+  // breaking the compaction hook silently). pickRegulus must skip it
+  // with a rebuild reason instead of adopting it — the same fail-fast
+  // class as a contract mismatch. The unstamped-dev-build warning is
+  // a different line and stays accepted (local dev flow).
+  const doctorOk = () => ({ exitCode: 0, output: "" });
+  test("skips the stale candidate and picks the next fresh one", async () => {
+    const seen: [string, string[]][] = [];
+    const probe: ProbeRun = async (bin, args) => {
+      seen.push([bin, args]);
+      if (bin === "stale") {
+        if (args[0] === "doctor")
+          return { exitCode: 0, output: "version:    WARNING — binary says 0.8.1 but package.json says 0.12.0: rebuild" };
+        throw new Error("contract must not be probed on a stale core");
+      }
+      if (args[0] === "doctor") return doctorOk();
+      return { exitCode: 0, output: REGULUS_CONTRACT };
+    };
+    const got = await pickRegulus(["stale", "fresh"], probe);
+    expect(got.bin).toBe("fresh");
+    expect(got.failures).toHaveLength(1);
+    expect(got.failures[0]).toContain("stale");
+    expect(got.failures[0]).toContain("0.8.1");
+    expect(got.failures[0]).toContain("npm run build");
+    expect(seen).toEqual([
+      ["stale", ["doctor"]],
+      ["fresh", ["doctor"]],
+      ["fresh", ["contract"]],
+    ]);
+  });
+  test("blocked + stale candidates yield no bin and name both reasons", async () => {
+    const probe: ProbeRun = async (bin, args) => {
+      if (bin === "blocked") throw new Error("EUNKNOWN: unknown error, uv_spawn");
+      return { exitCode: 0, output: "WARNING — binary says 0.8.1 but package.json says 0.12.0" };
+    };
+    const got = await pickRegulus(["blocked", "stale"], probe);
+    expect(got.bin).toBe("");
+    expect(got.failures).toHaveLength(2);
+    expect(got.failures[0]).toContain("EUNKNOWN");
+    expect(got.failures[1]).toContain("stale");
+  });
+  test("unstamped dev build warning stays accepted", async () => {
+    const probe: ProbeRun = async (_bin, args) => {
+      if (args[0] === "doctor")
+        return { exitCode: 0, output: "version:    WARNING — unstamped dev build (package.json says 0.12.0): rebuild" };
+      return { exitCode: 0, output: REGULUS_CONTRACT };
+    };
+    const got = await pickRegulus(["dev"], probe);
+    expect(got.bin).toBe("dev");
+    expect(got.failures).toEqual([]);
   });
 });
 

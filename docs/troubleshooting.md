@@ -93,6 +93,63 @@ en este repo. La firma local quita el aviso en tus PCs, no ante el mundo.
 Re-ejecutable sin miedo: el script es idempotente — si el cert ya existe
 y los EXEs ya están firmados con él, re-correrlo es no-op.
 
+## `EUNKNOWN: unknown error, uv_spawn` (Windows bloquea el binario)
+
+Si cualquier comando `regulus` (o el plugin de OpenCode) falla con
+`EUNKNOWN: unknown error, uv_spawn` (errno -4094 bajo Bun; bajo Node el
+launcher informa `code=UNKNOWN` con el mismo errno), la causa no es PATH,
+cwd ni permisos de archivo: es la directiva de **Device Guard / App
+Control (WDAC)** de la organización bloqueando el binario antes de
+ejecutarlo. libuv no tiene errno para ese rechazo, por eso el mensaje es
+opaco. Desde v0.12.1 el plugin y `bin/regulus.js` detectan esta firma y
+la explican en el propio error en vez de dejar el `EUNKNOWN` pelado.
+
+Cómo confirmarlo (elegí una):
+
+- `cmd.exe /C '"<ruta>\bin\regulus.exe" doctor'` muestra el aviso
+  "ha sido bloqueado por la directiva de Device Guard de su
+  organización".
+- Visor de eventos → `Microsoft-Windows-CodeIntegrity/Operational`,
+  eventos **3033/3077** nombrando el binario y el policy ID.
+- `Get-AuthenticodeSignature` da `NotSigned`: esperado en un build
+  local, y por eso la policy a nivel Enterprise lo rechaza.
+
+Lo que NO lo arregla: `Unblock-File` (eso saca Mark-of-the-Web, no una
+policy WDAC), la firma autofirmada de `scripts/sign-local.ps1` (solo
+sirve contra SmartScreen), mover el binario de carpeta, recompilar, ni
+`go run` (cuando `go.exe` está bloqueado por la misma policy, como se
+ve en los mismos eventos 3033/3077).
+
+Salidas reales:
+
+- Pedir a quien administre la policy una excepción por hash o firmante
+  para las rutas de dev (adjuntá los eventos 3033/3077 con el policy ID).
+- Correr dentro de WSL (el kernel Linux no está sujeto a la CI de
+  Windows) con `binaries/regulus-linux-*`.
+- Una máquina no gestionada por esa policy para builds locales.
+
+## El plugin usa un `regulus` viejo del PATH (stale core)
+
+Si el setup del plugin rechaza con `stale core: binary says X but
+package.json says Y`, el problema no es tu checkout: los candidatos
+locales fallaron (ver sección EUNKNOWN arriba) y el plugin llegó al
+último recurso — `regulus` en PATH — que resultó ser un core de una
+versión anterior. Ese core responde `contract` pero corre una
+superficie vieja (p. ej. 0.8.1 no conoce `--limit/--budget` de `memory
+context` y rompe el hook de compaction en silencio), por eso el plugin
+lo rechaza en vez de adoptarlo.
+
+Cómo confirmarlo: el propio mensaje nombra el binario y ambas
+versiones. Verificá con `<ese-binario> doctor`: la primera línea dice
+`WARNING — binary says X but package.json says Y`.
+
+Arreglo: reconstruí el binario local (`npm run build`, que estampa
+`binaries/` + `bin/regulus[.exe]`) y eliminá o actualizá el `regulus`
+viejo del PATH (`~/bin`, `~/.regulus/bin`) para que no vuelva a ganar
+por descarte. El aviso `WARNING — unstamped dev build` de un `go
+build` a mano, en cambio, sigue aceptado a propósito: es flujo de dev
+local, no skew de versiones.
+
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
@@ -133,9 +190,17 @@ too large.
 
 ## The plugin doesn't find the regulus binary
 
-The plugin searches, in order: `$REGULUS_BIN`, `bin/regulus.exe`,
-`bin/regulus`, `binaries/regulus-<platform>-<arch>`, `~/.regulus/bin`,
-and PATH. If none exists, build the stamped local binary with the
+The plugin searches, in order (first match wins): 1. `$REGULUS_BIN`,
+2. `bin/regulus.exe`, 3. `bin/regulus`,
+4. `binaries/regulus-<platform>-<arch>[.exe]` — on Windows (`win32`)
+the same slot probes both names, primary `regulus-win32-<arch>.exe`
+first and alias `regulus-windows-<arch>.exe` second (the shipped dir
+only carries `regulus-windows-*`, so the alias is what hits),
+5. `~/.regulus/bin`, 6. `regulus` on PATH (last resort, never preferred).
+`EUNKNOWN` on slots 2–3 is the WDAC block, not PATH/cwd — see the
+`EUNKNOWN` section above, don't chase PATH/cwd ghosts. Landing on slot
+6 with `stale core` means slots 1–5 failed — see the stale-core section
+above. If none exists, build the stamped local binary with the
 documented flow:
 
 ```bash
