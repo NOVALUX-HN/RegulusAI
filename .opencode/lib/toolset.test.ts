@@ -133,6 +133,35 @@ describe("toolset plugin wiring (T2 intentional pin)", () => {
   });
 });
 
+describe("lens migration (T8 review transaction)", () => {
+  // The verify command wraps the guardian protocol in a review
+  // lineage: start freezes, lenses file per-lens verdicts (4R),
+  // findings sort through refute, approve binds, and approval never
+  // delivers (no commit/push/release from a review).
+  async function verifyText(): Promise<string> {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const at = src.indexOf('name: "regulus-verify"');
+    return src.slice(at, at + 3000);
+  }
+  test("verify opens a lineage and closes it with approve", async () => {
+    const text = await verifyText();
+    expect(text).toContain("review start");
+    expect(text).toContain("review approve");
+  });
+  test("verify files verdicts per 4R lens and sorts findings via refute", async () => {
+    const text = await verifyText();
+    for (const lens of ["risk", "resilience", "readability", "reliability"]) {
+      expect(text).toContain(lens);
+    }
+    expect(text).toContain("review refute");
+  });
+  test("approval never delivers", async () => {
+    const text = await verifyText();
+    expect(text).toContain("Approval is not delivery");
+    expect(text).toContain("never commit");
+  });
+});
+
 describe("usage pruning (T3 measured toolset)", () => {
   // The plugin prunes the full set by measured use: a full-only tool
   // with zero recorded calls across the evidence floor (>= 3 traced

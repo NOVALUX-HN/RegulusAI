@@ -19,8 +19,8 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 - T4 (S1,S2,S4): Fase 3 — hook proposer cada k sesiones + supersede por contradicción — ruta: inline — commit: 7dee40c
 - T5 (S1,S2,S4): Fase 4 — evolution report con delta por lección — ruta: inline — commit: c9968ef
 - T6 (S1,S4): Fase 5 diseño — chart RDD (lineage, lenses, budget, burn, consent) — ruta: inline — commit: 722bf44
-- T7 (S1,S2,S4): Fase 5 core Go — transacción de review — ruta: inline — commit: T7-pendiente-hash
-- T8 (S1,S2,S4): Fase 5 plugin + migración guardians→lenses — ruta: inline — commit: pendiente
+- T7 (S1,S2,S4): Fase 5 core Go — transacción de review — ruta: inline — commit: fbe0715
+- T8 (S1,S2,S4): Fase 5 plugin + migración guardians→lenses — ruta: inline — commit: T8-pendiente-hash
 
 ## Log
 
@@ -34,3 +34,4 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 - L8 (T5 evidencia): `evolve report [--domain]` — precio proxy (chars/4) + estado ok/rot/unchecked por lección, totales, líneas retire. Dogfood real: 4 admitidas, 1188 proxy tokens, 3 rot con retiro propuesto. Rebuild 0.12.0 reinstalado en ~/bin (con backup) para probar en opencode. Go evolve+cli verde.
 - L9 (T6 evidencia): charts/pro-harness-rdd.md — 7 escenarios Given/When/Then (freeze, lenses por tier, refuter adversarial, budget 2, consent/delivery, migración), decisiones de diseño fijadas (model-lenses solo high-risk, 4R, budget 2, burn por bytes). `spec check` → OK.
 - L10 (T7 evidencia): `review start|approve|refute` — linaje rev_* con bytes congelados (sha256, sin git), approve ata a bytes exactos (drift consume N/2, tercera va a humano), refute clasifica in-set=candidate-caused vs fuera=pre-existing follow-up. Legacy `review` intacto. CLI verde completo.
+- L11 (T8 evidencia): verify envuelve el protocolo en linaje (start→lenses 4R por tier→refute→approve; approval≠delivery pineado en texto). docs/agents.md mapea guardians→lenses. Bun 147/147; tsc limpio.
