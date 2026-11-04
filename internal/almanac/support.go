@@ -1,9 +1,6 @@
 package almanac
 
 import (
-	"path/filepath"
-	"strings"
-
 	"regulus-ai/internal/evidence"
 )
 
@@ -20,42 +17,18 @@ const (
 	SupportUnchecked = "unchecked"
 )
 
-// SupportOf grades one observation's cited support. Receipt references
-// match by cleaned path or by base name: provenance cites absolute
-// paths, task-relative paths and bare ids across writers, while
-// verification reports root-joined paths — the dual match keeps both
-// honest without forcing one canonical form.
+// SupportOf grades one observation's cited support, sharing the
+// evidence.CitedRot semantics: only a cited failure rots.
 func SupportOf(root string, o Observation) string {
-	if o.Provenance == nil || strings.TrimSpace(o.Provenance.Task) == "" {
+	if o.Provenance == nil {
 		return SupportUnchecked
 	}
-	if len(o.Provenance.Receipts) == 0 {
+	rot, checked := evidence.CitedRot(root, o.Provenance.Task, o.Provenance.Receipts)
+	if !checked {
 		return SupportUnchecked
 	}
-	taskDir, err := evidence.TaskDirSafe(root, o.Provenance.Task)
-	if err != nil {
-		return SupportUnchecked
-	}
-	files, err := filepath.Glob(filepath.Join(taskDir, "*.json"))
-	if err != nil || len(files) == 0 {
-		return SupportUnchecked
-	}
-	rep, err := evidence.Verify(root, o.Provenance.Task, false)
-	if err != nil {
-		return SupportUnchecked
-	}
-	if len(rep.Failed) == 0 {
-		return SupportOK
-	}
-	failed := map[string]bool{}
-	for _, f := range rep.Failed {
-		failed[f.File] = true
-		failed[filepath.Base(f.File)] = true
-	}
-	for _, r := range o.Provenance.Receipts {
-		if failed[r] || failed[filepath.Base(r)] {
-			return SupportRot
-		}
+	if rot {
+		return SupportRot
 	}
 	return SupportOK
 }
