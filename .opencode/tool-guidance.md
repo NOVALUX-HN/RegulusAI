@@ -75,6 +75,18 @@ List one session trace's distinct touched paths, in order.
 
 Run one gate three times (base + two variants); merge cleanly or flag conflicts.
 
+## audit
+
+Repo-wide ranked audit: entry points first, then what to fix first.
+
+## evolve_report
+
+Lesson economics: proxy price plus evidence state per lesson.
+
+## evolve_tick
+
+Periodic proposer: mine recent sessions into pending candidates.
+
 ## search-default
 
 Search default: obscura browser_navigate + browser_extract/markdown + browser_links; fallback raw/bing; recipe DDG html + extract + raw.

@@ -79,3 +79,6 @@ back with receipts.
 | `trace_files` | Lists the distinct touched paths of one session trace, in call order |
 | `probe_compose` | Runs one gate three times (base + two variants); merges non-conflicting changes, flags conflicts |
 | `memory_history` | The revision chain of one evolving topic (append-only) |
+| `audit` | Repo-wide ranked audit: entry points first, then must-fix / should-fix / nice |
+| `evolve_report` | Lesson economics: proxy price plus evidence state per lesson |
+| `evolve_tick` | Periodic proposer: pending candidates from recent sessions (dry-run by default) |

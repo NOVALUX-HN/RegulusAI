@@ -55,18 +55,15 @@ func lessonProxy(l library.Lesson) int64 {
 	return (n + 3) / 4
 }
 
-// lessonEvidence checks one lesson's support: lessons without a task
-// cannot be checked; an unreadable store fails open to unchecked; only
-// failed receipt verification reads as rot.
+// lessonEvidence grades one lesson's cited support, sharing the
+// evidence.CitedRot semantics with almanac SupportOf: only a cited
+// failure rots.
 func lessonEvidence(root string, l library.Lesson) string {
-	if l.Task == "" {
+	rot, checked := evidence.CitedRot(root, l.Task, l.Evidence)
+	if !checked {
 		return EvidenceUnchecked
 	}
-	rep, err := evidence.Verify(root, l.Task, false)
-	if err != nil {
-		return EvidenceUnchecked
-	}
-	if len(rep.Failed) > 0 {
+	if rot {
 		return EvidenceRot
 	}
 	return EvidenceOK

@@ -312,3 +312,64 @@ func shortSHA(sha string) string {
 	}
 	return sha
 }
+
+// CitedRot is the shared support semantics for cited provenance
+// (almanac SupportOf, evolve report/tick/validate): it reports
+// whether any CITED receipt fails verification, and whether anything
+// was actually checked. Only a cited failure rots support — failures
+// elsewhere in the task leave other citations intact. Anything
+// unverifiable (no task, no citations, missing/empty evidence dir,
+// unreadable store) returns checked=false: fail-open, never accuse.
+// Receipt references match by cleaned path or base name, since
+// provenance cites absolute paths, task-relative paths and bare ids
+// while verification reports root-joined paths. A cited receipt found
+// under corrupt/ counts as failed: quarantine preserves the bytes
+// but concedes the integrity check.
+func CitedRot(root, task string, cited []string) (rot, checked bool) {
+	failed, checked := CitedFailures(root, task, cited)
+	return len(failed) > 0, checked
+}
+
+// CitedFailures returns the cited receipts that fail verification
+// (matched by path or base name), plus whether anything was
+// actually checked. Unverifiable stores yield checked=false with no
+// failures: fail-open, never accuse.
+func CitedFailures(root, task string, cited []string) (failed []string, checked bool) {
+	if strings.TrimSpace(task) == "" || len(cited) == 0 {
+		return nil, false
+	}
+	taskDir, err := TaskDirSafe(root, task)
+	if err != nil {
+		return nil, false
+	}
+	files, err := filepath.Glob(filepath.Join(taskDir, "*.json"))
+	if err != nil || len(files) == 0 {
+		return nil, false
+	}
+	rep, err := Verify(root, task, false)
+	if err != nil {
+		return nil, false
+	}
+	if len(rep.Failed) == 0 {
+		return nil, true
+	}
+	bad := map[string]bool{}
+	for _, f := range rep.Failed {
+		bad[f.File] = true
+		bad[filepath.Base(f.File)] = true
+	}
+	// Quarantined citations count as failed: corrupt/ preserves the
+	// bytes but concedes the integrity check that put them there.
+	quarantined, _ := filepath.Glob(filepath.Join(taskDir, "corrupt", "*.json"))
+	for _, q := range quarantined {
+		bad[q] = true
+		bad[filepath.Base(q)] = true
+	}
+	for _, r := range cited {
+		if bad[r] || bad[filepath.Base(r)] {
+			failed = append(failed, r)
+		}
+	}
+	sort.Strings(failed)
+	return failed, true
+}

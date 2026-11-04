@@ -86,22 +86,25 @@ func TestTickRepeatedErrorsPropose(t *testing.T) {
 func TestTickStaleLesson(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	taskDir, err := evidence.TaskDirSafe(root, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Precise semantics: the finding fires only for the cited
+	// receipt that fails.
+	garbage := filepath.Join(taskDir, "rec_garbage.json")
 	les := library.Lesson{
 		Domain: "go", Task: "t1", Cue: "flaky gate", Lesson: "Rerun the gate once before debugging.",
-		Evidence: []string{"rec_t1/1"}, Confidence: "medium",
+		Evidence: []string{garbage}, Confidence: "medium",
 		CreatedAt: now, GitHead: "abc",
 	}
 	if err := library.Admit(root, les, "g"); err != nil {
 		t.Fatal(err)
 	}
-	taskDir, err := evidence.TaskDirSafe(root, "t1")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, "rec_garbage.json"), []byte("{not json"), 0o644); err != nil {
+	if err := os.WriteFile(garbage, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	recordTickEntry(t, root, "s1", "c1", "read", trace.StatusCompleted)

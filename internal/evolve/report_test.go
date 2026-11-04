@@ -57,20 +57,23 @@ func TestReportPricesAndTotals(t *testing.T) {
 func TestReportFlagsRot(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
-	admitReportLesson(t, root, library.Lesson{
-		Domain: "go", Task: "t9", Cue: "old fact",
-		Lesson:     "Something once true.",
-		Evidence:   []string{"rec_t9/1"},
-		Confidence: "medium", CreatedAt: now,
-	})
 	taskDir, err := evidence.TaskDirSafe(root, "t9")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Precise semantics: the lesson must cite the receipt that
+	// actually fails — task dirt elsewhere does not rot support.
+	garbage := filepath.Join(taskDir, "rec_garbage.json")
+	admitReportLesson(t, root, library.Lesson{
+		Domain: "go", Task: "t9", Cue: "old fact",
+		Lesson:     "Something once true.",
+		Evidence:   []string{garbage},
+		Confidence: "medium", CreatedAt: now,
+	})
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, "rec_garbage.json"), []byte("{not json"), 0o644); err != nil {
+	if err := os.WriteFile(garbage, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	rep, err := BuildReport(root, "go")

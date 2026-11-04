@@ -391,7 +391,7 @@ func (c CLI) budgetCmd(args []string) int {
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
 		return 2
 	}
 	switch args[0] {
@@ -401,9 +401,11 @@ func (c CLI) evolveCmd(args []string) int {
 		return c.evolveTickCmd(args[1:])
 	case "report":
 		return c.evolveReportCmd(args[1:])
+	case "validate":
+		return c.evolveValidateCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
 		return 2
 	}
 }
@@ -504,5 +506,44 @@ func (c CLI) evolveReportCmd(args []string) int {
 	for _, id := range rep.Retire {
 		fmt.Fprintf(c.Stdout, "retire: %s — evidence rot, re-validate or retire it\n", id)
 	}
+	return 0
+}
+
+// evolveValidateCmd implements `regulus evolve validate [--domain <d>]
+// [--lesson <id>]`: the deterministic verdict per admitted lesson
+// (P7) — keep, drop, or unreviewable — from evidence alone. Cost is
+// reported, never judged. Read-only: it proposes nothing, retires
+// nothing; the guardian acts on the lines. Exit 0 with the verdicts.
+func (c CLI) evolveValidateCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve validate", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only this domain's lessons")
+	lesson := fs.String("lesson", "", "only this lesson id")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve validate [--domain <d>] [--lesson <id>]")
+		return 2
+	}
+	verdicts, err := evolve.Validate(c.dir(), *domain, *lesson)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve validate: %v\n", err)
+		return 1
+	}
+	var keep, drop, unreviewable int
+	for _, v := range verdicts {
+		fmt.Fprintf(c.Stdout, "  - %s %s: %s (~%d proxy tokens, %s)\n",
+			v.Verdict, v.ID, v.Cue, v.ProxyTokens, v.Reason)
+		switch v.Verdict {
+		case evolve.VerdictKeep:
+			keep++
+		case evolve.VerdictDrop:
+			drop++
+		default:
+			unreviewable++
+		}
+	}
+	fmt.Fprintf(c.Stdout, "keep: %d, drop: %d, unreviewable: %d\n", keep, drop, unreviewable)
 	return 0
 }

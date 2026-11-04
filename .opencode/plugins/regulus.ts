@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { applyUsagePruning, candidates, compactionContextArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, parseTraceUsage, pickRegulus, REGULUS_CONTRACT, resolveDomain, resolveToolset, suggestSkills, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
+import { applyUsagePruning, candidates, compactionContextArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, parseTraceUsage, pickRegulus, REGULUS_CONTRACT, resolveDomain, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -55,6 +55,9 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
   trace_files: "List one session trace's distinct touched paths, in order.",
   probe_compose:
     "Run one gate three times (base + two variants); merge cleanly or flag conflicts.",
+  audit: "Repo-wide ranked audit: entry points first, then what to fix first.",
+  evolve_report: "Lesson economics: proxy price plus evidence state per lesson.",
+  evolve_tick: "Periodic proposer: mine recent sessions into pending candidates.",
   "search-default":
     "Search default: obscura browser_navigate + browser_extract/markdown + browser_links; fallback raw/bing; recipe DDG html + extract + raw.",
 }
@@ -220,7 +223,7 @@ export default Plugin.define({
     // TOOLSET_* in lib/domain.ts). Reversal: TE_TOOLSET=full restores
     // all 16; unset restores auto (charts/ present → full).
     const toolset = resolveToolset({ hasCharts: hasChartFiles(dir) })
-    console.error(`[regulus] toolset: ${toolset} (${toolsetTools(toolset).length}/16 tools, TE_TOOLSET=${process.env.TE_TOOLSET ?? ""})`)
+    console.error(`[regulus] toolset: ${toolset} (${toolsetTools(toolset).length}/${TOOLSET_FULL.length} tools, TE_TOOLSET=${process.env.TE_TOOLSET ?? ""})`)
     // T3 (pro-harness): measured pruning — one best-effort `trace
     // usage` spawn in auto-full mode; explicit TE_TOOLSET skips
     // measuring, and any failure fails open to the unpruned set.
@@ -571,6 +574,69 @@ export default Plugin.define({
             context.signal,
             gateRunTimeoutMs(),
           )
+          return { content: res.output }
+        },
+      })
+
+      add({
+        name: "audit",
+        description: guidance["audit"],
+        input: {
+          type: "object",
+          properties: {
+            profile: { type: "string", description: "go cover profile path (default .regulus/coverage.out)" },
+            top: { type: "integer", description: "how many worst functions to rank (default 10)" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { profile, top } = input as { profile?: string; top?: number }
+          const args = ["audit", "--profile", profile && profile !== "" ? profile : ".regulus/coverage.out"]
+          if (typeof top === "number" && top > 0) args.push("--top", String(Math.floor(top)))
+          const res = await run(bin, args, dir, context.signal)
+          return { content: res.output }
+        },
+      })
+
+      add({
+        name: "evolve_report",
+        description: guidance["evolve_report"],
+        input: {
+          type: "object",
+          properties: {
+            domain: { type: "string", description: "only this domain's lessons" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { domain } = input as { domain?: string }
+          const args = ["evolve", "report"]
+          if (domain && domain !== "") args.push("--domain", domain)
+          const res = await run(bin, args, dir, context.signal)
+          return { content: res.output }
+        },
+      })
+
+      add({
+        name: "evolve_tick",
+        description: guidance["evolve_tick"],
+        input: {
+          type: "object",
+          properties: {
+            every: { type: "integer", description: "fire once this many traced sessions accumulate (default 3)" },
+            dry_run: { type: "boolean", description: "print findings without proposing (default true)" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "regulus", codemode: true },
+        execute: async (input, context) => {
+          const { every, dry_run } = input as { every?: number; dry_run?: boolean }
+          const args = ["evolve", "tick"]
+          if (typeof every === "number" && every > 0) args.push("--every", String(Math.floor(every)))
+          if (dry_run !== false) args.push("--dry-run")
+          const res = await run(bin, args, dir, context.signal)
           return { content: res.output }
         },
       })

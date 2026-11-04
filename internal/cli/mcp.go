@@ -409,6 +409,37 @@ func mcpTools() []mcpTool {
 				return c.mcpExec(func(sub CLI) int { return sub.traceFilesCmd([]string{"--session", s}) })
 			},
 		},
+		{
+			name: "audit", desc: "Repo-wide ranked audit: entry points first, then what to fix first",
+			props: map[string]any{
+					"profile": map[string]any{"type": "string", "description": "go cover profile path (default .regulus/coverage.out)"},
+					"top":     map[string]any{"type": "integer", "description": "how many worst functions to rank (default 10)"},
+				},
+			required: []string{},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				p := strings.TrimSpace(mcpStr(args, "profile"))
+				if p == "" {
+					p = ".regulus/coverage.out"
+				}
+				argv := []string{"--profile", p}
+				if n, ok := mcpInt(args, "top"); ok && n > 0 {
+					argv = append(argv, "--top", strconv.Itoa(n))
+				}
+				return c.mcpExec(func(sub CLI) int { return sub.auditCmd(argv) })
+			},
+		},
+		{
+			name: "evolve_report", desc: "Lesson economics: proxy price plus evidence state per lesson",
+			props: props(domainOptKey, domainOptProp), required: []string{},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				d := strings.TrimSpace(mcpStr(args, "domain"))
+				argv := []string{}
+				if d != "" {
+					argv = append(argv, "--domain", d)
+				}
+				return c.mcpExec(func(sub CLI) int { return sub.evolveReportCmd(argv) })
+			},
+		},
 	}
 }
 

@@ -3,7 +3,7 @@
 One stdio MCP server (`regulus mcp`, zero dependencies) plus the
 committed `.devin/` pack (skill, two subagent profiles, MCP config)
 covers all three Devin surfaces. No OpenCode runtime needed anywhere.
-The opencode plugin (hooks, 16 namespaced tools, opencode agents) does
+The opencode plugin (hooks, 19 namespaced tools, opencode agents) does
 NOT transfer — the table below shows what maps to what instead.
 
 ## What runs where
@@ -123,7 +123,7 @@ set `command` to the absolute path of `bin/regulus.exe` on your machine.
 
 | OpenCode (this repo) | Devin equivalent (this feature) |
 |---|---|
-| `.opencode/plugins/regulus.ts` (16 tools, hooks) | `regulus mcp` (12 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
+| `.opencode/plugins/regulus.ts` (19 tools, hooks) | `regulus mcp` (14 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
 | `.opencode/skills/regulus-workflow/` | `.devin/skills/regulus-workflow/` |
 | `.opencode/agents/regulus-{worker,scout}.md` | `.devin/agents/regulus-{worker,scout}.md` |
 | `opencode.json` permissions | Devin `permissions` allow/deny/ask (project `.devin/config.json`, yours to create) |
@@ -132,6 +132,8 @@ set `command` to the absolute path of `bin/regulus.exe` on your machine.
 
 Deliberately NOT ported: `probe_contrast/compose` (2–3x gate cost per
 call), `evolve_propose` (harness self-modification doesn't transfer),
-`skills_list` (opencode registry; Devin has its own skills),
-`memory prune/import/export` (destructive or management ops — run them
-in a local shell, not through the agent).
+`evolve_tick` (writes pending candidates, same reason), `skills_list`
+(opencode registry; Devin has its own skills), `memory
+prune/import/export` (destructive or management ops — run them in a
+local shell, not through the agent). Ported as read-only: `audit` and
+`evolve_report` (same policy as `trace_show`).

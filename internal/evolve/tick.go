@@ -208,12 +208,12 @@ func repeatedErrorFindings(root string) []Finding {
 	return out
 }
 
-// staleLessonFindings reviews admitted lessons against their task
-// evidence: a lesson whose task receipts no longer verify (and that
-// cites evidence) seeds a retirement review. Lessons without a task
-// cannot be checked and are skipped; an unreadable evidence store
-// fails open (no findings) rather than proposing retirements from
-// ignorance. Sorted by domain, then cue.
+// staleLessonFindings reviews admitted lessons against their CITED
+// task evidence (shared evidence.CitedRot semantics): a lesson only
+// seeds a retirement review when a receipt it cites fails. Lessons
+// without a task or citations cannot be checked and are skipped; an
+// unreadable evidence store fails open (no findings) rather than
+// proposing retirements from ignorance. Sorted by domain, then cue.
 func staleLessonFindings(root string) []Finding {
 	domains, err := library.Domains(root)
 	if err != nil {
@@ -229,18 +229,11 @@ func staleLessonFindings(root string) []Finding {
 			if l.Task == "" || len(l.Evidence) == 0 {
 				continue
 			}
-			rep, err := evidence.Verify(root, l.Task, false)
-			if err != nil {
+			rot, checked := evidence.CitedRot(root, l.Task, l.Evidence)
+			if !checked || !rot {
 				continue
 			}
-			if len(rep.Failed) == 0 {
-				continue
-			}
-			files := make([]string, 0, len(rep.Failed))
-			for _, f := range rep.Failed {
-				files = append(files, f.File)
-			}
-			sort.Strings(files)
+			files, _ := evidence.CitedFailures(root, l.Task, l.Evidence)
 			out = append(out, Finding{
 				Kind:     FindingStaleLesson,
 				Domain:   d,

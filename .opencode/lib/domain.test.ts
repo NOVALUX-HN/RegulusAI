@@ -250,7 +250,7 @@ describe("tool registry (S4 intentional pin)", () => {
   // (behavior via gateRunTimeoutMs plus the long-budget count below),
   // and fallback wording (behavior via loadDiscipline/loadToolGuidance
   // below). Precedent: the agent surface pin (self-audit U1) — the
-  // OpenCode agent surface carries 16 named tools, not full CLI parity
+  // OpenCode agent surface carries 19 named tools, not full CLI parity
   // (surface/reflect/library/budget/crap/status/evidence stay CLI-only
   // by design). Exact names; a new agent tool means a test edit, not a
   // silent drift.
@@ -271,9 +271,12 @@ describe("tool registry (S4 intentional pin)", () => {
     "trace_sessions",
     "trace_files",
     "probe_compose",
+    "audit",
+    "evolve_report",
+    "evolve_tick",
   ];
 
-  test("the tool surface is exactly these 16 registered names", async () => {
+  test("the tool surface is exactly these 19 registered names", async () => {
     const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
     const start = src.indexOf("ctx.tool.transform");
     const end = src.indexOf("ctx.command.transform");

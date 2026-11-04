@@ -181,7 +181,7 @@ Commands:
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file> | verify [--task <t>]   audit gauntlet receipts
-  evolve propose --task <t> --domain <d> | evolve tick [--every N] | evolve report [--domain <d>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics
+  evolve propose --task <t> --domain <d> | evolve tick [--every N] | evolve report [--domain <d>] | evolve validate [--domain <d>] [--lesson <id>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics; deterministic verdicts
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning

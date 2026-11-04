@@ -825,6 +825,9 @@ export const TOOLSET_FULL: readonly string[] = [
   "trace_sessions",
   "trace_files",
   "probe_compose",
+  "audit",
+  "evolve_report",
+  "evolve_tick",
 ];
 
 // TOOLSET_MINIMAL is the simple-session subset: verify the install

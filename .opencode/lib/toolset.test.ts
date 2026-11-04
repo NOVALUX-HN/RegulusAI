@@ -20,7 +20,7 @@ import {
 } from "./domain";
 
 describe("toolset lists (T2 subset pin)", () => {
-  test("full pins the 16 registered definitions in registration order", () => {
+  test("full pins the 19 registered definitions in registration order", () => {
     expect([...TOOLSET_FULL]).toEqual([
       "gate_run",
       "spec_check",
@@ -38,6 +38,9 @@ describe("toolset lists (T2 subset pin)", () => {
       "trace_sessions",
       "trace_files",
       "probe_compose",
+      "audit",
+      "evolve_report",
+      "evolve_tick",
     ]);
   });
 
@@ -93,13 +96,13 @@ describe("resolveToolset (TE_TOOLSET selection + reversal)", () => {
 });
 
 describe("simple sessions pay fewer definitions (T2 cost pin)", () => {
-  test("3/16 definitions and under half the guidance chars", async () => {
+  test("3/19 definitions and under half the guidance chars", async () => {
     const md = await Bun.file(`${import.meta.dir}/../tool-guidance.md`).text();
     const guidance = parseToolGuidance(md);
     const chars = (names: readonly string[]) =>
       names.reduce((n, name) => n + (guidance[name] ?? "").length, 0) + (guidance["regulus"] ?? "").length;
     expect(toolsetTools("minimal").length).toBe(3);
-    expect(toolsetTools("full").length).toBe(16);
+    expect(toolsetTools("full").length).toBe(19);
     const full = chars(toolsetTools("full"));
     const minimal = chars(toolsetTools("minimal"));
     expect(full).toBeGreaterThan(500);
