@@ -21,6 +21,24 @@ Guardians **verify** — they read code, run commands, and report. They have
 **The one-command dispatch**: `/regulus-verify` runs the full gate-verifier
 protocol in one step.
 
+## Guardians as lenses (review lineage)
+
+Inside a `review start` lineage (chart `pro-harness-rdd`), guardians
+file as lenses — none deleted, all re-homed. High-risk work runs each
+lens through its guardian; otherwise the deterministic `review` lens
+output suffices:
+
+| Lens | Guardians re-homed | What it owns |
+|---|---|---|
+| risk | `@regulus-reviewer` | What breaks, security, must-fix order |
+| resilience | `@regulus-mutation-auditor` | Failures, retries, tests that catch defects |
+| readability | `@regulus-reviewer`, `@regulus-spec-keeper` | Cut list, spec quality, public surface |
+| reliability | `@regulus-gate-verifier`, `@regulus-evidence-auditor`, `@regulus-crap-analyst` | Gauntlet verdicts, receipt backing, complexity debt |
+
+Findings sort through `review refute`; the lineage closes with
+`review approve`. Approval is not delivery: no commit, push or
+release ever follows from a review alone.
+
 ## The Crew (can edit, bounded by a Chart)
 
 The Crew **works** — they take one bounded unit against a Chart and hand it

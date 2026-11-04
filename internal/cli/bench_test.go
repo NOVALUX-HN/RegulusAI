@@ -54,7 +54,7 @@ func TestBenchListJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.String()), &tasks); err != nil {
 		t.Fatalf("list --json is not JSON: %v\n%s", err, out.String())
 	}
-	if len(tasks) < 5 || len(tasks) > 10 {
+	if len(tasks) < 5 || len(tasks) > 12 {
 		t.Fatalf("suite band broken: %d tasks", len(tasks))
 	}
 	c2, _, errb := newCLI(nil)
@@ -72,7 +72,7 @@ func TestBenchRun(t *testing.T) {
 	if code := c.Run([]string{"bench", "run", "--surface", "tree"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	for _, want := range []string{"B1", "PASS", "bench: 10/10 passed"} {
+	for _, want := range []string{"B1", "PASS", "B11", "bench: 11/11 passed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("run must show %q, got:\n%s", want, out.String())
 		}
@@ -136,14 +136,14 @@ func TestBenchBaselineSetAndShow(t *testing.T) {
 	if err := json.Unmarshal(raw, &rep); err != nil {
 		t.Fatalf("baseline is not a report: %v", err)
 	}
-	if len(rep.Tasks) != 10 || rep.Passed != 10 {
+	if len(rep.Tasks) != 11 || rep.Passed != 11 {
 		t.Fatalf("baseline = %+v", rep)
 	}
 	c2, out2, _ := newCLI(nil)
 	if code := c2.Run([]string{"bench", "baseline"}); code != 0 {
 		t.Fatalf("show: exit = %d", code)
 	}
-	if !strings.Contains(out2.String(), "10/10 passed") {
+	if !strings.Contains(out2.String(), "11/11 passed") {
 		t.Fatalf("show output = %q", out2.String())
 	}
 	c3, out3, _ := newCLI(nil)

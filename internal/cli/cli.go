@@ -69,6 +69,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
 	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
+	"audit":    func(c CLI, args []string) int { return c.auditCmd(args) },
 }
 
 // Run executes one CLI invocation and returns the process exit code:
@@ -171,6 +172,7 @@ Usage:
   regulus <command> [arguments]
 
 Commands:
+  audit [--profile <coverprofile>] [--top N]   repo-wide ranked audit: entry points, then what to fix first
   budget show|record   the evolution ledger (show; record a probe run)
   bench list|run|baseline|compare   the self-benchmark: offline suite, baseline, contrast (regulus bench --help)
   chart init <name> | list             scaffold a Chart, list every Chart
@@ -179,7 +181,7 @@ Commands:
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file> | verify [--task <t>]   audit gauntlet receipts
-  evolve propose --task <t> --domain <d>   assemble the evidence pack a proposer needs
+  evolve propose --task <t> --domain <d> | evolve tick [--every N] | evolve report [--domain <d>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
@@ -196,7 +198,7 @@ Commands:
   trace record|show|files|sessions|prune|cost   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
   task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
   decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
-  review [--task <t>] [--lens NAME]   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks)
+  review [--task <t>] [--lens NAME] | review start|approve|refute ...   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks); lineage transactions bind approval to frozen bytes
   spec check <file|dir>  validate the acceptance contract of feature documents
   status             one look at the project: runtime, gauntlet, evolution, receipts
   yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)

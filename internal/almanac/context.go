@@ -145,6 +145,7 @@ func ContextScoped(root string, now time.Time, limit int, sc ContextScope) (stri
 	writeContextNotes(&b, listed, now, effLimit)
 	writeContextPinned(&b, root, all, now)
 	writeContextLessons(&b, listed)
+	writeContextConflicts(&b, root, listed)
 	writeContextDecisionsScoped(&b, listed, now, sc.Budget)
 	return b.String(), nil
 }
@@ -287,6 +288,61 @@ func writeContextPinned(b *strings.Builder, root string, all []Observation, now 
 		if pins[o.ID] {
 			fmt.Fprintf(b, "  - %s %s: %s (saved %s)\n", o.ID, o.Type, o.Title, age(now, o.SavedAt))
 		}
+	}
+}
+
+// writeContextConflicts names live contradictions (A2): every
+// conflicts_with pair with both endpoints listed gets one line —
+// read both before trusting either. One-sided pairs (partner
+// filtered out of this block) stay silent: half a contradiction is
+// worse than none. Mirrors the search annotation; the resume block
+// is where stale trust does the most damage, so it names titles too.
+// A relations read failure silences the section (fail-open), never
+// the block.
+func writeContextConflicts(b *strings.Builder, root string, listed []Observation) {
+	live := map[string]string{}
+	for _, o := range listed {
+		live[o.ID] = o.Title
+	}
+	rels, err := Relations(root)
+	if err != nil {
+		return
+	}
+	type pair struct{ a, c string }
+	seen := map[pair]bool{}
+	var pairs []pair
+	for _, r := range rels {
+		if r.Relation != RelationConflictsWith {
+			continue
+		}
+		if _, ok := live[r.From]; !ok {
+			continue
+		}
+		if _, ok := live[r.To]; !ok {
+			continue
+		}
+		a, c := r.From, r.To
+		if c < a {
+			a, c = c, a
+		}
+		key := pair{a: a, c: c}
+		if !seen[key] {
+			seen[key] = true
+			pairs = append(pairs, key)
+		}
+	}
+	if len(pairs) == 0 {
+		return
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].a != pairs[j].a {
+			return pairs[i].a < pairs[j].a
+		}
+		return pairs[i].c < pairs[j].c
+	})
+	b.WriteString("\nConflicts (both sides live — read both before trusting either):\n")
+	for _, p := range pairs {
+		fmt.Fprintf(b, "  - %s (%s) <-> %s (%s)\n", p.a, live[p.a], p.c, live[p.c])
 	}
 }
 

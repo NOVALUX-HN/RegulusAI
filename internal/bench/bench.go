@@ -1,6 +1,6 @@
 // Package bench owns the macizo self-benchmark (chart macizo-flow/F4):
-// a fixed suite of 5-10 micro-tasks with hidden checks plus an offline
-// runner. The worker sees only the prompt (Title + Prompt); the runner
+// 8 behavior tasks with hidden checks plus reported-never-judged cost
+// tasks and an offline runner. The worker sees only the prompt (Title + Prompt); the runner
 // knows the answer (the check function). Every check is machine-checked
 // (PASS/FAIL, no judgment) and runs offline: no network, no model —
 // wall time is the proxy cost plus the measured-local token proxy
@@ -33,10 +33,10 @@ import (
 
 // SuiteVersion pins the task list: reports compare only within one
 // version. Adding a task bumps the version and re-baselines.
-const SuiteVersion = "macizo-bench-v2"
 
 // BaselinePath is the tracked baseline report (committed, not runtime
 // state): the current tree's numbers future surfaces contrast against.
+const SuiteVersion = "macizo-bench-v3"
 const BaselinePath = "bench/baseline.json"
 
 // Task is one micro-task: the visible prompt plus the hidden check the
@@ -96,7 +96,8 @@ type Comparison struct {
 	Reason       string
 }
 
-// Suite returns the fixed v2 task list (10 tasks, within the 5-10 band):
+// Suite returns the fixed v3 task list (11 tasks: 8 behavior tasks
+// within the 5-10 band, plus reported-never-judged cost tasks):
 // representative of repo work (COVER formula, SPLIT-bounded parse,
 // prose spec, veracity round-trip, gate selection, security jail,
 // honest-zero cost) with hidden machine checks, plus the P1 golden
@@ -136,6 +137,9 @@ func Suite() []Task {
 		{ID: "B10", Title: "token-proxy-golden", Kind: "tokens",
 			Prompt: "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
 			Check:  checkTokenProxyGolden},
+		{ID: "B11", Title: "lesson-context-cost", Kind: "tokens",
+			Prompt: "Assemble one Almanac resume block over a fixed fixture store and report its token-proxy cost.",
+			Check:  checkLessonContextCost},
 	}
 }
 
@@ -592,4 +596,47 @@ func checkTokenProxyGolden() (string, error) {
 		return "", fmt.Errorf("local proxy not marked measured: %+v", got)
 	}
 	return "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown", nil
+}
+
+// checkLessonContextCost pins the deterministic proxy-token price of
+// one Almanac resume block over a fixed fixture store (2 notes +
+// 1 evidence-gated lesson), assembled exactly like the compaction
+// hook (--limit 20 --budget 20). Chars/4 rounded up, the same
+// convention as trace.EstimateLocalTokens. The check reports, never
+// judges: Fase 4 (pro-harness) diffs this number per admitted lesson
+// to ask whether the evolution pays. Hermetic by construction:
+// ContextScoped reads only the temp store, never charts or cwd, and
+// every timestamp is fixed so the byte count is stable run to run.
+func checkLessonContextCost() (string, error) {
+	root, err := os.MkdirTemp("", "bench-lesson-cost-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(root)
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	fixture := []almanac.Observation{
+		{Type: almanac.TypeSessionNote, Title: "harbor deploy done", Content: "Deploy finished cleanly; canary watched for ten minutes."},
+		{Type: almanac.TypeSessionNote, Title: "rollback drill done", Content: "Rollback drill finished; restoring service is routine now."},
+		{Type: almanac.TypeLesson, Title: "harbor rollback first", Content: "When the harbor deploy fails, roll back before investigating.",
+			Lesson: &almanac.Lesson{Cue: "harbor deploy fails", Lesson: "Roll back first, questions later.", Evidence: []string{"rec_fixture/1"}, Confidence: "high", Dimension: "dom"}},
+	}
+	for i, o := range fixture {
+		if _, err := almanac.Save(root, &o, now.Add(time.Duration(i)*time.Second)); err != nil {
+			return "", err
+		}
+	}
+	ctx, err := almanac.ContextScoped(root, now.Add(3*time.Second), 20, almanac.ContextScope{Budget: 20})
+	if err != nil {
+		return "", err
+	}
+	// Lessons render as cue/lesson text (never the observation title):
+	// assert on the cue, the most distinctive priced-in string.
+	if !strings.Contains(ctx, "harbor deploy fails") {
+		return "", fmt.Errorf("fixture lesson missing from the assembled block (%d chars)", len(ctx))
+	}
+	proxy := (int64(len(ctx)) + 3) / 4
+	if proxy <= 0 {
+		return "", fmt.Errorf("empty block prices nothing")
+	}
+	return fmt.Sprintf("fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble %d chars = %d proxy tokens, host unknown", len(ctx), proxy), nil
 }

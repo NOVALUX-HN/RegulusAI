@@ -76,6 +76,7 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus evidence list [--task <t>]` | one line per receipt — the audit surface |
 | `regulus evidence show <file>` | one receipt in full (sha256-pinned output) |
 | `regulus crap --profile <p> [--max 30]` | CRAP scores: complexity × (1 − coverage)³ + complexity |
+| `regulus audit --profile <p> [--top 10]` | Repo-wide ranked audit: entry points first, then must-fix / should-fix / nice with the top item named |
 | `regulus memory note <text>` | a durable session note (survives restarts and compaction) |
 | `regulus memory save --type <t> --title <t> …` | a typed observation with provenance (decision, discovery, preference) |
 | `regulus memory search [terms]` | deterministic bucket-then-match, age annotations |

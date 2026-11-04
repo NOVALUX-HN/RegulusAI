@@ -112,4 +112,31 @@ const result = spawnSync(bin, process.argv.slice(2), {
   stdio: "inherit",
   env: process.env,
 })
+if (result.error) {
+  // The binary never ran: surface why instead of a silent exit 1.
+  // On Windows an OS-level Device Guard / App Control (WDAC) denial
+  // arrives here as EUNKNOWN/uv_spawn — never as ENOENT — so name it
+  // and point at the confirming steps, not at PATH ghosts.
+  const msg = result.error.message || String(result.error)
+  const code = typeof result.error.code === "string" ? result.error.code : ""
+  const errno = typeof result.error.errno === "number" ? result.error.errno : undefined
+  console.error(`regulus: failed to start ${bin}: ${msg}`)
+  // Exact codes/errno first: a genuine missing file is ENOENT/−4058
+  // and must not read as an OS block. Text covers the libuv rendering
+  // (Bun's "EUNKNOWN: unknown error, uv_spawn").
+  const blocked =
+    code === "EUNKNOWN" ||
+    code === "UNKNOWN" ||
+    errno === -4094 ||
+    /\bEUNKNOWN\b|unknown error|-4094/i.test(`${code} ${msg}`)
+  if (blocked) {
+    console.error(
+      "regulus: on Windows this is the Device Guard / App Control (WDAC) block, not a PATH problem.\n" +
+        `regulus: confirm with cmd.exe /C '"${bin}" doctor' (Device Guard prints its organization banner),\n` +
+        "regulus: or Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077.\n" +
+        "regulus: outs: ask IT for a hash/signer exception, or run inside WSL — see docs/troubleshooting.md (EUNKNOWN uv_spawn).",
+    )
+  }
+  process.exit(1)
+}
 process.exit(result.status === null ? 1 : result.status)

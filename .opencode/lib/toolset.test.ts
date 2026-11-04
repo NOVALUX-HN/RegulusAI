@@ -9,8 +9,10 @@
 // subset selection, the cost saving, and the plugin wiring.
 import { describe, expect, test } from "bun:test";
 import {
+  applyUsagePruning,
   isToolEnabled,
   parseToolGuidance,
+  parseTraceUsage,
   resolveToolset,
   TOOLSET_FULL,
   TOOLSET_MINIMAL,
@@ -128,5 +130,80 @@ describe("toolset plugin wiring (T2 intentional pin)", () => {
     expect(setup).toContain("hasChartFiles(dir)");
     expect(setup).toContain("TE_TOOLSET=full");
     expect(src).toContain("TE_TOOLSET");
+  });
+});
+
+describe("lens migration (T8 review transaction)", () => {
+  // The verify command wraps the guardian protocol in a review
+  // lineage: start freezes, lenses file per-lens verdicts (4R),
+  // findings sort through refute, approve binds, and approval never
+  // delivers (no commit/push/release from a review).
+  async function verifyText(): Promise<string> {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const at = src.indexOf('name: "regulus-verify"');
+    return src.slice(at, at + 3000);
+  }
+  test("verify opens a lineage and closes it with approve", async () => {
+    const text = await verifyText();
+    expect(text).toContain("review start");
+    expect(text).toContain("review approve");
+  });
+  test("verify files verdicts per 4R lens and sorts findings via refute", async () => {
+    const text = await verifyText();
+    for (const lens of ["risk", "resilience", "readability", "reliability"]) {
+      expect(text).toContain(lens);
+    }
+    expect(text).toContain("review refute");
+  });
+  test("approval never delivers", async () => {
+    const text = await verifyText();
+    expect(text).toContain("Approval is not delivery");
+    expect(text).toContain("never commit");
+  });
+});
+
+describe("usage pruning (T3 measured toolset)", () => {
+  // The plugin prunes the full set by measured use: a full-only tool
+  // with zero recorded calls across the evidence floor (>= 3 traced
+  // sessions) is left out; the minimal set never prunes (safe floor);
+  // explicit modes skip measuring; malformed usage fails open to full.
+  // Trace tool names are host-side (suffix match); usage JSON comes
+  // from `trace usage --json`.
+  const usage3 = JSON.stringify({
+    sessions: 3,
+    tools: [
+      { tool: "regulus_doctor", calls: 5, sessions: ["s1", "s2", "s3"] },
+      { tool: "regulus_memory_search", calls: 2, sessions: ["s1"] },
+    ],
+  });
+  test("unused full-only tools prune, minimal tools stay", () => {
+    const got = applyUsagePruning("full", parseTraceUsage(usage3));
+    expect(got.tools).not.toContain("probe_compose");
+    expect(got.tools).not.toContain("gate_run");
+    expect(got.tools).toContain("doctor");
+    expect(got.tools).toContain("memory_search");
+    expect(got.tools).toContain("memory_context");
+    expect(got.pruned.length).toBeGreaterThan(0);
+    expect(got.pruned).toContain("probe_compose");
+  });
+  test("below the evidence floor nothing prunes", () => {
+    const thin = JSON.stringify({ sessions: 2, tools: [] });
+    const got = applyUsagePruning("full", parseTraceUsage(thin));
+    expect([...got.tools]).toEqual([...TOOLSET_FULL]);
+    expect(got.pruned).toEqual([]);
+  });
+  test("explicit modes skip measuring", () => {
+    for (const mode of ["full", "minimal"] as const) {
+      const got = applyUsagePruning(mode, parseTraceUsage(usage3), true);
+      expect([...got.tools]).toEqual([...toolsetTools(mode)]);
+      expect(got.pruned).toEqual([]);
+    }
+  });
+  test("malformed usage fails open to full", () => {
+    for (const bad of ["", "not json", JSON.stringify({ tools: [] })]) {
+      const got = applyUsagePruning("full", parseTraceUsage(bad));
+      expect([...got.tools]).toEqual([...TOOLSET_FULL]);
+      expect(got.pruned).toEqual([]);
+    }
   });
 });
