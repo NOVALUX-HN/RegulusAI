@@ -122,6 +122,20 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 			fmt.Fprintf(c.Stdout, "orphan relations: %s %s %s\n", r.From, r.Relation, r.To)
 		}
 	}
+	// Miss rate (A3): zero-hit searches log their terms; the doctor
+	// reports the count plus the most-missed sets — save the fact,
+	// reword the query, or reindex. A missing log reads as none.
+	if count, top, merr := almanac.MissStats(c.dir()); merr != nil {
+		fmt.Fprintf(c.Stdout, "misses:      unreadable — %v\n", merr)
+	} else if count == 0 {
+		fmt.Fprintln(c.Stdout, "misses:      none — no zero-hit searches logged")
+	} else {
+		quoted := make([]string, 0, len(top))
+		for _, t := range top {
+			quoted = append(quoted, fmt.Sprintf("%q", t))
+		}
+		fmt.Fprintf(c.Stdout, "misses:      %d (top: %s)\n", count, strings.Join(quoted, ", "))
+	}
 	// H3 (S5): doctor also surfaces index freshness with the repairing
 	// command — a save after the last reindex makes hybrid search fall
 	// back to lexical, and that must never surprise.
@@ -452,6 +466,9 @@ func (c CLI) memorySearchCmd(args []string) int {
 		return 1
 	}
 	if len(hits) == 0 {
+		// Miss log (A3): a zero-hit search records its terms —
+		// best-effort, never breaking the search itself.
+		_ = almanac.RecordMiss(c.dir(), fs.Args(), time.Now().UTC())
 		fmt.Fprintln(c.Stdout, "no matching observations")
 		return 0
 	}
