@@ -722,6 +722,19 @@ export default Plugin.define({
       if (context_.exitCode === 0 && context_.output !== "") {
         event.system.push({ type: "text", text: dataBlock("regulus_almanac_context", context_.output) })
       }
+      // T4 (pro-harness): the periodic proposer rides the compaction
+      // boundary (rare, session-natural) best-effort: a due tick mines
+      // repeated errors + stale lessons into pending candidates (the
+      // guardian still admits). Failures never break the resume; a
+      // proposal surfaces as DATA with its count.
+      try {
+        const tick = await run(bin, ["evolve", "tick"], dir)
+        if (tick.exitCode === 0 && !tick.output.startsWith("no tick due") && tick.output.trim() !== "") {
+          event.system.push({ type: "text", text: dataBlock("regulus_tick_proposals", tick.output) })
+        }
+      } catch (err) {
+        console.error(`[regulus] evolve tick: ${(err as Error)?.message ?? String(err)} — skipping proposals`)
+      }
     })
   },
 })

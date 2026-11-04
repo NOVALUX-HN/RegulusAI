@@ -391,15 +391,17 @@ func (c CLI) budgetCmd(args []string) int {
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run]")
 		return 2
 	}
 	switch args[0] {
 	case "propose":
 		return c.evolveProposeCmd(args[1:])
+	case "tick":
+		return c.evolveTickCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run]")
 		return 2
 	}
 }
@@ -425,5 +427,48 @@ func (c CLI) evolveProposeCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintln(c.Stdout, pack)
+	return 0
+}
+
+// evolveTickCmd implements `regulus evolve tick [--every N]
+// [--dry-run]`: the periodic proposer (T4). Every N traced sessions
+// past the last applied tick it mines repeated tool errors and stale
+// lessons into library candidates — proposing, never admitting. Not
+// due prints the cadence position; dry-run prints findings without
+// writing. Exit 0 in all non-error cases: silence would hide the
+// cadence, failure would break hooks that call it best-effort.
+func (c CLI) evolveTickCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve tick", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	every := fs.Int("every", evolve.TickDefaultEvery, "fire once this many traced sessions accumulate past the last tick")
+	dry := fs.Bool("dry-run", false, "print findings without proposing or advancing")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve tick [--every N] [--dry-run]")
+		return 2
+	}
+	res, err := evolve.ComputeTick(c.dir(), *every)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve tick: %v\n", err)
+		return 1
+	}
+	if !res.Due {
+		fmt.Fprintf(c.Stdout, "no tick due (%d sessions, last tick at %d, every %d)\n", res.Sessions, res.AtTick, res.Every)
+		return 0
+	}
+	for _, f := range res.Findings {
+		fmt.Fprintf(c.Stdout, "[%s] %s: %s\n", f.Kind, f.Domain, f.Cue)
+	}
+	if *dry {
+		fmt.Fprintf(c.Stdout, "dry run: %d finding(s), nothing proposed\n", len(res.Findings))
+		return 0
+	}
+	if err := evolve.ApplyTick(c.dir(), res, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "evolve tick: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "tick: %d finding(s), %d candidate(s) proposed\n", len(res.Findings), len(res.Findings))
 	return 0
 }
