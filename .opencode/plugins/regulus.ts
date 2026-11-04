@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { candidates, compactionContextArgs, dataBlock, extractPaths, filterSeenSkills, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveDomain, resolveToolset, suggestSkills, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
+import { applyUsagePruning, candidates, compactionContextArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, parseTraceUsage, pickRegulus, REGULUS_CONTRACT, resolveDomain, resolveToolset, suggestSkills, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -93,6 +93,13 @@ async function run(bin: string, args: string[], cwd?: string, signal?: AbortSign
     const err = await stderrP
     const output = (out + (err.trim() !== "" ? (out.trim() !== "" ? "\n" : "") + err : "")).trim()
     return { exitCode, output }
+  } catch (err) {
+    // A spawn throw means the binary never ran (missing file, OS
+    // block, abort): enrich it once here so every tool — not just
+    // gate_run's formatGateFailure — surfaces the diagnosis instead
+    // of a bare EUNKNOWN/uv_spawn. pickRegulus records these messages
+    // per candidate, so setup-time probing benefits too.
+    throw new Error(explainSpawnError(err, bin))
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener("abort", onAbort)
@@ -214,6 +221,26 @@ export default Plugin.define({
     // all 16; unset restores auto (charts/ present → full).
     const toolset = resolveToolset({ hasCharts: hasChartFiles(dir) })
     console.error(`[regulus] toolset: ${toolset} (${toolsetTools(toolset).length}/16 tools, TE_TOOLSET=${process.env.TE_TOOLSET ?? ""})`)
+    // T3 (pro-harness): measured pruning — one best-effort `trace
+    // usage` spawn in auto-full mode; explicit TE_TOOLSET skips
+    // measuring, and any failure fails open to the unpruned set.
+    // TE_TOOLSET=full restores everything (plus /reload).
+    let pruned: string[] = []
+    const rawToolset = (process.env.TE_TOOLSET ?? "").trim().toLowerCase()
+    const explicitToolset = rawToolset === "full" || rawToolset === "minimal"
+    if (toolset === "full" && !explicitToolset) {
+      try {
+        const usage = await run(bin, ["trace", "usage", "--json"], dir)
+        if (usage.exitCode === 0) {
+          pruned = applyUsagePruning(toolset, parseTraceUsage(usage.output)).pruned
+          if (pruned.length > 0) {
+            console.error(`[regulus] toolset: pruned by measured use (${pruned.length}): ${pruned.join(", ")} — TE_TOOLSET=full restores`)
+          }
+        }
+      } catch (err) {
+        console.error(`[regulus] toolset: usage pruning skipped (${(err as Error)?.message ?? String(err)}) — full set kept`)
+      }
+    }
 
     await ctx.tool.transform((editor) => {
       editor.namespace({
@@ -225,7 +252,7 @@ export default Plugin.define({
       // minimal-mode server only pays the simple-session subset. Full
       // mode is byte-identical to the previous unconditional adds.
       const add = (tool: Parameters<typeof editor.add>[0]) => {
-        if (isToolEnabled(toolset, tool.name)) editor.add(tool)
+        if (isToolEnabled(toolset, tool.name) && !pruned.includes(tool.name)) editor.add(tool)
       }
 
       add({

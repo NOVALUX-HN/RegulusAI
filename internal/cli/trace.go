@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -9,7 +10,7 @@ import (
 	"regulus-ai/internal/trace"
 )
 
-// traceCmd implements `regulus trace record|show|files|sessions|prune|cost`:
+// traceCmd implements `regulus trace record|show|files|sessions|prune|cost|usage`:
 // minimal agent-process capture (G2.6). `record` appends one tool
 // execution to the session trace; `show` prints the diffable
 // fingerprint (sequence, tool, status) for probe-with-contrast
@@ -21,7 +22,7 @@ import (
 // folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 	switch args[0] {
@@ -37,9 +38,11 @@ func (c CLI) traceCmd(args []string) int {
 		return c.tracePruneCmd(args[1:])
 	case "cost":
 		return c.traceCostCmd(args[1:])
+	case "usage":
+		return c.traceUsageCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 }
@@ -313,4 +316,66 @@ func localTokensKnown(tc trace.TaskCost) string {
 		return "unknown (nothing measured locally)"
 	}
 	return fmt.Sprintf("~%d proxy tokens (chars/4, measured-local)", tc.TotalLocalTokens)
+}
+
+// traceUsageCmd implements `regulus trace usage [--json]`: reports the
+// measured per-tool usage (T3) folded auditably from the trace logs on
+// disk — one row per called tool (calls + distinct sessions) plus the
+// session count that carries the evidence floor for pruning. Human
+// text by default, --json for the plugin (which parses the report
+// without scraping prose). Every number recomputes from the same
+// JSONL lines `trace show` reads, so the report squares with the
+// traces. An empty store is an empty report, never an error: a fresh
+// repo must not lose tools for lack of history.
+func (c CLI) traceUsageCmd(args []string) int {
+	fs := flag.NewFlagSet("trace usage", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	asJSON := fs.Bool("json", false, "print the usage report as JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace usage [--json]")
+		return 2
+	}
+	sessions, err := trace.UsageSessions(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace usage: %v\n", err)
+		return 1
+	}
+	usage, err := trace.UsageByTool(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace usage: %v\n", err)
+		return 1
+	}
+	if *asJSON {
+		raw, err := json.MarshalIndent(struct {
+			Sessions int               `json:"sessions"`
+			Tools    []trace.ToolUsage `json:"tools"`
+		}{Sessions: sessions, Tools: usageOrEmpty(usage)}, "", "  ")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "trace usage: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(c.Stdout, string(raw))
+		return 0
+	}
+	if sessions == 0 {
+		fmt.Fprintln(c.Stdout, "(no usage: no sessions traced)")
+		return 0
+	}
+	fmt.Fprintf(c.Stdout, "sessions: %d\n", sessions)
+	for _, u := range usage {
+		fmt.Fprintf(c.Stdout, "tool %s: %d call(s) across %d session(s)\n", u.Tool, u.Calls, len(u.Sessions))
+	}
+	return 0
+}
+
+// usageOrEmpty keeps the JSON report shape stable (tools: [] instead
+// of tools: null) on an empty store.
+func usageOrEmpty(u []trace.ToolUsage) []trace.ToolUsage {
+	if u == nil {
+		return []trace.ToolUsage{}
+	}
+	return u
 }

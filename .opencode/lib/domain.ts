@@ -171,11 +171,59 @@ export function formatGateResult(output: string, exitCode: number): string {
   return exitCode === 0 ? body : `${body}\nexit code: ${exitCode}`;
 }
 
+// BLOCKED_SPAWN_RE matches a spawn the OS refused before exec, as
+// plain text. On Windows libuv has no errno for a Device Guard / App
+// Control (WDAC) denial, so Bun renders EUNKNOWN ("EUNKNOWN: unknown
+// error, uv_spawn", errno -4094) and Node's spawnSync a bare code with
+// the same errno — never ENOENT. The matchers below are deliberately
+// narrow: a bare `uv_spawn` token also appears in genuine Bun ENOENTs
+// ("no such file or directory, uv_spawn '...'"), and a bare
+// case-insensitive UNKNOWN would match any "unknown ..." prose, so
+// neither rides alone. Structured code/errno (checked in
+// explainSpawnError) is the primary signal; text covers string-only
+// inputs like gate_run failure lines and captured stderr.
+export const BLOCKED_SPAWN_RE = /\bEUNKNOWN\b|unknown error|-4094/i;
+
+export function isBlockedSpawn(message: string): boolean {
+  return BLOCKED_SPAWN_RE.test(message);
+}
+
+// explainSpawnError turns an opaque spawn refusal into an actionable
+// diagnosis. Non-block failures (ENOENT, timeouts, aborts) pass
+// through byte-identical so existing pins keep holding; only a block
+// signature appends the OS-block explanation (confirm steps + real
+// outs). Pure so bun tests pin it without spawning.
+export function explainSpawnError(err: unknown, bin: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const fields = err instanceof Error ? (err as unknown as { code?: unknown; errno?: unknown }) : {};
+  const codeStr = typeof fields.code === "string" ? fields.code : "";
+  const errnoNum = typeof fields.errno === "number" ? fields.errno : undefined;
+  const code = codeStr !== "" ? ` (${codeStr})` : "";
+  const base = raw.trim() === "" ? "spawn failed" : raw.trim();
+  // Structured code/errno is the primary signal (exact codes only:
+  // Bun reports EUNKNOWN/−4094, Node UNKNOWN/−4094, while a genuine
+  // missing file is ENOENT/−4058). Text covers string-only inputs.
+  const blocked =
+    codeStr === "EUNKNOWN" || codeStr === "UNKNOWN" || errnoNum === -4094 || isBlockedSpawn(`${base}${code}`);
+  if (!blocked) return base;
+  const where = bin.trim() !== "" ? ` "${bin}"` : "";
+  const subject = bin.trim() !== "" ? bin : "<bin>";
+  return (
+    `${base}${code} — the OS refused to start${where} before exec. ` +
+    `On Windows this is the Device Guard / App Control (WDAC) block, not a PATH or cwd problem. ` +
+    `Confirm: run cmd.exe /C '"${subject}" doctor' (Device Guard prints its organization banner), ` +
+    `or check Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077. ` +
+    `Outs: ask IT for a hash/signer exception, or run inside WSL; ` +
+    `self-signing (scripts/sign-local.ps1) only helps SmartScreen, and 'go run' only helps where the Go toolchain itself runs. ` +
+    `See docs/troubleshooting.md (EUNKNOWN uv_spawn).`
+  );
+}
+
 // formatGateFailure turns a gate_run spawn failure (timeout, abort,
 // missing binary) into tool content instead of a thrown null: one
 // diagnostic line carrying the conventional -1 exit code.
 export function formatGateFailure(message: string): string {
-  const detail = message.trim() === "" ? "gate run: spawn failed" : message.trim();
+  const detail = message.trim() === "" ? "gate run: spawn failed" : explainSpawnError(message, "");
   return `${detail}\nexit code: -1`;
 }
 
@@ -310,15 +358,43 @@ export function candidates(dir: string): string[] {
   const platform = process.platform
   const arch = process.arch === "x64" ? "amd64" : process.arch
   const ext = platform === "win32" ? ".exe" : ""
+  // The shipped binaries/ dir uses the Go OS name ("windows" instead of
+  // Node's "win32"), so on Windows the Go spelling is probed as part of
+  // the same slot — order is unchanged, first match wins (S2). Mirrors
+  // bin/regulus.js binariesPrimary + binariesAlias.
+  const primary = `${dir}/binaries/regulus-${platform}-${arch}${ext}`
+  const alias = platform === "win32" ? `${dir}/binaries/regulus-windows-${arch}.exe` : ""
   const list = [
     process.env.REGULUS_BIN,
     `${dir}/bin/regulus.exe`,
     `${dir}/bin/regulus`,
-    `${dir}/binaries/regulus-${platform}-${arch}${ext}`,
+    primary,
+    alias,
     home ? `${home}/.regulus/bin/regulus${ext}` : "",
     "regulus",
   ]
   return list.filter((c): c is string => typeof c === "string" && c !== "")
+}
+
+// STALE_DOCTOR_RE matches doctor's version-mismatch warning: the
+// core runs but reports a different version than the checkout's
+// package.json ("binary says X but package.json says Y"). Such a
+// core answers the contract yet runs an older surface (0.8.1 prints
+// usage for `memory context --limit/--budget`, silently breaking the
+// compaction hook), so it is refused like a contract mismatch — never
+// silently adopted. The unstamped-dev-build warning is a different
+// line and stays accepted (local dev flow).
+export function staleDoctorRefusal(doctorOutput: string): string {
+  const m = doctorOutput.match(/binary says (\S+) but package\.json says (\S+)/);
+  if (!m) return "";
+  // Doctor lines end the versions with a colon ("says 0.12.0: rebuild");
+  // strip trailing punctuation so the refusal reads cleanly.
+  const theirs = m[1].replace(/[:;,]+$/, "");
+  const ours = m[2].replace(/[:;,]+$/, "");
+  return (
+    `stale core: binary says ${theirs} but package.json says ${ours} — ` +
+    `rebuild with npm run build so core and plugin speak the same surface, not just the same contract`
+  );
 }
 
 // ProbeRun probes one candidate binary; injected so tests fake it while
@@ -343,6 +419,14 @@ export async function pickRegulus(bins: string[], probe: ProbeRun): Promise<{ bi
     }
     if (res.exitCode !== 0) {
       failures.push(`${bin}: ${res.output}`)
+      continue
+    }
+    // A runnable core on an older surface answers the contract but
+    // breaks plugin commands (stale-core refusal above): skip it with
+    // its rebuild reason before spending the contract probe.
+    const stale = staleDoctorRefusal(res.output)
+    if (stale !== "") {
+      failures.push(`${bin}: ${stale}`)
       continue
     }
     const refusal = checkContract(await probe(bin, ["contract"]))
@@ -779,6 +863,69 @@ export function isToolEnabled(mode: ToolsetMode, name: string): boolean {
 // the cost pin counts these (plus their guidance chars).
 export function toolsetTools(mode: ToolsetMode): readonly string[] {
   return mode === "full" ? TOOLSET_FULL : TOOLSET_MINIMAL;
+}
+
+// TraceToolUsage is one row of `trace usage --json`: a host-side tool
+// name with its measured calls and distinct session count.
+export interface TraceToolUsage {
+  tool: string;
+  calls: number;
+  sessions: number;
+}
+
+// PRUNE_MIN_SESSIONS is the evidence floor for usage pruning: below
+// it nothing prunes — a fresh repo must not lose tools for lack of
+// history. Sessions are cumulative (no recency): a pruned tool
+// returns by itself once traces show calls again, and TE_TOOLSET=full
+// restores everything in one step.
+export const PRUNE_MIN_SESSIONS = 3;
+
+// parseTraceUsage reads `trace usage --json` defensively: any shape
+// violation (bad JSON, missing sessions count, ragged rows) yields an
+// empty report, and the pruner fails open to the full set — measuring
+// must never break setup.
+export function parseTraceUsage(text: string): { sessions: number; tools: TraceToolUsage[] } {
+  try {
+    const raw = JSON.parse(text) as { sessions?: unknown; tools?: unknown };
+    if (typeof raw !== "object" || raw === null) return { sessions: 0, tools: [] };
+    if (typeof raw.sessions !== "number") return { sessions: 0, tools: [] };
+    if (!Array.isArray(raw.tools)) return { sessions: 0, tools: [] };
+    const tools: TraceToolUsage[] = [];
+    for (const row of raw.tools) {
+      if (typeof row !== "object" || row === null) continue;
+      const r = row as { tool?: unknown; calls?: unknown; sessions?: unknown };
+      if (typeof r.tool !== "string" || typeof r.calls !== "number") continue;
+      const n = Array.isArray(r.sessions) ? r.sessions.length : 0;
+      tools.push({ tool: r.tool, calls: r.calls, sessions: n });
+    }
+    return { sessions: raw.sessions, tools };
+  } catch {
+    return { sessions: 0, tools: [] };
+  }
+}
+
+// applyUsagePruning trims the full set by measured use (T3): a
+// full-only tool with zero recorded calls across the evidence floor
+// is left out and named in pruned. The minimal set never prunes
+// (safe floor); explicit modes skip measuring; thin or malformed
+// usage fails open to the unpruned set. Trace names are host-side,
+// so a regulus tool matches by suffix (regulus_gate_run covers
+// gate_run); an exact match counts too.
+export function applyUsagePruning(
+  mode: ToolsetMode,
+  usage: { sessions: number; tools: TraceToolUsage[] },
+  explicit = false,
+): { tools: readonly string[]; pruned: string[] } {
+  const base = toolsetTools(mode);
+  if (mode !== "full" || explicit) return { tools: base, pruned: [] };
+  if (usage.sessions < PRUNE_MIN_SESSIONS) return { tools: base, pruned: [] };
+  const called = (name: string) =>
+    usage.tools.some((u) => u.calls > 0 && (u.tool === name || u.tool.endsWith(`_${name}`)));
+  const tools = base.filter(
+    (name) => (TOOLSET_MINIMAL as readonly string[]).includes(name) || called(name),
+  );
+  const pruned = base.filter((name) => !tools.includes(name));
+  return { tools, pruned };
 }
 
 // LoopGuard counts consecutive same-signature failures per session.
