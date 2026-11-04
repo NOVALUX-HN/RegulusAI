@@ -801,6 +801,18 @@ export default Plugin.define({
       } catch (err) {
         console.error(`[regulus] evolve tick: ${(err as Error)?.message ?? String(err)} — skipping proposals`)
       }
+      // Sextant-as-Engram: the session lineage survives compaction
+      // without the agent doing anything — exactly one [auto] note
+      // per compaction (message count + time). Best-effort like the
+      // tick above; a failed note never breaks the resume.
+      try {
+        const count = Array.isArray((event as { messages?: unknown }).messages)
+          ? ((event as { messages: unknown[] }).messages.length)
+          : 0
+        await run(bin, ["memory", "note", `[auto] session compacted: ${count} message(s) at ${new Date().toISOString()}`], dir)
+      } catch (err) {
+        console.error(`[regulus] compaction note: ${(err as Error)?.message ?? String(err)} — skipping note`)
+      }
     })
   },
 })

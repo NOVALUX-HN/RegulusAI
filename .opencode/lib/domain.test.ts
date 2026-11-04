@@ -417,6 +417,17 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     const hook = src.slice(src.indexOf('"compaction"'));
     expect(hook).toContain("compactionContextArgs()");
   });
+
+  test("compaction hook appends one automatic session note (Sextant-as-Engram)", async () => {
+    // Engram persists across compaction without the agent doing
+    // anything; the Sextant matches it by appending exactly one
+    // [auto] session note per compaction (message count + time) —
+    // best-effort, never breaking the resume.
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const hook = src.slice(src.indexOf('"compaction"'));
+    expect(hook).toContain('"memory", "note"');
+    expect(hook).toContain("[auto] session compacted");
+  });
 });
 
 describe("withTimeout", () => {
