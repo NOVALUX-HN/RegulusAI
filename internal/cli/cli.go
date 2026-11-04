@@ -69,6 +69,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
 	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
+	"audit":    func(c CLI, args []string) int { return c.auditCmd(args) },
 }
 
 // Run executes one CLI invocation and returns the process exit code:
@@ -171,6 +172,7 @@ Usage:
   regulus <command> [arguments]
 
 Commands:
+  audit [--profile <coverprofile>] [--top N]   repo-wide ranked audit: entry points, then what to fix first
   budget show|record   the evolution ledger (show; record a probe run)
   bench list|run|baseline|compare   the self-benchmark: offline suite, baseline, contrast (regulus bench --help)
   chart init <name> | list             scaffold a Chart, list every Chart
