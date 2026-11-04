@@ -14,8 +14,8 @@ productizado — más el portability pendiente de pro-harness.
 
 ## Tasks
 
-- A1 (S1,S3): support-status en retrieval — `SupportOf` en almanac + anotación en `memory search` (rot hunde con motivo) — ruta: inline — commit: A1-pendiente-hash
-- A2 (S1,S3): contradicciones visibles — `Conflicts` + notas en search/context — ruta: inline — commit: pendiente
+- A1 (S1,S3): support-status en retrieval — `SupportOf` en almanac + anotación en `memory search` (rot hunde con motivo) — ruta: inline — commit: 4dfda3c
+- A2 (S1,S3): contradicciones visibles — notas de conflicto en `memory context` — ruta: inline — commit: A2-pendiente-hash
 - A3 (S1,S3): miss log + miss-rate en doctor — ruta: inline — commit: pendiente
 - A4 (S2,S3): portability Git-Bash (bashPosixPath detecta /c/) — ruta: inline — commit: pendiente
 
@@ -24,3 +24,4 @@ productizado — más el portability pendiente de pro-harness.
 - L1 (origen, verbatim): "recuerda que Almanac es nuestro engram en este proyecto. quiero que también mejoremos almanac para hacerlo mejor que engram pero de forma lógica y que se adapte a Regulus. también implementa las mejoras pendientes"
 - L2: Rama feat/almanac-prime desde el tip de feat/pro-harness (T0–T8 adentro). Engram leído (command reference: TUI, projects-consolidate, sync, cloud) + MCP tools conocidos (juicios con confianza, review, dedup, pins, timeline). Decisión: no clonar TUI/cloud (fuera de la lógica Regulus); superar por evidencia.
 - L3 (A1 evidencia): `almanac.SupportOf` (supported/rot/unchecked, fail-open salvo fallo probado) + `memory search` anota cada hit y hunde rot estable. Fixture con sha256 real (el fallo honesto del hash inventado validó el verificador). CLI+almanac verdes.
+- L4 (A2 evidencia): `writeContextConflicts` — pares conflicts_with con ambos lados listados rinden una línea con títulos; unilaterales en silencio; fallo de lectura enmudece la sección, nunca el bloque. Search ya lo tenía (descubierto, no duplicado). Almanac verde.
