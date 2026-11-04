@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -160,17 +161,71 @@ func extractFallback(t *testing.T, body string) string {
 	return rest[:end+3]
 }
 
-// bashPosixPath translates a Windows path to the /mnt/<drive> form WSL
-// bash understands; elsewhere it returns p unchanged.
+// bashPosixPath translates a Windows path to the form the RUNNING
+// bash understands (WSL /mnt/c vs Git Bash /c, detected once from
+// `bash --version`); elsewhere it returns p unchanged. The WSL form
+// stays the default where detection fails — CI runs WSL bash.
 func bashPosixPath(p string) string {
 	if runtime.GOOS != "windows" {
 		return p
 	}
-	if len(p) >= 2 && p[1] == ':' {
-		rest := strings.ReplaceAll(p[2:], `\`, "/")
-		return "/mnt/" + strings.ToLower(string(p[0])) + rest
+	return bashPosixPathFor(p, detectedBashStyle())
+}
+
+// bashPosixPathFor is the pure dialect half: "gitbash" renders /c
+// (msys mounts drives at root), anything else renders /mnt/c.
+// Non-drive input passes through with only backslash normalization.
+func bashPosixPathFor(p, style string) string {
+	if len(p) < 2 || p[1] != ':' {
+		return strings.ReplaceAll(p, `\`, "/")
 	}
-	return strings.ReplaceAll(p, `\`, "/")
+	rest := strings.ReplaceAll(p[2:], `\`, "/")
+	drive := strings.ToLower(string(p[0]))
+	if style == "gitbash" {
+		return "/" + drive + rest
+	}
+	return "/mnt/" + drive + rest
+}
+
+var (
+	detectedStyleOnce sync.Once
+	detectedStyle     string
+)
+
+// detectedBashStyle names the running bash's dialect once per test
+// process: the machine string in `bash --version` carries it
+// (x86_64-pc-msys/mingw/cygwin = Git Bash, linux = WSL). Unknown or
+// missing bash keeps the historical WSL default.
+func detectedBashStyle() string {
+	detectedStyleOnce.Do(func() {
+		detectedStyle = bashStyleFromVersion(bashVersionText())
+	})
+	return detectedStyle
+}
+
+func bashVersionText() string {
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		return ""
+	}
+	out, err := exec.Command(bashPath, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// bashStyleFromVersion reads the dialect off the version banner:
+// msys/mingw/cygwin builds mount drives at /c, linux builds (WSL)
+// at /mnt/c. Anything unrecognized stays WSL — the CI dialect.
+func bashStyleFromVersion(version string) string {
+	v := strings.ToLower(version)
+	for _, marker := range []string{"msys", "mingw", "cygwin"} {
+		if strings.Contains(v, marker) {
+			return "gitbash"
+		}
+	}
+	return "wsl"
 }
 
 // hermeticBinDir builds a PATH directory containing only the binaries
@@ -192,14 +247,18 @@ func hermeticBinDir(t *testing.T, bashPath string) string {
 	var missing []string
 	linkFromGo := func(name, target string) {
 		link := filepath.Join(dir, name)
-		if err := os.Symlink(target, link); err != nil {
-			data, readErr := os.ReadFile(target)
-			if readErr != nil {
-				t.Fatalf("hermetic PATH: symlink %s -> %s: %v (copy fallback read: %v)", link, target, err, readErr)
-			}
-			if writeErr := os.WriteFile(link, data, 0o755); writeErr != nil {
-				t.Fatalf("hermetic PATH: copy %s -> %s: %v (symlink err: %v)", target, link, writeErr, err)
-			}
+		if serr := os.Symlink(target, link); serr == nil {
+			return
+		}
+		// Symlink refused (Windows without the privilege): a bare
+		// binary copy would break msys dependents (grep.exe without
+		// msys-2.0.dll beside it cannot start), so link a tiny
+		// wrapper invoking the absolute target instead — the loader
+		// resolves DLLs from the target's own directory. The target
+		// renders in the running bash's dialect (WSL vs Git Bash).
+		shim := "#!/bin/sh\nexec \"" + bashPosixPathFor(target, detectedBashStyle()) + "\" \"$@\"\n"
+		if writeErr := os.WriteFile(link, []byte(shim), 0o755); writeErr != nil {
+			t.Fatalf("hermetic PATH: wrapper %s -> %s: %v", link, target, writeErr)
 		}
 	}
 	for _, name := range []string{"grep", "head", "sed"} {
@@ -224,10 +283,19 @@ func hermeticBinDir(t *testing.T, bashPath string) string {
 		// there: covers WSL/Git Bash where the tools are invisible
 		// to the Windows process. File, not `bash -c`: the WSL
 		// launcher pre-expands $vars in -c args.
+		linkLine := "  ln -sf \"$p\" \"$dest/$t\" 2>/dev/null || { cp \"$p\" \"$dest/$t\" && chmod +x \"$dest/$t\"; }\n"
+		if runtime.GOOS == "windows" {
+			// Windows bash (WSL or Git Bash): never copy a binary —
+			// msys dependents break without their DLLs beside them
+			// (and msys ln silently copies). A wrapper invoking the
+			// absolute path `command -v` returned keeps working;
+			// that path already speaks this bash's dialect.
+			linkLine = "  printf '#!/bin/sh\\nexec \"%s\" \"$@\"\\n' \"$p\" > \"$dest/$t\" && chmod +x \"$dest/$t\" || exit 1\n"
+		}
 		script := "set -eu\ndest=\"$1\"\nshift\n" +
 			"for t in \"$@\"; do\n" +
 			"  p=\"$(command -v \"$t\")\" || { echo \"hermetic PATH: $t not found via bash\" >&2; exit 1; }\n" +
-			"  ln -sf \"$p\" \"$dest/$t\" 2>/dev/null || { cp \"$p\" \"$dest/$t\" && chmod +x \"$dest/$t\"; }\n" +
+			linkLine +
 			"done\n"
 		setupPath := filepath.Join(dir, "hermetic-setup.bash")
 		if err := os.WriteFile(setupPath, []byte(script), 0o644); err != nil {
@@ -324,4 +392,36 @@ func TestBashSyntax(t *testing.T) {
 			t.Fatalf("bash -n scripts/%s: %v\n%s", name, err, out)
 		}
 	}
+}
+
+// A4 (almanac-prime, pending since pro-harness): the path translation
+// must speak the RUNNING bash's dialect — /mnt/c under WSL bash,
+// /c under Git Bash (msys) — never assume WSL. The pure form is
+// pinned without bash; the live dialect names itself in --version.
+func TestBashPosixPathDialects(t *testing.T) {
+	if got := bashPosixPathFor(`C:\w\probe.bash`, "wsl"); got != "/mnt/c/w/probe.bash" {
+		t.Errorf("wsl form = %q, want /mnt/c/w/probe.bash", got)
+	}
+	if got := bashPosixPathFor(`C:\w\probe.bash`, "gitbash"); got != "/c/w/probe.bash" {
+		t.Errorf("gitbash form = %q, want /c/w/probe.bash", got)
+	}
+	if got := bashPosixPathFor(`/already/posix`, "wsl"); got != "/already/posix" {
+		t.Errorf("posix input must pass through, got %q", got)
+	}
+}
+
+func TestBashDialectNamesItself(t *testing.T) {
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not on PATH")
+	}
+	out, err := exec.Command(bashPath, "--version").Output()
+	if err != nil {
+		t.Fatalf("bash --version: %v", err)
+	}
+	style := bashStyleFromVersion(string(out))
+	if runtime.GOOS == "windows" && style != "wsl" && style != "gitbash" {
+		t.Fatalf("bash dialect = %q, want wsl|gitbash (version %q)", style, strings.TrimSpace(string(out)))
+	}
+	t.Logf("running bash speaks %s", style)
 }
