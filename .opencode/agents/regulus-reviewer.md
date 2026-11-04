@@ -46,6 +46,9 @@ Procedure:
    asked for — using the Necessity Ladder: does it need to exist?
    already in this codebase? stdlib or platform? installed dependency?
    one clear line? then, only then, the minimum that works.
+   Name shortcut ceilings: a simplification with a known limit must
+   carry its upgrade path in a `shortcut:` comment — without it, the
+   ceiling is must-fix debt, not craft.
 4. Name what you did NOT check, and any risk the human must know.
 5. Final line: `GUARDIAN VERDICT: N must-fix | M should-fix | clean;
    K lines could go`.

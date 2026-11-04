@@ -12,8 +12,8 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 
 ## Tasks
 
-- T0 (S1,S2,S4): Fase 0 — bench compara con/sin lección + baseline en charts/ — ruta: inline — commit: T0-pendiente-hash
-- T1 (S1,S2,S4): Fase 1 texto — ladder 6 peldaños + reviewer 4 campos en agents — ruta: inline — commit: pendiente
+- T0 (S1,S2,S4): Fase 0 — bench compara con/sin lección + baseline en charts/ — ruta: inline — commit: d206fb3
+- T1 (S1,S2,S4): Fase 1 texto — ladder 6 peldaños + reviewer 4 campos en agents — ruta: inline — commit: T1-pendiente-hash
 - T2 (S1,S2,S4): Fase 1 audit — comando rankeado repo-wide sobre CRAP/traces — ruta: inline — commit: pendiente
 - T3 (S1,S2,S4): Fase 2 — poda de toolset por uso medido en traces — ruta: inline — commit: pendiente
 - T4 (S1,S2,S4): Fase 3 — hook proposer cada k sesiones + supersede por contradicción — ruta: inline — commit: pendiente
