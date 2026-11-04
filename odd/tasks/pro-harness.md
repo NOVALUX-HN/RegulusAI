@@ -13,7 +13,7 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 ## Tasks
 
 - T0 (S1,S2,S4): Fase 0 — bench compara con/sin lección + baseline en charts/ — ruta: inline — commit: d206fb3
-- T1 (S1,S2,S4): Fase 1 texto — ladder 6 peldaños + reviewer 4 campos en agents — ruta: inline — commit: T1-pendiente-hash
+- T1 (S1,S2,S4): Fase 1 texto — ladder 6 peldaños + reviewer 4 campos en agents — ruta: inline — commit: 707d745
 - T2 (S1,S2,S4): Fase 1 audit — comando rankeado repo-wide sobre CRAP/traces — ruta: inline — commit: pendiente
 - T3 (S1,S2,S4): Fase 2 — poda de toolset por uso medido en traces — ruta: inline — commit: pendiente
 - T4 (S1,S2,S4): Fase 3 — hook proposer cada k sesiones + supersede por contradicción — ruta: inline — commit: pendiente
@@ -27,3 +27,4 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 - L1 (origen, verbatim): "quiero que analices todo regulus y me digas si el harness contempla lo mejor de lo siguiente: https://github.com/Gentleman-Programming/gentle-ai https://github.com/google-research/harness2 https://github.com/DietrichGebert/ponytail https://github.com/microsoft/TokenEconomizer analiza bien a detalle si tenemos lo mejor de todo eso" → análisis entregado con 5 gaps rankeados; "haz un plan para implementar lo mejor de cada uno de esos universos para hacer que regulus sea un harness de calidad profesional" → plan de 6 fases aprobado con "procede y crea test o modifica los existentes para probar que cada cambio este completo y funcional".
 - L2: Rama feat/pro-harness creada sobre develop con árbol sucio heredado (6 archivos de EUNKNOWN/stale-core + charts/plugin-resilience.md sin trackear, de sesiones previas, verificados y en uso por opencode — NO tocar ni commitear; los commits de esta feature solo stagean archivos propios).
 - L3 (T0 evidencia): B11 lesson-context-cost golden — fixture 2 notas + 1 lección con evidencia arma 550 chars = 138 proxy tokens (chars/4, host unknown), hermético (ContextScoped solo lee temp store, timestamps fijos). bench/baseline.json regenerado a macizo-bench-v3 11/11; `bench compare` → ADOPT. Go verde salvo internal/portability (preexistente ambiental: bashPosixPath asume WSL /mnt/c, acá Git Bash /c/ — fuera de scope T0, no tocar). Bun 138/138, tsc limpio.
+- L4 (slices): T0 d206fb3 (139+/22-) y T1 707d745 (59+/8-) — cada unidad bajo el corte de ~400. El aviso de "2054 líneas en 3 commits since origin/main" es drift heredado develop-vs-main + árbol sucio previo, no de esta feature.
