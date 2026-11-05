@@ -180,6 +180,19 @@ en Temp): en máquinas gestionadas preferí `--profile quick` o WSL
 para corridas largas. La salida real sigue siendo la excepción
 ante IT (sección EUNKNOWN arriba).
 
+Experimento controlado (2026-11-05): el MISMO `surface.test.exe`
+recién compilado corrió bien desde `.gotmp`, `Temp` y un dir nuevo
+— ni la ruta ni el hash deciden por sí solos; la aplicación es
+intermitente (ciclos de policy/MDM, reputación en nube). Conclusión
+operativa: cada `go test` con rebuild es un boleto de lotería;
+`go test` con caché (`ok (cached)`) no genera ningún binario y por
+tanto ningún aviso. Evitá `-count=1` en corridas rutinarias (solo
+para re-verificación real) y preferí paquetes puntuales al suite
+completo. El test de yolo (`bun test` que compila+ejecuta un
+`regulus` fresco en Temp) genera avisos por construcción en estas
+máquinas — si lo ves fallar con `unknown error`, es el bloqueo,
+no el producto (el propio test ahora lo diagnostica).
+
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
