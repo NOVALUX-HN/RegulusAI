@@ -7,7 +7,7 @@
     { "name": "typecheck", "layer": 1, "command": "go build ./...", "category": "build", "required": true },
     { "name": "lint", "layer": 2, "command": "go vet -appends -asmdecl -assign -atomic -bools -buildtag -cgocall -composites -copylocks -defers -directive -errorsas -framepointer -hostport -httpresponse -ifaceassert -loopclosure -lostcancel -nilfunc -printf -shift -sigchanyzer -slog -stdmethods -stdversion -stringintconv -structtag -testinggoroutine -tests -timeformat -unmarshal -unreachable -unsafeptr -unusedresult -waitgroup ./...", "category": "analysis", "required": true },
     { "name": "build", "layer": 3, "command": "go build -o bin/regulus ./cmd/regulus", "category": "build", "required": true },
-    { "name": "unit-tests", "layer": 4, "command": "go test ./... -coverprofile .regulus/coverage.out", "category": "test", "required": true },
+    { "name": "unit-tests", "layer": 4, "command": "go test ./... -coverpkg=./... -coverprofile .regulus/coverage.out", "category": "test", "required": true },
     { "name": "coverage-floor", "layer": 5, "command": "go tool cover -func .regulus/coverage.out", "metric": { "extract": "last-line-percent", "threshold": 80, "operator": ">=" }, "category": "test", "required": true },
     { "name": "mutation", "layer": 6, "command": "gremlins unleash ./internal/receipts --threshold-efficacy 70 --workers 1 --timeout-coefficient 10", "timeout_sec": 600, "category": "test", "required": true, "profiles": ["full"] },
     { "name": "crap", "layer": 7, "command": "go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --top 5", "category": "analysis", "required": true },

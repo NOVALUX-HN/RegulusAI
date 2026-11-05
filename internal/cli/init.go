@@ -225,7 +225,7 @@ var initPresets = map[string][]map[string]any{
 		{"name": "typecheck", "layer": 1, "command": "go build ./..."},
 		{"name": "lint", "layer": 2, "command": "go vet ./..."},
 		{"name": "build", "layer": 3, "command": "go build -o bin/app ./..."},
-		{"name": "unit-tests", "layer": 4, "command": "go test ./... -coverprofile .regulus/coverage.out"},
+		{"name": "unit-tests", "layer": 4, "command": "go test ./... -coverpkg=./... -coverprofile .regulus/coverage.out"},
 		{"name": "coverage-floor", "layer": 5, "command": "go tool cover -func .regulus/coverage.out", "metric": map[string]any{"extract": "last-line-percent", "threshold": 80, "operator": ">="}},
 		{"name": "crap", "layer": 6, "command": "go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --top 5"},
 		{"name": "spec", "layer": 7, "command": "regulus spec check charts/"},
