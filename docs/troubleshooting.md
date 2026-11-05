@@ -150,6 +150,36 @@ por descarte. El aviso `WARNING — unstamped dev build` de un `go
 build` a mano, en cambio, sigue aceptado a propósito: es flujo de dev
 local, no skew de versiones.
 
+## Por qué las alertas nombran a `bun.exe` y `go.exe` (no son los culpables)
+
+Si Windows muestra alertas nombrando a `bun` o `go`, no están
+marcados como malware (Defender no registra ninguna detección
+contra ellos; `bun.exe` está firmado válido y ambos corren): aparecen
+como el **proceso padre** de binarios sin firmar que la policy WDAC
+bloquea al nacer. Cada `go test` compila ejecutables frescos en
+`Temp` (o `GOTMPDIR`), cada test de yolo construye un `regulus` de
+prueba, cada `gremlins` del gate de mutación copia el módulo a Temp
+— y cada hijo bloqueado suma eventos 3033/3077 más un posible aviso
+nombrando al padre. Verificable en Visor de eventos →
+`Microsoft-Windows-CodeIntegrity/Operational`: el bloqueado es
+siempre el hijo (`*.test.exe` en Temp), nunca `bun`/`go`.
+
+Mitigación práctica (no elimina la policy, reduce el ruido):
+
+```powershell
+$env:GOCACHE = "$HOME/.gocache"
+$env:GOTMPDIR = "$HOME/.gotmp"
+$env:TMPDIR = "$HOME/.gotmp"
+```
+
+Con eso los binarios de compilación/test nacen fuera de `Temp`
+(la zona más castigada). No es garantía: la policy también ha
+bloqueado `.gotmp` a rachas. El gate de mutación (`gremlins`)
+es el mayor generador de avisos por diseño (un build por mutante
+en Temp): en máquinas gestionadas preferí `--profile quick` o WSL
+para corridas largas. La salida real sigue siendo la excepción
+ante IT (sección EUNKNOWN arriba).
+
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
