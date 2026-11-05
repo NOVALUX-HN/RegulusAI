@@ -436,7 +436,8 @@ func TestMCPAuditAndEvolveReport(t *testing.T) {
 	}
 }
 
-func TestMCPGateRunPassReportsVerdicts(t *testing.T) {	dir := writeGatesProject(t, `{"gates":[
+func TestMCPGateRunPassReportsVerdicts(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[
 		{"name":"typecheck","layer":1,"command":"echo hi"},
 		{"name":"unit-tests","layer":2,"command":"echo ok"}
 	]}`)

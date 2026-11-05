@@ -412,9 +412,9 @@ func mcpTools() []mcpTool {
 		{
 			name: "audit", desc: "Repo-wide ranked audit: entry points first, then what to fix first",
 			props: map[string]any{
-					"profile": map[string]any{"type": "string", "description": "go cover profile path (default .regulus/coverage.out)"},
-					"top":     map[string]any{"type": "integer", "description": "how many worst functions to rank (default 10)"},
-				},
+				"profile": map[string]any{"type": "string", "description": "go cover profile path (default .regulus/coverage.out)"},
+				"top":     map[string]any{"type": "integer", "description": "how many worst functions to rank (default 10)"},
+			},
 			required: []string{},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				p := strings.TrimSpace(mcpStr(args, "profile"))
