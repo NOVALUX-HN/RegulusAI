@@ -486,11 +486,13 @@ func (c CLI) evolveReportCmd(args []string) int {
 	fs := flag.NewFlagSet("evolve report", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	domain := fs.String("domain", "", "only this domain's lessons")
+	save := fs.String("save", "", "pin this report to a snapshot file")
+	compare := fs.String("compare", "", "diff a saved snapshot against the live store")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>]")
 		return 2
 	}
 	rep, err := evolve.BuildReport(c.dir(), *domain)
@@ -506,7 +508,50 @@ func (c CLI) evolveReportCmd(args []string) int {
 	for _, id := range rep.Retire {
 		fmt.Fprintf(c.Stdout, "retire: %s — evidence rot, re-validate or retire it\n", id)
 	}
+	if *save != "" {
+		if err := evolve.SaveReport(*save, rep); err != nil {
+			fmt.Fprintf(c.Stderr, "evolve report: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(c.Stdout, "saved to %s\n", *save)
+	}
+	if *compare != "" {
+		base, err := evolve.LoadReport(*compare)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "evolve report: %v\n", err)
+			return 1
+		}
+		cmp := evolve.CompareReports(base, rep)
+		for _, r := range cmp.Rows {
+			fmt.Fprintf(c.Stdout, "  - %s: proxy %+d (%d -> %d), evidence %s -> %s%s%s\n",
+				r.ID, r.DeltaProxy, r.BaseProxy, r.CandProxy,
+				evidenceOrNone(r.BaseEvidence), evidenceOrNone(r.CandEvidence),
+				markAdded(r.Added), markDropped(r.Dropped))
+		}
+		fmt.Fprintf(c.Stdout, "delta proxy: %+d, delta admitted: %+d\n", cmp.DeltaProxy, cmp.DeltaAdmitted)
+	}
 	return 0
+}
+
+func evidenceOrNone(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+func markAdded(added bool) string {
+	if added {
+		return " [added]"
+	}
+	return ""
+}
+
+func markDropped(dropped bool) string {
+	if dropped {
+		return " [dropped]"
+	}
+	return ""
 }
 
 // evolveValidateCmd implements `regulus evolve validate [--domain <d>]

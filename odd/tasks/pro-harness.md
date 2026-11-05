@@ -18,6 +18,7 @@ Lo mejor de gentle-ai (RDD con autoridad), harness2 (medición de mejora), ponyt
 - T3 (S1,S2,S4): Fase 2 — poda de toolset por uso medido en traces — ruta: inline — commit: 341b289
 - T4 (S1,S2,S4): Fase 3 — hook proposer cada k sesiones + supersede por contradicción — ruta: inline — commit: 7dee40c
 - T5 (S1,S2,S4): Fase 4 — evolution report con delta por lección — ruta: inline — commit: c9968ef
+- T5b (snapshots): `evolve report --save/--compare` + CompareReports puro (filas estables, deltas proxy/admitidos) — commit: T5b-pendiente-hash
 - T6 (S1,S4): Fase 5 diseño — chart RDD (lineage, lenses, budget, burn, consent) — ruta: inline — commit: 722bf44
 - T7 (S1,S2,S4): Fase 5 core Go — transacción de review — ruta: inline — commit: fbe0715
 - T8 (S1,S2,S4): Fase 5 plugin + migración guardians→lenses — ruta: inline — commit: 84a36f5
