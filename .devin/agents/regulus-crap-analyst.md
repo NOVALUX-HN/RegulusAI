@@ -22,7 +22,7 @@ Contract:
 Procedure:
 
 1. Ensure a coverage profile exists via Exec:
-   `go test ./... -coverpkg=./... -coverprofile=.regulus/coverage.out`.
+   `go test ./... -coverprofile=.regulus/coverage.out`.
 2. Run via Exec
    `regulus crap --profile .regulus/coverage.out --max 30 --top 10`.
 3. For every function over the threshold, report the exact cure:
