@@ -214,13 +214,13 @@ func TestB8RetrievalGolden(t *testing.T) {
 	}
 }
 
-// P1: B9 pins the real twelve-gate profile contract.
+// P1: B9 pins the real twelve-gate profile contract (quick=10, full-only mutation/vulncheck).
 func TestB9RealGateProfile(t *testing.T) {
 	detail, err := checkRealGateProfile()
 	if err != nil {
 		t.Fatalf("B9 check failed: %v", err)
 	}
-	for _, want := range []string{"full=12", "quick=12", "unknown refused"} {
+	for _, want := range []string{"full=12", "quick=10", "unknown refused"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B9 detail must contain %q, got %q", want, detail)
 		}

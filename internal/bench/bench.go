@@ -497,16 +497,25 @@ func realGateConfig() gates.Config {
 	}
 	cfg := gates.Config{}
 	for i, name := range names {
-		cfg.Gates = append(cfg.Gates, gates.Gate{
+		g := gates.Gate{
 			Name: name, Layer: i + 1, Command: cmds[i],
-		})
+		}
+		if name == "mutation" || name == "vulncheck" {
+			g.Required = boolPtr(false)
+			g.Profiles = []string{"full"}
+		}
+		if name == "vulncheck" {
+			g.Profiles = []string{"full", "security"}
+		}
+		cfg.Gates = append(cfg.Gates, g)
 	}
 	return cfg
 }
 
 // checkRealGateProfile pins the real gauntlet shape through profile
-// selection: full and quick keep all twelve required gates in
-// declaration order with halt policy, and an unknown profile refuses.
+// selection: full keeps all twelve gates in declaration order with halt
+// policy, quick keeps the 10 required gates (mutation + vulncheck are
+// full-only), and an unknown profile refuses.
 func checkRealGateProfile() (string, error) {
 	cfg := realGateConfig()
 	full, err := gates.SelectGates(cfg, "")
@@ -528,13 +537,13 @@ func checkRealGateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(quick) != 12 {
-		return "", fmt.Errorf("quick profile: got %d gates, want 12 required", len(quick))
+	if len(quick) != 10 {
+		return "", fmt.Errorf("quick profile: got %d gates, want 10 required", len(quick))
 	}
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=12, quick=12 required in order, unknown refused", nil
+	return "full=12, quick=10 required in order, unknown refused", nil
 }
 
 // checkTokenProxyGolden pins the T1 local-token proxy on golden values:
