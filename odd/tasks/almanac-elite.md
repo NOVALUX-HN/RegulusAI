@@ -9,7 +9,7 @@ Read until `## Log` before edits.
 
 ## Tasks
 
-- [ ] T1 (S1) — sha cache: evitar re-hash del log en cada query — route: inline — commit: —
+- [x] T1 (S1) — sha cache: evitar re-hash del log en cada query — route: inline — commit: fd421b9
 - [ ] T2 (S1) — missrate como gate: pinnear recall paraphrase/typo en bench — route: inline — commit: —
 - [ ] T3 (S1) — RecordMiss probado: cero-hit registra y MissStats lo muestra — route: inline — commit: —
 - [ ] T4 (S1) — check accionable: paths citados vs git_head — route: inline — commit: —

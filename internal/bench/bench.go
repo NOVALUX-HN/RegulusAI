@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/crap"
@@ -97,7 +98,7 @@ type Comparison struct {
 	Reason       string
 }
 
-// Suite returns the fixed v3 task list (13 tasks: 8 behavior tasks
+// Suite returns the fixed v3 task list (14 tasks: 8 behavior tasks
 // within the 5-14 band, plus reported-never-judged cost tasks):
 // representative of repo work (COVER formula, SPLIT-bounded parse,
 // prose spec, veracity round-trip, gate selection, security jail,
@@ -147,6 +148,9 @@ func Suite() []Task {
 		{ID: "B13", Title: "gate-profile-decision", Kind: "decision",
 			Prompt: "Pick the lean gate set for a docs-only edit and the full set when gate code moves.",
 			Check:  checkGateProfileDecision},
+		{ID: "B14", Title: "missrate-golden", Kind: "retrieval",
+			Prompt: "Recall the right field note when the wording shifts or a word is mistyped, and miss honestly when nothing matches.",
+			Check:  checkMissRateGolden},
 	}
 }
 
@@ -718,4 +722,122 @@ func checkGateProfileDecision() (string, error) {
 		return "", fmt.Errorf("mixed scope: chose %q, want full", got)
 	}
 	return "docs-only edits ride quick=10, gate code rides full=12, forced full honored", nil
+}
+
+// missDoc is one eval corpus entry for the miss-rate golden (B14).
+type missDoc struct {
+	key, title, content string
+}
+
+// missQuery is one dup-query: b-side wording plus its target key.
+type missQuery struct {
+	name, kind, bTitle, bContent, target string
+}
+
+// checkMissRateGolden pins the retrieval honesty contract on a fixed
+// 5-doc corpus with 4 dup queries (2 paraphrase + 2 typo): the lexical
+// AND channel must miss every dup (novel/typo word matches nothing)
+// while hybrid top-3 recalls every one. A corpus-wide unknown term
+// must return zero hits (honest miss, wired to RecordMiss by the CLI).
+func checkMissRateGolden() (string, error) {
+	corpus := []missDoc{
+		{"pooling", "chose postgres connection pooling", "pooling keeps p95 latency flat under load; sized the pool to twice the worker count"},
+		{"leak", "postgres pool leaks idle connections", "the harvester stalls under load and idle connections never return; restart recovers the pool"},
+		{"cache", "cache the retrieval index in memory", "sizing the cache to the working set keeps p95 under fifty milliseconds"},
+		{"runtime", "chose bun runtime for the plugin host", "cold start under fifty milliseconds keeps the picker responsive"},
+		{"trace", "trace sessions prune to the call-order tail", "keeping the last two calls per second keeps the debug trail short"},
+	}
+	queries := []missQuery{
+		{"paraphrase/postgres-pool", "paraphrase", "picked postgres connection pooling", "pooling keeps p95 latency flat under load; sized the pool to twice the worker count", "pooling"},
+		{"paraphrase/pool-leak", "paraphrase", "postgres pool leaking idle connections", "the harvester stalls under load and idle connections never return; a restart recovers the pool", "leak"},
+		{"typo/pooling", "typo", "chose postgres conenction pooling", "pooling keeps p95 latnecy flat under load; sized the pool to twice the worker count", "pooling"},
+		{"typo/cache-sizing", "typo", "cache the retrival index in memory", "sizing the cache to the working set keeps p95 under fifty miliseconds", "cache"},
+	}
+	root, err := os.MkdirTemp("", "bench-missrate-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(root)
+	now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	ids := map[string]string{}
+	for i, d := range corpus {
+		saved, err := almanac.Save(root, &almanac.Observation{Type: almanac.TypeDecision, Title: d.title, Content: d.content}, now.Add(time.Duration(i)*time.Second))
+		if err != nil {
+			return "", err
+		}
+		ids[d.key] = saved.ID
+	}
+	if _, _, err := almanac.Reindex(root); err != nil {
+		return "", err
+	}
+	lexMiss, hybHit, paraHit, typoHit := 0, 0, 0, 0
+	for _, mq := range queries {
+		terms := benchMissTerms(mq.bTitle, mq.bContent)
+		lex, err := almanac.Search(root, almanac.Query{Terms: terms})
+		if err != nil {
+			return "", err
+		}
+		found := false
+		for _, o := range lex {
+			if o.ID == ids[mq.target] {
+				found = true
+			}
+		}
+		if !found {
+			lexMiss++
+		}
+		hyb, degraded, err := almanac.HybridSearchWith(root, almanac.Query{Terms: terms, Limit: 3}, "")
+		if err != nil {
+			return "", err
+		}
+		if degraded {
+			return "", fmt.Errorf("query %q: fresh index must not degrade", mq.name)
+		}
+		hybFound := false
+		for _, o := range hyb {
+			if o.ID == ids[mq.target] {
+			hybFound = true
+			}
+		}
+		if hybFound {
+			hybHit++
+			if mq.kind == "paraphrase" {
+				paraHit++
+			} else {
+				typoHit++
+			}
+		} else {
+			return "", fmt.Errorf("query %q (%s): hybrid top-3 misses target (lexMiss=%v)", mq.name, mq.kind, !found)
+		}
+		if found {
+			return "", fmt.Errorf("query %q (%s): lexical AND must miss the dup target", mq.name, mq.kind)
+		}
+	}
+	none, err := almanac.Search(root, almanac.Query{Terms: []string{"zebracorn"}})
+	if err != nil {
+		return "", err
+	}
+	if len(none) != 0 {
+		return "", fmt.Errorf("unknown term: got %d hits, want 0", len(none))
+	}
+	if lexMiss != 4 || hybHit != 4 {
+		return "", fmt.Errorf("missrate: lexMiss=%d hybHit=%d, want 4/4", lexMiss, hybHit)
+	}
+	return fmt.Sprintf("missrate 4/4 lexical-miss, 4/4 hybrid top-3 (%d paraphrase + %d typo), unknown 0 hits", paraHit, typoHit), nil
+}
+
+// benchMissTerms tokenizes a query side like the eval: lowercase,
+// punctuation stripped (matchTerms is substring-per-term, so a typo'd
+// or novel word matches nothing — the lexical miss).
+func benchMissTerms(title, content string) []string {
+	var out []string
+	for _, f := range strings.Fields(strings.ToLower(title + " " + content)) {
+		w := strings.TrimFunc(f, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		if w != "" {
+			out = append(out, w)
+		}
+	}
+	return out
 }

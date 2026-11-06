@@ -153,6 +153,33 @@ func TestB13GateProfileDecision(t *testing.T) {
 	}
 }
 
+func TestB14MissRateGolden(t *testing.T) {
+	var b14 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B14" {
+			b14 = &tasks[i]
+			break
+		}
+	}
+	if b14 == nil {
+		t.Fatal("B14 task absent from the suite")
+	}
+	wantPrompt := "Recall the right field note when the wording shifts or a word is mistyped, and miss honestly when nothing matches."
+	if b14.Prompt != wantPrompt {
+		t.Fatalf("B14 prompt drifted:\n got: %q\nwant: %q", b14.Prompt, wantPrompt)
+	}
+	detail, err := b14.Check()
+	if err != nil {
+		t.Fatalf("B14 check failed: %v", err)
+	}
+	for _, want := range []string{"4/4 lexical-miss", "4/4 hybrid top-3", "paraphrase", "typo"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B14 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
 func TestRunAllPassOffline(t *testing.T) {
 	rep := Run("tree", "abc123")
 	if rep.Suite != SuiteVersion {
@@ -320,7 +347,7 @@ func TestCompareAdoptV2(t *testing.T) {
 	base := Run("tree", "a")
 	cand := Run("candidate", "b")
 	if len(base.Tasks) != 13 || base.Passed != 13 {
-		t.Fatalf("v3 suite = %d tasks %d passed, want 13/13", len(base.Tasks), base.Passed)
+		t.Fatalf("v3 suite = %d tasks %d passed, want 14/14", len(base.Tasks), base.Passed)
 	}
 	cmp := Compare(base, cand)
 	if cmp.Verdict != "ADOPT" {
