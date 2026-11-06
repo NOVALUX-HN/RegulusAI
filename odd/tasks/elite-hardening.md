@@ -11,7 +11,7 @@ Read until `## Log` before edits.
 
 ## Tasks
 
-- [ ] T1 (S1,S3) — velocidad: quick útil + mutación contenida — route: inline — commit: —
+- [x] T1 (S1,S3) — velocidad: quick útil + mutación contenida — route: inline — commit: 63cec17
 - [ ] T2 (S1,S3) — precisión CRAP: partir loadLiveCache + cubrir envfacts — route: inline — commit: —
 - [ ] T3 (S1,S3) — precisión evidencia: aislamiento degradado explícito + spec floor — route: inline — commit: —
 - [ ] T4 (S1,S3) — decisiones: scoring cuantitativo + 2 bench tasks de decisión — route: inline — commit: —

@@ -38,6 +38,63 @@ type liveCache struct {
 	status  map[string]string
 }
 
+func newLiveCache() *liveCache {
+	return &liveCache{
+		byTopic: map[string][]almanac.Observation{},
+		byID:    map[string]almanac.Observation{},
+		inv:     map[string]bool{},
+		sup:     map[string]bool{},
+		status:  map[string]string{},
+	}
+}
+
+func indexObservations(c *liveCache, all []almanac.Observation) {
+	for _, o := range all {
+		c.byTopic[o.TopicKey] = append(c.byTopic[o.TopicKey], o)
+		c.byID[o.ID] = o
+	}
+}
+
+func applyRelationsToCache(c *liveCache, rels []almanac.Relation) {
+	for _, r := range rels {
+		if _, ok := c.byID[r.From]; !ok {
+			continue
+		}
+		if _, ok := c.byID[r.To]; !ok {
+			continue
+		}
+		if r.Relation == almanac.RelationInvalidatedBy {
+			c.inv[r.To] = true
+		} else if r.Relation == almanac.RelationSupersedes {
+			c.sup[r.To] = true
+		}
+	}
+}
+
+func loadStatusIntoCache(c *liveCache, root string) {
+	data, err := os.ReadFile(almanac.StatusFile(root))
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if id, to, ok := parseStatusLine(line); ok {
+			c.status[id] = to
+		}
+	}
+}
+
+func parseStatusLine(line string) (string, string, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", "", false
+	}
+	var ev almanac.StatusEvent
+	if err := json.Unmarshal([]byte(line), &ev); err != nil {
+		return "", "", false
+	}
+	return ev.ID, ev.To, true
+}
+
 func loadLiveCache(root string) (*liveCache, error) {
 	all, err := almanac.All(root)
 	if err != nil {
@@ -47,44 +104,10 @@ func loadLiveCache(root string) (*liveCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &liveCache{
-		byTopic: map[string][]almanac.Observation{},
-		byID:    map[string]almanac.Observation{},
-		inv:     map[string]bool{},
-		sup:     map[string]bool{},
-		status:  map[string]string{},
-	}
-	for _, o := range all {
-		c.byTopic[o.TopicKey] = append(c.byTopic[o.TopicKey], o)
-		c.byID[o.ID] = o
-	}
-	for _, r := range rels {
-		if _, ok := c.byID[r.From]; !ok {
-			continue
-		}
-		if _, ok := c.byID[r.To]; !ok {
-			continue
-		}
-		switch r.Relation {
-		case almanac.RelationInvalidatedBy:
-			c.inv[r.To] = true
-		case almanac.RelationSupersedes:
-			c.sup[r.To] = true
-		}
-	}
-	if data, err := os.ReadFile(almanac.StatusFile(root)); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var ev almanac.StatusEvent
-			if err := json.Unmarshal([]byte(line), &ev); err != nil {
-				continue
-			}
-			c.status[ev.ID] = ev.To
-		}
-	}
+	c := newLiveCache()
+	indexObservations(c, all)
+	applyRelationsToCache(c, rels)
+	loadStatusIntoCache(c, root)
 	return c, nil
 }
 
