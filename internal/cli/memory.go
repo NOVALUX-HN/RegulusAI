@@ -197,9 +197,10 @@ func (c CLI) memoryReindexCmd(args []string) int {
 }
 
 // memoryPruneCmd implements `regulus memory prune [--older-than-days N]
-// [--type t1,t2] [--yes]`: drop stale non-lesson observations.
-// Lessons and pinned observations are never pruned (safety
-// invariants in almanac.Prune). Without --yes it is a dry run: lists
+// [--type t1,t2] [--yes]`: drop stale observations. Active lessons and
+// pinned observations are never pruned (safety invariants in
+// almanac.Prune); retired lessons (superseded, invalidated, rejected
+// or expired) prune like any other content when unpinned. Without --yes it is a dry run: lists
 // what WOULD be removed and removes nothing — the human confirmation
 // is the explicit flag. A successful --yes apply refreshes the derived
 // retrieval.bin best-effort (M1 S1: doctor stays fresh without a manual
@@ -208,7 +209,7 @@ func (c CLI) memoryPruneCmd(args []string) int {
 	fs := flag.NewFlagSet("memory prune", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	olderThan := fs.Int("older-than-days", 90, "prune observations older than N days")
-	types := fs.String("type", "", "only these observation types, comma-separated (lessons are never pruned)")
+	types := fs.String("type", "", "only these observation types, comma-separated (active lessons are never pruned)")
 	yes := fs.Bool("yes", false, "execute the prune (default is a dry run)")
 	if err := fs.Parse(args); err != nil {
 		return 2
