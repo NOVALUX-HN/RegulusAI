@@ -280,10 +280,10 @@ func TestDockerFallbackNote(t *testing.T) {
 		t.Fatalf("host fallback must still pass echo hi: %+v", res)
 	}
 	rec := readReceiptFile(t, res.Receipts[0])
-	if rec.Isolation != "host-contained" {
-		t.Fatalf("fallback isolation = %q, want host-contained", rec.Isolation)
+	if rec.Isolation != "host-contained:degraded-docker-unavailable" {
+		t.Fatalf("fallback isolation = %q, want degraded", rec.Isolation)
 	}
-	if !strings.Contains(rec.Stderr, "isolation: docker requested but unavailable") || !strings.Contains(rec.Stderr, "ran host-contained") {
+	if !strings.Contains(rec.Stderr, "isolation: docker requested but unavailable") || !strings.Contains(rec.Stderr, "ran host-contained:degraded") {
 		t.Fatalf("fallback stderr must carry the note, got %q", rec.Stderr)
 	}
 }

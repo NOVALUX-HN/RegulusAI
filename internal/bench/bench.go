@@ -23,6 +23,7 @@ import (
 
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/crap"
+	"regulus-ai/internal/decisions"
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/gates"
 	"regulus-ai/internal/receipts"
@@ -96,8 +97,8 @@ type Comparison struct {
 	Reason       string
 }
 
-// Suite returns the fixed v3 task list (11 tasks: 8 behavior tasks
-// within the 5-10 band, plus reported-never-judged cost tasks):
+// Suite returns the fixed v3 task list (13 tasks: 8 behavior tasks
+// within the 5-14 band, plus reported-never-judged cost tasks):
 // representative of repo work (COVER formula, SPLIT-bounded parse,
 // prose spec, veracity round-trip, gate selection, security jail,
 // honest-zero cost) with hidden machine checks, plus the P1 golden
@@ -140,6 +141,12 @@ func Suite() []Task {
 		{ID: "B11", Title: "lesson-context-cost", Kind: "tokens",
 			Prompt: "Assemble one Almanac resume block over a fixed fixture store and report its token-proxy cost.",
 			Check:  checkLessonContextCost},
+		{ID: "B12", Title: "decision-scoring-golden", Kind: "decision",
+			Prompt: "Rate a structured choice from its support, open objections, priced options, and safety nets.",
+			Check:  checkDecisionScoringGolden},
+		{ID: "B13", Title: "gate-profile-decision", Kind: "decision",
+			Prompt: "Pick the lean gate set for a docs-only edit and the full set when gate code moves.",
+			Check:  checkGateProfileDecision},
 	}
 }
 
@@ -497,16 +504,25 @@ func realGateConfig() gates.Config {
 	}
 	cfg := gates.Config{}
 	for i, name := range names {
-		cfg.Gates = append(cfg.Gates, gates.Gate{
+		g := gates.Gate{
 			Name: name, Layer: i + 1, Command: cmds[i],
-		})
+		}
+		if name == "mutation" || name == "vulncheck" {
+			g.Required = boolPtr(false)
+			g.Profiles = []string{"full"}
+		}
+		if name == "vulncheck" {
+			g.Profiles = []string{"full", "security"}
+		}
+		cfg.Gates = append(cfg.Gates, g)
 	}
 	return cfg
 }
 
 // checkRealGateProfile pins the real gauntlet shape through profile
-// selection: full and quick keep all twelve required gates in
-// declaration order with halt policy, and an unknown profile refuses.
+// selection: full keeps all twelve gates in declaration order with halt
+// policy, quick keeps the 10 required gates (mutation + vulncheck are
+// full-only), and an unknown profile refuses.
 func checkRealGateProfile() (string, error) {
 	cfg := realGateConfig()
 	full, err := gates.SelectGates(cfg, "")
@@ -528,13 +544,13 @@ func checkRealGateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(quick) != 12 {
-		return "", fmt.Errorf("quick profile: got %d gates, want 12 required", len(quick))
+	if len(quick) != 10 {
+		return "", fmt.Errorf("quick profile: got %d gates, want 10 required", len(quick))
 	}
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=12, quick=12 required in order, unknown refused", nil
+	return "full=12, quick=10 required in order, unknown refused", nil
 }
 
 // checkTokenProxyGolden pins the T1 local-token proxy on golden values:
@@ -639,4 +655,67 @@ func checkLessonContextCost() (string, error) {
 		return "", fmt.Errorf("empty block prices nothing")
 	}
 	return fmt.Sprintf("fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble %d chars = %d proxy tokens, host unknown", len(ctx), proxy), nil
+}
+
+// checkDecisionScoringGolden pins the T4 quantitative decision score on
+// its golden values: the same formula decisions.Score computes, so
+// score drift breaks the suite from the bench side too.
+func checkDecisionScoringGolden() (string, error) {
+	cases := []struct {
+		in    decisions.ScoreInput
+		want  int
+		grade string
+	}{
+		{decisions.ScoreInput{EvidenceOK: true, Blocking: 0, AlternativesPriced: 1, RisksTotal: 1, RisksMitigated: 1}, 94, "A"},
+		{decisions.ScoreInput{EvidenceOK: false, Blocking: 3, AlternativesPriced: 0, RisksTotal: 0, RisksMitigated: 0}, 10, "F"},
+		{decisions.ScoreInput{EvidenceOK: true, Blocking: 1, AlternativesPriced: 2, RisksTotal: 2, RisksMitigated: 1}, 75, "B"},
+	}
+	for _, tc := range cases {
+		if got, grade := decisions.Score(tc.in); got != tc.want || grade != tc.grade {
+			return "", fmt.Errorf("Score(%+v) = %d/%s, want %d/%s", tc.in, got, grade, tc.want, tc.grade)
+		}
+	}
+	return "scoring golden 94/A 10/F 75/B", nil
+}
+
+// chooseGateProfile is the cost/precision tradeoff: docs-only edits ride
+// the lean quick set, anything else (or a forced full) rides the full
+// gauntlet. Empty means full (unknown scope defaults to precision).
+func chooseGateProfile(changed []string, forceFull bool) string {
+	if forceFull || len(changed) == 0 {
+		return ""
+	}
+	for _, p := range changed {
+		if !strings.HasSuffix(p, ".md") {
+			return ""
+		}
+	}
+	return "quick"
+}
+
+// checkGateProfileDecision pins the tradeoff through real selection:
+// docs-only chooses quick (10 required, no full-only gates), gate code
+// or forced full chooses the 12-gate gauntlet.
+func checkGateProfileDecision() (string, error) {
+	cfg := realGateConfig()
+	quick, err := gates.SelectGates(cfg, chooseGateProfile([]string{"charts/flow.md", "README.md"}, false))
+	if err != nil || len(quick) != 10 {
+		return "", fmt.Errorf("docs-only: got %d gates (%v), want 10 quick", len(quick), err)
+	}
+	for _, g := range quick {
+		if g.Name == "mutation" || g.Name == "vulncheck" {
+			return "", fmt.Errorf("docs-only quick kept full-only gate %q", g.Name)
+		}
+	}
+	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
+	if err != nil || len(full) != 12 {
+		return "", fmt.Errorf("gate code: got %d gates (%v), want 12 full", len(full), err)
+	}
+	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
+		return "", fmt.Errorf("forced full: chose %q, want full", got)
+	}
+	if got := chooseGateProfile([]string{"charts/flow.md", "internal/x.go"}, false); got != "" {
+		return "", fmt.Errorf("mixed scope: chose %q, want full", got)
+	}
+	return "docs-only edits ride quick=10, gate code rides full=12, forced full honored", nil
 }

@@ -234,13 +234,13 @@ func (s ShRunner) runWithStats(ctx context.Context, command, root, dockerImage, 
 		if !dockerProbe(ctx) {
 			reason := "docker daemon unavailable"
 			stdout, stderr, code, cpuMs, err := runShell(ctx, shellName(command), shellArgs(command), s.Dir, s.EnvUnset)
-			note := "isolation: docker requested but unavailable (" + reason + "); ran host-contained"
+			note := "isolation: docker requested but unavailable (" + reason + "); ran host-contained:degraded"
 			if stderr == "" {
 				stderr = note
 			} else {
 				stderr += "\n" + note
 			}
-			return stdout, stderr, code, cpuMs, IsolationHostContained, err
+			return stdout, stderr, code, cpuMs, IsolationHostDegraded, err
 		}
 		vol := root
 		if vol == "" {
@@ -263,13 +263,13 @@ func (s ShRunner) runWithStats(ctx context.Context, command, root, dockerImage, 
 	if isolate == "docker" && dockerImage == "" {
 		reason := "no docker image configured"
 		stdout, stderr, code, cpuMs, err := runShell(ctx, shellName(command), shellArgs(command), s.Dir, s.EnvUnset)
-		note := "isolation: docker requested but unavailable (" + reason + "); ran host-contained"
+		note := "isolation: docker requested but unavailable (" + reason + "); ran host-contained:degraded"
 		if stderr == "" {
 			stderr = note
 		} else {
 			stderr += "\n" + note
 		}
-		return stdout, stderr, code, cpuMs, IsolationHostContained, err
+		return stdout, stderr, code, cpuMs, IsolationHostDegraded, err
 	}
 	stdout, stderr, code, cpuMs, err = runShell(ctx, shellName(command), shellArgs(command), s.Dir, s.EnvUnset)
 	return stdout, stderr, code, cpuMs, IsolationHostContained, err
