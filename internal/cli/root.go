@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/executil"
 )
 
 // rootGitTimeout bounds the `git rev-parse --show-toplevel` probe used
@@ -70,6 +72,7 @@ func gitTopLevel(dir string) string {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	cmd.Dir = dir
+	executil.HideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/executil"
 )
 
 // Unknown is the best-effort fallback when the branch (or HEAD) cannot
@@ -55,6 +57,7 @@ func runGit(root string, args ...string) string {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = root
+	executil.HideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

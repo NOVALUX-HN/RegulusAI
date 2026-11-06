@@ -111,6 +111,11 @@ if (!bin) {
 const result = spawnSync(bin, process.argv.slice(2), {
   stdio: "inherit",
   env: process.env,
+  // windowsHide: the launcher is spawned by GUI hosts (and the
+  // opencode background server) that own no console on Windows —
+  // without it every regulus invocation flashes a terminal open
+  // and shut. Harmless when a console already exists.
+  windowsHide: true,
 })
 if (result.error) {
   // The binary never ran: surface why instead of a silent exit 1.
