@@ -23,8 +23,6 @@ package almanac
 // values at commit time.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"os"
@@ -159,12 +157,11 @@ func freshIndexVectors(root string) (map[string][EmbedDim]int8, bool) {
 	if err != nil {
 		return nil, false
 	}
-	raw, err := os.ReadFile(File(root))
+	shaHex, err := cachedSourceSHA(root)
 	if err != nil {
 		return nil, false
 	}
-	sum := sha256.Sum256(raw)
-	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
+	if hdr.SourceSHAHex() != shaHex {
 		return nil, false
 	}
 	vecs := make(map[string][EmbedDim]int8, len(entries))

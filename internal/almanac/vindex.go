@@ -328,12 +328,11 @@ func IndexState(root string) (string, error) {
 	if err != nil {
 		return "stale", nil
 	}
-	raw, err := os.ReadFile(File(root))
+	shaHex, err := cachedSourceSHA(root)
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(raw)
-	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
+	if hdr.SourceSHAHex() != shaHex {
 		return "stale", nil
 	}
 	return "fresh", nil
