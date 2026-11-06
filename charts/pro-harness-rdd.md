@@ -1,6 +1,7 @@
 # pro-harness RDD — review with executable authority
 
 Domain: harness
+Class: STANDARD
 
 Design chart for Fase 5 (T7/T8): the review stops being a prompt role
 and becomes an executable transaction — frozen candidate, independent
@@ -24,6 +25,18 @@ Design decisions (locked here, not in code review):
 - Burn: an approval covers the frozen bytes only; any modification
   after approval invalidates it. Delivery still follows ordinary
   repository policy (commit/push/PR stay human).
+
+## Contract
+
+- Objective: que el review deje de ser un rol en prompt y pase a transacción ejecutable (candidato congelado, lenses 4R, refuter adversarial, budget 2, burn terminal, consentimiento separado del delivery), adaptado de gentle-ai review-integration sin provider bindings.
+- Scope: `internal/cli/review_lineage.go` (start/approve/refute), `internal/cli/review.go` (ruta), `.opencode/plugins/regulus.ts` (texto verify), `.opencode/lib/toolset.test.ts` + `domain.test.ts` (pines), `docs/agents.md` (mapa guardians→lenses). Sin tocar gates, `gate run`, ni el review informativo legacy.
+- Constraints: model-lenses solo high-risk; 4R en orden; budget fijo en 2; burn por bytes exactos; delivery sigue policy ordinaria (ningún approve commitea/pushea); guardians no se eliminan, se re-homenajean.
+- Acceptance: all
+- Artifacts: receipts `pro-harness-rdd/T*` (12/12 por tarea).
+- Dependencies: T6 antes que T7 (el diseño fija la API); T7 antes que T8 (el plugin invoca la transacción).
+- Risk: standard
+- Verification: `spec check charts/pro-harness-rdd.md` + `gate run pro-harness-rdd/T*` 12/12.
+- Completion: T6–T8.2 CLOSED vía `task close`.
 
 ## Acceptance
 
@@ -79,13 +92,13 @@ Design decisions (locked here, not in code review):
 
 ## Tasks
 
-| ID | Spec | Work | Route | Commit |
+| ID | Spec | Work | Route | Commit | Status |
 |---|---|---|---|---|
-| T6 | S1 | This chart (design lock + acceptance contract) | inline | — |
-| T7.1 | S2,S3 | Core: freeze candidate by hash, lineage, correction budget ≤2, burn on drift | inline | — |
-| T7.2 | S4,S5 | Core: refuter (pre-existing = follow-up), refusal past budget | inline | — |
-| T8.1 | S2,S3 | Plugin: invoke the transaction, model lenses iff high-risk tier | inline | — |
-| T8.2 | S6,S7 | Plugin: consent separation + guardian→lens migration, gauntlet unchanged | inline | — |
+| T6 | S1 | This chart (design lock + acceptance contract) | inline | 722bf44 | done |
+| T7.1 | S2,S3 | Core: freeze candidate by hash, lineage, correction budget ≤2, burn on drift | inline | fbe0715 | done |
+| T7.2 | S4,S5 | Core: refuter (pre-existing = follow-up), refusal past budget | inline | fbe0715 | done |
+| T8.1 | S2,S3 | Plugin: invoke the transaction, model lenses iff high-risk tier | inline | 84a36f5 | done |
+| T8.2 | S6,S7 | Plugin: consent separation + guardian→lens migration, gauntlet unchanged | inline | 84a36f5 | done |
 
 ## Log
 
@@ -97,3 +110,9 @@ Design decisions (locked here, not in code review):
   (single runtime: this core + its plugin), model lenses gated by the
   existing risk tier, correction budget fixed at 2. User authorization:
   "continua todos los pasos hasta finalizarlos".
+
+- CLOSED T6 STANDARD spec OK + 12 receipt(s) PASS (run_11460ff045f72ef5).
+- CLOSED T7.1 STANDARD spec OK + 12 receipt(s) PASS (run_f508c5a7dab57e24).
+- CLOSED T7.2 STANDARD spec OK + 12 receipt(s) PASS (run_24cfcafd8aef515d).
+- CLOSED T8.1 STANDARD spec OK + 12 receipt(s) PASS (run_beadb535771f6f5a).
+- CLOSED T8.2 STANDARD spec OK + 12 receipt(s) PASS (run_e5f6f9567af54f57).
