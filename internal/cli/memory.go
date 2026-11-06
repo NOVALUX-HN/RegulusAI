@@ -466,6 +466,11 @@ func (c CLI) memorySearchCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1
 	}
+	if *lexical {
+		fmt.Fprintln(c.Stderr, "ranking: lexical buckets+terms, newest first (forced --lexical)")
+	} else {
+		fmt.Fprintln(c.Stderr, "ranking: hybrid RRF(k=60)+decay+confidence, rot sinks (fresh index) — lexical fallback warns above")
+	}
 	if len(hits) == 0 {
 		// Miss log (A3): a zero-hit search records its terms —
 		// best-effort, never breaking the search itself.

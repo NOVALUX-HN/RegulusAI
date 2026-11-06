@@ -14,7 +14,7 @@ Read until `## Log` before edits.
 - [x] T3 (S1) — RecordMiss probado: cero-hit registra y MissStats lo muestra — route: inline — commit: 2fff074
 - [x] T4 (S1) — check accionable: paths citados vs git_head — route: inline — commit: a9939e1
 - [x] T5 (S1) — calibración documentada: RRF/decay/topN pineados con test — route: inline — commit: 45cd5ad
-- [ ] T6 (S1) — retención: GC de lessons no usadas sin romper evidencia — route: inline — commit: —
+- [x] T6 (S1) — retención: GC de lessons no usadas sin romper evidencia — route: inline — commit: daafb8b
 - [ ] T7 (S1) — CLI: status lista + ranking explicado en search — route: inline — commit: —
 
 ## Log

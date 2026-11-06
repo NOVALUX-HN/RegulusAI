@@ -80,3 +80,29 @@ func TestMemorySearchLexicalFlagPath(t *testing.T) {
 		t.Fatalf("fresh hybrid must not warn, got %q", errbHyb.String())
 	}
 }
+
+func TestMemorySearchRankingExplained(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "chose postgres", "pooling everywhere"}); code != 0 {
+		t.Fatalf("save: exit = %d", code)
+	}
+	cR, _, _ := newCLI(nil)
+	if code := cR.Run([]string{"memory", "reindex"}); code != 0 {
+		t.Fatalf("reindex: exit = %d", code)
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"memory", "search", "--lexical", "postgres"}); code != 0 {
+		t.Fatalf("lexical: exit = %d", code)
+	}
+	if !strings.Contains(errb2.String(), "ranking: lexical") {
+		t.Fatalf("lexical search must name its ranking, got %q", errb2.String())
+	}
+	c3, _, errb3 := newCLI(nil)
+	if code := c3.Run([]string{"memory", "search", "postgres"}); code != 0 {
+		t.Fatalf("hybrid: exit = %d", code)
+	}
+	if !strings.Contains(errb3.String(), "ranking: hybrid RRF") {
+		t.Fatalf("hybrid search must name its ranking, got %q", errb3.String())
+	}
+}

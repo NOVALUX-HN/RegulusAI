@@ -197,3 +197,19 @@ func TestMemoryCheckTouchedPaths(t *testing.T) {
 		t.Fatalf("check must name the touched path, got:\n%s", out2.String())
 	}
 }
+
+func TestMemoryStatusListsAll(t *testing.T) {
+	govRoot(t)
+	a := govSave(t, "discovery", "list-one")
+	b := govSave(t, "decision", "list-two")
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "status"}); code != 0 {
+		t.Fatalf("bare status exit = %d, want 0", code)
+	}
+	got := out.String()
+	for _, want := range []string{a, b, "OBSERVED", "episodic", "decision"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status list must contain %q, got:\n%s", want, got)
+		}
+	}
+}

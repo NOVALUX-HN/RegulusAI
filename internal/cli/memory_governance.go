@@ -100,8 +100,8 @@ func (c CLI) memoryRejectCmd(args []string) int {
 	return 0
 }
 
-// memoryStatusCmd implements `regulus memory status <id>`: effective state
-// plus its audit trail.
+// memoryStatusCmd implements `regulus memory status [<id>]`: effective
+// state plus its audit trail; bare (no id) lists every observation.
 func (c CLI) memoryStatusCmd(args []string) int {
 	fs := flag.NewFlagSet("memory status", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -109,9 +109,12 @@ func (c CLI) memoryStatusCmd(args []string) int {
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
-	if len(pos) != 1 || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory status <id>")
+	if len(pos) > 1 || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory status [<id>]")
 		return 2
+	}
+	if len(pos) == 0 {
+		return c.memoryStatusList()
 	}
 	id := pos[0]
 	st, err := almanac.EffectiveStatus(c.dir(), id)
@@ -135,6 +138,29 @@ func (c CLI) memoryStatusCmd(args []string) int {
 	}
 	for _, h := range hist {
 		fmt.Fprintf(c.Stdout, "  %s %s -> %s by %s: %s\n", h.At.Format(time.RFC3339), h.From, h.To, h.By, h.Note)
+	}
+	return 0
+}
+
+// memoryStatusList prints one line per observation: id, state, system
+// and title (file order, oldest first). Bare `memory status` is the
+// governed-memory inventory; per-id shows the audit trail.
+func (c CLI) memoryStatusList() int {
+	all, err := almanac.All(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory status: %v\n", err)
+		return 1
+	}
+	if len(all) == 0 {
+		fmt.Fprintln(c.Stdout, "(no observations)")
+		return 0
+	}
+	for _, o := range all {
+		st, err := almanac.EffectiveStatus(c.dir(), o.ID)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(c.Stdout, "%s: %s (system %s) %s\n", o.ID, st, almanac.SystemOf(o.Type), o.Title)
 	}
 	return 0
 }
