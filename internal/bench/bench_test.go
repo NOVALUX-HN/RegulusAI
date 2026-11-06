@@ -12,8 +12,8 @@ func TestSuiteBand(t *testing.T) {
 	// 8 behavior tasks within the 5-10 band, plus reported-never-judged
 	// cost tasks (B7, B10, B11): measurement rides along, judgment stays
 	// on behavior.
-	if len(tasks) < 5 || len(tasks) > 12 {
-		t.Fatalf("suite has %d tasks, want 5-12", len(tasks))
+	if len(tasks) < 5 || len(tasks) > 14 {
+		t.Fatalf("suite has %d tasks, want 5-14", len(tasks))
 	}
 	seen := map[string]bool{}
 	for _, task := range tasks {
@@ -89,6 +89,66 @@ func TestB11LessonContextCostGolden(t *testing.T) {
 	for _, want := range []string{"fixture lessons", "proxy tokens"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B11 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// T4 (S1,S3): B12 pins the quantitative decision score on its golden
+// values — the same formula decisions.Score computes, machine-checked
+// from the bench side so score drift breaks the suite.
+func TestB12DecisionScoringGolden(t *testing.T) {
+	var b12 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B12" {
+			b12 = &tasks[i]
+			break
+		}
+	}
+	if b12 == nil {
+		t.Fatal("B12 task absent from the suite")
+	}
+	wantPrompt := "Rate a structured choice from its support, open objections, priced options, and safety nets."
+	if b12.Prompt != wantPrompt {
+		t.Fatalf("B12 prompt drifted:\n got: %q\nwant: %q", b12.Prompt, wantPrompt)
+	}
+	detail, err := b12.Check()
+	if err != nil {
+		t.Fatalf("B12 check failed: %v", err)
+	}
+	for _, want := range []string{"94/A", "10/F", "75/B"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B12 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// T4 (S1,S3): B13 pins the cost/precision gate-profile decision — lean
+// quick set for docs-only edits, full gauntlet when gate code moves or
+// full is forced.
+func TestB13GateProfileDecision(t *testing.T) {
+	var b13 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B13" {
+			b13 = &tasks[i]
+			break
+		}
+	}
+	if b13 == nil {
+		t.Fatal("B13 task absent from the suite")
+	}
+	wantPrompt := "Pick the lean gate set for a docs-only edit and the full set when gate code moves."
+	if b13.Prompt != wantPrompt {
+		t.Fatalf("B13 prompt drifted:\n got: %q\nwant: %q", b13.Prompt, wantPrompt)
+	}
+	detail, err := b13.Check()
+	if err != nil {
+		t.Fatalf("B13 check failed: %v", err)
+	}
+	for _, want := range []string{"quick=10", "full=12", "docs-only"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B13 detail must contain %q, got %q", want, detail)
 		}
 	}
 }
@@ -259,8 +319,8 @@ func TestB3RefusesHardenedShapes(t *testing.T) {
 func TestCompareAdoptV2(t *testing.T) {
 	base := Run("tree", "a")
 	cand := Run("candidate", "b")
-	if len(base.Tasks) != 11 || base.Passed != 11 {
-		t.Fatalf("v3 suite = %d tasks %d passed, want 11/11", len(base.Tasks), base.Passed)
+	if len(base.Tasks) != 13 || base.Passed != 13 {
+		t.Fatalf("v3 suite = %d tasks %d passed, want 13/13", len(base.Tasks), base.Passed)
 	}
 	cmp := Compare(base, cand)
 	if cmp.Verdict != "ADOPT" {

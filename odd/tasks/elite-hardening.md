@@ -13,7 +13,7 @@ Read until `## Log` before edits.
 
 - [x] T1 (S1,S3) — velocidad: quick útil + mutación contenida — route: inline — commit: 63cec17
 - [x] T2 (S1,S3) — precisión CRAP: partir loadLiveCache + cubrir envfacts — route: inline — commit: 46919c0
-- [ ] T3 (S1,S3) — precisión evidencia: aislamiento degradado explícito + spec floor — route: inline — commit: —
+- [x] T3 (S1,S3) — precisión evidencia: aislamiento degradado explícito + spec floor — route: inline — commit: cdcca88
 - [ ] T4 (S1,S3) — decisiones: scoring cuantitativo + 2 bench tasks de decisión — route: inline — commit: —
 - [ ] T5 (S1,S3) — tokens/i18n: loopguard en inglés + warning de fallback de dominio + budget doc — route: inline — commit: —
 - [ ] T6 (S2) — tabla comparativa probada y documentada — route: inline — commit: —

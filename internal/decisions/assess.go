@@ -66,6 +66,10 @@ type Pipeline struct {
 	Recommendation string
 	Rationale      string
 	Abstained      bool
+	// Score/Grade carry the punctual quantitative signal (T4):
+	// advisory only, never a transition input.
+	Score int
+	Grade string
 }
 
 // PolicyResult is the hard-gate layer resolve() enforces.
@@ -205,6 +209,12 @@ func Assess(root string, d Decision, accepted []Decision) Pipeline {
 	p.Findings = append(p.Findings, findings...)
 	p.Findings = append(p.Findings, absoluteFinding(c, resolvedCount)...)
 	recommendDecision(&p, c)
+	priced := pricedAlternatives(c)
+	total, mitigated := mitigatedRisks(c)
+	p.Score, p.Grade = Score(ScoreInput{
+		EvidenceOK: p.Policy.EvidenceOK, Blocking: countBlocking(p.Findings),
+		AlternativesPriced: priced, RisksTotal: total, RisksMitigated: mitigated,
+	})
 	return p
 }
 
