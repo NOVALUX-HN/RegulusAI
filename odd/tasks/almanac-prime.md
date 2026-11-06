@@ -18,6 +18,7 @@ productizado — más el portability pendiente de pro-harness.
 - A2 (S1,S3): contradicciones visibles — notas de conflicto en `memory context` — ruta: inline — commit: 42b1b20
 - A3 (S1,S3): miss log + miss-rate en doctor — ruta: inline — commit: 43095db
 - A4 (S2,S3): portability Git-Bash (bashPosixPath detecta /c/) — ruta: inline — commit: f3cafba
+- A5 (dashboard): endpoint GET /v1/evolution (admitted/proxy/rot/pending/sessions/tick_at, solo conteos) + TickPosition exportado — ruta: inline — commit: A5-pendiente-hash
 
 ## Log
 

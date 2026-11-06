@@ -91,6 +91,15 @@ func loadTickState(root string) tickState {
 	return st
 }
 
+// TickPosition reports the tick cadence cursor: traced sessions now
+// versus at the last applied tick. Exported for read-only surfaces
+// (dashboard); the cadence itself stays inside ComputeTick/ApplyTick.
+func TickPosition(root string) (sessions, atTick int) {
+	st := loadTickState(root)
+	sessions, _ = trace.UsageSessions(root)
+	return sessions, st.SessionsAtTick
+}
+
 func saveTickState(root string, st tickState) error {
 	if err := os.MkdirAll(EvolveDir(root), 0o755); err != nil {
 		return err

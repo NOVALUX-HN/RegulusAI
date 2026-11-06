@@ -240,6 +240,7 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/version", s.handleVersion)
 	mux.HandleFunc("/v1/metrics", s.handleMetrics)
 	mux.HandleFunc("/v1/almanac/summary", s.handleAlmanacSummary)
+	mux.HandleFunc("/v1/evolution", s.handleEvolution)
 	mux.HandleFunc("/v1/receipts", s.handleReceipts)
 	mux.HandleFunc("/v1/executions", s.handleExecutions)
 	mux.HandleFunc("/v1/git", s.handleGit)
