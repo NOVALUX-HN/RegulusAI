@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -154,4 +155,45 @@ func TestMemoryImportStaysProposed(t *testing.T) {
 		t.Fatalf("reviewed import verifies, got %q", st)
 	}
 	_ = time.Now
+}
+
+func mustGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestMemoryCheckTouchedPaths(t *testing.T) {
+	dir := govRoot(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	mustGit(t, dir, "init", "-b", "main")
+	mustGit(t, dir, "config", "user.email", "t@t.t")
+	mustGit(t, dir, "config", "user.name", "t")
+	mustGit(t, dir, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile("tracked.txt", []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "tracked.txt")
+	mustGit(t, dir, "commit", "-m", "one")
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "discovery", "--title", "ground moves", "--path", "tracked.txt", "content about tracked"}); code != 0 {
+		t.Fatalf("save exit = %d, want 0", code)
+	}
+	if err := os.WriteFile("tracked.txt", []byte("v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "tracked.txt")
+	mustGit(t, dir, "commit", "-m", "two")
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"memory", "check"}); code != 1 {
+		t.Fatalf("touched ground must exit 1, output:\n%s", out2.String())
+	}
+	if !strings.Contains(out2.String(), "TOUCHED:") || !strings.Contains(out2.String(), "tracked.txt") {
+		t.Fatalf("check must name the touched path, got:\n%s", out2.String())
+	}
 }

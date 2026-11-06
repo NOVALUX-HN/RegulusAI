@@ -11,7 +11,7 @@ Read until `## Log` before edits.
 
 - [x] T1 (S1) — sha cache: evitar re-hash del log en cada query — route: inline — commit: fd421b9
 - [x] T2 (S1) — missrate como gate: pinnear recall paraphrase/typo en bench — route: inline — commit: b76578f
-- [ ] T3 (S1) — RecordMiss probado: cero-hit registra y MissStats lo muestra — route: inline — commit: —
+- [x] T3 (S1) — RecordMiss probado: cero-hit registra y MissStats lo muestra — route: inline — commit: 2fff074
 - [ ] T4 (S1) — check accionable: paths citados vs git_head — route: inline — commit: —
 - [ ] T5 (S1) — calibración documentada: RRF/decay/topN pineados con test — route: inline — commit: —
 - [ ] T6 (S1) — retención: GC de lessons no usadas sin romper evidencia — route: inline — commit: —

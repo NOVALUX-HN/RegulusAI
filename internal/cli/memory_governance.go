@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"regulus-ai/internal/almanac"
@@ -137,6 +139,56 @@ func (c CLI) memoryStatusCmd(args []string) int {
 	return 0
 }
 
+// touchedSinceHead reports cited provenance paths that changed since
+// the observation's git head: "<n> file(s) since <short>: <csv>".
+// Empty when nothing cited, when head/paths look unsafe for the shell,
+// or when git is unavailable — fail-open like commitsBehindSuffix.
+// A non-empty result makes `memory check` actionable: the knowledge
+// may be stale because the ground moved, not just old.
+func (c CLI) touchedSinceHead(o almanac.Observation) string {
+	if o.Provenance == nil || o.Provenance.GitHead == "" || len(o.Provenance.Paths) == 0 {
+		return ""
+	}
+	head := o.Provenance.GitHead
+	if !gitHeadSafe(head) {
+		return ""
+	}
+	for _, p := range o.Provenance.Paths {
+		if !provenancePathSafe(p) {
+			return ""
+		}
+	}
+	ctx, cancel := gitTimeout()
+	defer cancel()
+	out, _, _, err := c.runner().Run(ctx, "git diff --name-only "+head+"..HEAD -- "+strings.Join(o.Provenance.Paths, " "))
+	if err != nil {
+		return ""
+	}
+	var touched []string
+	for _, line := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			touched = append(touched, t)
+		}
+	}
+	if len(touched) == 0 {
+		return ""
+	}
+	short := head
+	if len(short) > 7 {
+		short = short[:7]
+	}
+	return fmt.Sprintf("%d file(s) since %s: %s", len(touched), short, strings.Join(touched, ", "))
+}
+
+var (
+	gitHeadSafeRe = regexp.MustCompile(`^[0-9a-f]{4,40}$`)
+	provPathSafeRe = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
+)
+
+func gitHeadSafe(s string) bool { return gitHeadSafeRe.MatchString(s) }
+
+func provenancePathSafe(s string) bool { return provPathSafeRe.MatchString(s) }
+
 // memoryCheckCmd implements `regulus memory check`: live contradictions,
 // retired knowledge still presented as current, and expired-but-active
 // observations. Exit 1 names every problem; exit 0 certifies clean.
@@ -175,6 +227,12 @@ func (c CLI) memoryCheckCmd(args []string) int {
 		}
 		if almanac.IsExpired(&o, now) && st != almanac.StatusRejected && !sup[o.ID] && !inv[o.ID] {
 			fmt.Fprintf(c.Stdout, "STALE: %s expired but reads %s\n", o.ID, st)
+			problems++
+		}
+	}
+	for _, o := range all {
+		if touched := c.touchedSinceHead(o); touched != "" {
+			fmt.Fprintf(c.Stdout, "TOUCHED: %s %s\n", o.ID, touched)
 			problems++
 		}
 	}
