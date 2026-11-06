@@ -666,6 +666,9 @@ export async function resolveDomain(dir: string, runBin: RunBin, messagesText: s
         // trace lookup failed — fall through to the library signal
       }
       if (domains.length === 1) return domains[0]
+      if (domains.length > 1) {
+        console.error(`[regulus] domain: no pin found (${domains.length} domains, no chart/file hit) — using unfiltered lessons (newest-first fallback)`)
+      }
     }
   } catch {
     // never break context assembly on detection
@@ -783,7 +786,7 @@ export function isLoopGuardEnabled(env?: string): boolean {
 // TE_LOOPGUARD=off reversal inline so the agent sees it where it acts.
 export function formatLoopRedirect(tool: string): string {
   const name = tool.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim() || "tool";
-  return `[regulus loop-guard] parece bucle en ${name} (×3 mismo fallo): prueba otro enfoque (relee el error, cambia de archivo/comando o pide ayuda) — reversible, ignóralo si no aplica (TE_LOOPGUARD=off lo desactiva).`;
+  return `[regulus loop-guard] possible loop in ${name} (×3 same failure): try a different approach (re-read the error, change file/command, or ask for help) — advisory, ignore if not applicable (TE_LOOPGUARD=off disables it).`;
 }
 
 // TOOLSET_FULL / TOOLSET_MINIMAL / resolveToolset — T2 (macizo-tokens):
