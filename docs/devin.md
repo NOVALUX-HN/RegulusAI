@@ -68,13 +68,13 @@ powershell -File scripts/install-devin.ps1
 # .devin/config.json — YOUR file, not committed by this repo:
 # { "permissions": { "allow": ["Exec(regulus *)"], "ask": ["Write(**/.env*)"] } }
 
-# use it
+# use it (`/regulus` is user-trigger only: inert unless you invoke it)
 devin
-> /regulus-workflow implement feature/T2 against charts/feature.md
+> /regulus implement feature/T2 against charts/feature.md
 ```
 
-Non-Windows shells run the bash mirror instead (same S1+S2):
-`bash scripts/install-devin.bash` (needs Go, node, GNU timeout + grep).
+Non-Windows shells run the bash mirror instead (same S1+S2, plus S3 Devin surface):
+`bash scripts/install-devin.bash` (needs Go, node, GNU timeout + grep; Devin CLI checked, not installed — see S3 remedy).
 
 ### CLI-only: `devin mcp add` (never needed on Desktop)
 
@@ -111,7 +111,7 @@ CLI on PATH, and none is needed. The committed `.devin/mcp_config.json`
    (user-level overrides live under `%APPDATA%\devin\` on Windows).
 3. Verify in the MCP panel that the `regulus` server is listed and
    connected — no registration command needed.
-4. Invoke `/regulus-workflow`; subagents `regulus-worker` and
+4. Invoke `/regulus`; subagents `regulus-worker` and
    `regulus-scout` appear alongside the built-ins (no model pinned, so the
    router picks the cheaper default — pin one only if you need a frontier
    model for writes).
@@ -124,7 +124,7 @@ set `command` to the absolute path of `bin/regulus.exe` on your machine.
 | OpenCode (this repo) | Devin equivalent (this feature) |
 |---|---|
 | `.opencode/plugins/regulus.ts` (19 tools, hooks) | `regulus mcp` (14 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
-| `.opencode/skills/regulus-workflow/` | `.devin/skills/regulus-workflow/` |
+| `.opencode/skills/regulus-workflow/` | `.devin/skills/regulus/` (`/regulus`, user-trigger only — the selectable agent entry) |
 | `.opencode/agents/regulus-{worker,scout}.md` | `.devin/agents/regulus-{worker,scout}.md` |
 | `opencode.json` permissions | Devin `permissions` allow/deny/ask (project `.devin/config.json`, yours to create) |
 | `regulus doctor` V2 gate | `regulus contract` version pin (`regulus.contract/v1`) |

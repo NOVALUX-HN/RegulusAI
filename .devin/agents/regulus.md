@@ -2,6 +2,7 @@
 name: regulus
 description: Regulus harness orchestrator — run the full Sextant workflow (authorize, chart, build, prove, learn) with the Crew; select me to drive the work
 allowed-tools: [read, grep, glob, exec]
+max-nesting: 2
 ---
 
 <!-- No model pin: Devin router default drives this role; the OpenCode twin pins temperature 0.2, omitted here by pack convention. -->

@@ -3,7 +3,7 @@
 #
 # Usage: bash scripts/install-devin.bash
 #
-# What it does (same S1+S2 as the .ps1, minimal portable form):
+# What it does (S1+S2 as the .ps1, plus S3 Devin surface; minimal portable form):
 #   1. Builds bin/regulus from ./cmd/regulus, stamping main.version from
 #      package.json:
 #        go build -trimpath -ldflags "-X main.version=<package.json>" -o bin/regulus ./cmd/regulus
@@ -88,5 +88,35 @@ set -o pipefail
 printf '%s\n' "$line" | grep -qF 'regulus.contract/v1' \
   || fail "S2 MCP smoke failed: serverInfo.contract is not regulus.contract/v1. Raw: $line"
 echo "mcp initialize: serverInfo.contract = regulus.contract/v1"
+
+# 5. S3: Devin surface (headless-safe: `skills`/`mcp` need no auth).
+# 5a. The Devin CLI must exist. It is NOT installed here on purpose: on
+#     some machines it comes from a system mise config that other machines
+#     lack, so fail loud with the exact remedy instead of guessing.
+if ! command -v devin >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+install-devin: S3 needs the Devin CLI and it is not on PATH.
+Remedy (pick one), then re-run this script:
+  mise (recommended): add to ~/.config/mise/config.toml and run `mise install devin`:
+    [tools]
+    "http:devin" = { version = "latest", platforms_linux_x64_url = "https://static.devin.ai/cli/{{ version }}/devin-{{ version }}-x86_64-unknown-linux.tar.gz", platforms_linux_arm64_url = "https://static.devin.ai/cli/{{ version }}/devin-{{ version }}-aarch64-unknown-linux.tar.gz", bin_path = "bin", version_list_url = "https://static.devin.ai/cli/current/manifest.json", version_json_path = ".version" }
+  manual: fetch the current version from https://static.devin.ai/cli/current/manifest.json (.version), unpack the matching tarball above into ~/.local/bin, and ensure it is on PATH.
+EOF
+  exit 1
+fi
+echo "devin: $(devin --version 2>&1 | head -n 1)"
+# 5b. The /regulus selectable skill must resolve from this repo.
+devin skills show regulus >/dev/null 2>&1 \
+  || fail "S3 skill check failed: /regulus not found — run from the repo root with .devin/skills/regulus/SKILL.md present."
+echo "skill: /regulus selectable (user-triggered only)"
+# 5c. MCP registration, idempotent: add only when missing so a present
+#     server never rewrites the committed .devin/mcp_config.json.
+if devin mcp get regulus >/dev/null 2>&1; then
+  echo "mcp: regulus already registered"
+else
+  devin mcp add -s project regulus -- regulus mcp \
+    || fail "S3 MCP registration failed: devin mcp add regulus."
+  echo "mcp: regulus registered"
+fi
 
 echo "done: regulus ${version} on PATH (${destdir}/regulus), contract + MCP initialize verified."
