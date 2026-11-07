@@ -1,5 +1,17 @@
 # Troubleshooting
 
+## Devin reports "Failed to connect" on a regulus MCP tool call
+
+That wrapper message does not always mean the server died: Devin retries
+the call on a fresh connection and reports the *tool* error inside it.
+Read the code, not the wrapper — `Mcp error: -32602` is regulus refusing
+invalid params (e.g. `memory_save` with an absolute `--path`, which the
+trust boundary only accepts repo-relative; the refusal now names the
+relative fix). The server is healthy when `devin mcp get regulus` resolves
+and a fresh `initialize` answers. Transport-level failures look different
+(spawn errors, timeouts with no `Mcp error` code).
+
+
 ## `/regulus-yolo` (or editing opencode.json) doesn't take effect immediately
 
 Opencode reads its config once at startup: flipping YOLO (or any

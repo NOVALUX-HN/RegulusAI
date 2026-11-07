@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -129,17 +130,17 @@ func (c CLI) runner() gates.CmdRunner {
 // paths, no drive letters, no ".." segments, no empty entries. Provenance
 // is metadata, not file access — the MCP trust boundary documents that the
 // server never reads or writes these paths, it only stores them.
-func checkProvenancePaths(values []string, flag string) error {
+func checkProvenancePaths(root string, values []string, flag string) error {
 	for _, v := range values {
 		p := strings.TrimSpace(v)
 		if p == "" {
 			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
 		}
 		if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\") {
-			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+			return provenanceErr(root, flag, v, p)
 		}
 		if len(p) >= 2 && ((p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') && p[1] == ':') {
-			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+			return provenanceErr(root, flag, v, p)
 		}
 		for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
 			if seg == ".." {
@@ -148,6 +149,29 @@ func checkProvenancePaths(values []string, flag string) error {
 		}
 	}
 	return nil
+}
+
+// provenanceErr refuses an absolute provenance path, naming the
+// repo-relative fix when root is known so agents self-correct instead of
+// retrying the same absolute path. With an unknown root ("" or ".") it
+// keeps the generic refusal.
+func provenanceErr(root, flag, v, p string) error {
+	if root == "" || root == "." {
+		return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+	}
+	return fmt.Errorf("invalid provenance %s %q: must be repo-relative to %s (try %q), no absolute paths or ..", flag, v, root, suggestRelative(root, p))
+}
+
+// suggestRelative names the repo-relative form of an absolute provenance
+// path when it lives under root, so agents can self-correct a refusal.
+// Outside root (or on failure) it echoes the input back: the refusal
+// stands either way, only the hint degrades.
+func suggestRelative(root, abs string) string {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return abs
+	}
+	return rel
 }
 
 // splitList splits a comma-separated flag value, trimming spaces.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -351,11 +352,20 @@ func (c CLI) memorySaveCmd(args []string) int {
 	}
 	provenancePaths := splitList(*paths)
 	provenanceReceipts := splitList(*receiptsFlag)
-	if err := checkProvenancePaths(provenancePaths, "--path"); err != nil {
+	// Display root for refusal hints: dir() stays "." at the project
+	// root by contract, so resolve it for the message only (never for
+	// storage) — agents can then self-correct an absolute path.
+	provenanceRoot := c.dir()
+	if provenanceRoot == "" || provenanceRoot == "." {
+		if wd, err := os.Getwd(); err == nil && wd != "" {
+			provenanceRoot = wd
+		}
+	}
+	if err := checkProvenancePaths(provenanceRoot, provenancePaths, "--path"); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 2
 	}
-	if err := checkProvenancePaths(provenanceReceipts, "--receipt"); err != nil {
+	if err := checkProvenancePaths(provenanceRoot, provenanceReceipts, "--receipt"); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 2
 	}
