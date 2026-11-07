@@ -342,11 +342,11 @@ func TestB3RefusesHardenedShapes(t *testing.T) {
 }
 
 // P1: the v3 suite keeps Compare ADOPT semantics — zero regressions and
-// no pass-count drop across green runs, now over 11 tasks.
+// no pass-count drop across green runs, now 14 tasks.
 func TestCompareAdoptV2(t *testing.T) {
 	base := Run("tree", "a")
 	cand := Run("candidate", "b")
-	if len(base.Tasks) != 13 || base.Passed != 13 {
+	if len(base.Tasks) != 14 || base.Passed != 14 {
 		t.Fatalf("v3 suite = %d tasks %d passed, want 14/14", len(base.Tasks), base.Passed)
 	}
 	cmp := Compare(base, cand)

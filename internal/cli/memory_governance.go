@@ -207,7 +207,7 @@ func (c CLI) touchedSinceHead(o almanac.Observation) string {
 }
 
 var (
-	gitHeadSafeRe = regexp.MustCompile(`^[0-9a-f]{4,40}$`)
+	gitHeadSafeRe  = regexp.MustCompile(`^[0-9a-f]{4,40}$`)
 	provPathSafeRe = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
 )
 

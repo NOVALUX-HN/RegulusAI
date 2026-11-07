@@ -207,7 +207,7 @@ func TestMemoryStatusListsAll(t *testing.T) {
 		t.Fatalf("bare status exit = %d, want 0", code)
 	}
 	got := out.String()
-	for _, want := range []string{a, b, "OBSERVED", "episodic", "decision"} {
+	for _, want := range []string{a, b, "OBSERVED", "semantic", "decision"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status list must contain %q, got:\n%s", want, got)
 		}

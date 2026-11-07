@@ -796,7 +796,7 @@ func checkMissRateGolden() (string, error) {
 		hybFound := false
 		for _, o := range hyb {
 			if o.ID == ids[mq.target] {
-			hybFound = true
+				hybFound = true
 			}
 		}
 		if hybFound {
