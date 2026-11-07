@@ -87,7 +87,11 @@ func (c CLI) initCmd(args []string) int {
 		devinNote = ", .devin/mcp_config.json"
 	}
 	fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)%s\n", devinNote)
-	fmt.Fprintln(c.Stdout, "next: copy the .opencode/ harness config in (or re-run with --harness-from <repo>), run bun install in .opencode/, run regulus doctor, open your first Chart")
+	if *stack == "smoke" {
+		fmt.Fprintln(c.Stdout, "next: replace the smoke gate with your real gates in regulus.json, run regulus doctor, open your first Chart in charts/")
+	} else {
+		fmt.Fprintln(c.Stdout, "next: point the gates at your real layout in regulus.json (see the --harness-from option for the full harness), run regulus doctor, open your first Chart in charts/")
+	}
 	return 0
 }
 
@@ -232,8 +236,8 @@ var initPresets = map[string][]map[string]any{
 		{"name": "gofmt", "layer": 8, "command": "gofmt -l ."},
 	},
 	"node": {
-		{"name": "ts-typecheck", "layer": 1, "command": "bunx tsc --noEmit -p .opencode/tsconfig.json"},
-		{"name": "ts-unit-tests", "layer": 2, "command": "bun test ./.opencode/lib/"},
+		{"name": "ts-typecheck", "layer": 1, "command": "bunx tsc --noEmit -p tsconfig.json"},
+		{"name": "ts-unit-tests", "layer": 2, "command": "bun test ./"},
 		{"name": "spec", "layer": 3, "command": "regulus spec check charts/"},
 	},
 	"smoke": {
