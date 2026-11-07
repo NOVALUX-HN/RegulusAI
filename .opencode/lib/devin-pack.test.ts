@@ -34,7 +34,7 @@ describe("devin skill", () => {
     expect(fm.triggers).not.toContain("model");
     const perms = JSON.stringify(fm.permissions ?? {});
     expect(perms).toContain("Read(**)");
-    expect(perms).toContain("Exec(regulus *)");
+    expect(perms).toContain("Exec(regulus)");
     expect(perms).toContain("Write(**/.env*)");
   });
 

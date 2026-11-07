@@ -55,6 +55,10 @@ Cloud caveats (honest limits, not bugs):
 - `regulus gate run` works (pure Go + shell), but gates that assume
   interactive tools will refuse — read the refusal, don't fight it.
 
+## Global install — use Regulus in any project
+
+`scripts/install-devin.bash` S4 copies `.devin/skills/regulus/` and `.devin/agents/*.md` into `~/.config/devin/` (refreshed when changed) and registers MCP at user scope, so `/regulus` and the `regulus-*` profiles resolve outside this repo too. The repo `.devin/` stays the source of truth; global files are copies. `devin skills show regulus` from any directory proves it.
+
 ## Devin CLI — quickstart (Windows PowerShell, CLI-only)
 
 CLI path, documented separately — Devin Desktop users skip this section
@@ -66,14 +70,14 @@ powershell -File scripts/install-devin.ps1
 
 # pre-approve regulus tool calls (CLI permissions, project config)
 # .devin/config.json — YOUR file, not committed by this repo:
-# { "permissions": { "allow": ["Exec(regulus *)"], "ask": ["Write(**/.env*)"] } }
+# { "permissions": { "allow": ["Exec(regulus)"], "ask": ["Write(**/.env*)"] } }
 
 # use it (`/regulus` is user-trigger only: inert unless you invoke it)
 devin
 > /regulus implement feature/T2 against charts/feature.md
 ```
 
-Non-Windows shells run the bash mirror instead (same S1+S2, plus S3 Devin surface):
+Non-Windows shells run the bash mirror instead (same S1+S2, plus S3 Devin surface and S4 global sync):
 `bash scripts/install-devin.bash` (needs Go, node, GNU timeout + grep; Devin CLI checked, not installed — see S3 remedy).
 
 ### CLI-only: `devin mcp add` (never needed on Desktop)
@@ -91,7 +95,7 @@ The `.devin/mcp_config.json` in this repo already points at
 
 `regulus mcp` has no permission layer: OpenCode `permission` blocks do not
 apply over MCP. Treat every MCP client as untrusted input — Devin project
-permissions (`allow: ["Exec(regulus *)"]`, `ask: ["Write(**/.env*)"]`) are
+permissions (`allow: ["Exec(regulus)"]`, `ask: ["Write(**/.env*)"]`) are
 the enforcement point, not the server. Provenance fields (`memory_save
 --path/--receipt`) are metadata only: the server never reads or writes
 those paths, stores repo-relative values only, and refuses absolute paths

@@ -119,4 +119,38 @@ else
   echo "mcp: regulus registered"
 fi
 
+# 6. S4: global availability — Regulus selectable in ANY project, not just
+#    this repo. Syncs the committed pack into the user-level Devin config
+#    (one skill + the custom subagent profiles) and registers MCP at user
+#    scope. Repo .devin/ stays the source of truth; global files are copies
+#    refreshed on every install (changed files only, cmp-checked).
+gskills="$HOME/.config/devin/skills"
+gagents="$HOME/.config/devin/agents"
+mkdir -p "${gskills}/regulus" "$gagents"
+sync_file() { # sync_file <src> <dst>: copy only when missing or different
+  if [ ! -f "$2" ] || ! cmp -s "$1" "$2"; then
+    cp "$1" "$2" && echo "sync: $2"
+  else
+    echo "sync: $2 unchanged"
+  fi
+}
+for f in .devin/agents/*.md; do
+  [ -e "$f" ] || continue
+  sync_file "$f" "${gagents}/$(basename "$f")"
+done
+sync_file ".devin/skills/regulus/SKILL.md" "${gskills}/regulus/SKILL.md"
+if grep -q '"regulus"' "$HOME/.config/devin/mcp_config.json" 2>/dev/null; then
+  echo "mcp-user: regulus already registered"
+else
+  devin mcp add -s user regulus -- regulus mcp \
+    || fail "S4 MCP user registration failed: devin mcp add -s user regulus."
+  echo "mcp-user: regulus registered"
+fi
+# Prove it from outside any project: /regulus must resolve to the global copy.
+gshow="$(cd /tmp && devin skills show regulus 2>&1)" \
+  || fail "S4 global check failed: /regulus not visible outside the repo. Raw: ${gshow}"
+echo "$gshow" | grep -q "$HOME/.config/devin/skills/regulus" \
+  || fail "S4 global check failed: /regulus resolves to a project copy, not the global one. Raw: ${gshow}"
+echo "skill-global: /regulus selectable in any project"
+
 echo "done: regulus ${version} on PATH (${destdir}/regulus), contract + MCP initialize verified."
