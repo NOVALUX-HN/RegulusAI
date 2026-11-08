@@ -512,7 +512,7 @@ type runStamp struct {
 }
 
 func Run(ctx context.Context, cfg Config, evidenceDir, task, gitHead string, r CmdRunner) (Result, error) {
-	return run(ctx, cfg, evidenceDir, task, gitHead, r, runStamp{}, "")
+	return run(ctx, cfg, nil, evidenceDir, task, gitHead, r, runStamp{}, "", "")
 }
 
 // SelectGates resolves which gates run: "" and "full" select everything
@@ -629,7 +629,7 @@ func runnerFacts(gctx context.Context, rerr error) verdict.Facts {
 	return verdict.Facts{Executed: false, SpawnError: true}
 }
 
-func run(ctx context.Context, cfg Config, evidenceDir, task, gitHead string, r CmdRunner, stamp runStamp, profile string) (Result, error) {
+func run(ctx context.Context, cfg Config, cfgBytes []byte, evidenceDir, task, gitHead string, r CmdRunner, stamp runStamp, profile, root string) (Result, error) {
 	setup, err := selectOrdered(cfg, profile)
 	if err != nil {
 		return Result{}, err
@@ -663,9 +663,26 @@ func run(ctx context.Context, cfg Config, evidenceDir, task, gitHead string, r C
 		timeout := effectiveTimeout(g.TimeoutSec, max)
 		refused, refuseNote, classification := refusePolicy(g, cfg)
 
+		// Coverage cache (T5): an unchanged config+HEAD reuses the
+		// existing coverprofile instead of recomputing it. The
+		// synthetic outcome still writes an honest PASS receipt.
+		if !refused {
+			if cached, ok := coverageHit(root, cfgBytes, gitHead, g); ok {
+				metricValue, metricThreshold, metricOp, _, metricNote, facts := evalMetric(g, cached.stdout, cached.code, cached.rerr, refused, cached.facts)
+				stop, err := adjudicateAndWrite(g, &res, evidenceDir, task, gitHead, stamp, timeout, classification, cached, metricValue, metricThreshold, metricOp, condNote, metricNote, facts)
+				if err != nil {
+					return res, err
+				}
+				if stop {
+					return res, nil
+				}
+				continue
+			}
+		}
+
 		ex := execGate(ctx, g, r, timeout, dockerImage, execEnvUnset, refused, refuseNote)
 
-		metricValue, metricThreshold, metricOp, _, metricNote, facts := evalMetric(g, ex.stdout, ex.code, ex.rerr, refused, ex.facts)
+		metricValue, metricThreshold, metricOp, metricFailed, metricNote, facts := evalMetric(g, ex.stdout, ex.code, ex.rerr, refused, ex.facts)
 
 		stop, err := adjudicateAndWrite(g, &res, evidenceDir, task, gitHead, stamp, timeout, classification, ex, metricValue, metricThreshold, metricOp, condNote, metricNote, facts)
 		if err != nil {
@@ -673,6 +690,13 @@ func run(ctx context.Context, cfg Config, evidenceDir, task, gitHead string, r C
 		}
 		if stop {
 			return res, nil
+		}
+		// The gate genuinely recomputed coverage and passed: pin the
+		// config+HEAD key so the next identical run reuses the file.
+		if !refused && ex.rerr == nil && ex.code == 0 && !metricFailed {
+			if cover, ok := coverageProfilePath(g.Command); ok {
+				WriteCoverageCache(root, cfgBytes, gitHead, cover)
+			}
 		}
 	}
 	res.Status = string(verdict.StatusPass)

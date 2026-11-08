@@ -29,7 +29,7 @@ func RunTask(ctx context.Context, cfg Config, cfgBytes []byte, root, task, versi
 		return Result{}, "", err
 	}
 	evidenceDir := filepath.Join(absRoot, ".regulus", "evidence", receipts.Slug(task))
-	res, err := executeTaskRun(ctx, cfg, absRoot, task, runID, profile, r, evidenceDir)
+	res, err := executeTaskRun(ctx, cfg, cfgBytes, absRoot, task, runID, profile, r, evidenceDir)
 	if err != nil {
 		return Result{}, "", err
 	}
