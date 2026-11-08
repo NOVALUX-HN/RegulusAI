@@ -272,7 +272,17 @@ func (c CLI) memoryPruneCmd(args []string) int {
 // silent (stdout stays machine-stable), ErrNoLog (empty log, nothing
 // to index) is silent, and any other failure warns on stderr without
 // failing the mutation that already succeeded.
+//
+// T4 (S2-S3) deferred bursts: REGULUS_DEFER_REINDEX=1 skips the
+// synchronous rebuild. The log append already stales the index (sha
+// mismatch), so the next `memory search` honestly degrades to lexical
+// with the stale-index warning; the caller reindexes once with an
+// explicit `memory reindex` (or the next non-deferred write). Unset
+// (default) keeps the synchronous rebuild — backwards compatible.
 func (c CLI) refreshIndexBestEffort(op string) {
+	if os.Getenv("REGULUS_DEFER_REINDEX") == "1" {
+		return
+	}
 	if _, _, err := almanac.Reindex(c.dir()); err != nil {
 		if errors.Is(err, almanac.ErrNoLog) {
 			return

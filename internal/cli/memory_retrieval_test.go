@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -187,5 +188,66 @@ func TestMemorySearchStalenessProbesCached(t *testing.T) {
 	}
 	if got := countRevList(r3); got != 0 {
 		t.Fatalf("context --no-staleness = %d rev-list probes, want 0", got)
+	}
+}
+
+// TestMemoryDeferReindexBurstStaysStale (T4 S2-S3): a burst of N writes
+// under REGULUS_DEFER_REINDEX=1 must perform zero synchronous reindexes
+// (retrieval.bin bytes untouched, IndexState stale) while search still
+// answers lexically with the stale-index warning. An explicit reindex
+// then restores fresh in one shot.
+func TestMemoryDeferReindexBurstStaysStale(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c0, _, _ := newCLI(nil)
+	if code := c0.Run([]string{"memory", "save", "--type", "decision", "--title", "base choice", "pooling baseline"}); code != 0 {
+		t.Fatalf("seed save: exit = %d", code)
+	}
+	if state, err := almanac.IndexState("."); err != nil || state != "fresh" {
+		t.Fatalf("seed must leave fresh index, state = %q, err = %v", state, err)
+	}
+	before, err := os.ReadFile(almanac.IndexPath("."))
+	if err != nil {
+		t.Fatalf("read index before burst: %v", err)
+	}
+	t.Setenv("REGULUS_DEFER_REINDEX", "1")
+	burst := []string{"burst alpha", "burst beta", "burst gamma", "burst delta", "burst epsilon"}
+	for i, title := range burst {
+		c, _, _ := newCLI(nil)
+		var code int
+		if i%2 == 0 {
+			code = c.Run([]string{"memory", "save", "--type", "discovery", "--title", title, "pooling " + title})
+		} else {
+			code = c.Run([]string{"memory", "note", "pooling " + title})
+		}
+		if code != 0 {
+			t.Fatalf("burst write %q: exit = %d", title, code)
+		}
+	}
+	after, err := os.ReadFile(almanac.IndexPath("."))
+	if err != nil {
+		t.Fatalf("read index after burst: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("deferred burst must perform zero synchronous reindexes (retrieval.bin untouched)")
+	}
+	if state, err := almanac.IndexState("."); err != nil || state != "stale" {
+		t.Fatalf("deferred burst must leave index stale, state = %q, err = %v", state, err)
+	}
+	cS, outS, errS := newCLI(nil)
+	if code := cS.Run([]string{"memory", "search", "burst"}); code != 0 {
+		t.Fatalf("deferred search: exit = %d (%s)", code, errS.String())
+	}
+	if !strings.Contains(outS.String(), "burst") {
+		t.Fatalf("deferred search must still answer lexically, got:\n%s", outS.String())
+	}
+	if !strings.Contains(errS.String(), "warning: semantic index stale or missing") {
+		t.Fatalf("deferred search must warn stale (honest lexical), stderr = %q", errS.String())
+	}
+	cR, _, _ := newCLI(nil)
+	if code := cR.Run([]string{"memory", "reindex"}); code != 0 {
+		t.Fatalf("explicit reindex: exit = %d", code)
+	}
+	if state, err := almanac.IndexState("."); err != nil || state != "fresh" {
+		t.Fatalf("explicit reindex must restore fresh, state = %q, err = %v", state, err)
 	}
 }
