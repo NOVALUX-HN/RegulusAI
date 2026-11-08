@@ -531,16 +531,84 @@ async function getDomains(dir: string, runBin: RunBin): Promise<string[] | null>
   return domains
 }
 
-// TraceBatcher (harness-total/V1): the trace-hook queue. The hook no
-// longer pays one awaited `trace record` spawn per tool call on its
-// critical path: records enqueue and drain in a single-flight background
-// flush (cola+flush). flush() drains until empty — every queued record is
-// attempted exactly once, in FIFO order — so items enqueued mid-flush
-// (concurrent hooks) ride the same drain instead of starting a second
-// spawn train. A failed record is reported in its result but never skips
-// the rest; the queue is empty afterwards even when every spawn fails.
-// Durability matches the old hook (best-effort, failures logged by the
-// caller, never thrown); behavior pinned by lib/v1-batch.test.ts.
+// TRACE_RECORD_STR/NUM_FLAGS map `trace record` flags to record-batch
+// NDJSON keys (trace.Entry field names). `--files` is the only
+// non-scalar: comma-joined on argv, an array in NDJSON (mirroring Go
+// splitList). T7 speed-tokens: flush converts queued record argv into
+// these objects so one flush costs one `trace record-batch` spawn.
+const TRACE_RECORD_STR_FLAGS: ReadonlyMap<string, string> = new Map([
+  ["--session", "session"],
+  ["--message", "message"],
+  ["--call", "call"],
+  ["--tool", "tool"],
+  ["--status", "status"],
+  ["--task", "task"],
+]);
+
+const TRACE_RECORD_NUM_FLAGS: ReadonlyMap<string, string> = new Map([
+  ["--duration-ms", "duration_ms"],
+  ["--output-bytes", "output_bytes"],
+  ["--input-tokens", "input_tokens"],
+  ["--output-tokens", "output_tokens"],
+]);
+
+// traceRecordArgvToEntry converts one `trace record` argv into its
+// record-batch NDJSON object. Returns null when the argv is not a
+// well-formed record (wrong shape, unknown flag, missing required
+// value, non-numeric/negative cost) — flush then records that entry
+// with its own spawn, preserving the old error surface exactly instead
+// of failing the whole batch on one odd entry. Pure so bun tests pin
+// the field mapping without spawning.
+export function traceRecordArgvToEntry(argv: string[]): Record<string, unknown> | null {
+  if (argv.length < 2 || argv[0] !== "trace" || argv[1] !== "record") return null;
+  const tail = argv.slice(2);
+  if (tail.length === 0 || tail.length % 2 !== 0) return null;
+  const out: Record<string, unknown> = {};
+  let files: string[] | undefined;
+  for (let i = 0; i < tail.length; i += 2) {
+    const flag = tail[i];
+    const value = tail[i + 1];
+    if (value === undefined) return null;
+    const sKey = TRACE_RECORD_STR_FLAGS.get(flag);
+    if (sKey !== undefined) {
+      if (value.trim() === "") return null;
+      out[sKey] = value;
+      continue;
+    }
+    if (flag === "--files") {
+      files = value.split(",").map((p) => p.trim()).filter((p) => p !== "");
+      continue;
+    }
+    const nKey = TRACE_RECORD_NUM_FLAGS.get(flag);
+    if (nKey !== undefined) {
+      if (!/^\d+$/.test(value.trim())) return null;
+      out[nKey] = Number(value);
+      continue;
+    }
+    return null; // unknown flag — never guess, fall back to a single spawn
+  }
+  for (const k of ["session", "message", "call", "tool", "status"]) {
+    if (typeof out[k] !== "string" || (out[k] as string).trim() === "") return null;
+  }
+  if (out["status"] !== "completed" && out["status"] !== "error") return null;
+  if (files !== undefined && files.length > 0) out["files"] = files;
+  return out;
+}
+
+// TraceBatcher (harness-total/V1, T7 speed-tokens): the trace-hook
+// queue. The hook no longer pays one awaited `trace record` spawn per
+// tool call on its critical path: records enqueue and drain in a
+// single-flight background flush (cola+flush). flush() drains until
+// empty — every queued record is attempted exactly once, in FIFO order
+// — so items enqueued mid-flush (concurrent hooks) ride the next batch
+// of the same drain instead of starting a second spawn train.
+// T7 batches each drain round into a single `trace record-batch
+// --ndjson` spawn (entries serialized as NDJSON argv lines): a 10-tool
+// burst costs 1 spawn, not 10 sequential ones. A failed batch is
+// reported on every entry of the round but never skips the rest; the
+// queue is empty afterwards even when every spawn fails. Durability
+// matches the old hook (best-effort, failures logged by the caller,
+// never thrown); behavior pinned by lib/v1-batch.test.ts.
 export interface TraceEntry {
   argv: string[];
   label: string;
@@ -567,17 +635,48 @@ export class TraceBatcher {
   async flush(runBin: RunBin): Promise<TraceFlushResult[]> {
     const results: TraceFlushResult[] = [];
     while (this.queue.length > 0) {
-      const entry = this.queue.shift()!;
-      try {
-        const res = await runBin(entry.argv);
-        if (res.exitCode !== 0) {
-          results.push({ argv: entry.argv, label: entry.label, ok: false, error: res.output });
-        } else {
-          results.push({ argv: entry.argv, label: entry.label, ok: true, error: "" });
+      const batch = this.queue.splice(0, this.queue.length);
+      const slots: TraceFlushResult[] = new Array(batch.length);
+      const batched: number[] = [];
+      const lines: string[] = [];
+      const singles: number[] = [];
+      batch.forEach((entry, i) => {
+        const obj = traceRecordArgvToEntry(entry.argv);
+        if (obj === null) singles.push(i);
+        else {
+          batched.push(i);
+          lines.push(JSON.stringify(obj));
         }
-      } catch (err) {
-        results.push({ argv: entry.argv, label: entry.label, ok: false, error: (err as Error)?.message ?? String(err) });
+      });
+      if (lines.length > 0) {
+        try {
+          const res = await runBin(["trace", "record-batch", "--ndjson", ...lines]);
+          for (const i of batched) {
+            slots[i] =
+              res.exitCode === 0
+                ? { argv: batch[i].argv, label: batch[i].label, ok: true, error: "" }
+                : { argv: batch[i].argv, label: batch[i].label, ok: false, error: res.output };
+          }
+        } catch (err) {
+          const msg = (err as Error)?.message ?? String(err);
+          for (const i of batched) {
+            slots[i] = { argv: batch[i].argv, label: batch[i].label, ok: false, error: msg };
+          }
+        }
       }
+      for (const i of singles) {
+        const entry = batch[i];
+        try {
+          const res = await runBin(entry.argv);
+          slots[i] =
+            res.exitCode !== 0
+              ? { argv: entry.argv, label: entry.label, ok: false, error: res.output }
+              : { argv: entry.argv, label: entry.label, ok: true, error: "" };
+        } catch (err) {
+          slots[i] = { argv: entry.argv, label: entry.label, ok: false, error: (err as Error)?.message ?? String(err) };
+        }
+      }
+      results.push(...slots);
     }
     return results;
   }

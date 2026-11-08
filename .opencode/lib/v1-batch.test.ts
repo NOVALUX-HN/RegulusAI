@@ -32,26 +32,30 @@ describe("TraceBatcher (harness-total/V1, falla-antes)", () => {
     q.enqueue({ argv: recordArgv("c3"), label: "session s1" });
     expect(q.pending()).toBe(3);
     const results = await q.flush(runBin);
-    expect(seen).toEqual([recordArgv("c1"), recordArgv("c2"), recordArgv("c3")]);
+    // T7 speed-tokens: one flush batches into a single record-batch
+    // spawn; FIFO order survives inside the NDJSON lines and results.
+    expect(seen).toHaveLength(1);
+    expect(seen[0].slice(0, 3)).toEqual(["trace", "record-batch", "--ndjson"]);
+    expect(seen[0].slice(3).map((l) => (JSON.parse(l) as { call: string }).call)).toEqual(["c1", "c2", "c3"]);
     expect(results.map((r) => r.ok)).toEqual([true, true, true]);
     expect(q.pending()).toBe(0);
   });
 
-  test("a failed record is reported but never skips the rest (no loss)", async () => {
+  test("a failed batch is reported on every entry, none lost (no loss)", async () => {
     const seen: string[][] = [];
     const runBin: RunBin = async (a) => {
       seen.push(a);
-      if (a.includes("c2")) return { exitCode: 1, output: "boom" };
-      return ok;
+      return { exitCode: 1, output: "boom" };
     };
     const q = new TraceBatcher();
     q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
     q.enqueue({ argv: recordArgv("c2"), label: "session s1" });
     q.enqueue({ argv: recordArgv("c3"), label: "session s1" });
     const results = await q.flush(runBin);
-    // All three attempted despite the middle failure.
-    expect(seen).toEqual([recordArgv("c1"), recordArgv("c2"), recordArgv("c3")]);
-    expect(results.map((r) => r.ok)).toEqual([true, false, true]);
+    // One batch spawn carried all three; its failure lands on every
+    // entry result (best-effort, never thrown) and drains the queue.
+    expect(seen).toHaveLength(1);
+    expect(results.map((r) => r.ok)).toEqual([false, false, false]);
     expect(results[1].error).toContain("boom");
     expect(q.pending()).toBe(0);
   });
@@ -61,7 +65,8 @@ describe("TraceBatcher (harness-total/V1, falla-antes)", () => {
     let q: TraceBatcher | null = null;
     const runBin: RunBin = async (a) => {
       seen.push(a);
-      if (a.includes("c1") && q !== null && q.pending() === 0) {
+      const body = a.slice(3).join("\n");
+      if (body.includes('"c1"') && q !== null && q.pending() === 0) {
         q.enqueue({ argv: recordArgv("c-late"), label: "session s1" });
       }
       return ok;
@@ -69,24 +74,29 @@ describe("TraceBatcher (harness-total/V1, falla-antes)", () => {
     q = new TraceBatcher();
     q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
     const results = await q.flush(runBin);
-    expect(seen).toEqual([recordArgv("c1"), recordArgv("c-late")]);
+    // The in-flight batch already left, so the late entry rides the
+    // next batch of the same drain: same flush() call, two spawns,
+    // nothing lost, queue empty.
+    expect(seen).toHaveLength(2);
+    expect(seen[0].slice(0, 3)).toEqual(["trace", "record-batch", "--ndjson"]);
+    expect(seen[1].slice(0, 3)).toEqual(["trace", "record-batch", "--ndjson"]);
+    expect(seen[1].slice(3).map((l) => (JSON.parse(l) as { call: string }).call)).toEqual(["c-late"]);
     expect(results).toHaveLength(2);
     expect(q.pending()).toBe(0);
   });
 
-  test("spawn throw (abort/ENOENT) is reported per item, rest still recorded", async () => {
+  test("spawn throw (abort/ENOENT) is reported on the batch, never thrown", async () => {
     const seen: string[][] = [];
     const runBin: RunBin = async (a) => {
       seen.push(a);
-      if (a.includes("c1")) throw new Error("spawn ENOENT");
-      return ok;
+      throw new Error("spawn ENOENT");
     };
     const q = new TraceBatcher();
     q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
     q.enqueue({ argv: recordArgv("c2"), label: "session s1" });
     const results = await q.flush(runBin);
-    expect(seen).toEqual([recordArgv("c1"), recordArgv("c2")]);
-    expect(results.map((r) => r.ok)).toEqual([false, true]);
+    expect(seen).toHaveLength(1);
+    expect(results.map((r) => r.ok)).toEqual([false, false]);
     expect(results[0].error).toContain("ENOENT");
     expect(q.pending()).toBe(0);
   });
@@ -196,5 +206,102 @@ describe("domainFromFiles parallel+cache (harness-total/V1, falla-antes)", () =>
       clearDomainsCache();
       clearDomainHitCache();
     }
+  });
+});
+
+describe("TraceBatcher record-batch (speed-tokens/T7, falla-antes)", () => {
+  function recordArgvFull(call: string): string[] {
+    return [
+      "trace", "record", "--session", "s1", "--message", "m", "--call", call,
+      "--tool", "read", "--status", "completed",
+      "--files", "a.go, b.go", "--task", "t7",
+      "--duration-ms", "120", "--output-bytes", "2048",
+      "--input-tokens", "10", "--output-tokens", "5",
+    ];
+  }
+
+  test("one flush of N entries costs exactly 1 spawn, all reported ok", async () => {
+    const seen: string[][] = [];
+    const runBin: RunBin = async (a) => {
+      seen.push(a);
+      return ok;
+    };
+    const q = new TraceBatcher();
+    q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
+    q.enqueue({ argv: recordArgv("c2"), label: "session s1" });
+    q.enqueue({ argv: recordArgv("c3"), label: "session s1" });
+    const results = await q.flush(runBin);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].slice(0, 3)).toEqual(["trace", "record-batch", "--ndjson"]);
+    expect(seen[0].length).toBe(3 + 3);
+    expect(results.map((r) => r.ok)).toEqual([true, true, true]);
+    expect(results.map((r) => r.label)).toEqual(["session s1", "session s1", "session s1"]);
+    expect(q.pending()).toBe(0);
+  });
+
+  test("NDJSON lines carry every record field incl. duration/output-bytes", async () => {
+    const seen: string[][] = [];
+    const runBin: RunBin = async (a) => {
+      seen.push(a);
+      return ok;
+    };
+    const q = new TraceBatcher();
+    q.enqueue({ argv: recordArgvFull("c9"), label: "session s1" });
+    await q.flush(runBin);
+    expect(seen).toHaveLength(1);
+    const lines = seen[0].slice(3);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toEqual({
+      session: "s1", message: "m", call: "c9", tool: "read", status: "completed",
+      files: ["a.go", "b.go"], task: "t7",
+      duration_ms: 120, output_bytes: 2048, input_tokens: 10, output_tokens: 5,
+    });
+  });
+
+  test("batch failure marks every entry failed, never throws, queue drained", async () => {
+    const seen: string[][] = [];
+    const runBin: RunBin = async (a) => {
+      seen.push(a);
+      return { exitCode: 1, output: "line 2: boom" };
+    };
+    const q = new TraceBatcher();
+    q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
+    q.enqueue({ argv: recordArgv("c2"), label: "session s1" });
+    const results = await q.flush(runBin);
+    expect(seen).toHaveLength(1);
+    expect(results.map((r) => r.ok)).toEqual([false, false]);
+    expect(results[0].error).toContain("boom");
+    expect(results[1].error).toContain("boom");
+    expect(q.pending()).toBe(0);
+  });
+
+  test("batch spawn throw marks every entry failed, never throws", async () => {
+    const runBin: RunBin = async () => {
+      throw new Error("spawn ENOENT");
+    };
+    const q = new TraceBatcher();
+    q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
+    q.enqueue({ argv: recordArgv("c2"), label: "session s1" });
+    const results = await q.flush(runBin);
+    expect(results.map((r) => r.ok)).toEqual([false, false]);
+    expect(results[0].error).toContain("ENOENT");
+    expect(q.pending()).toBe(0);
+  });
+
+  test("non-record argv falls back to its own spawn (batch + single)", async () => {
+    const seen: string[][] = [];
+    const runBin: RunBin = async (a) => {
+      seen.push(a);
+      return ok;
+    };
+    const q = new TraceBatcher();
+    q.enqueue({ argv: recordArgv("c1"), label: "session s1" });
+    q.enqueue({ argv: ["trace", "show", "--session", "s1"], label: "session s1" });
+    const results = await q.flush(runBin);
+    expect(seen).toHaveLength(2);
+    expect(seen[0].slice(0, 3)).toEqual(["trace", "record-batch", "--ndjson"]);
+    expect(seen[1]).toEqual(["trace", "show", "--session", "s1"]);
+    expect(results.map((r) => r.ok)).toEqual([true, true]);
+    expect(q.pending()).toBe(0);
   });
 });

@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"regulus-ai/internal/trace"
@@ -22,16 +25,18 @@ import (
 // folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 	switch args[0] {
 	case "record":
 		return c.traceRecordCmd(args[1:])
+	case "record-batch":
+		return c.traceRecordBatchCmd(args[1:])
 	case "show":
 		return c.traceShowCmd(args[1:])
 	case "files":
@@ -46,7 +51,7 @@ func (c CLI) traceCmd(args []string) int {
 		return c.traceUsageCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 }
@@ -89,6 +94,75 @@ func (c CLI) traceRecordCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintln(c.Stdout, "trace recorded")
+	return 0
+}
+
+// traceStdin is the NDJSON source for `trace record-batch --ndjson`
+// (os.Stdin in production; tests substitute a strings.Reader so the
+// in-process CLI stays hermetic without touching cli.go surfaces).
+var traceStdin io.Reader = os.Stdin
+
+// traceRecordBatchCmd implements `regulus trace record-batch --ndjson`:
+// appends many tool executions to the session traces in one spawn (T7
+// speed-tokens: one hook flush = one spawn, same fields as `trace
+// record` including duration/output-bytes). Each entry is one NDJSON
+// object per line with the trace.Entry field names (session, message,
+// call, tool, status, files[], task, duration_ms, output_bytes,
+// input_tokens, output_tokens); blank lines are skipped.
+//
+// Entries arrive on stdin; when stdin carries no lines and positional
+// args are present, each arg is one NDJSON line instead — the OpenCode
+// plugin spawn helper cannot inject stdin, so the hook batches through
+// argv while shells pipe stdin. Positional args win without touching
+// stdin, so a spawn with inherited stdin never blocks. Recording stops
+// at the first bad line (exit 1 naming it); earlier lines stay
+// recorded, exactly as sequential `trace record` calls would leave
+// them. Success prints one summary line.
+func (c CLI) traceRecordBatchCmd(args []string) int {
+	fs := flag.NewFlagSet("trace record-batch", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	ndjson := fs.Bool("ndjson", false, "read entries as NDJSON (one object per line)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if !*ndjson {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record-batch --ndjson")
+		return 2
+	}
+	var lines []string
+	if rest := fs.Args(); len(rest) > 0 {
+		for _, ln := range rest {
+			if strings.TrimSpace(ln) == "" {
+				continue
+			}
+			lines = append(lines, ln)
+		}
+	} else {
+		sc := bufio.NewScanner(traceStdin)
+		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for sc.Scan() {
+			if ln := strings.TrimSpace(sc.Text()); ln != "" {
+				lines = append(lines, ln)
+			}
+		}
+		if err := sc.Err(); err != nil {
+			fmt.Fprintf(c.Stderr, "trace record-batch: %v\n", err)
+			return 1
+		}
+	}
+	now := time.Now().UTC()
+	for i, ln := range lines {
+		var e trace.Entry
+		if err := json.Unmarshal([]byte(ln), &e); err != nil {
+			fmt.Fprintf(c.Stderr, "trace record-batch: line %d: malformed entry: %v\n", i+1, err)
+			return 1
+		}
+		if _, err := trace.Record(c.dir(), e, now); err != nil {
+			fmt.Fprintf(c.Stderr, "trace record-batch: line %d: %v\n", i+1, err)
+			return 1
+		}
+	}
+	fmt.Fprintf(c.Stdout, "trace recorded %d entr(y/ies)\n", len(lines))
 	return 0
 }
 
