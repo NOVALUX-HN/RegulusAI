@@ -32,6 +32,10 @@ const mcpProtocolVersion = "2024-11-05"
 // mcpCmd implements `regulus mcp`: serve one JSON-RPC object per stdin
 // line until EOF.
 func (c CLI) mcpCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus mcp")
+		return 0
+	}
 	if len(args) != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus mcp")
 		return 2

@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"io"
 	"time"
 
 	"regulus-ai/internal/probe"
@@ -16,8 +17,12 @@ import (
 // all runs executed (a non-empty diff, or conflicts, are evidence, not
 // failure), 1 on run or refusal errors, 2 on usage errors.
 func (c CLI) probeCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		c.probeUsage(c.Stdout)
+		return 0
+	}
 	if len(args) == 0 {
-		c.probeUsage()
+		c.probeUsage(c.Stderr)
 		return 2
 	}
 	switch args[0] {
@@ -27,15 +32,15 @@ func (c CLI) probeCmd(args []string) int {
 		return c.probeComposeCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "probe: unknown subcommand %q\n", args[0])
-		c.probeUsage()
+		c.probeUsage(c.Stderr)
 		return 2
 	}
 }
 
 // probeUsage prints the probe subcommand usages to stderr.
-func (c CLI) probeUsage() {
-	fmt.Fprintln(c.Stderr, "usage: regulus probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>")
-	fmt.Fprintln(c.Stderr, "usage: regulus probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>")
+func (c CLI) probeUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: regulus probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>")
+	fmt.Fprintln(w, "usage: regulus probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>")
 }
 
 // probeContrastCmd implements `regulus probe contrast`.

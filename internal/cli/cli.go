@@ -47,7 +47,13 @@ func (c CLI) dir() string {
 // table: adding a command means adding one line here, Run stays short.
 // doctor takes no arguments; its entry ignores the tail.
 var cliDispatch = map[string]func(c CLI, args []string) int{
-	"doctor":   func(c CLI, _ []string) int { return c.doctor() },
+	"doctor": func(c CLI, args []string) int {
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			fmt.Fprintln(c.Stdout, "usage: regulus doctor")
+			return 0
+		}
+		return c.doctor()
+	},
 	"spec":     func(c CLI, args []string) int { return c.specCmd(args) },
 	"status":   func(c CLI, args []string) int { return c.statusCmd(args) },
 	"chart":    func(c CLI, args []string) int { return c.chartCmd(args) },
@@ -200,12 +206,12 @@ Commands:
   budget show|record   the evolution ledger (show; record a probe run)
   bench list|run|baseline|compare   the self-benchmark: offline suite, baseline, contrast (regulus bench --help)
   chart init <name> | list             scaffold a Chart, list every Chart
-  init [--stack go|node|smoke] [--harness-from <repo>]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
+  init [--stack go|node|smoke] [--harness-from <repo>] [--devin]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
-  evidence list [--task <t>] | show <file> | verify [--task <t>]   audit gauntlet receipts
-  evolve propose --task <t> --domain <d> | evolve tick [--every N] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics + snapshots; deterministic verdicts
+  evidence list [--task <t>] | show <file> | verify [--task <t>] | prune --task <t> [--keep N] [--yes] [--force]   audit gauntlet receipts
+  evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics + snapshots; deterministic verdicts
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
@@ -214,17 +220,18 @@ Commands:
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
   mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
   serve [--port N] [--bind ADDR]   serve the read-only dashboard (default 127.0.0.1:17817)
-  memory note|show|save|search|history|context|prune|doctor|import|pin|unpin|relate|export|library   the Almanac — persistent memory
+  memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   skills list        trigger registry: skills with their one-line triggers
-  trace record|show|files|sessions|prune|cost   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
+  trace record|show|files|sessions|prune|cost|usage   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
   task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
   decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
   review [--task <t>] [--lens NAME] | review start|approve|refute ...   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks); lineage transactions bind approval to frozen bytes
   spec check <file|dir>  validate the acceptance contract of feature documents
   status             one look at the project: runtime, gauntlet, evolution, receipts
+  surface propose|list|apply   harness-surface edits under guardian control (regulus surface --help)
   yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)
   --version          print the regulus version
 

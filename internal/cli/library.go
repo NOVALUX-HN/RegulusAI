@@ -19,6 +19,10 @@ import (
 // [--dimension] [--confidence] <feature-doc>`: admit an evidence-gated lesson (PRD
 // R-E1/R-E2).
 func (c CLI) reflectCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv|dom] [--confidence low|medium|high] <feature-doc>")
+		return 0
+	}
 	fs := flag.NewFlagSet("reflect", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	domain := fs.String("domain", "", "lesson domain (required)")
@@ -58,6 +62,10 @@ func (c CLI) reflectCmd(args []string) int {
 // forget|retain --domain --task` — dispatched to
 // one handler per subcommand.
 func (c CLI) libraryCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name> | regulus library forget|retain --domain <d> --task <t>")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name> | regulus library forget|retain --domain <d> --task <t>")
 		return 2
@@ -316,6 +324,10 @@ func (c CLI) printLessons(domain string, lessons []library.Lesson) {
 
 // budgetCmd implements `regulus budget show | record --kind probe`.
 func (c CLI) budgetCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus budget show | regulus budget record --kind probe --detail <text>")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus budget show | regulus budget record --kind probe --detail <text>")
 		return 2
@@ -390,8 +402,12 @@ func (c CLI) budgetCmd(args []string) int {
 // `propose` assembles the evidence pack; authoring stays with the
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		return 0
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
 		return 2
 	}
 	switch args[0] {
@@ -405,7 +421,7 @@ func (c CLI) evolveCmd(args []string) int {
 		return c.evolveValidateCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
 		return 2
 	}
 }
@@ -494,6 +510,12 @@ func (c CLI) evolveReportCmd(args []string) int {
 	if fs.NArg() != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>]")
 		return 2
+	}
+	for _, f := range []string{*save, *compare} {
+		if strings.HasPrefix(f, "-") {
+			fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>]")
+			return 2
+		}
 	}
 	rep, err := evolve.BuildReport(c.dir(), *domain)
 	if err != nil {

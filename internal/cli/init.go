@@ -17,6 +17,10 @@ import (
 // regulus.json already exists — init never overwrites a configured
 // project.
 func (c CLI) initCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus init [--stack go|node|smoke] [--harness-from <repo>] [--devin]")
+		return 0
+	}
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	stack := fs.String("stack", "smoke", "go | node | smoke")
@@ -32,6 +36,12 @@ func (c CLI) initCmd(args []string) int {
 	if _, err := os.Stat("regulus.json"); err == nil {
 		fmt.Fprintln(c.Stderr, "init: regulus.json already exists — refusing to overwrite")
 		return 1
+	}
+	if *harnessFrom != "" {
+		if st, err := os.Stat(filepath.Join(*harnessFrom, ".opencode")); err != nil || !st.IsDir() {
+			fmt.Fprintf(c.Stderr, "init: no .opencode directory at %s\n", filepath.Join(*harnessFrom, ".opencode"))
+			return 2
+		}
 	}
 	gates, ok := initPresets[*stack]
 	if !ok {

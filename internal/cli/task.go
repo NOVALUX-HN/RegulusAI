@@ -15,7 +15,15 @@ import (
 // discipline (Phase 2) — contracts, delegation, progress and core-verified
 // completion, all read from the chart.
 func (c CLI) taskCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
+		return 0
+	}
 	if len(args) == 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
+		return 2
+	}
+	if len(args) > 1 && (args[0] == "check" || args[0] == "status" || args[0] == "close") && strings.HasPrefix(args[1], "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
 		return 2
 	}

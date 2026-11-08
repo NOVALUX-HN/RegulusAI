@@ -16,9 +16,19 @@ import (
 // portable: no shell glob or loop is needed and every failure names the
 // broken file.
 func (c CLI) specCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus spec check <file|dir> [more...]")
+		return 0
+	}
 	if len(args) < 2 || args[0] != "check" {
 		fmt.Fprintln(c.Stderr, "usage: regulus spec check <file|dir> [more...]")
 		return 2
+	}
+	for _, f := range args[1:] {
+		if strings.HasPrefix(f, "-") {
+			fmt.Fprintln(c.Stderr, "usage: regulus spec check <file|dir> [more...]")
+			return 2
+		}
 	}
 	files, err := collectSpecFiles(args[1:])
 	if err != nil {

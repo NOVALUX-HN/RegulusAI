@@ -134,10 +134,12 @@ set `command` to the absolute path of `bin/regulus.exe` on your machine.
 | `regulus doctor` V2 gate | `regulus contract` version pin (`regulus.contract/v1`) |
 | Almanac on disk (`.regulus/`) | Same files, same CLI — plus the Cloud persistence caveat above |
 
-Deliberately NOT ported: `probe_contrast/compose` (2–3x gate cost per
-call), `evolve_propose` (harness self-modification doesn't transfer),
-`evolve_tick` (writes pending candidates, same reason), `skills_list`
-(opencode registry; Devin has its own skills), `memory
-prune/import/export` (destructive or management ops — run them in a
-local shell, not through the agent). Ported as read-only: `audit` and
-`evolve_report` (same policy as `trace_show`).
+Deliberately NOT ported (plugin 19 vs MCP 14, gap pinned by
+`TestMCPIntentionalGapPinsPluginDelta`): `probe_contrast/compose`
+(2–3x gate cost per call), `evolve_propose` (harness self-modification
+doesn't transfer), `evolve_tick` (writes pending candidates, same
+reason), `skills_list` (opencode registry; Devin has its own skills).
+Ported as read-only: `audit` and `evolve_report` (same policy as
+`trace_show`). Destructive or management ops (`memory prune/import`,
+`surface apply`) stay shell-only by policy — see the MCP trust
+boundary above.

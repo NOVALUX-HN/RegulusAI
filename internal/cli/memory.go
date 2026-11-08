@@ -20,8 +20,12 @@ import (
 // Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor|reindex|verify|reject|check|status|mine")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine")
 		return 2
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(c.Stdout, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine")
+		return 0
 	}
 	switch args[0] {
 	case "note":
@@ -64,7 +68,7 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryMineCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor|reindex|verify|reject|check|status|mine")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine")
 		return 2
 	}
 }
@@ -663,6 +667,10 @@ func (c CLI) memoryExportCmd(args []string) int {
 		return 2
 	}
 	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory export [--domain <d>] [--out <dir>]")
+		return 2
+	}
+	if strings.HasPrefix(*out, "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory export [--domain <d>] [--out <dir>]")
 		return 2
 	}

@@ -37,6 +37,10 @@ const (
 func (c CLI) reviewCmd(args []string) int {
 	// Transactional subcommands (chart pro-harness-rdd) route before
 	// the legacy flag path: start freezes, approve binds, refute sorts.
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus review [--task <t>] [--lens reviewer|crap|mutation|spec|evidence|gate] | review start|approve|refute ...")
+		return 0
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "start":

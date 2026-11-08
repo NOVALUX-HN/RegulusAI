@@ -19,6 +19,10 @@ import (
 //	baseline [--set] [--json]  show (or record) the tracked baseline
 //	compare --base A --candidate B [--json]  contrast table + ADOPT/REJECT
 func (c CLI) benchCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
 		return 2
@@ -106,6 +110,10 @@ func (c CLI) benchRunCmd(args []string) int {
 		return 2
 	}
 	if fs.NArg() != 0 || !benchSurface(*surface) {
+		fmt.Fprintln(c.Stderr, "usage: regulus bench run [--surface <name>] [--save <path>] [--json]")
+		return 2
+	}
+	if strings.HasPrefix(*save, "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus bench run [--surface <name>] [--save <path>] [--json]")
 		return 2
 	}
@@ -215,7 +223,7 @@ func (c CLI) benchCompareCmd(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *base == "" || *cand == "" || fs.NArg() != 0 {
+	if *base == "" || *cand == "" || fs.NArg() != 0 || strings.HasPrefix(*base, "-") || strings.HasPrefix(*cand, "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus bench compare --base <path> --candidate <path> [--json]")
 		return 2
 	}

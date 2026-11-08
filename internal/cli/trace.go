@@ -21,6 +21,10 @@ import (
 // exposes them, plus the always-measured local token proxy chars/4)
 // folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2

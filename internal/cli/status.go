@@ -35,6 +35,10 @@ func (c CLI) doctor() int {
 // runtime gate, the gauntlet configuration, today's evolution against
 // the cap, pending candidates, admitted lessons and receipts on disk.
 func (c CLI) statusCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus status")
+		return 0
+	}
 	if len(args) != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus status")
 		return 2

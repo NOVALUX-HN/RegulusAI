@@ -14,6 +14,10 @@ import (
 // structured technical decisions, assessed (never auto-approved) by the
 // core against evidence, policy, and human approval.
 func (c CLI) decideCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus decide propose --file <json> | regulus decide assess <id> [--json] | regulus decide resolve <id> --accept|--reject|--inconclusive [--supersede <id>] [--approve-by \"nick: reason\"] [--note <text>] | regulus decide show <id> [--json] | regulus decide list [--state S]")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus decide propose --file <json> | regulus decide assess <id> [--json] | regulus decide resolve <id> --accept|--reject|--inconclusive [--supersede <id>] [--approve-by \"nick: reason\"] [--note <text>] | regulus decide show <id> [--json] | regulus decide list [--state S]")
 		return 2
@@ -42,7 +46,7 @@ func (c CLI) decideProposeCmd(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if fs.NArg() != 0 || *file == "" {
+	if fs.NArg() != 0 || *file == "" || strings.HasPrefix(*file, "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus decide propose --file <json>")
 		return 2
 	}

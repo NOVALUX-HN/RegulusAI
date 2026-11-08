@@ -15,9 +15,17 @@ func (c CLI) chartCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus chart init <name> | regulus chart list")
 		return 2
 	}
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(c.Stdout, "usage: regulus chart init <name> | regulus chart list")
+		return 0
+	}
 	switch args[0] {
 	case "init":
 		if len(args) != 2 {
+			fmt.Fprintln(c.Stderr, "usage: regulus chart init <name>")
+			return 2
+		}
+		if strings.HasPrefix(args[1], "-") {
 			fmt.Fprintln(c.Stderr, "usage: regulus chart init <name>")
 			return 2
 		}

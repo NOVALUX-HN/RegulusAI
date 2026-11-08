@@ -18,6 +18,10 @@ import (
 // nothing); execAndReport preflights binaries then runs the gauntlet.
 // Behavior, messages and exit codes are unchanged.
 func (c CLI) gateCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
 		return 2
@@ -46,6 +50,10 @@ func (c CLI) gateCmd(args []string) int {
 // [--top N]`: the layer-7 gauntlet gate (PRD R-G2) — Uncle Bob's CRAP
 // formula over a go cover profile.
 func (c CLI) crapCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus crap --profile <coverprofile> [--max N] [--top N]")
+		return 0
+	}
 	fs := flag.NewFlagSet("crap", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	profile := fs.String("profile", "", "go cover profile path (required)")

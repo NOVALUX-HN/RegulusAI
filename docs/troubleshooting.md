@@ -515,12 +515,13 @@ warning, check that `git archive HEAD` works in your checkout.
   by path cover the workflow, CI builds from source) and
   `README.md:19-23` (quickstart is build-from-repo: `regulus-ai` is
   not published). Revisit only if the project ever goes public.
-- **Plugin-16 vs MCP-12 gap (gap-4) is intentional.** The OpenCode
-  agent surface is 16 tools; MCP deliberately exposes 12. The 4-gap
-  (`evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`)
-  is a Devin-side policy decision, not drift: `internal/cli/mcp_test.go:179-215`
+- **Plugin-19 vs MCP-14 gap (gap-5) is intentional.** The OpenCode
+  agent surface is 19 tools; MCP deliberately exposes 14. The 5-gap
+  (`evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`,
+  `evolve_tick`) is a Devin-side policy decision, not drift:
+  `internal/cli/mcp_test.go:180-205`
   (`TestMCPIntentionalGapPinsPluginDelta`) pins the exact gap, and
-  `docs/devin.md:133-137` lists what is deliberately NOT ported and
+  `docs/devin.md` lists what is deliberately NOT ported and
   why. Evolving the tool list means updating `docs/devin.md` too.
 - **`bash "*"` allow is the yolo design, not a hole.**
   `docs/troubleshooting.md:3-15` (`/regulus-yolo` section): `regulus

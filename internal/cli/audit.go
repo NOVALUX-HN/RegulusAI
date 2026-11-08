@@ -61,6 +61,10 @@ func auditTier(f crap.Scored, max float64) string {
 // Informational by design — exit 0 with a verdict, never a gate: the
 // gauntlet owns failing, the audit owns prioritizing.
 func (c CLI) auditCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus audit --profile <coverprofile> [--max N] [--top N]")
+		return 0
+	}
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	profile := fs.String("profile", "", "go cover profile path (required)")
