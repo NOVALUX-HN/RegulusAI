@@ -983,6 +983,32 @@ export function toolsetTools(mode: ToolsetMode): readonly string[] {
   return mode === "full" ? TOOLSET_FULL : TOOLSET_MINIMAL;
 }
 
+// MINIMAL_CREW_LINE is the 1-line Crew for minimal sessions (T9
+// speed-tokens): simple sessions keep the builder without paying the
+// full scout/worker/verifier/proposer + guardian roster. Guardians
+// stay reachable on demand via `review --lens` (review paths
+// untouched).
+export const MINIMAL_CREW_LINE =
+  "- The Crew: @regulus-worker builds one unit; guardians on demand via `review --lens`.";
+
+// formatDisciplineForToolset renders the discipline text per toolset
+// mode: full returns the text byte-identical (roster intact),
+// minimal swaps the "- The Crew:" roster line for MINIMAL_CREW_LINE.
+// The .md source keeps the full roster (single source); the trim
+// happens at render, so trimming only shrinks the injected prompt
+// and the discipline token-budget cap stays green. Pure so bun tests
+// pin both modes without a host. A missing Crew line passes through
+// unchanged (never break context assembly on wording drift).
+export function formatDisciplineForToolset(discipline: string, mode: ToolsetMode): string {
+  if (mode === "full") return discipline;
+  const lines = discipline.split("\n");
+  const idx = lines.findIndex((l) => l.trimStart().startsWith("- The Crew:"));
+  if (idx < 0) return discipline;
+  const next = [...lines];
+  next[idx] = MINIMAL_CREW_LINE;
+  return next.join("\n");
+}
+
 // TraceToolUsage is one row of `trace usage --json`: a host-side tool
 // name with its measured calls and distinct session count.
 export interface TraceToolUsage {

@@ -11,8 +11,10 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import {
   applyUsagePruning,
   clearUsageCache,
+  formatDisciplineForToolset,
   getCachedUsage,
   isToolEnabled,
+  MINIMAL_CREW_LINE,
   parseToolGuidance,
   parseTraceUsage,
   resolveToolset,
@@ -287,5 +289,66 @@ describe("single table (T6 md is the source)", () => {
     const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
     const block = extractGuidanceBlock(src);
     expect(block).not.toContain("search-default");
+  });
+});
+
+describe("minimal hides proposer/evolve/guardian surface (T9 speed-tokens)", () => {
+  // Minimal sessions (TE_TOOLSET=minimal or auto-resolving minimal)
+  // must not pay the proposer/evolve/guardian definitions: every
+  // evolve_*/probe_*/trace_* tool plus audit stays full-only.
+  // Registration already limits tools (TOOLSET_MINIMAL is 3); this
+  // pins the hiding so a new evolve/probe/trace/audit tool trips
+  // here instead of leaking into simple sessions.
+  const HIDDEN = [
+    "evolve_propose",
+    "evolve_report",
+    "evolve_tick",
+    "probe_contrast",
+    "probe_compose",
+    "trace_show",
+    "trace_sessions",
+    "trace_files",
+    "audit",
+  ];
+  test("isToolEnabled hides every evolve_/probe_/trace_/audit tool in minimal", () => {
+    for (const name of HIDDEN) expect(isToolEnabled("minimal", name)).toBe(false);
+  });
+  test("no evolve_/probe_/trace_ prefix or audit leaks via toolsetTools(minimal)", () => {
+    for (const name of toolsetTools("minimal")) {
+      expect(name.startsWith("evolve_")).toBe(false);
+      expect(name.startsWith("probe_")).toBe(false);
+      expect(name.startsWith("trace_")).toBe(false);
+      expect(name).not.toBe("audit");
+    }
+  });
+  test("full keeps the surface (no regression)", () => {
+    for (const name of HIDDEN) expect(isToolEnabled("full", name)).toBe(true);
+  });
+});
+
+describe("discipline minimal Crew (T9 speed-tokens)", () => {
+  // Minimal mode trims the Crew roster to one line; full keeps the
+  // roster byte-identical. Guardians stay reachable on demand via
+  // `review --lens` (review paths untouched).
+  test("minimal renders the 1-line Crew, full keeps the roster", async () => {
+    const md = await Bun.file(`${import.meta.dir}/../discipline.md`).text();
+    const { renderDisciplineDefault } = await import("../../scripts/sync-plugin-defaults");
+    const full = renderDisciplineDefault(md);
+    expect(full).toContain("@regulus-scout");
+    expect(formatDisciplineForToolset(full, "full")).toBe(full);
+    const minimal = formatDisciplineForToolset(full, "minimal");
+    expect(minimal).toContain(MINIMAL_CREW_LINE);
+    expect(minimal).not.toContain("@regulus-scout");
+    expect(minimal).not.toContain("@regulus-proposer");
+    expect(minimal).not.toContain("@regulus-verifier");
+    expect(minimal).toContain("review --lens");
+    expect(minimal.length).toBeLessThan(full.length);
+    // The Crew entry stays exactly one line in minimal.
+    const crewLines = minimal.split("\n").filter((l) => l.includes("The Crew:"));
+    expect(crewLines).toHaveLength(1);
+  });
+  test("context hook renders discipline through the toolset (wiring pin)", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    expect(src).toContain("formatDisciplineForToolset(");
   });
 });

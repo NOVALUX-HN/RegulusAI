@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, getCachedUsage, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
+import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatDisciplineForToolset, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, getCachedUsage, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -740,8 +740,13 @@ export default Plugin.define({
       }
     })
 
+    // T9 (speed-tokens): minimal sessions render the 1-line Crew —
+    // the .md source keeps the full roster (single source), the trim
+    // happens here at render via formatDisciplineForToolset, so full
+    // stays byte-identical and minimal shrinks the injected prompt.
+    // Guardians stay reachable on demand via `review --lens`.
     await ctx.session.hook("context", async (event) => {
-      event.system.push({ type: "text", text: await loadDiscipline(dir, DEFAULT_DISCIPLINE) })
+      event.system.push({ type: "text", text: formatDisciplineForToolset(await loadDiscipline(dir, DEFAULT_DISCIPLINE), toolset) })
     })
 
     // Lessons reach the agent without being asked: single-spawn
