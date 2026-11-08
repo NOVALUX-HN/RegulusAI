@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"regulus-ai/internal/almanac"
+	"regulus-ai/internal/gates"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/trace"
 )
@@ -291,7 +292,7 @@ func (c CLI) memoryNoteCmd(args []string) int {
 	if runes := []rune(title); len(runes) > 60 {
 		title = string(runes[:60])
 	}
-	head := gitHeadBounded(c.runner())
+	head := cachedGitHead(c.runner(), c.dir())
 	obs := &almanac.Observation{
 		Type: almanac.TypeSessionNote, Title: title, Content: text,
 		Provenance: &almanac.Provenance{GitHead: head},
@@ -380,7 +381,7 @@ func (c CLI) memorySaveCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "memory save: source import is reserved for memory import")
 		return 2
 	}
-	head := gitHeadBounded(c.runner())
+	head := cachedGitHead(c.runner(), c.dir())
 	var expiry *time.Time
 	if strings.TrimSpace(*expires) != "" {
 		d, err := parseExpiry(*expires)
@@ -455,6 +456,7 @@ func (c CLI) memorySearchCmd(args []string) int {
 	latest := fs.Bool("latest", false, "collapse each topic chain to its best hit (default: all coexist)")
 	includeSuperseded := fs.Bool("include-superseded", false, "show observations a supersedes relation hides")
 	lexical := fs.Bool("lexical", false, "force lexical-only search (skip hybrid semantic ranking)")
+	noStaleness := fs.Bool("no-staleness", false, "skip git staleness probes (no rev-list spawns, no behind annotations)")
 	embedder := fs.String("embedder", "", "encoder id for the vector channel (default "+almanac.EmbedderID+")")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -533,7 +535,10 @@ func (c CLI) memorySearchCmd(args []string) int {
 	})
 	for _, oi := range order {
 		h := hits[oi]
-		suffix := c.commitsBehindSuffix(h)
+		suffix := ""
+		if !*noStaleness {
+			suffix = c.commitsBehindSuffix(h)
+		}
 		if by := supersededBy[h.ID]; by != "" {
 			suffix += fmt.Sprintf(" [superseded by %s]", by)
 		}
@@ -858,6 +863,7 @@ func (c CLI) memoryContextCmd(args []string) int {
 	var charts chartList
 	fs.Var(&charts, "chart", "chart ref for Domain: pin (repeatable, with --resolve-domain)")
 	lessonsN := fs.Int("lessons", 3, "scoped lessons to include with --resolve-domain")
+	noStaleness := fs.Bool("no-staleness", false, "skip git staleness probes (no rev-list spawns)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -867,9 +873,10 @@ func (c CLI) memoryContextCmd(args []string) int {
 		return 2
 	}
 	if fs.NArg() != 0 || *limit < 0 || *budget < 0 || *lessonsN < 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
+	_ = *noStaleness // context performs no git probes today; the flag keeps the skip symmetric with search and future-proofs staleness annotations.
 	scope := almanac.ContextScope{Task: *task, Path: *path, System: sys, Budget: *budget}
 	ctx, err := almanac.ContextScoped(c.dir(), time.Now().UTC(), *limit, scope)
 	if err != nil {
@@ -907,6 +914,48 @@ func (c CLI) memoryContextCmd(args []string) int {
 	return 0
 }
 
+// Staleness probe cache (T3 S2-S3): HEAD (per directory — one process
+// can touch many repos across invocations, and tests retarget cwd per
+// case) and per-head rev-list counts live for the process. Search fans
+// out to one `git rev-list --count` per hit (up to --limit 20); N hits
+// sharing a head cost 1 probe because HEAD cannot move under a single
+// CLI invocation. Negative results (at HEAD / unknown ref) stick too —
+// one probe per head per process, then silence. resetStalenessCache
+// clears it for tests.
+var (
+	headByDir     = map[string]string{}
+	headByDirSeen = map[string]bool{}
+	behindCache   = map[string]string{}
+	behindSeen    = map[string]bool{}
+)
+
+// resetStalenessCache clears the process-life staleness cache (tests).
+func resetStalenessCache() {
+	headByDir = map[string]string{}
+	headByDirSeen = map[string]bool{}
+	behindCache = map[string]string{}
+	behindSeen = map[string]bool{}
+}
+
+// cachedGitHead resolves HEAD once per process and directory with the
+// S3 git bound (30s, same as gates.changedFiles): note/save stamp
+// provenance without re-probing, and a wedged git still degrades
+// to "". The directory key matters: cwd moves between invocations
+// (and between tests), so a single process-wide HEAD would stamp one
+// repo's sha onto another's observations.
+func cachedGitHead(r gates.CmdRunner, dir string) string {
+	key := dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		key = abs
+	}
+	if headByDirSeen[key] {
+		return headByDir[key]
+	}
+	headByDirSeen[key] = true
+	headByDir[key] = gitHeadBounded(r)
+	return headByDir[key]
+}
+
 // commitsBehindSuffix renders the git staleness annotation for an
 // observation with a provenance git head — empty when unknown.
 func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
@@ -914,6 +963,12 @@ func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
 		return ""
 	}
 	head := o.Provenance.GitHead
+	if behindSeen[head] {
+		return behindCache[head]
+	}
+	// Mark before probing so negatives stick: one probe per head per
+	// process, even for unknown refs.
+	behindSeen[head] = true
 	// S3 hygiene: the rev-list probe shares the git bound so a wedged
 	// repository degrades to no annotation instead of hanging search.
 	ctx, cancel := gitTimeout()
@@ -926,7 +981,8 @@ func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
 	if n == "0" {
 		return ""
 	}
-	return ", " + n + " commits behind"
+	behindCache[head] = ", " + n + " commits behind"
+	return behindCache[head]
 }
 
 // humanAge renders a coarse age annotation for staleness awareness.

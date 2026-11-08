@@ -3,6 +3,9 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"regulus-ai/internal/almanac"
 )
 
 func retrievalSeed(t *testing.T) {
@@ -116,5 +119,73 @@ func TestMemoryContextInvalidSystem(t *testing.T) {
 	c, _, errb := newCLI(nil)
 	if code := c.Run([]string{"memory", "context", "--system", "nope"}); code != 2 {
 		t.Fatalf("exit = %d, want 2 (%q)", code, errb.String())
+	}
+}
+
+// TestMemorySearchStalenessProbesCached (T3 S2-S3): N hits sharing one
+// git head must cost 1 rev-list probe (process-life cache), and
+// --no-staleness must cost zero probes on search and context while
+// keeping the default annotated.
+func TestMemorySearchStalenessProbesCached(t *testing.T) {
+	resetStalenessCache()
+	t.Cleanup(resetStalenessCache)
+	t.Chdir(t.TempDir())
+	const head = "ca1ab1e5"
+	for i, title := range []string{"cacheme alpha", "cacheme beta", "cacheme gamma"} {
+		if _, err := almanac.Save(".", &almanac.Observation{
+			Type: almanac.TypeDecision, Title: title, Content: "cacheme content",
+			Provenance: &almanac.Provenance{GitHead: head},
+		}, time.Unix(1700000000+int64(i), 0).UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	countRevList := func(r *fakeGateRunner) int {
+		n := 0
+		for _, call := range r.calls {
+			if strings.HasPrefix(call, "git rev-list") {
+				n++
+			}
+		}
+		return n
+	}
+	// Default stays annotated: 3 hits, 1 shared head = 1 probe.
+	r := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-list --count " + head + "..HEAD": {stdout: "5\n"},
+	}}
+	c, out, _ := newCLI(nil)
+	c.Runner = r
+	if code := c.Run([]string{"memory", "search", "--lexical", "cacheme"}); code != 0 {
+		t.Fatalf("search exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "5 commits behind") {
+		t.Fatalf("default search must stay annotated, got:\n%s", out.String())
+	}
+	if got := countRevList(r); got != 1 {
+		t.Fatalf("3 hits sharing one head = %d rev-list probes, want 1", got)
+	}
+	// --no-staleness: zero probes, no annotation.
+	r2 := &fakeGateRunner{results: map[string]fakeGateResult{
+		"git rev-list --count " + head + "..HEAD": {stdout: "5\n"},
+	}}
+	c2, out2, _ := newCLI(nil)
+	c2.Runner = r2
+	if code := c2.Run([]string{"memory", "search", "--lexical", "--no-staleness", "cacheme"}); code != 0 {
+		t.Fatalf("search --no-staleness exit = %d", code)
+	}
+	if strings.Contains(out2.String(), "commits behind") {
+		t.Fatalf("--no-staleness must skip annotations, got:\n%s", out2.String())
+	}
+	if got := countRevList(r2); got != 0 {
+		t.Fatalf("--no-staleness = %d rev-list probes, want 0", got)
+	}
+	// --no-staleness on context: accepted, zero probes.
+	r3 := &fakeGateRunner{}
+	c3, _, _ := newCLI(nil)
+	c3.Runner = r3
+	if code := c3.Run([]string{"memory", "context", "--no-staleness"}); code != 0 {
+		t.Fatalf("context --no-staleness exit = %d, want 0", code)
+	}
+	if got := countRevList(r3); got != 0 {
+		t.Fatalf("context --no-staleness = %d rev-list probes, want 0", got)
 	}
 }

@@ -1320,6 +1320,8 @@ func TestSurfaceApplyRoundTrip(t *testing.T) {
 }
 
 func TestCommitsBehindSuffix(t *testing.T) {
+	resetStalenessCache()
+	t.Cleanup(resetStalenessCache)
 	// with a fake runner returning count output
 	r := &fakeGateRunner{results: map[string]fakeGateResult{
 		"git rev-list --count abc123..HEAD": {stdout: "42\n"},
