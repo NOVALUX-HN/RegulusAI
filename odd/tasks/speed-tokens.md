@@ -19,7 +19,7 @@ Read until `## Log` before edits.
 - [x] T6 (S2,S3) — toolset lazy + tabla única: `TE_TOOLSET=auto` lazy, generar MCP+TS desde una tabla, sacar search-default a skill — route: delegated (worker mw8c1wgr-5-yi2z + explorer mw8c879z-6-ra4b, parent verified) — commit: a26386d
 - [x] T7 (S2,S3) — `trace record-batch --ndjson` (1 spawn por flush con duration/output-bytes) — route: delegated (worker mw8c9l0m-7-uh81, parent verified) — commit: b897d74
 - [x] T8 (S2,S3) — fallback barato: si domains>1 sin pin, inyectar 1 lesson + hint `memory_search --domain` — route: delegated (worker mw8e4olm-8-fou2, parent verified) — commit: 8ef35f1
-- [ ] T9 (S2,S3) — minimal recortado: ocultar `evolve_*/probe_*/trace_*/audit` en minimal, Crew a 1 línea — route: inline — commit: —
+- [x] T9 (S2,S3) — minimal recortado: ocultar `evolve_*/probe_*/trace_*/audit` en minimal, Crew a 1 línea — route: delegated (worker mw8e6p7g-9-q8yh, parent verified) — commit: 696a849
 - [ ] T10 (S2,S3) — bench como gate de presupuesto: B10+B11 pinean guidance/context bytes, `CostByTask` en `evolve_report` — route: inline — commit: —
 
 ## Log
@@ -36,3 +36,4 @@ Read until `## Log` before edits.
 - L10: T6 done a26386d — toolset medido con cache por dir (primer setup spawnea, resto cero; laziness real inviable en registration, documentado) + tabla única vía codegen con search-default excluido del compilado. Decisión evidenciada (explorer): search-default ya cuesta 0/request (nunca fue tool registrado, hooks no lo referencian) y queda alcanzable (md + docs/search-default.md + init copy); el skill-move costaría más por el mismo 0 y rompería el pin de init — keep-md. Worker RED->GREEN + parent re-verificó: bun lib 155/155, tsc limpio, sync --check in sync, token caps verdes, spot-check de no-referencia.
 - L11: T7 done b897d74 — record-batch --ndjson (stdin canónico, argv fallback porque el spawn helper no inyecta stdin) + flush batea cada ronda en 1 spawn con resultados por entry; record intacto, fail-fast documentado con mismo residuo que llamadas secuenciales. Worker RED->GREEN + parent re-verificó: Go 7/7 nuevo, cli+trace verdes, bun 160/160, tsc limpio, vivo 2 entries en 1 spawn.
 - L12: T8 done 8ef35f1 — fallback unpinned-multi recorta default 3->1 lesson newest + hints por dominio; --lessons explícito gana, pineados intactos. Worker RED->GREEN + parent re-verificó: focused 7/7, cli suite verde, vet/fmt limpios, diff revisado.
+- L13: T9 done 696a849 — minimal oculta evolve/probe/trace/audit (pins) y rinde Crew 1 línea en render (fuente md intacta, full byte-identical); guardians vía review --lens. Worker RED->GREEN + parent re-verificó: bun 165/165, tsc limpio, sync in sync, caps verdes, diff revisado.
