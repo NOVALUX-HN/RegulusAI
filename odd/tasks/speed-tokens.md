@@ -20,7 +20,7 @@ Read until `## Log` before edits.
 - [x] T7 (S2,S3) — `trace record-batch --ndjson` (1 spawn por flush con duration/output-bytes) — route: delegated (worker mw8c9l0m-7-uh81, parent verified) — commit: b897d74
 - [x] T8 (S2,S3) — fallback barato: si domains>1 sin pin, inyectar 1 lesson + hint `memory_search --domain` — route: delegated (worker mw8e4olm-8-fou2, parent verified) — commit: 8ef35f1
 - [x] T9 (S2,S3) — minimal recortado: ocultar `evolve_*/probe_*/trace_*/audit` en minimal, Crew a 1 línea — route: delegated (worker mw8e6p7g-9-q8yh, parent verified) — commit: 696a849
-- [ ] T10 (S2,S3) — bench como gate de presupuesto: B10+B11 pinean guidance/context bytes, `CostByTask` en `evolve_report` — route: inline — commit: —
+- [x] T10 (S2,S3) — bench como gate de presupuesto: B10+B11 pinean guidance/context bytes, `CostByTask` en `evolve_report` — route: delegated (worker mw8e9bfh-a-s1cv + parent stdout follow-up, parent verified) — commit: 11906a5
 
 ## Log
 
@@ -37,3 +37,4 @@ Read until `## Log` before edits.
 - L11: T7 done b897d74 — record-batch --ndjson (stdin canónico, argv fallback porque el spawn helper no inyecta stdin) + flush batea cada ronda en 1 spawn con resultados por entry; record intacto, fail-fast documentado con mismo residuo que llamadas secuenciales. Worker RED->GREEN + parent re-verificó: Go 7/7 nuevo, cli+trace verdes, bun 160/160, tsc limpio, vivo 2 entries en 1 spawn.
 - L12: T8 done 8ef35f1 — fallback unpinned-multi recorta default 3->1 lesson newest + hints por dominio; --lessons explícito gana, pineados intactos. Worker RED->GREEN + parent re-verificó: focused 7/7, cli suite verde, vet/fmt limpios, diff revisado.
 - L13: T9 done 696a849 — minimal oculta evolve/probe/trace/audit (pins) y rinde Crew 1 línea en render (fuente md intacta, full byte-identical); guardians vía review --lens. Worker RED->GREEN + parent re-verificó: bun 165/165, tsc limpio, sync in sync, caps verdes, diff revisado.
+- L14: T10 done 11906a5 — bench gate con techos pineados (B10 proxy 13, B11 546B/137t, FAIL en overrun incl. flake 549/550 cazado y fijado) + Costs/CostLines en evolve report con print en stdout (follow-up parent RED->GREEN). Worker RED->GREEN + parent re-verificó: focused nuevos, cli+evolve+bench verdes, vet/fmt limpios, bench vivo 14/14. FEATURE COMPLETE 10/10.
