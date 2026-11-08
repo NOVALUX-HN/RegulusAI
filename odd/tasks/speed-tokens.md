@@ -12,7 +12,7 @@ Read until `## Log` before edits.
 ## Tasks
 
 - [x] T1 (S2,S3) — context single-spawn: un solo `memory context --resolve-domain` en Go (files+domains+lessons en 1 spawn) — route: inline — commit: 8d1234a
-- [ ] T2 (S2,S3) — compaction sin bloqueo: `tick+note` a background / `--check-only` por mtime — route: inline — commit: —
+- [x] T2 (S2,S3) — compaction sin bloqueo: `tick+note` a background / `--check-only` por mtime — route: inline — commit: 617e3d1
 - [ ] T3 (S2,S3) — HEAD cacheado + `--no-staleness`: cache HEAD por proceso, anotación solo con `--staleness` — route: inline — commit: —
 - [ ] T4 (S2,S3) — reindex diferido: debounced/async o `REGULUS_DEFER_REINDEX=1`, default lexical en racha de writes — route: inline — commit: —
 - [ ] T5 (S2,S3) — `gate run --quick` (layers 1-4+spec+gofmt), full solo pre-close, cache coverage.out por sha — route: inline — commit: —
@@ -29,3 +29,4 @@ Read until `## Log` before edits.
 - L3: "ejecuta el plan uno por uno y verifica que efectivamente cada punto si haya funcionado"
 - L4: explorer handoff mw8arrgn-1-6fd5 con 10 puntos y evidencia path:line (context multi-spawn, compaction triple-spawn, N gits por search, reindex sincrónico, gauntlet sin quick, superficie 19vs14, trace flush, fallback frágil, guardians siempre, bench como gate).
 - L5: T1 done 8d1234a — Go 4/4 (chart-pin, single-library, file-hit, unfiltered), bun domain 82/82, lib 149/149, tsc clean, live probe `domain: go (reason: chart:charts/app.md)` en 1 spawn. Slice note: develop lleva 8858 authored lines en 60 commits vs origin/main (pre-existing); T1 slice propio 282 líneas.
+- L6: T2 done 617e3d1 — tick+note concurrentes vía Promise.allSettled tras el resume (wall max, no suma); bun domain 83/83, tsc clean, go cli verde.
