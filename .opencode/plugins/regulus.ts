@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, parseTraceUsage, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
+import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, getCachedUsage, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -24,8 +24,14 @@ const DEFAULT_DISCIPLINE = `Regulus discipline (evidence-first: authorize, chart
 - Web search default: obscura (browser_navigate + extract).`
 
 // DEFAULT_TOOL_GUIDANCE is the compiled fallback for every tool
-// description. tool-guidance.md overrides it section by section, so a
-// missing file or a missing section keeps the previous behavior.
+// description. tool-guidance.md is the single source: this literal is
+// generated from its ## sections via scripts/sync-plugin-defaults.ts
+// (--check in CI, --write to regenerate), so the duplication never
+// drifts by hand. `search-default` is intentionally NOT compiled here:
+// it lives in its skill's reach (the ## search-default section of
+// tool-guidance.md, still merged at runtime and copied by init, plus
+// the docs/search-default.md recipe), so simple sessions stop paying
+// the fallback chars for a default they never inject.
 const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
   regulus:
     "Regulus AI harness: gauntlet gates, spec contract, doctor, session memory",
@@ -58,8 +64,6 @@ const DEFAULT_TOOL_GUIDANCE: Record<string, string> = {
   audit: "Repo-wide ranked audit: entry points first, then what to fix first.",
   evolve_report: "Lesson economics: proxy price plus evidence state per lesson.",
   evolve_tick: "Periodic proposer: mine recent sessions into pending candidates.",
-  "search-default":
-    "Search default: obscura browser_navigate + browser_extract/markdown + browser_links; fallback raw/bing; recipe DDG html + extract + raw.",
 }
 
 // parseToolGuidance now lives in lib/domain.ts (see above); call sites
@@ -222,24 +226,26 @@ export default Plugin.define({
     // all 16; unset restores auto (charts/ present → full).
     const toolset = resolveToolset({ hasCharts: hasChartFiles(dir) })
     console.error(`[regulus] toolset: ${toolset} (${toolsetTools(toolset).length}/${TOOLSET_FULL.length} tools, TE_TOOLSET=${process.env.TE_TOOLSET ?? ""})`)
-    // T3 (pro-harness): measured pruning — one best-effort `trace
-    // usage` spawn in auto-full mode; explicit TE_TOOLSET skips
-    // measuring, and any failure fails open to the unpruned set.
-    // TE_TOOLSET=full restores everything (plus /reload).
+    // T3 (pro-harness) + T6 (speed-tokens): measured pruning — the
+    // `trace usage` measurement is cached per project dir for the life
+    // of the host process (getCachedUsage in lib/domain.ts), so only
+    // the first setup per dir spawns and every later setup resolves
+    // with zero spawns. True laziness (deferring until the first tool
+    // call) is infeasible here: tools register once per project load
+    // in the sync transform callback below, so the decision stays
+    // load-time and only the measurement is cached. Explicit
+    // TE_TOOLSET skips measuring, and any failure fails open to the
+    // unpruned set. TE_TOOLSET=full restores everything (plus /reload).
     let pruned: string[] = []
     const rawToolset = (process.env.TE_TOOLSET ?? "").trim().toLowerCase()
     const explicitToolset = rawToolset === "full" || rawToolset === "minimal"
     if (toolset === "full" && !explicitToolset) {
-      try {
-        const usage = await run(bin, ["trace", "usage", "--json"], dir)
-        if (usage.exitCode === 0) {
-          pruned = applyUsagePruning(toolset, parseTraceUsage(usage.output)).pruned
-          if (pruned.length > 0) {
-            console.error(`[regulus] toolset: pruned by measured use (${pruned.length}): ${pruned.join(", ")} — TE_TOOLSET=full restores`)
-          }
+      const usage = await getCachedUsage(dir, (a) => run(bin, a, dir))
+      if (usage !== null) {
+        pruned = applyUsagePruning(toolset, usage).pruned
+        if (pruned.length > 0) {
+          console.error(`[regulus] toolset: pruned by measured use (${pruned.length}): ${pruned.join(", ")} — TE_TOOLSET=full restores`)
         }
-      } catch (err) {
-        console.error(`[regulus] toolset: usage pruning skipped (${(err as Error)?.message ?? String(err)}) — full set kept`)
       }
     }
 

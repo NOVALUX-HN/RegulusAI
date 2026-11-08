@@ -947,6 +947,45 @@ export function applyUsagePruning(
   return { tools, pruned };
 }
 
+// usageCache (T6 speed-tokens): memoizes the parsed `trace usage
+// --json` report per project dir for the life of the host process.
+// Every session setup used to pay one spawn for usage pruning; now
+// only the first setup per dir spawns and every later setup for the
+// same dir resolves with zero spawns (pinned by lib/toolset.test.ts).
+//
+// Lazy-vs-cache decision: true laziness — deferring the full/minimal
+// decision until the first actual tool call — is infeasible in this
+// host lifecycle. Tools register once per project load in the sync
+// `transform` callback (no session, no async spawn possible; see
+// TOOLSET_FULL above), so the decision must stay load-time and only
+// the measurement is cached instead. Failures (spawn throw, non-zero
+// exit, malformed JSON) never pin the cache: the setup fails open to
+// the unpruned set and the next setup retries.
+const usageCache = new Map<string, { sessions: number; tools: TraceToolUsage[] }>();
+
+export function clearUsageCache(): void {
+  usageCache.clear();
+}
+
+export async function getCachedUsage(
+  dir: string,
+  runBin: RunBin,
+): Promise<{ sessions: number; tools: TraceToolUsage[] } | null> {
+  const hit = usageCache.get(dir);
+  if (hit !== undefined) return hit;
+  let res: { exitCode: number; output: string };
+  try {
+    res = await runBin(["trace", "usage", "--json"]);
+  } catch (err) {
+    console.error(`[regulus] toolset: usage pruning skipped (${(err as Error)?.message ?? String(err)}) — full set kept`);
+    return null;
+  }
+  if (res.exitCode !== 0) return null;
+  const parsed = parseTraceUsage(res.output);
+  usageCache.set(dir, parsed);
+  return parsed;
+}
+
 // LoopGuard counts consecutive same-signature failures per session.
 // observe(sessionID, tool, message, ok) returns the one-line redirect on
 // the LOOPGUARD_THRESHOLD-th consecutive identical failure and resets

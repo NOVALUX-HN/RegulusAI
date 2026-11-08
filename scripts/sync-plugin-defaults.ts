@@ -101,6 +101,17 @@ export function extractGuidanceBlock(ts: string): string {
   throw new Error("sync-plugin-defaults: DEFAULT_TOOL_GUIDANCE terminator not found")
 }
 
+// TS_EXCLUDED_SECTIONS are ## sections that tool-guidance.md keeps as
+// the readable source but the TS compiled fallback intentionally omits
+// (T6 speed-tokens). `search-default` moved to its skill's reach — the
+// md section (still merged at runtime, still copied by init) plus the
+// docs/search-default.md recipe — so simple sessions stop paying the
+// fallback chars for a default they never inject. runCheck passes when
+// an excluded section is missing from the compiled literal, and fails
+// when it is (still) compiled: the exclusion documents the move, not a
+// drift to re-add silently.
+const TS_EXCLUDED_SECTIONS = new Set(["search-default"]);
+
 async function runCheck(tree: string): Promise<string[]> {
   const problems: string[] = []
   const disciplineMd = await Bun.file(`${tree}/.opencode/discipline.md`).text()
@@ -120,11 +131,13 @@ async function runCheck(tree: string): Promise<string[]> {
   // compile to "name": "..." entries, which bare (\w+): never matches.
   for (const m of block.matchAll(/["']?([\w-]+)["']?\s*:\s*\n?\s*"((?:[^"\\]|\\.)*)"/g)) compiled[m[1]] = m[2]
   for (const [name, body] of Object.entries(rendered)) {
+    if (TS_EXCLUDED_SECTIONS.has(name)) continue
     if (!(name in compiled)) problems.push(`guidance: section ## ${name} missing from compiled defaults`)
     else if (compiled[name] !== tsDq(body)) problems.push(`guidance: ## ${name} differs from compiled default`)
   }
   for (const name of Object.keys(compiled)) {
-    if (!(name in rendered)) problems.push(`guidance: compiled default ${name} has no ## section`)
+    if (TS_EXCLUDED_SECTIONS.has(name)) problems.push(`guidance: compiled default ${name} is skill-moved (see TS_EXCLUDED_SECTIONS) — remove it`)
+    else if (!(name in rendered)) problems.push(`guidance: compiled default ${name} has no ## section`)
   }
   return problems
 }
@@ -140,6 +153,12 @@ async function runWrite(tree: string): Promise<void> {
     () => `const DEFAULT_DISCIPLINE = \`${tsBacktick(renderDisciplineDefault(disciplineMd))}\``,
   )
   const rendered = renderGuidanceDefaults(guidanceMd)
+  for (const name of TS_EXCLUDED_SECTIONS) {
+    // Strip skill-moved sections so --write enforces the move instead
+    // of re-adding it: remove the whole property line (a TS object
+    // tolerates the surviving trailing comma on the previous entry).
+    ts = ts.replace(new RegExp(`\n\\s*["']?${name}["']?\\s*:\\s*(?:\\n\\s*)?"(?:[^"\\\\]|\\\\.)*"\\s*,?`), "")
+  }
   for (const [name, body] of Object.entries(rendered)) {
     const re = new RegExp(`(["']?${name}["']?\\s*:\\s*\\n?\\s*\")((?:[^\"\\\\]|\\\\.)*)(\")`)
     if (re.test(ts)) ts = ts.replace(re, (_m, pre, _old, post) => `${pre}${tsDq(body)}${post}`)

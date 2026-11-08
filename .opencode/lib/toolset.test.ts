@@ -7,9 +7,11 @@
 // impossible and the Chart's Then-alternative applies to that branch:
 // load-time subsets (TE_TOOLSET) + documented why. These tests pin the
 // subset selection, the cost saving, and the plugin wiring.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach } from "bun:test";
 import {
   applyUsagePruning,
+  clearUsageCache,
+  getCachedUsage,
   isToolEnabled,
   parseToolGuidance,
   parseTraceUsage,
@@ -17,7 +19,9 @@ import {
   TOOLSET_FULL,
   TOOLSET_MINIMAL,
   toolsetTools,
+  type RunBin,
 } from "./domain";
+import { extractGuidanceBlock, renderGuidanceDefaults } from "../../scripts/sync-plugin-defaults";
 
 describe("toolset lists (T2 subset pin)", () => {
   test("full pins the 19 registered definitions in registration order", () => {
@@ -208,5 +212,80 @@ describe("usage pruning (T3 measured toolset)", () => {
       expect([...got.tools]).toEqual([...TOOLSET_FULL]);
       expect(got.pruned).toEqual([]);
     }
+  });
+});
+
+describe("toolset lazy usage cache (T6 speed-tokens)", () => {
+  // Every session setup used to pay one `trace usage --json` spawn for
+  // usage pruning. The measurement is now cached per project dir for
+  // the life of the host process: the first setup per dir spawns once,
+  // every later setup for the same dir resolves with zero spawns.
+  beforeEach(() => {
+    clearUsageCache();
+  });
+  const usageJson = JSON.stringify({ sessions: 5, tools: [] });
+  test("repeat setups for one project pay zero spawns", async () => {
+    let spawns = 0;
+    const run: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 0, output: usageJson };
+    };
+    const first = await getCachedUsage("/proj", run);
+    expect(first).not.toBeNull();
+    expect(spawns).toBe(1);
+    const second = await getCachedUsage("/proj", run);
+    expect(second).toEqual(first);
+    expect(spawns).toBe(1);
+  });
+  test("the cache is per project dir", async () => {
+    let spawns = 0;
+    const run: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 0, output: usageJson };
+    };
+    await getCachedUsage("/proj-a", run);
+    await getCachedUsage("/proj-b", run);
+    expect(spawns).toBe(2);
+    await getCachedUsage("/proj-a", run);
+    await getCachedUsage("/proj-b", run);
+    expect(spawns).toBe(2);
+  });
+  test("failed usage never pins the cache (fail-open, retry next setup)", async () => {
+    let spawns = 0;
+    const failing: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 1, output: "boom" };
+    };
+    expect(await getCachedUsage("/proj", failing)).toBeNull();
+    expect(await getCachedUsage("/proj", failing)).toBeNull();
+    expect(spawns).toBe(2);
+    const ok: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 0, output: usageJson };
+    };
+    expect(await getCachedUsage("/proj", ok)).not.toBeNull();
+    expect(spawns).toBe(3);
+    expect(await getCachedUsage("/proj", ok)).not.toBeNull();
+    expect(spawns).toBe(3);
+  });
+});
+
+describe("single table (T6 md is the source)", () => {
+  // tool-guidance.md is the single source: every TOOLSET_FULL tool
+  // plus the regulus namespace must have a ## section, and the
+  // compiled literals must match that table (minus the skill-moved
+  // exclusion). The sync harness (--check) pins the byte-equality;
+  // these pins name the table shape so a new tool without a section
+  // (or a section without a tool) trips here first.
+  test("every registered tool has a ## section in tool-guidance.md", async () => {
+    const md = await Bun.file(`${import.meta.dir}/../tool-guidance.md`).text();
+    const table = renderGuidanceDefaults(md);
+    for (const name of TOOLSET_FULL) expect(table[name]).toBeDefined();
+    expect(table["regulus"]).toBeDefined();
+  });
+  test("search-default lives in its skill, not the compiled defaults", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = extractGuidanceBlock(src);
+    expect(block).not.toContain("search-default");
   });
 });
