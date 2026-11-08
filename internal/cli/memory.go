@@ -5,12 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/almanac"
+	"regulus-ai/internal/library"
+	"regulus-ai/internal/trace"
 )
 
 // memoryCmd implements the Almanac surface (docs/memory.md):
@@ -727,6 +730,115 @@ func (c CLI) memoryImportCmd(args []string) int {
 	return 0
 }
 
+// chartList is a repeatable --chart flag: --chart a --chart b,c appends all.
+type chartList []string
+
+func (c *chartList) String() string { return strings.Join(*c, ",") }
+func (c *chartList) Set(v string) error {
+	for _, p := range strings.Split(v, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			*c = append(*c, p)
+		}
+	}
+	return nil
+}
+
+// readDomainLine returns the Domain: line value from a chart file, or "".
+func readDomainLine(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, ln := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(ln)
+		if len(t) < 7 {
+			continue
+		}
+		// case-sensitive Domain: to match TS findDomainInChart
+		if !strings.HasPrefix(t, "Domain:") {
+			continue
+		}
+		v := strings.TrimSpace(strings.TrimPrefix(t, "Domain:"))
+		if v == "" {
+			return ""
+		}
+		// keep first token, allow [A-Za-z0-9_][\w.\-]*
+		f := strings.Fields(v)[0]
+		return f
+	}
+	return ""
+}
+
+// resolveDomainInProcess detects the lesson domain without spawning:
+// chart pins first, then the lone chart, then single library domain,
+// then trace file hits, else unfiltered. Returns domain + reason.
+func resolveDomainInProcess(dir, session string, charts []string) (string, string) {
+	for _, ref := range charts {
+		p := ref
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, ref)
+		}
+		if d := readDomainLine(p); d != "" {
+			return d, "chart:" + ref
+		}
+	}
+	// lone chart fallback when caller passed none
+	if len(charts) == 0 {
+		entries, err := os.ReadDir(filepath.Join(dir, "charts"))
+		if err == nil {
+			var mds []string
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+					mds = append(mds, e.Name())
+				}
+			}
+			if len(mds) == 1 {
+				if d := readDomainLine(filepath.Join(dir, "charts", mds[0])); d != "" {
+					return d, "lone-chart:" + mds[0]
+				}
+			}
+		}
+	}
+	domains, err := library.Domains(dir)
+	if err != nil || len(domains) == 0 {
+		return "", "unfiltered"
+	}
+	if len(domains) == 1 {
+		return domains[0], "single-domain"
+	}
+	if session != "" {
+		entries, err := trace.List(dir, session)
+		if err == nil {
+			seen := map[string]bool{}
+			var files []string
+			for _, e := range entries {
+				for _, f := range e.Files {
+					if !seen[f] {
+						seen[f] = true
+						files = append(files, f)
+						if len(files) >= 3 {
+							break
+						}
+					}
+				}
+				if len(files) >= 3 {
+					break
+				}
+			}
+			for _, f := range files {
+				for _, d := range domains {
+					hits, err := almanac.Search(dir, almanac.Query{Domain: d, Path: f, Type: almanac.TypeLesson, Limit: 1})
+					if err == nil && len(hits) > 0 {
+						return d, "file-hit:" + f
+					}
+				}
+			}
+		}
+	}
+	return "", "unfiltered-multi"
+}
+
 // memoryContextCmd implements `regulus memory context [--limit N]` — the
 // resume block, DATA-framed. The default block is BOUNDED (latest
 // DefaultContextLimit notes, DefaultContextBudget items per long list,
@@ -741,6 +853,11 @@ func (c CLI) memoryContextCmd(args []string) int {
 	path := fs.String("path", "", "only observations citing this provenance path")
 	system := fs.String("system", "", "only this memory system (episodic|semantic|decision|procedural|evolution)")
 	budget := fs.Int("budget", almanac.DefaultContextBudget, "cap listed notes/decisions items each (0: all)")
+	resolve := fs.Bool("resolve-domain", false, "resolve lesson domain in-process and scope lessons (single-spawn)")
+	session := fs.String("session", "", "session id for trace file-hit domain detection (with --resolve-domain)")
+	var charts chartList
+	fs.Var(&charts, "chart", "chart ref for Domain: pin (repeatable, with --resolve-domain)")
+	lessonsN := fs.Int("lessons", 3, "scoped lessons to include with --resolve-domain")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -749,8 +866,8 @@ func (c CLI) memoryContextCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
 		return 2
 	}
-	if fs.NArg() != 0 || *limit < 0 || *budget < 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]")
+	if fs.NArg() != 0 || *limit < 0 || *budget < 0 || *lessonsN < 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
 	scope := almanac.ContextScope{Task: *task, Path: *path, System: sys, Budget: *budget}
@@ -759,7 +876,34 @@ func (c CLI) memoryContextCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
 		return 1
 	}
+	if !*resolve {
+		fmt.Fprint(c.Stdout, ctx)
+		return 0
+	}
+	domain, reason := resolveDomainInProcess(c.dir(), *session, []string(charts))
+	domainLabel := domain
+	if domainLabel == "" {
+		domainLabel = "(unfiltered)"
+	}
+	fmt.Fprintf(c.Stdout, "domain: %s (reason: %s)\n\n", domainLabel, reason)
 	fmt.Fprint(c.Stdout, ctx)
+	q := almanac.Query{Type: almanac.TypeLesson, Limit: *lessonsN}
+	if domain != "" {
+		q.Domain = domain
+	}
+	hits, err := almanac.Search(c.dir(), q)
+	if err != nil {
+		fmt.Fprintf(c.Stdout, "\nLessons scoped: (search error: %v)\n", err)
+		return 0
+	}
+	if len(hits) == 0 {
+		fmt.Fprint(c.Stdout, "\nLessons scoped: (none)\n")
+		return 0
+	}
+	fmt.Fprint(c.Stdout, "\nLessons scoped:\n")
+	for _, h := range hits {
+		fmt.Fprintf(c.Stdout, "  - [%s] %s: %s\n", h.Domain, h.Title, h.Content)
+	}
 	return 0
 }
 

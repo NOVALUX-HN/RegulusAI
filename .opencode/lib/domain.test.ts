@@ -10,6 +10,7 @@ import {
   COMPACTION_CONTEXT_BUDGET,
   COMPACTION_CONTEXT_LIMIT,
   compactionContextArgs,
+  contextResolveArgs,
   dataBlock,
   distinctiveWords,
   explainSpawnError,
@@ -416,6 +417,16 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
     const hook = src.slice(src.indexOf('"compaction"'));
     expect(hook).toContain("compactionContextArgs()");
+  });
+
+  test("context hook is single-spawn via contextResolveArgs (T1 speed-tokens)", async () => {
+    expect(contextResolveArgs()).toEqual(["memory", "context", "--resolve-domain", "--limit", "20", "--budget", "20", "--lessons", "3"]);
+    expect(contextResolveArgs({ sessionID: "s1", charts: ["charts/a.md", "charts/b.md"] })).toEqual(["memory", "context", "--resolve-domain", "--session", "s1", "--chart", "charts/a.md", "--chart", "charts/b.md", "--limit", "20", "--budget", "20", "--lessons", "3"]);
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const hook = src.slice(src.indexOf('"context"'), src.indexOf('"compaction"'));
+    expect(hook).toContain("contextResolveArgs(");
+    expect(hook).toContain("findChartRefs(recent)");
+    expect(hook).not.toContain("resolveDomain(dir");
   });
 
   test("compaction hook appends one automatic session note (Sextant-as-Engram)", async () => {

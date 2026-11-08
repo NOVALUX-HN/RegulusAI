@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { applyUsagePruning, candidates, compactionContextArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, parseTraceUsage, pickRegulus, REGULUS_CONTRACT, resolveDomain, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
+import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, parseTraceUsage, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -109,10 +109,8 @@ async function run(bin: string, args: string[], cwd?: string, signal?: AbortSign
   }
 }
 
-// lessonsCache skips the `memory search --type lesson` spawn while fresh
-// (60s per project+domain): admitted lessons only change on admit, so
-// re-spawning on every context assembly is pure latency.
-const lessonsCache = new TtlCache<{ exitCode: number; output: string }>(60000)
+// lessonsCache retired (T1 speed-tokens): single-spawn context resolves
+// lessons in-process, so per-domain memo is no longer needed.
 
 // skillsMemo (harness-total/T2): loadSkills reads N SKILL.md per context
 // assembly; the registry only changes on deploy, so one read per process
@@ -740,23 +738,16 @@ export default Plugin.define({
       event.system.push({ type: "text", text: await loadDiscipline(dir, DEFAULT_DISCIPLINE) })
     })
 
-    // Lessons reach the agent without being asked: the newest admitted
-    // lessons inject into every context assembly, DATA-framed — scoped
-    // to the detected domain when one resolves (G1.4), newest-first
-    // otherwise.
+    // Lessons reach the agent without being asked: single-spawn
+    // context assembly (T1 speed-tokens) — `memory context
+    // --resolve-domain` resolves the domain in-process and renders
+    // context + scoped lessons in 1 spawn instead of 4-8.
     await ctx.session.hook("context", async (event) => {
       const recent = JSON.stringify(event.messages ?? []).slice(-20000)
-      const domain = await resolveDomain(dir, (args) => run(bin, args, dir), recent, event.sessionID)
-      const cacheKey = `${dir}\n${domain}`
-      let lessons = lessonsCache.get(cacheKey)
-      if (lessons === undefined) {
-        const args = ["memory", "search", "--type", "lesson", "--limit", "3"]
-        if (domain !== "") args.push("--domain", domain)
-        lessons = await run(bin, args, dir)
-        lessonsCache.set(cacheKey, lessons)
-      }
-      if (lessons.exitCode === 0 && lessons.output !== "" && !lessons.output.startsWith("no matching")) {
-        event.system.push({ type: "text", text: dataBlock("regulus_admitted_lessons", lessons.output) })
+      const charts = findChartRefs(recent).slice(0, 5)
+      const ctxRes = await run(bin, contextResolveArgs({ sessionID: event.sessionID, charts }), dir)
+      if (ctxRes.exitCode === 0 && ctxRes.output !== "") {
+        event.system.push({ type: "text", text: dataBlock("regulus_admitted_lessons", ctxRes.output) })
       }
       // Skill suggestions (E6): match recent message words against
       // skill triggers; conservative (2+ shared words, max 2), DATA.

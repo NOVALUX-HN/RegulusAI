@@ -720,6 +720,19 @@ export function compactionContextArgs(env?: string): string[] {
   return ["memory", "context", "--limit", String(COMPACTION_CONTEXT_LIMIT), "--budget", String(COMPACTION_CONTEXT_BUDGET)];
 }
 
+// contextResolveArgs builds the single-spawn context hook argv (T1
+// speed-tokens): `memory context --resolve-domain` resolves the lesson
+// domain in-process (chart pins, lone chart, single library domain,
+// trace file-hits) and renders context + scoped lessons in one spawn.
+// Pure so bun tests pin the argv without spawning.
+export function contextResolveArgs(opts?: { sessionID?: string; charts?: string[]; limit?: number; budget?: number; lessons?: number }): string[] {
+  const args = ["memory", "context", "--resolve-domain"];
+  if (opts?.sessionID) args.push("--session", opts.sessionID);
+  for (const c of opts?.charts ?? []) args.push("--chart", c);
+  args.push("--limit", String(opts?.limit ?? COMPACTION_CONTEXT_LIMIT), "--budget", String(opts?.budget ?? COMPACTION_CONTEXT_BUDGET), "--lessons", String(opts?.lessons ?? 3));
+  return args;
+}
+
 // memorySearchArgs builds the `memory search` argv, mirroring the MCP
 // coercion the tool schema advertises: limit is an integer (0 means
 // all), any/latest/include_superseded are booleans (flag iff truthy),
