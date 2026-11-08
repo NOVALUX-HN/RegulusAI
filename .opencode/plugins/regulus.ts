@@ -779,30 +779,27 @@ export default Plugin.define({
       if (context_.exitCode === 0 && context_.output !== "") {
         event.system.push({ type: "text", text: dataBlock("regulus_almanac_context", context_.output) })
       }
-      // T4 (pro-harness): the periodic proposer rides the compaction
-      // boundary (rare, session-natural) best-effort: a due tick mines
-      // repeated errors + stale lessons into pending candidates (the
-      // guardian still admits). Failures never break the resume; a
-      // proposal surfaces as DATA with its count.
-      try {
-        const tick = await run(bin, ["evolve", "tick"], dir)
+      // T2 (speed-tokens): tick + note run concurrently — the resume
+      // above is already pushed, so slow mining costs max(tick,note)
+      // wall instead of the sum. allSettled: a failed note never drops
+      // the tick proposals and vice versa; failures log, never break.
+      const count = Array.isArray((event as { messages?: unknown }).messages)
+        ? ((event as { messages: unknown[] }).messages.length)
+        : 0
+      const [tickSettled, noteSettled] = await Promise.allSettled([
+        run(bin, ["evolve", "tick"], dir),
+        run(bin, ["memory", "note", `[auto] session compacted: ${count} message(s) at ${new Date().toISOString()}`], dir),
+      ])
+      if (tickSettled.status === "fulfilled") {
+        const tick = tickSettled.value
         if (tick.exitCode === 0 && !tick.output.startsWith("no tick due") && tick.output.trim() !== "") {
           event.system.push({ type: "text", text: dataBlock("regulus_tick_proposals", tick.output) })
         }
-      } catch (err) {
-        console.error(`[regulus] evolve tick: ${(err as Error)?.message ?? String(err)} — skipping proposals`)
+      } else {
+        console.error(`[regulus] evolve tick: ${(tickSettled.reason as Error)?.message ?? String(tickSettled.reason)} — skipping proposals`)
       }
-      // Sextant-as-Engram: the session lineage survives compaction
-      // without the agent doing anything — exactly one [auto] note
-      // per compaction (message count + time). Best-effort like the
-      // tick above; a failed note never breaks the resume.
-      try {
-        const count = Array.isArray((event as { messages?: unknown }).messages)
-          ? ((event as { messages: unknown[] }).messages.length)
-          : 0
-        await run(bin, ["memory", "note", `[auto] session compacted: ${count} message(s) at ${new Date().toISOString()}`], dir)
-      } catch (err) {
-        console.error(`[regulus] compaction note: ${(err as Error)?.message ?? String(err)} — skipping note`)
+      if (noteSettled.status === "rejected") {
+        console.error(`[regulus] compaction note: ${(noteSettled.reason as Error)?.message ?? String(noteSettled.reason)} — skipping note`)
       }
     })
   },

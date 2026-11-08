@@ -439,6 +439,16 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     expect(hook).toContain('"memory", "note"');
     expect(hook).toContain("[auto] session compacted");
   });
+
+  test("compaction tick+note run concurrently (T2 speed-tokens)", async () => {
+    // Wall is max(tick,note), not the sum; resume is pushed before.
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const hook = src.slice(src.indexOf('"compaction"'));
+    expect(hook).toContain("Promise.allSettled");
+    expect(hook).toContain('"evolve", "tick"');
+    expect(hook).toContain("regulus_almanac_context");
+    expect(hook.indexOf("regulus_almanac_context")).toBeLessThan(hook.indexOf("Promise.allSettled"));
+  });
 });
 
 describe("withTimeout", () => {
