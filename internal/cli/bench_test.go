@@ -79,6 +79,22 @@ func TestBenchRun(t *testing.T) {
 	}
 }
 
+// Item 3 (usuario): bench run es gate - cualquier FAIL sale exit 1.
+func TestBenchRunExitCode(t *testing.T) {
+	allPass := bench.Report{Tasks: []bench.TaskResult{{ID: "B1", Pass: true}, {ID: "B2", Pass: true}}, Passed: 2}
+	if got := benchRunExitCode(allPass); got != 0 {
+		t.Fatalf("all-pass exit = %d, want 0", got)
+	}
+	oneFail := bench.Report{Tasks: []bench.TaskResult{{ID: "B1", Pass: true}, {ID: "B2", Pass: false}}, Passed: 1, Failed: 1}
+	if got := benchRunExitCode(oneFail); got != 1 {
+		t.Fatalf("one-fail exit = %d, want 1", got)
+	}
+	empty := bench.Report{}
+	if got := benchRunExitCode(empty); got != 0 {
+		t.Fatalf("empty exit = %d, want 0", got)
+	}
+}
+
 func TestBenchRunJSONAndSave(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
