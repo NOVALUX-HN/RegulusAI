@@ -213,3 +213,24 @@ func TestMemoryContextResolveDomainPinnedKeepsFullLessons(t *testing.T) {
 		t.Fatalf("pinned chart must keep full --lessons 3, got %d in:\n%s", n, got)
 	}
 }
+
+// R3-001 (R1 review, reliability BLOCKER): scoping flags without --resolve-domain
+// must refuse (exit 2), never silently discard scoping and exit 0.
+func TestMemoryContextResolveDomainFlagsNeedResolve(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	for _, args := range [][]string{
+		{"memory", "context", "--chart", "charts/app.md"},
+		{"memory", "context", "--session", "s1"},
+		{"memory", "context", "--lessons", "5"},
+	} {
+		c, _, _ := newCLI(nil)
+		if code := c.Run(args); code != 2 {
+			t.Fatalf("%v: exit = %d, want 2 (scoping flags need --resolve-domain)", args, code)
+		}
+	}
+	c, _, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "context"}); code != 0 {
+		t.Fatalf("plain context exit = %d, want 0", code)
+	}
+}

@@ -877,6 +877,20 @@ func (c CLI) memoryContextCmd(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	// R3-001 (R1 review, reliability BLOCKER): scoping flags without
+	// --resolve-domain refuse (exit 2) instead of silently discarding
+	// scoping and exiting 0 with unscoped context.
+	lessonsFlagSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "lessons" {
+			lessonsFlagSet = true
+		}
+	})
+	if !*resolve && (*session != "" || len(charts) > 0 || lessonsFlagSet) {
+		fmt.Fprintln(c.Stderr, "memory context: --session/--chart/--lessons need --resolve-domain")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		return 2
+	}
 	sys, err := almanac.ParseSystem(*system)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
