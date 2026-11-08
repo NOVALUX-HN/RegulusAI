@@ -9,6 +9,7 @@ import (
 
 	"regulus-ai/internal/evidence"
 	"regulus-ai/internal/library"
+	"regulus-ai/internal/trace"
 )
 
 // Lesson evidence states for the evolution report: ok (task receipts
@@ -34,15 +35,17 @@ type LessonRow struct {
 
 // Report is the lesson economics of the store (one domain, or all
 // when domain is ""): per-lesson rows in stable order (domain, cue),
-// totals, and retire lines for rot lessons. Rot proposes retirement;
-// the guardian still disposes.
+// totals, retire lines for rot lessons, and the measured-local cost
+// per task (Costs): the CostByTask fold over the store's trace logs,
+// so pruning decisions read measured cost next to lesson price.
 type Report struct {
-	Domain     string      `json:"domain"`
-	Lessons    []LessonRow `json:"lessons"`
-	Admitted   int         `json:"admitted"`
-	TotalProxy int64       `json:"total_proxy"`
-	Rot        int         `json:"rot"`
-	Retire     []string    `json:"retire"`
+	Domain     string           `json:"domain"`
+	Lessons    []LessonRow      `json:"lessons"`
+	Admitted   int              `json:"admitted"`
+	TotalProxy int64            `json:"total_proxy"`
+	Rot        int              `json:"rot"`
+	Retire     []string         `json:"retire"`
+	Costs      []trace.TaskCost `json:"costs"`
 }
 
 // lessonProxy prices one lesson the way the context prices text:
@@ -111,6 +114,13 @@ func BuildReport(root, domain string) (Report, error) {
 		}
 		return rep.Lessons[i].Cue < rep.Lessons[j].Cue
 	})
+	// Measured-local cost per task (speed-tokens/T10): the same CostByTask
+	// fold `bench run` trusts for the B7/B10 goldens, read off the same
+	// JSONL lines List reads. Fail-open like the library read above: a
+	// malformed trace line must not hide lesson economics.
+	if costs, err := trace.CostByTask(root); err == nil {
+		rep.Costs = costs
+	}
 	return rep, nil
 }
 
@@ -187,6 +197,21 @@ func hasLesson(r Report, id string) bool {
 		}
 	}
 	return false
+}
+
+// CostLines renders one line per measured task: its calls, errors and
+// measured-local proxy-token price. Host counts stay honestly unknown
+// (never estimated); the proxy measures the stored descriptor chars
+// plus output bytes, the same convention as the B10 golden. Pruning
+// decisions read these lines next to lesson price: a costly lesson
+// that pays is fine, a cheap one with rot evidence is not.
+func (r Report) CostLines() []string {
+	lines := make([]string, 0, len(r.Costs))
+	for _, c := range r.Costs {
+		lines = append(lines, fmt.Sprintf("%s: %d calls, %d errors, ~%d proxy tokens (measured-local, host unknown)",
+			c.Task, c.Calls, c.Errors, c.TotalLocalTokens))
+	}
+	return lines
 }
 
 // SaveReport writes one report as indented JSON (temp+rename: a torn

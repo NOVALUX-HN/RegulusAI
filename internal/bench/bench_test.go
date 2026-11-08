@@ -327,6 +327,50 @@ func TestB10TokenProxyGolden(t *testing.T) {
 	}
 }
 
+// T10 (S2,S3): the budget gate — B10/B11 pin their goldens as
+// ceilings, so `bench run` FAILS when collapsed guidance bytes or the
+// default bounded context bytes grow past their pins. At-budget passes;
+// one byte or token over refuses with a gate error.
+func TestBudgetGateRefusesOverrun(t *testing.T) {
+	if err := checkTokenProxyBudget(b10CollapsedProxyBudget, b10CollapsedProxyBudget); err != nil {
+		t.Fatalf("at-budget proxy fold must pass: %v", err)
+	}
+	if err := checkTokenProxyBudget(b10CollapsedProxyBudget+1, b10CollapsedProxyBudget); err == nil {
+		t.Fatal("over-budget proxy fold must fail the gate")
+	}
+	if err := checkContextBudget(defaultContextBytesBudget, defaultContextProxyBudget); err != nil {
+		t.Fatalf("at-budget context block must pass: %v", err)
+	}
+	if err := checkContextBudget(defaultContextBytesBudget+1, defaultContextProxyBudget); err == nil {
+		t.Fatal("over-budget context bytes must fail the gate")
+	}
+	if err := checkContextBudget(defaultContextBytesBudget, defaultContextProxyBudget+1); err == nil {
+		t.Fatal("over-budget context proxy must fail the gate")
+	}
+}
+
+// T10 (S2,S3): B10/B11 details name the budget they gate, so a `bench
+// run` failure tells the reader which pin grew and by policy (narrow
+// the text or widen the pin deliberately, never drift silently).
+func TestB10B11DetailsNameBudgetGate(t *testing.T) {
+	b10, err := checkTokenProxyGolden()
+	if err != nil {
+		t.Fatalf("B10 check failed: %v", err)
+	}
+	if !strings.Contains(b10, "budget") {
+		t.Errorf("B10 detail must name its budget gate, got %q", b10)
+	}
+	b11, err := checkLessonContextCost()
+	if err != nil {
+		t.Fatalf("B11 check failed: %v", err)
+	}
+	for _, want := range []string{"budget", "546"} {
+		if !strings.Contains(b11, want) {
+			t.Errorf("B11 detail must contain %q, got %q", want, b11)
+		}
+	}
+}
+
 // P1: B3 now machine-checks the spec hardening — Then-less,
 // single-word and disordered scenarios all refuse.
 func TestB3RefusesHardenedShapes(t *testing.T) {

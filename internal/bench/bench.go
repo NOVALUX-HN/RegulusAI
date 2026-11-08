@@ -557,6 +557,49 @@ func checkRealGateProfile() (string, error) {
 	return "full=12, quick=10 required in order, unknown refused", nil
 }
 
+// Budget gates (speed-tokens/T10): the suite pins token/context budgets
+// as ceilings, not estimates — `bench run` FAILS when the measured
+// bytes or proxy tokens exceed their goldens. Guidance/context bytes
+// otherwise grow silently (every char rides every request). Narrow the
+// text or widen a pin deliberately; never drift past it quietly.
+//
+// b10CollapsedProxyBudget caps the collapsed per-task proxy of the B10
+// golden entries: the two-entry fold models per-call guidance
+// descriptors (tool/message/call/task/files chars/4), and the fold is
+// their collapsed per-task price.
+const b10CollapsedProxyBudget = 13
+
+// defaultContextBytesBudget and defaultContextProxyBudget cap the
+// default bounded Almanac resume block (Context: latest 20 notes,
+// budget 20 per long list) over the B11 fixture store: 3 observations
+// (2 notes + 1 lesson) assembled deterministically (fixed timestamps,
+// fixed temp dir name — the header embeds ProjectName(root) — hermetic
+// temp store, never the repo). Measured 2026-11-08.
+const defaultContextBytesBudget = 546
+const defaultContextProxyBudget = 137
+
+// checkTokenProxyBudget refuses a collapsed proxy total over budget.
+// At-budget passes; one token over fails the suite with the pin named.
+func checkTokenProxyBudget(total, budget int64) error {
+	if total > budget {
+		return fmt.Errorf("budget gate: collapsed proxy %d exceeds pinned golden %d — narrow the guidance or widen the pin deliberately", total, budget)
+	}
+	return nil
+}
+
+// checkContextBudget refuses a default bounded block over either
+// golden (bytes and proxy price move together, but pin both: a
+// rendering change could fatten one without the other).
+func checkContextBudget(nBytes, proxy int64) error {
+	if nBytes > defaultContextBytesBudget {
+		return fmt.Errorf("budget gate: default bounded context %dB exceeds pinned golden %dB — narrow the block or widen the pin deliberately", nBytes, defaultContextBytesBudget)
+	}
+	if proxy > defaultContextProxyBudget {
+		return fmt.Errorf("budget gate: default bounded context ~%d proxy tokens exceeds pinned golden %d — narrow the block or widen the pin deliberately", proxy, defaultContextProxyBudget)
+	}
+	return nil
+}
+
 // checkTokenProxyGolden pins the T1 local-token proxy on golden values:
 // exact chars/4 estimates over fixed entries plus the per-task fold
 // (calls, errors, summed proxy) with host tokens honestly unknown.
@@ -606,8 +649,14 @@ func checkTokenProxyGolden() (string, error) {
 	got := costs[0]
 	// "boom"(4) replaces "hello"(5): 4+4+2+9 = 19 chars + 12 output bytes
 	// = 31 → (31+3)/4 = 8. Fold: 5 + 8 = 13.
-	if got.Calls != 2 || got.Errors != 1 || got.TotalLocalTokens != 13 {
-		return "", fmt.Errorf("fold miscounted: %+v (want 2 calls, 1 error, 13 proxy tokens)", got)
+	// The fold total is a budget ceiling, not an exact pin: the unit
+	// estimates above already pin the composition, so only growth fails
+	// here — shrinkage is a diet, not drift.
+	if got.Calls != 2 || got.Errors != 1 {
+		return "", fmt.Errorf("fold miscounted: %+v (want 2 calls, 1 error)", got)
+	}
+	if err := checkTokenProxyBudget(got.TotalLocalTokens, b10CollapsedProxyBudget); err != nil {
+		return "", err
 	}
 	if got.TokensKnown || got.TotalInputTokens != 0 || got.TotalOutputTokens != 0 {
 		return "", fmt.Errorf("tokens not honestly unknown: %+v", got)
@@ -615,21 +664,32 @@ func checkTokenProxyGolden() (string, error) {
 	if !got.LocalTokensKnown {
 		return "", fmt.Errorf("local proxy not marked measured: %+v", got)
 	}
-	return "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown", nil
+	return fmt.Sprintf("proxy golden 5/8/7, fold 2 calls 1 error 13 tokens (budget %d), host unknown", b10CollapsedProxyBudget), nil
 }
 
 // checkLessonContextCost pins the deterministic proxy-token price of
 // one Almanac resume block over a fixed fixture store (2 notes +
-// 1 evidence-gated lesson), assembled exactly like the compaction
-// hook (--limit 20 --budget 20). Chars/4 rounded up, the same
-// convention as trace.EstimateLocalTokens. The check reports, never
-// judges: Fase 4 (pro-harness) diffs this number per admitted lesson
-// to ask whether the evolution pays. Hermetic by construction:
-// ContextScoped reads only the temp store, never charts or cwd, and
-// every timestamp is fixed so the byte count is stable run to run.
+// 1 evidence-gated lesson), assembled through the real default path
+// (Context: the default bounded block, --limit 20 --budget 20 — what
+// every restart injects). Chars/4 rounded up, the same convention as
+// trace.EstimateLocalTokens. The check gates, never merely reports:
+// block bytes and proxy tokens must stay within their pinned goldens
+// (T10 budget gate) — Fase 4 (pro-harness) diffs this number per
+// admitted lesson to ask whether the evolution pays. Hermetic by
+// construction: Context reads only the temp store, never charts or
+// cwd, and every timestamp is fixed so the byte count is stable run
+// to run.
 func checkLessonContextCost() (string, error) {
-	root, err := os.MkdirTemp("", "bench-lesson-cost-*")
-	if err != nil {
+	// Deterministic dir name — not MkdirTemp's random decimal suffix:
+	// the block header embeds ProjectName(root), so a random suffix
+	// would wobble the byte count run to run and no golden could pin
+	// it exactly. Cleaned before and after; a crashed run leaves
+	// nothing the next run cannot clear.
+	root := filepath.Join(os.TempDir(), "bench-lesson-cost-golden")
+	if err := os.RemoveAll(root); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(root)
@@ -645,7 +705,7 @@ func checkLessonContextCost() (string, error) {
 			return "", err
 		}
 	}
-	ctx, err := almanac.ContextScoped(root, now.Add(3*time.Second), 20, almanac.ContextScope{Budget: 20})
+	ctx, err := almanac.Context(root, now.Add(3*time.Second))
 	if err != nil {
 		return "", err
 	}
@@ -658,7 +718,10 @@ func checkLessonContextCost() (string, error) {
 	if proxy <= 0 {
 		return "", fmt.Errorf("empty block prices nothing")
 	}
-	return fmt.Sprintf("fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble %d chars = %d proxy tokens, host unknown", len(ctx), proxy), nil
+	if err := checkContextBudget(int64(len(ctx)), proxy); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble %d chars = %d proxy tokens (budget %dB/%dt), host unknown", len(ctx), proxy, defaultContextBytesBudget, defaultContextProxyBudget), nil
 }
 
 // checkDecisionScoringGolden pins the T4 quantitative decision score on

@@ -527,6 +527,12 @@ func (c CLI) evolveReportCmd(args []string) int {
 			l.Domain, l.ID, l.Cue, l.ProxyTokens, l.Evidence)
 	}
 	fmt.Fprintf(c.Stdout, "admitted: %d, proxy tokens: %d, rot: %d\n", rep.Admitted, rep.TotalProxy, rep.Rot)
+	// T10 (speed-tokens): measured-local cost per task on stdout, next to
+	// lesson price — pruning reads measured cost without --save. Empty
+	// when no session left attributed traces (fail-open, never an error).
+	for _, l := range rep.CostLines() {
+		fmt.Fprintf(c.Stdout, "cost: %s\n", l)
+	}
 	for _, id := range rep.Retire {
 		fmt.Fprintf(c.Stdout, "retire: %s — evidence rot, re-validate or retire it\n", id)
 	}
