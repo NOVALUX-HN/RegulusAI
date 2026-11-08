@@ -99,3 +99,117 @@ func TestMemoryContextResolveDomainUnfiltered(t *testing.T) {
 		t.Fatalf("empty store must be unfiltered, got:\n%s", out.String())
 	}
 }
+
+// T8 (S2,S3) cheap fallback: unpinned-multi (domains>1, no pin) trims the
+// default --lessons 3 to 1 newest lesson plus per-domain search hints.
+func TestMemoryContextResolveDomainUnpinnedMultiCheapFallback(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "go"), 0755)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "ts"), 0755)
+	base := time.Now()
+	seeds := []struct {
+		title, content, domain string
+	}{
+		{"old go lesson", "old go content", "go"},
+		{"mid ts lesson", "mid ts content", "ts"},
+		{"new go lesson", "new go content", "go"},
+	}
+	for i, s := range seeds {
+		if _, err := almanac.Save(dir, &almanac.Observation{
+			Type: almanac.TypeLesson, Title: s.title, Content: s.content,
+			Domain: s.domain, Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low"},
+		}, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatalf("seed lesson %d: %v", i, err)
+		}
+	}
+
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "context", "--resolve-domain"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	got := out.String()
+	if !strings.Contains(got, "reason: unfiltered-multi") {
+		t.Fatalf("must resolve unfiltered-multi, got:\n%s", got)
+	}
+	idx := strings.Index(got, "Lessons scoped:")
+	if idx < 0 {
+		t.Fatalf("must render Lessons scoped section, got:\n%s", got)
+	}
+	scoped := got[idx:]
+	if n := strings.Count(scoped, "  - ["); n != 1 {
+		t.Fatalf("unpinned-multi must render exactly 1 scoped lesson, got %d in:\n%s", n, got)
+	}
+	if !strings.Contains(scoped, "memory search --domain go") {
+		t.Fatalf("must hint per-domain search for go, got:\n%s", got)
+	}
+	if !strings.Contains(scoped, "memory search --domain ts") {
+		t.Fatalf("must hint per-domain search for ts, got:\n%s", got)
+	}
+}
+
+// T8 (S2,S3): explicit --lessons N wins over the cheap fallback.
+func TestMemoryContextResolveDomainUnpinnedMultiExplicitLessonsWins(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "go"), 0755)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "ts"), 0755)
+	base := time.Now()
+	for i := 0; i < 3; i++ {
+		if _, err := almanac.Save(dir, &almanac.Observation{
+			Type: almanac.TypeLesson, Title: "lesson", Content: "content",
+			Domain: "go", Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low"},
+		}, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatalf("seed lesson %d: %v", i, err)
+		}
+	}
+
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "context", "--resolve-domain", "--lessons", "3"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	got := out.String()
+	idx := strings.Index(got, "Lessons scoped:")
+	if idx < 0 {
+		t.Fatalf("must render Lessons scoped section, got:\n%s", got)
+	}
+	if n := strings.Count(got[idx:], "  - ["); n != 3 {
+		t.Fatalf("explicit --lessons 3 must render 3 lessons, got %d in:\n%s", n, got)
+	}
+}
+
+// T8 (S2,S3): pinned resolutions keep full --lessons behavior (no trim,
+// no fallback hints needed for the trim path).
+func TestMemoryContextResolveDomainPinnedKeepsFullLessons(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	os.MkdirAll(filepath.Join(dir, "charts"), 0755)
+	os.WriteFile(filepath.Join(dir, "charts", "app.md"), []byte("# App\n\nDomain: go\n"), 0644)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "go"), 0755)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "ts"), 0755)
+	base := time.Now()
+	for i := 0; i < 3; i++ {
+		if _, err := almanac.Save(dir, &almanac.Observation{
+			Type: almanac.TypeLesson, Title: "go lesson", Content: "content",
+			Domain: "go", Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low"},
+		}, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatalf("seed lesson %d: %v", i, err)
+		}
+	}
+
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "context", "--resolve-domain", "--chart", "charts/app.md"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	got := out.String()
+	if !strings.Contains(got, "reason: chart:charts/app.md") {
+		t.Fatalf("must resolve chart pin, got:\n%s", got)
+	}
+	idx := strings.Index(got, "Lessons scoped:")
+	if idx < 0 {
+		t.Fatalf("must render Lessons scoped section, got:\n%s", got)
+	}
+	if n := strings.Count(got[idx:], "  - ["); n != 3 {
+		t.Fatalf("pinned chart must keep full --lessons 3, got %d in:\n%s", n, got)
+	}
+}

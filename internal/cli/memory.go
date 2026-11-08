@@ -872,7 +872,7 @@ func (c CLI) memoryContextCmd(args []string) int {
 	session := fs.String("session", "", "session id for trace file-hit domain detection (with --resolve-domain)")
 	var charts chartList
 	fs.Var(&charts, "chart", "chart ref for Domain: pin (repeatable, with --resolve-domain)")
-	lessonsN := fs.Int("lessons", 3, "scoped lessons to include with --resolve-domain")
+	lessonsN := fs.Int("lessons", 3, "scoped lessons to include with --resolve-domain (default 3; unpinned multi-domain fallback trims to 1 unless --lessons is explicit)")
 	noStaleness := fs.Bool("no-staleness", false, "skip git staleness probes (no rev-list spawns)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -904,7 +904,25 @@ func (c CLI) memoryContextCmd(args []string) int {
 	}
 	fmt.Fprintf(c.Stdout, "domain: %s (reason: %s)\n\n", domainLabel, reason)
 	fmt.Fprint(c.Stdout, ctx)
-	q := almanac.Query{Type: almanac.TypeLesson, Limit: *lessonsN}
+	// T8 (S2,S3) cheap fallback: unpinned-multi (no pin, >1 library
+	// domain) is the most expensive scope — unfiltered newest-first up to
+	// --lessons. Trim the DEFAULT 3 to 1 newest lesson and hint per-domain
+	// `memory search --domain <d>` so the agent pulls more on demand.
+	// Explicit --lessons N wins; pinned resolutions
+	// (chart/lone-chart/single-domain/file-hit) keep full behavior.
+	lessonsExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "lessons" {
+			lessonsExplicit = true
+		}
+	})
+	libDomains, _ := library.Domains(c.dir())
+	unpinnedMulti := reason == "unfiltered-multi" || (reason == "unfiltered" && len(libDomains) > 1)
+	effectiveLessons := *lessonsN
+	if unpinnedMulti && !lessonsExplicit {
+		effectiveLessons = 1
+	}
+	q := almanac.Query{Type: almanac.TypeLesson, Limit: effectiveLessons}
 	if domain != "" {
 		q.Domain = domain
 	}
@@ -915,13 +933,27 @@ func (c CLI) memoryContextCmd(args []string) int {
 	}
 	if len(hits) == 0 {
 		fmt.Fprint(c.Stdout, "\nLessons scoped: (none)\n")
+		printDomainHints(c, unpinnedMulti, libDomains)
 		return 0
 	}
 	fmt.Fprint(c.Stdout, "\nLessons scoped:\n")
 	for _, h := range hits {
 		fmt.Fprintf(c.Stdout, "  - [%s] %s: %s\n", h.Domain, h.Title, h.Content)
 	}
+	printDomainHints(c, unpinnedMulti, libDomains)
 	return 0
+}
+
+// printDomainHints renders one on-demand pull line per library domain for
+// the T8 cheap fallback (unpinned-multi only). Pinned resolutions and
+// single/zero-domain stores print nothing.
+func printDomainHints(c CLI, unpinnedMulti bool, libDomains []string) {
+	if !unpinnedMulti || len(libDomains) <= 1 {
+		return
+	}
+	for _, d := range libDomains {
+		fmt.Fprintf(c.Stdout, "  hint: more %q lessons on demand: regulus memory search --domain %s\n", d, d)
+	}
 }
 
 // Staleness probe cache (T3 S2-S3): HEAD (per directory — one process
