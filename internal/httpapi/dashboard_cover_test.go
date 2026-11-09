@@ -219,3 +219,61 @@ func TestAlmanacSummaryStoreError(t *testing.T) {
 		t.Fatalf("error must name the almanac store (%s)", rec.Body.String())
 	}
 }
+
+// H5 (S2,S3): the dashboard polls every 30s and fans each aggregate
+// out to several panels per cycle, so successful aggregate GETs carry
+// a short Cache-Control (max-age=10). Poll frequency and JSON shapes
+// stay byte-identical: headers only, no body change.
+func TestDashboardAggregatesCarryCacheControl(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	srv := newTestServer()
+	for _, path := range []string{"/v1/metrics", "/v1/almanac/summary", "/v1/evolution"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200 (%s)", path, rec.Code, rec.Body.String())
+		}
+		if cc := rec.Header().Get("Cache-Control"); cc != "max-age=10" {
+			t.Fatalf("GET %s Cache-Control = %q, want max-age=10", path, cc)
+		}
+	}
+}
+
+// H5 (S2,S3): the almanac.All fold is memoized per store mtime+size so
+// repeat polls skip the uncapped rescan, and any store append
+// invalidates the memo (the second fetch sees the new total, and an
+// unchanged store replays byte-identical bodies).
+func TestAlmanacSummaryMemoInvalidatesOnStoreChange(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	srv := newTestServer()
+	fetch := func() (string, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/v1/almanac/summary", nil)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET = %d, want 200 (%s)", rec.Code, rec.Body.String())
+		}
+		return rec.Body.String(), almanacData(t, rec.Body.Bytes())
+	}
+	if _, data := fetch(); data["total"].(float64) != 0 {
+		t.Fatalf("total = %v, want 0 on empty store", data["total"])
+	}
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	if _, err := almanac.Save(dir, &almanac.Observation{
+		Type: almanac.TypeSessionNote, Title: "memo", Content: "probe",
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	bodyAfterSave, data := fetch()
+	if data["total"].(float64) != 1 {
+		t.Fatalf("total = %v, want 1 after store append (memo must invalidate)", data["total"])
+	}
+	bodyAgain, _ := fetch()
+	if bodyAgain != bodyAfterSave {
+		t.Fatalf("repeat fetch on unchanged store must replay byte-identical body:\n%s\n%s", bodyAfterSave, bodyAgain)
+	}
+}

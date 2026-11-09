@@ -7,6 +7,9 @@ package httpapi
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"regulus-ai/internal/almanac"
@@ -16,6 +19,93 @@ import (
 	"regulus-ai/internal/observability"
 	"regulus-ai/internal/reflect"
 )
+
+// aggregateCacheControl marks successful read-only aggregate GETs
+// cacheable for 10s (H5, S2-S3): the dashboard polls every 30s and fans
+// each aggregate out to several panels per cycle, so a short max-age
+// lets caches coalesce the duplicate in-cycle fetches. Poll frequency
+// and JSON shapes stay byte-identical: headers only, never bodies.
+const aggregateCacheControl = "max-age=10"
+
+func setAggregateCache(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", aggregateCacheControl)
+}
+
+// almanacFoldEntry memoizes the uncapped almanac.All scan+fold
+// (total, by_type, oldest, newest) keyed by the observations file
+// identity (H5, S2-S3): the fold is pure over the file bytes, so an
+// unchanged mtime+size means an unchanged fold and repeat polls skip
+// the rescan. Any store append changes mtime+size and invalidates.
+type almanacFoldEntry struct {
+	mtime  time.Time
+	size   int64
+	total  int
+	byType map[string]int
+	oldest time.Time
+	newest time.Time
+}
+
+var almanacFoldMemo = struct {
+	sync.Mutex
+	byFile map[string]almanacFoldEntry
+}{byFile: map[string]almanacFoldEntry{}}
+
+// cachedAlmanacFold returns the almanac.All fold, serving the memoized
+// entry when the store file is unchanged (same mtime+size) and
+// rescanning otherwise. Errors are never memoized: the next poll
+// retries the store. A missing log folds to zeros, like almanac.All.
+func cachedAlmanacFold(root string) (int, map[string]int, time.Time, time.Time, error) {
+	path := almanac.File(root)
+	key := path
+	if abs, err := filepath.Abs(path); err == nil {
+		key = abs
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, map[string]int{}, time.Time{}, time.Time{}, nil
+		}
+		return 0, nil, time.Time{}, time.Time{}, err
+	}
+	almanacFoldMemo.Lock()
+	if e, ok := almanacFoldMemo.byFile[key]; ok && e.mtime.Equal(fi.ModTime()) && e.size == fi.Size() {
+		byType := make(map[string]int, len(e.byType))
+		for k, v := range e.byType {
+			byType[k] = v
+		}
+		total, oldest, newest := e.total, e.oldest, e.newest
+		almanacFoldMemo.Unlock()
+		return total, byType, oldest, newest, nil
+	}
+	almanacFoldMemo.Unlock()
+	all, err := almanac.All(root)
+	if err != nil {
+		return 0, nil, time.Time{}, time.Time{}, err
+	}
+	byType := map[string]int{}
+	var oldest, newest time.Time
+	for _, o := range all {
+		byType[o.Type]++
+		if oldest.IsZero() || o.SavedAt.Before(oldest) {
+			oldest = o.SavedAt
+		}
+		if newest.IsZero() || o.SavedAt.After(newest) {
+			newest = o.SavedAt
+		}
+	}
+	stored := make(map[string]int, len(byType))
+	for k, v := range byType {
+		stored[k] = v
+	}
+	almanacFoldMemo.Lock()
+	almanacFoldMemo.byFile[key] = almanacFoldEntry{
+		mtime: fi.ModTime(), size: fi.Size(),
+		total: len(all), byType: stored,
+		oldest: oldest, newest: newest,
+	}
+	almanacFoldMemo.Unlock()
+	return len(all), byType, oldest, newest, nil
+}
 
 // metricsData is Summarize plus today's evolution against the cap.
 type metricsData struct {
@@ -70,6 +160,7 @@ func (s Server) handleEvolution(w http.ResponseWriter, r *http.Request) {
 		Admitted: rep.Admitted, ProxyTokens: rep.TotalProxy, Rot: rep.Rot,
 		Pending: pending, Sessions: sessions, TickAt: atTick,
 	}, "", 0)
+	setAggregateCache(w)
 	writeEnvelope(w, status, env)
 }
 
@@ -93,6 +184,7 @@ func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(root)}, "", 0)
+	setAggregateCache(w)
 	writeEnvelope(w, status, env)
 }
 
@@ -105,21 +197,10 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	all, err := almanac.All(root)
+	total, byType, oldest, newest, err := cachedAlmanacFold(root)
 	if err != nil {
 		writeEnvelope(w, http.StatusInternalServerError, Internal("almanac: "+observability.RedactText(err.Error())))
 		return
-	}
-	byType := map[string]int{}
-	var oldest, newest time.Time
-	for _, o := range all {
-		byType[o.Type]++
-		if oldest.IsZero() || o.SavedAt.Before(oldest) {
-			oldest = o.SavedAt
-		}
-		if newest.IsZero() || o.SavedAt.After(newest) {
-			newest = o.SavedAt
-		}
 	}
 	lessons, candidates := 0, 0
 	if domains, err := library.Domains(root); err == nil {
@@ -141,10 +222,11 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 		newestS = newest.UTC().Format(time.RFC3339)
 	}
 	status, env := MapResult(almanacSummaryData{
-		Total: len(all), ByType: byType,
+		Total: total, ByType: byType,
 		Lessons: lessons, Candidates: candidates,
 		Oldest: oldestS, Newest: newestS, IndexStatus: idx,
 	}, "", 0)
+	setAggregateCache(w)
 	writeEnvelope(w, status, env)
 }
 
