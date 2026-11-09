@@ -20,12 +20,13 @@ Read until `## Log` before edits.
 - [ ] H7 (S2,S3) — portar skills_list/evolve_tick/evolve_propose a MCP — route: worker — commit: —
 - [ ] H8 (S2,S3) — bench gauntlet-shape.json + B5 con 6 quick — route: worker — commit: —
 - [ ] H9 (S2,S3) — init: refusal con ancestro + --force + validación — route: worker — commit: —
-- [ ] H10 (S2,S3) — golden de rutas + point-in-time a audit — route: inline — commit: —
+- [x] H10 (S2,S3) — golden de rutas + point-in-time a audit — route: inline — commit: e41696b
 
 ## Log
 
 - L1: "revisa nuevamente que otros puntos de mejora tenemos"
 - L2: "procede papi. hay que dejar Regulus al 100"
+- L8: H10 done — RED golden (docs sin /v1/evolution) -> GREEN; línea evolution en Rutas + 3 banners (paths estables por refs vivas en logs/charts, no moves); suite httpapi verde, vet/fmt limpios.
 - L7: H4 done — RED firma vieja -> GREEN; server con ReadHeader 5s + Write 30s, SIGINT/SIGTERM graceful (vivo: 200 + exit 0); suite cmd verde, vet/fmt limpios.
 - L6: H3 done — RED 200-en-error -> GREEN 500 (9 sitios collections+dashboard, envelope intacto, mapeo exit-1->200 intacto); pin viejo actualizado al contrato; suite httpapi verde, vet/fmt limpios.
 - L5: H2 done — RED 3 casos tabla (2.9/-1.5/3.0) -> GREEN con math.Trunc; strings enteros e ints intactos; suite verde, vet/fmt limpios.
