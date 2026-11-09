@@ -888,7 +888,7 @@ func (c CLI) memoryContextCmd(args []string) int {
 	})
 	if !*resolve && (*session != "" || len(charts) > 0 || lessonsFlagSet) {
 		fmt.Fprintln(c.Stderr, "memory context: --session/--chart/--lessons need --resolve-domain")
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
 	sys, err := almanac.ParseSystem(*system)
@@ -897,10 +897,14 @@ func (c CLI) memoryContextCmd(args []string) int {
 		return 2
 	}
 	if fs.NArg() != 0 || *limit < 0 || *budget < 0 || *lessonsN < 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
-	_ = *noStaleness // context performs no git probes today; the flag keeps the skip symmetric with search and future-proofs staleness annotations.
+	if *noStaleness {
+		fmt.Fprintln(c.Stderr, "memory context: --no-staleness is a search-only flag (context performs no git probes)")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		return 2
+	}
 	scope := almanac.ContextScope{Task: *task, Path: *path, System: sys, Budget: *budget}
 	ctx, err := almanac.ContextScoped(c.dir(), time.Now().UTC(), *limit, scope)
 	if err != nil {
