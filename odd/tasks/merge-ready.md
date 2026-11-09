@@ -13,12 +13,13 @@ Read until `## Log` before edits.
 
 - [ ] C1 (S2,S3) — CRAP paydown mcpTools/serve/initCmd/resolveDomainInProcess — route: mixed — commit: —
 - [ ] C2 (S2,S3) — perf rerun + veredicto flake/regresión — route: inline — commit: —
-- [ ] C3 (S2,S3) — release mechanics (bump/CHANGELOG/tag) — route: blocked (número lo decide el dueño) — commit: —
+- [x] C3 (S2,S3) — release 0.13.0 (bump/CHANGELOG/chart, tag en main pendiente) — route: inline — commit: C3
 
 ## Log
 
 - L1: "que mas nos falta resolver antes de hacer merge a main?"
 - L2: "procede"
+- L7: C3 done 0.13.0 — package.json/versioninfo/manifest/README/CHANGELOG + chart release-0-13-0; rebuild stampleado (6 binarios + local) y doctor matches; suite doctor/cli verde. Tag v0.13.0 en main pendiente del dueño (igual que el merge).
 - L6: C1 initCmd done 88aec88 — split en 8 helpers, cx 25->11, CRAP 32.79->11.51, mensajes/exits byte-identical; 14/14 init tests intactos, suite verde.
 - L5: C1 serve+resolveDomain done (commits 791c8c2, 420a21d) — serve cx 7->2 (CRAP 39.22->3.19), resolve cx 25->9 (CRAP 31.61->9.03); suites verdes.
 - L4: C1 mcpTools done 13f39f8 — split en 5 grupos, orden/schemas byte-identical (pin 17 en orden PASS), CRAP 44.03->fuera de lista (max 28.69 yolo).

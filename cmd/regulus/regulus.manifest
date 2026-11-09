@@ -3,7 +3,7 @@
   <assemblyIdentity
     type="win32"
     name="regulus-ai"
-    version="0.12.0.0"
+    version="0.13.0.0"
     processorArchitecture="*"/>
   <description>Regulus AI core CLI</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">

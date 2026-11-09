@@ -4,6 +4,43 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.13.0] - 2026-11-08
+
+Same branch (`develop`); tags cut on main at merge.
+
+Batch delivered since 0.12.0 (HEAD `a8ab1e9`):
+
+### Added
+- speed-tokens (T1–T10): single-spawn `memory context --resolve-domain`,
+  concurrent compaction tick+note, process-life staleness cache +
+  `--no-staleness`, `REGULUS_DEFER_REINDEX=1`, `gate run --quick` (6 lean
+  gates) + coverage sha-cache, toolset measurement cache + single-table
+  guidance codegen, `trace record-batch` (1 spawn per flush), cheap
+  unpinned-multi fallback (1 lesson + hints), minimal 1-line Crew, bench
+  budget gate (B10 13 tokens, B11 546B/137t) + measured costs in
+  `evolve report`.
+- fresh-fixes (F1–F10): CI gauntlet on `develop`, plugin `memory_search`
+  without required terms, manual `memory_context` with lessons,
+  `gate_run` tools with quick/profile/dry_run, `serve` space-form flags,
+  bounded `status` scan + memoized gremlins probe, dead-surface pruning
+  (context `--no-staleness` refuses, `validateTarget` drops root),
+  docs drift fixes (server routes, audit 19/14), `doctor` caveat to
+  stderr on refusal, did-you-mean on unknown commands (exit 2 kept).
+- regulus-100 (H1–H10): MCP over-long line fails loud (exit 1),
+  `mcpInt` refuses fractional floats, store I/O failures answer HTTP 500
+  (envelope unchanged), serve timeouts + graceful shutdown, dashboard
+  cache headers + almanac fold memo, traces listing without N+1 decodes,
+  MCP 14→17 (`skills_list`, `evolve_tick` dry-run default,
+  `evolve_propose`), bench gauntlet-shape pin + real quick preset in B5,
+  `init` ancestor refusal + `--force` + post-init validation, golden
+  route list + point-in-time doc stamps.
+- merge-ready (C1–C2): CRAP paydown under 30 (serve 39→3, resolveDomain
+  31→9, mcpTools 44→gone, initCmd 33→11; max 28.69); perf marginal
+  confirmed flake via CI rerun (unit-tests green on retry).
+- `bench run` is a gate: any task FAIL exits 1 (was exit 0).
+- R1 review finding R3-001 fixed: `memory context` scoping flags without
+  `--resolve-domain` refuse exit 2 instead of silently discarding.
+
 ## [0.12.0] - 2026-11-02
 
 Same branch (`develop`); tags cut on main at merge.
