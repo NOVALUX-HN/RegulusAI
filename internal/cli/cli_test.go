@@ -2409,3 +2409,22 @@ func TestMemoryImportCycle(t *testing.T) {
 		t.Fatalf("usage exit = %d, want 2", code)
 	}
 }
+
+// F10: unknown commands suggest the nearest real command (typo tax),
+// exit stays 2 and gibberish gets no hint.
+func TestUnknownCommandSuggestsNearest(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"statu"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), `did you mean "status"?`) {
+		t.Fatalf("statu must hint status, got %q", errb.String())
+	}
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"frobnicate"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if strings.Contains(errb2.String(), "did you mean") {
+		t.Fatalf("gibberish must get no hint, got %q", errb2.String())
+	}
+}

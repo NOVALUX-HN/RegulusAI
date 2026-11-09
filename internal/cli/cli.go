@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"regulus-ai/internal/contract"
@@ -111,8 +112,66 @@ func (c CLI) Run(args []string) int {
 		return fn(c, args[1:])
 	}
 	fmt.Fprintf(c.Stderr, "regulus: unknown command %q\n\n", args[0])
+	if hint := suggestUnknownCommand(args[0]); hint != "" {
+		fmt.Fprintf(c.Stderr, "did you mean %q?\n", hint)
+	}
 	c.usage(c.Stderr)
 	return 2
+}
+
+// suggestUnknownCommand names the nearest registered command for a
+// typo invocation (F10): an exact-prefix match wins (shortest, then
+// alphabetical); else the smallest rune-wise Levenshtein distance up
+// to 2 (ties alphabetical). Empty when nothing is close, so gibberish
+// gets no hint and exit stays 2. Stdlib only.
+func suggestUnknownCommand(input string) string {
+	var prefixed []string
+	for name := range cliDispatch {
+		if input != "" && strings.HasPrefix(name, input) {
+			prefixed = append(prefixed, name)
+		}
+	}
+	if len(prefixed) > 0 {
+		sort.Strings(prefixed)
+		best := prefixed[0]
+		for _, name := range prefixed[1:] {
+			if len(name) < len(best) {
+				best = name
+			}
+		}
+		return best
+	}
+	best, bestDist := "", -1
+	for name := range cliDispatch {
+		d := levenshtein(input, name)
+		if d <= 2 && (bestDist < 0 || d < bestDist || (d == bestDist && name < best)) {
+			best, bestDist = name, d
+		}
+	}
+	return best
+}
+
+// levenshtein is the rune-wise edit distance (insert/delete/substitute
+// cost 1), stdlib only for the F10 typo hint.
+func levenshtein(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	prev := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i, ca := range ar {
+		cur := make([]int, len(br)+1)
+		cur[0] = i + 1
+		for j, cb := range br {
+			cost := 0
+			if ca != cb {
+				cost = 1
+			}
+			cur[j+1] = min(prev[j+1]+1, min(cur[j]+1, prev[j]+cost))
+		}
+		prev = cur
+	}
+	return prev[len(br)]
 }
 
 var taskIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
