@@ -51,7 +51,18 @@ type serveConfig struct {
 // the caller must return code without serving.
 func parseServeFlags(args []string) (serveConfig, int, bool) {
 	cfg := serveConfig{port: httpapi.DefaultDashboardPort, bind: "127.0.0.1"}
-	for _, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		// F5: space form (--port N) normalizes into =-form so the single
+		// validation below serves both spellings; a trailing bare flag is a usage error.
+		if a == "--port" || a == "--bind" || a == "--projects" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+				return cfg, 2, false
+			}
+			i++
+			a = a + "=" + args[i]
+		}
 		if a == "--help" || a == "-h" {
 			fmt.Println("usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
 			return cfg, 0, false

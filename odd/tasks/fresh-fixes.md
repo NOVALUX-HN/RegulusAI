@@ -15,7 +15,7 @@ Read until `## Log` before edits.
 - [x] F2 (S2,S3) — plugin memory_search sin terms requerido — route: inline (small enough) — commit: 2dcde1a
 - [ ] F3 (S2,S3) — memory_context manual con lessons (params session/charts en plugin+MCP) — route: worker — commit: —
 - [ ] F4 (S2,S3) — gate_run tools con quick/profile/dry_run — route: worker — commit: —
-- [ ] F5 (S2,S3) — serve acepta forma con espacio — route: inline — commit: —
+- [x] F5 (S2,S3) — serve acepta forma con espacio — route: inline — commit: F5
 - [ ] F6 (S2,S3) — status sin full-scan (medir, cap 200 newest, memo gremlins) — route: worker — commit: —
 - [ ] F7 (S2,S3) — podar muertos: --no-staleness en context + root en validateTarget — route: inline — commit: —
 - [ ] F8 (S2,S3) — docs drift: server.go rutas + audit 19/14 (con pin) — route: inline — commit: —
@@ -29,3 +29,4 @@ Read until `## Log` before edits.
 - L3: scan mw8ok4aw-c-4xsu + spot-checks del parent (gauntlet.yml, required terms, context pelado, gate_run task-only, serve =-only) — 10 items verificados como reales antes de implementar.
 - L4: F1 done — ruby -ryaml parse OK + ambas listas pineadas [main, develop]; sin push-back en el workflow (S8 retirado, solo artifacts), seguro en develop.
 - L5: F2 done 2dcde1a — RED scrape (required terms) -> GREEN required []; bun lib 166/166, tsc limpio.
+- L6: F5 done — RED 4 casos tabla -> GREEN; forma-espacio normalizada a =-form (validación única); cmd suite verde, vet/fmt limpios, binario vivo (8080 arranca, errores exit 2).
