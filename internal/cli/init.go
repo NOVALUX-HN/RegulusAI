@@ -42,42 +42,94 @@ func (c CLI) initCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus init [--stack go|node|smoke] [--force] [--harness-from <repo>] [--devin]")
 		return 2
 	}
-	if _, err := os.Stat("regulus.json"); err == nil && !*force {
-		if abs, aberr := filepath.Abs("regulus.json"); aberr == nil {
-			fmt.Fprintf(c.Stderr, "init: regulus.json already exists at %s — refusing to overwrite (use --force)\n", abs)
-		} else {
-			fmt.Fprintln(c.Stderr, "init: regulus.json already exists — refusing to overwrite (use --force)")
-		}
+	if msg, refused := initCwdConflict(*force); refused {
+		fmt.Fprint(c.Stderr, msg)
 		return 1
 	}
-	// H9: refuse a nested scaffold even when the cwd itself is clean.
-	// Every other CLI path resolves stores upward via ResolveRoot, so
-	// writing sub/regulus.json + sub/charts/ here would leave a nested
-	// config whose gates run against the ancestor's stores. Name the
-	// ancestor path so the fix is obvious; --force scaffolds the cwd
-	// deliberately and never chdirs.
-	if !*force {
-		if ancestor, ok := ancestorRegulusJSON(); ok {
-			fmt.Fprintf(c.Stderr, "init: ancestor regulus.json at %s — refusing to scaffold a nested project (run in the project root or use --force)\n", ancestor)
-			return 1
-		}
+	if msg, refused := initAncestorConflict(*force); refused {
+		fmt.Fprint(c.Stderr, msg)
+		return 1
 	}
-	if *harnessFrom != "" {
-		if st, err := os.Stat(filepath.Join(*harnessFrom, ".opencode")); err != nil || !st.IsDir() {
-			fmt.Fprintf(c.Stderr, "init: no .opencode directory at %s\n", filepath.Join(*harnessFrom, ".opencode"))
-			return 2
-		}
-	}
-	gates, ok := initPresets[*stack]
-	if !ok {
-		fmt.Fprintf(c.Stderr, "init: unknown stack %q (go | node | smoke)\n", *stack)
+	if msg, bad := initHarnessSourceError(*harnessFrom); bad {
+		fmt.Fprint(c.Stderr, msg)
 		return 2
 	}
-	allowlist, ok := initAllowlists[*stack]
+	stackGates, allowlist, msg, ok := lookupInitStack(*stack)
 	if !ok {
-		fmt.Fprintf(c.Stderr, "init: unknown stack %q (go | node | smoke)\n", *stack)
+		fmt.Fprint(c.Stderr, msg)
 		return 2
 	}
+	if err := writeInitScaffold(stackGates, allowlist); err != nil {
+		fmt.Fprintf(c.Stderr, "init: %v\n", err)
+		return 1
+	}
+	return c.finishInit(*stack, *harnessFrom, *devin)
+}
+
+// initCwdConflict reports whether a regulus.json in the cwd blocks init:
+// without --force an existing config is a deliberate-overwrite situation,
+// so init refuses instead of silently replacing it. The message names the
+// absolute path (falling back to the bare name when Abs fails) so the
+// refusal tells the operator exactly which file to inspect or --force over.
+func initCwdConflict(force bool) (string, bool) {
+	if _, err := os.Stat("regulus.json"); err != nil || force {
+		return "", false
+	}
+	if abs, aberr := filepath.Abs("regulus.json"); aberr == nil {
+		return fmt.Sprintf("init: regulus.json already exists at %s — refusing to overwrite (use --force)\n", abs), true
+	}
+	return "init: regulus.json already exists — refusing to overwrite (use --force)\n", true
+}
+
+// initAncestorConflict implements the H9 nested-scaffold refusal: running
+// init in a subdirectory of a configured project would split-brain (the
+// nested config in the cwd while every CLI path resolves stores upward
+// via ResolveRoot), so init refuses and names the ancestor regulus.json
+// path. --force scaffolds the cwd deliberately and never chdirs.
+func initAncestorConflict(force bool) (string, bool) {
+	if force {
+		return "", false
+	}
+	if ancestor, ok := ancestorRegulusJSON(); ok {
+		return fmt.Sprintf("init: ancestor regulus.json at %s — refusing to scaffold a nested project (run in the project root or use --force)\n", ancestor), true
+	}
+	return "", false
+}
+
+// initHarnessSourceError validates the --harness-from source before init
+// writes anything: the source repo must carry a .opencode directory,
+// otherwise there is no harness config to copy.
+func initHarnessSourceError(harnessFrom string) (string, bool) {
+	if harnessFrom == "" {
+		return "", false
+	}
+	if st, err := os.Stat(filepath.Join(harnessFrom, ".opencode")); err != nil || !st.IsDir() {
+		return fmt.Sprintf("init: no .opencode directory at %s\n", filepath.Join(harnessFrom, ".opencode")), true
+	}
+	return "", false
+}
+
+// lookupInitStack resolves the --stack preset gates and their execution
+// allowlist. Both tables share the same keys, so an unknown stack fails
+// on the first lookup; the second branch only guards table skew.
+func lookupInitStack(stack string) (stackGates []map[string]any, allowlist []string, msg string, ok bool) {
+	stackGates, ok = initPresets[stack]
+	if !ok {
+		return nil, nil, fmt.Sprintf("init: unknown stack %q (go | node | smoke)\n", stack), false
+	}
+	allowlist, ok = initAllowlists[stack]
+	if !ok {
+		return nil, nil, fmt.Sprintf("init: unknown stack %q (go | node | smoke)\n", stack), false
+	}
+	return stackGates, allowlist, "", true
+}
+
+// writeInitScaffold writes the fresh-project scaffold for the resolved
+// stack preset: regulus.json (evolution budget + execution allowlist +
+// gates), charts/, and the .regulus/ gitignore entry. Every failure mode
+// surfaces as `init: <err>` through the caller, matching the historic
+// single-line scaffold errors.
+func writeInitScaffold(stackGates []map[string]any, allowlist []string) error {
 	cfg := struct {
 		Evolution map[string]int   `json:"evolution"`
 		Execution map[string]any   `json:"execution"`
@@ -85,37 +137,38 @@ func (c CLI) initCmd(args []string) int {
 	}{
 		Evolution: map[string]int{"max_per_day": 10},
 		Execution: map[string]any{"allowlist": allowlist},
-		Gates:     gates,
+		Gates:     stackGates,
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		fmt.Fprintf(c.Stderr, "init: %v\n", err)
-		return 1
+		return err
 	}
 	if err := os.WriteFile("regulus.json", append(data, '\n'), 0o644); err != nil {
-		fmt.Fprintf(c.Stderr, "init: %v\n", err)
-		return 1
+		return err
 	}
 	if err := os.MkdirAll("charts", 0o755); err != nil {
-		fmt.Fprintf(c.Stderr, "init: %v\n", err)
-		return 1
+		return err
 	}
-	if err := ensureGitignore(); err != nil {
-		fmt.Fprintf(c.Stderr, "init: %v\n", err)
-		return 1
-	}
-	if *harnessFrom != "" {
-		if err := copyHarnessConfig(*harnessFrom); err != nil {
+	return ensureGitignore()
+}
+
+// finishInit prints the success summary for a written scaffold: with
+// --harness-from it confirms the copied harness, with --devin it
+// registers the Devin MCP server, otherwise it points at the next gates
+// to wire. Every path ends with the best-effort post-init validation.
+func (c CLI) finishInit(stack, harnessFrom string, devin bool) int {
+	if harnessFrom != "" {
+		if err := copyHarnessConfig(harnessFrom); err != nil {
 			fmt.Fprintf(c.Stderr, "init: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore, .opencode copied from %s\n", *harnessFrom)
+		fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore, .opencode copied from %s\n", harnessFrom)
 		fmt.Fprintln(c.Stdout, "next: run bun install in .opencode/, run regulus doctor, open your first Chart")
 		c.printInitValidation()
 		return 0
 	}
 	devinNote := ""
-	if *devin {
+	if devin {
 		if err := scaffoldDevinMcpConfig(); err != nil {
 			fmt.Fprintf(c.Stderr, "init: %v\n", err)
 			return 1
@@ -123,7 +176,7 @@ func (c CLI) initCmd(args []string) int {
 		devinNote = ", .devin/mcp_config.json"
 	}
 	fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)%s\n", devinNote)
-	if *stack == "smoke" {
+	if stack == "smoke" {
 		fmt.Fprintln(c.Stdout, "next: replace the smoke gate with your real gates in regulus.json, run regulus doctor, open your first Chart in charts/")
 	} else {
 		fmt.Fprintln(c.Stdout, "next: point the gates at your real layout in regulus.json (see the --harness-from option for the full harness), run regulus doctor, open your first Chart in charts/")
@@ -158,37 +211,48 @@ func ancestorRegulusJSON() (string, bool) {
 }
 
 func (c CLI) printInitValidation() {
-	func() {
-		defer func() { _ = recover() }()
-		if c.Probe == nil {
-			fmt.Fprintln(c.Stdout, "validate: doctor skipped (no runtime probe)")
-			return
-		}
-		res := c.Probe()
-		if res.Supported {
-			fmt.Fprintf(c.Stdout, "validate: doctor ok — %s\n", res.Detected)
-		} else {
-			fmt.Fprintf(c.Stdout, "validate: doctor unavailable — %s (init still complete)\n", res.Reason)
-		}
-	}()
-	func() {
-		defer func() { _ = recover() }()
-		cfg, err := gates.Load("regulus.json")
-		if err != nil {
-			fmt.Fprintf(c.Stdout, "validate: gate run --dry-run skipped — %v (init still complete)\n", err)
-			return
-		}
-		r := c.Runner
-		if r == nil {
-			r = gates.ShRunner{}
-		}
-		fmt.Fprintln(c.Stdout, "validate: gate run --dry-run plan:")
-		if c.renderDryRunPlan(gateRunArgs{task: "init", cfg: cfg, runner: r}) != 0 {
-			fmt.Fprintln(c.Stdout, "validate: gate run --dry-run unavailable (init still complete)")
-			return
-		}
-		fmt.Fprintf(c.Stdout, "validate: gate run --dry-run ok — %d gate(s)\n", len(cfg.Gates))
-	}()
+	c.printInitDoctorLine()
+	c.printInitDryRunLine()
+}
+
+// printInitDoctorLine prints the doctor half of the post-init validation:
+// a skipped line with no runtime probe, otherwise ok/unavailable. Like
+// the dry-run half it never fails init — a panic-safe best-effort line.
+func (c CLI) printInitDoctorLine() {
+	defer func() { _ = recover() }()
+	if c.Probe == nil {
+		fmt.Fprintln(c.Stdout, "validate: doctor skipped (no runtime probe)")
+		return
+	}
+	res := c.Probe()
+	if res.Supported {
+		fmt.Fprintf(c.Stdout, "validate: doctor ok — %s\n", res.Detected)
+	} else {
+		fmt.Fprintf(c.Stdout, "validate: doctor unavailable — %s (init still complete)\n", res.Reason)
+	}
+}
+
+// printInitDryRunLine prints the gate run --dry-run half of the post-init
+// validation over the just-written cwd regulus.json: the plan when it
+// renders, a skipped/unavailable line when it does not. Best-effort by
+// contract — it reads the cwd regulus.json explicitly, never c.dir().
+func (c CLI) printInitDryRunLine() {
+	defer func() { _ = recover() }()
+	cfg, err := gates.Load("regulus.json")
+	if err != nil {
+		fmt.Fprintf(c.Stdout, "validate: gate run --dry-run skipped — %v (init still complete)\n", err)
+		return
+	}
+	r := c.Runner
+	if r == nil {
+		r = gates.ShRunner{}
+	}
+	fmt.Fprintln(c.Stdout, "validate: gate run --dry-run plan:")
+	if c.renderDryRunPlan(gateRunArgs{task: "init", cfg: cfg, runner: r}) != 0 {
+		fmt.Fprintln(c.Stdout, "validate: gate run --dry-run unavailable (init still complete)")
+		return
+	}
+	fmt.Fprintf(c.Stdout, "validate: gate run --dry-run ok — %d gate(s)\n", len(cfg.Gates))
 }
 
 // printInitValidation prints the post-init validation summary: a doctor
