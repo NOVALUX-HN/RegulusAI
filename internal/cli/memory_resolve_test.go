@@ -234,3 +234,74 @@ func TestMemoryContextResolveDomainFlagsNeedResolve(t *testing.T) {
 		t.Fatalf("plain context exit = %d, want 0", code)
 	}
 }
+
+// Split pin (C1 S2-S3): lone-chart fallback keeps its byte-identical
+// outcome — a single charts/*.md with a Domain: line resolves.
+func TestResolveLoneChartSingle(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "charts"), 0755)
+	os.WriteFile(filepath.Join(dir, "charts", "app.md"), []byte("# App\n\nDomain: go\n"), 0644)
+	d, reason, ok := resolveLoneChart(dir)
+	if !ok || d != "go" || reason != "lone-chart:app.md" {
+		t.Fatalf("got (%q, %q, %v), want (go, lone-chart:app.md, true)", d, reason, ok)
+	}
+}
+
+// Split pin (C1 S2-S3): lone-chart misses on zero/multiple candidates
+// or a candidate without a Domain: line — resolution moves on.
+func TestResolveLoneChartMiss(t *testing.T) {
+	mkcharts := func(t *testing.T, files map[string]string) string {
+		t.Helper()
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "charts"), 0755)
+		for name, body := range files {
+			os.WriteFile(filepath.Join(dir, "charts", name), []byte(body), 0644)
+		}
+		return dir
+	}
+	cases := map[string]struct {
+		dir string
+	}{
+		"no charts dir": {dir: t.TempDir()},
+		"two candidates": {dir: mkcharts(t, map[string]string{
+			"a.md": "# A\n\nDomain: go\n", "b.md": "# B\n\nDomain: ts\n",
+		})},
+		"single without domain": {dir: mkcharts(t, map[string]string{
+			"app.md": "# App\n\nno domain here\n",
+		})},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if d, reason, ok := resolveLoneChart(tc.dir); ok || d != "" || reason != "" {
+				t.Fatalf("got (%q, %q, %v), want miss", d, reason, ok)
+			}
+		})
+	}
+}
+
+// Split pin (C1 S2-S3): a session whose trace files match no lesson
+// path falls through to unfiltered-multi — same outcome as the inline
+// loop, with the cheap-fallback trim intact.
+func TestMemoryContextResolveDomainTraceMissFallsThrough(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "go"), 0755)
+	os.MkdirAll(filepath.Join(dir, ".regulus", "library", "ts"), 0755)
+	if _, err := almanac.Save(dir, &almanac.Observation{
+		Type: almanac.TypeLesson, Title: "go lesson", Content: "cover",
+		Domain: "go", Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low"},
+		Provenance: &almanac.Provenance{Paths: []string{"internal/cli/memory.go"}},
+	}, time.Now()); err != nil {
+		t.Fatalf("seed go lesson: %v", err)
+	}
+	_, _ = trace.Record(dir, trace.Entry{Session: "s9", Message: "m", Call: "c", Tool: "edit", Status: "completed", Files: []string{"unrelated/file.txt"}}, time.Now())
+
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"memory", "context", "--resolve-domain", "--session", "s9"}); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	got := out.String()
+	if !strings.Contains(got, "reason: unfiltered-multi") {
+		t.Fatalf("trace miss must fall through to unfiltered-multi, got:\n%s", got)
+	}
+}
