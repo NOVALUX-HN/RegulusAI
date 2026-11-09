@@ -16,7 +16,7 @@ Read until `## Log` before edits.
 - [x] H3 (S2,S3) — HTTP 500 en store-errors (9 sitios, envelope igual) — route: inline — commit: f706c39
 - [x] H4 (S2,S3) — serve timeouts + graceful shutdown en main — route: inline — commit: ce855c5
 - [ ] H5 (S2,S3) — dashboard cache headers/memo (medir primero) — route: worker — commit: —
-- [ ] H6 (S2,S3) — traces sin N+1 (glob o cap) — route: worker — commit: —
+- [x] H6 (S2,S3) — traces sin N+1 (glob o cap) — route: worker mw8qiduq-j-p49p — commit: H6
 - [ ] H7 (S2,S3) — portar skills_list/evolve_tick/evolve_propose a MCP — route: worker — commit: —
 - [ ] H8 (S2,S3) — bench gauntlet-shape.json + B5 con 6 quick — route: worker — commit: —
 - [ ] H9 (S2,S3) — init: refusal con ancestro + --force + validación — route: worker — commit: —
@@ -26,6 +26,7 @@ Read until `## Log` before edits.
 
 - L1: "revisa nuevamente que otros puntos de mejora tenemos"
 - L2: "procede papi. hay que dejar Regulus al 100"
+- L9: H6 done — RED N-List -> GREEN streaming counter (misma semántica error/task, path detalle intacto); suite httpapi verde, vet/fmt limpios, diff revisado.
 - L8: H10 done — RED golden (docs sin /v1/evolution) -> GREEN; línea evolution en Rutas + 3 banners (paths estables por refs vivas en logs/charts, no moves); suite httpapi verde, vet/fmt limpios.
 - L7: H4 done — RED firma vieja -> GREEN; server con ReadHeader 5s + Write 30s, SIGINT/SIGTERM graceful (vivo: 200 + exit 0); suite cmd verde, vet/fmt limpios.
 - L6: H3 done — RED 200-en-error -> GREEN 500 (9 sitios collections+dashboard, envelope intacto, mapeo exit-1->200 intacto); pin viejo actualizado al contrato; suite httpapi verde, vet/fmt limpios.
