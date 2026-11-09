@@ -569,6 +569,139 @@ func TestMCPGateRunFailureReportsExitCode(t *testing.T) {
 	}
 }
 
+func TestMCPGateRunBareUnchanged(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// Bare calls stay byte-identical to today: no flags means the full
+	// default set (all 12 gates), exactly as `gate run <task>`.
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "gauntlet: 12/12 gates passed") {
+		t.Fatalf("bare gate_run must run the full default set, got %q", text)
+	}
+}
+
+func TestMCPGateRunSchemaCarriesQuickProfileDryRun(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/list", nil))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	for _, tool := range mcpTools() {
+		if tool.name != "gate_run" {
+			continue
+		}
+		for key, typ := range map[string]string{"quick": "boolean", "profile": "string", "dry_run": "boolean"} {
+			prop, ok := tool.props[key].(map[string]any)
+			if !ok || prop["type"] != typ {
+				t.Fatalf("gate_run schema %q must be type %q, got %v", key, typ, tool.props[key])
+			}
+		}
+		if len(tool.required) != 1 || tool.required[0] != "task" {
+			t.Fatalf("gate_run required must stay [task], got %v", tool.required)
+		}
+		return
+	}
+	t.Fatal("gate_run missing from tools")
+}
+
+func TestMCPGateRunQuickRunsLeanSet(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "quick": true},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	for _, want := range []string{"typecheck", "lint", "build", "unit-tests", "spec", "gofmt"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("quick output must contain lean gate %q, got:\n%s", want, text)
+		}
+	}
+	for _, skip := range []string{"coverage-floor", "mutation", "crap", "vulncheck", "ts-typecheck", "ts-unit-tests"} {
+		if strings.Contains(text, skip) {
+			t.Fatalf("quick must not run full-only gate %q, got:\n%s", skip, text)
+		}
+	}
+	if !strings.Contains(text, "gauntlet: 6/6 gates passed") {
+		t.Fatalf("counts must reflect the lean set, got:\n%s", text)
+	}
+}
+
+func TestMCPGateRunProfilePassthrough(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "profile": "quick"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// profile=quick selects required only (10 of 12: the optional
+	// mutation/vulncheck drop out), proving the profile reached the CLI
+	// instead of the default full set (bare gives 12/12).
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "gauntlet: 10/10 gates passed") {
+		t.Fatalf("profile=quick must run required only, got:\n%s", text)
+	}
+}
+
+func TestMCPGateRunQuickPlusProfileRefused(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "quick": true, "profile": "full"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// quick+profile stay mutually exclusive: the CLI usage error (exit
+	// 2) surfaces as -32602, mirroring gate run semantics.
+	if resps[0].Error == nil || resps[0].Error.Code != -32602 {
+		t.Fatalf("quick+profile must be refused with -32602, got %+v", resps[0])
+	}
+	if !strings.Contains(resps[0].Error.Message, "mutually exclusive") {
+		t.Fatalf("refusal must name the conflict, got %q", resps[0].Error.Message)
+	}
+}
+
+func TestMCPGateRunDryRunPrintsPlan(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	r := &fakeGateRunner{results: map[string]fakeGateResult{}}
+	c.Runner = r
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "dry_run": true},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	if !strings.Contains(text, "timeout=") {
+		t.Fatalf("dry run must print the plan lines, got:\n%s", text)
+	}
+	if strings.Contains(text, "gauntlet:") {
+		t.Fatalf("dry run must print only the plan, got:\n%s", text)
+	}
+	if len(r.calls) != 0 {
+		t.Fatalf("dry run must not execute gates, ran %v", r.calls)
+	}
+}
+
 func TestMCPContentNeverEmpty(t *testing.T) {
 	if got := mcpContent("", "", 0); got == "" {
 		t.Fatal("empty success must not stay empty")

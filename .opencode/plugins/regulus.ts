@@ -269,13 +269,25 @@ export default Plugin.define({
           type: "object",
           properties: {
             task: { type: "string", description: "task id, e.g. feature/T2" },
+            quick: { type: "boolean", description: "lean daily-loop set only: typecheck, lint, build, unit-tests, spec, gofmt (mutually exclusive with profile)" },
+            profile: { type: "string", description: "run required gates plus this profile's members (mutually exclusive with quick)" },
+            dry_run: { type: "boolean", description: "print the execution plan without running gates" },
           },
           required: ["task"],
           additionalProperties: false,
         },
         options: { namespace: "regulus", codemode: true },
         execute: async (input, context) => {
-          const { task } = input as { task: string }
+          const { task, quick, profile, dry_run } = input as { task: string; quick?: boolean; profile?: string; dry_run?: boolean }
+          // F4: flags precede the positional task (Go flag parsing
+          // stops at the first positional); bare calls keep
+          // ["gate", "run", task] byte-identical. quick+profile
+          // refusal stays in the CLI (exit 2), surfaced as content.
+          const args = ["gate", "run"]
+          if (quick === true) args.push("--quick")
+          if (typeof profile === "string" && profile.trim() !== "") args.push("--profile", profile.trim())
+          if (dry_run === true) args.push("--dry-run")
+          args.push(task)
           // The gauntlet runs minutes (mutation alone budgets 600s);
           // the generic 30s spawn budget aborted it into a null. The
           // gate_run budget defaults to one hour (overridable via
@@ -283,7 +295,7 @@ export default Plugin.define({
           // caller's signal still cancels earlier — and a spawn failure
           // returns diagnostic content, never a thrown null.
           try {
-            const res = await run(bin, ["gate", "run", task], dir, context.signal, gateRunTimeoutMs())
+            const res = await run(bin, args, dir, context.signal, gateRunTimeoutMs())
             return { content: formatGateResult(res.output, res.exitCode) }
           } catch (err) {
             return { content: formatGateFailure((err as Error).message) }

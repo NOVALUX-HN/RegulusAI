@@ -489,6 +489,51 @@ describe("memory_context manual passthrough (F3)", () => {
   });
 });
 
+describe("gate_run quick/profile/dry_run passthrough (F4)", () => {
+  // F4: agent tools accept only `task`, forcing the full 12-layer
+  // gauntlet — the lean T5 --quick path and --profile/--dry-run are
+  // CLI-only. Both gate_run schemas gain optional `quick` (boolean),
+  // `profile` (string) and `dry_run` (boolean), passed through to the
+  // CLI (--quick, --profile NAME, --dry-run; quick+profile refused by
+  // the CLI with exit 2). Bare calls stay byte-identical to today.
+  // The lean-set semantics themselves live in gate_quick_test.go and
+  // the MCP end-to-end below; here the plugin side pins the schema
+  // and the flags-before-task argv (Go flag parsing stops at the
+  // first positional).
+  function gateRunBlock(src: string): string {
+    const start = src.indexOf('name: "gate_run"');
+    const end = src.indexOf('name: "spec_check"');
+    return src.slice(start, end);
+  }
+
+  test("schema carries optional quick + profile + dry_run, only task required", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = gateRunBlock(src);
+    expect(block).toContain('quick: { type: "boolean"');
+    expect(block).toContain('profile: { type: "string"');
+    expect(block).toContain('dry_run: { type: "boolean"');
+    const req = block.match(/required: \[([^\]]*)\]/);
+    expect(req?.[1]).toContain('"task"');
+    expect(req?.[1]).not.toContain("quick");
+    expect(req?.[1]).not.toContain("profile");
+    expect(req?.[1]).not.toContain("dry_run");
+  });
+
+  test("execute builds flags-before-task argv, bare stays [gate run task]", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = gateRunBlock(src);
+    expect(block).toContain('"--quick"');
+    expect(block).toContain('"--profile"');
+    expect(block).toContain('"--dry-run"');
+    // Bare base is unchanged; the positional task is appended last so
+    // flags always precede it.
+    expect(block).toContain('["gate", "run"]');
+    const pushTask = block.indexOf("args.push(task)");
+    expect(pushTask).toBeGreaterThan(-1);
+    expect(block.indexOf('"--dry-run"')).toBeLessThan(pushTask);
+  });
+});
+
 describe("withTimeout", () => {
   test("fast work resolves", async () => {
     await expect(withTimeout(Promise.resolve("ok"), 100)).resolves.toBe("ok");

@@ -383,13 +383,33 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "gate_run", desc: "Run the layered gauntlet for one task and write receipts",
-			props: props(taskKey, taskProp), required: []string{"task"},
+			props: props(taskKey, taskProp,
+				"quick", map[string]any{"type": "boolean", "description": "lean daily-loop set only: typecheck, lint, build, unit-tests, spec, gofmt (optional, mutually exclusive with profile)"},
+				"profile", map[string]any{"type": "string", "description": "run required gates plus this profile's members (optional, mutually exclusive with quick)"},
+				"dry_run", map[string]any{"type": "boolean", "description": "print the execution plan without running gates (optional)"},
+			), required: []string{"task"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				task := strings.TrimSpace(mcpStr(args, "task"))
 				if task == "" {
 					return "", "gate run: missing required param \"task\"", 2
 				}
-				return c.mcpExec(func(sub CLI) int { return sub.gateCmd([]string{"run", task}) })
+				// F4: optional lean/profile/dry-run passthrough; flags
+				// precede the positional task (Go flag parsing stops at
+				// the first positional). quick+profile stay mutually
+				// exclusive in the CLI (exit 2 surfaces as -32602);
+				// bare calls keep ["run", task] byte-identical.
+				cliArgs := []string{"run"}
+				if quick, ok := mcpBool(args, "quick"); ok && quick {
+					cliArgs = append(cliArgs, "--quick")
+				}
+				if profile := strings.TrimSpace(mcpStr(args, "profile")); profile != "" {
+					cliArgs = append(cliArgs, "--profile", profile)
+				}
+				if dryRun, ok := mcpBool(args, "dry_run"); ok && dryRun {
+					cliArgs = append(cliArgs, "--dry-run")
+				}
+				cliArgs = append(cliArgs, task)
+				return c.mcpExec(func(sub CLI) int { return sub.gateCmd(cliArgs) })
 			},
 		},
 		{
