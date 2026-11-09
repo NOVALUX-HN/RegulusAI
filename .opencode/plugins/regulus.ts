@@ -394,7 +394,7 @@ export default Plugin.define({
             include_superseded: { type: "boolean", description: "show observations a supersedes relation hides" },
             type: { type: "string", description: "observation type bucket" },
           },
-          required: ["terms"],
+          required: [],
           additionalProperties: false,
         },
         options: { namespace: "regulus", codemode: true },

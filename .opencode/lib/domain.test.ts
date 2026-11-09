@@ -399,6 +399,15 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     expect(src).toContain('include_superseded: { type: "boolean"');
   });
 
+  test("memory_search requires no terms (F2: browse without a term)", async () => {
+    // Plugin/MCP/CLI parity: empty search lists everything; the schema
+    // must not force a term the argv builder already handles as absent.
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = src.slice(src.indexOf('name: "memory_search"'), src.indexOf('name: "memory_search"') + 2000);
+    const req = block.match(/required: \[([^\]]*)\]/);
+    expect(req?.[1].trim()).toBe("");
+  });
+
   test("compaction resume is bounded by default (T1)", () => {
     expect(COMPACTION_CONTEXT_LIMIT).toBe(20);
     expect(COMPACTION_CONTEXT_BUDGET).toBe(20);
