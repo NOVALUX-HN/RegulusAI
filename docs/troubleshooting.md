@@ -481,8 +481,8 @@ members (`docs/gauntlet.md` §2, `internal/gates/gates.go:93-98`):
 
 Required gates always run: neither profiles nor `when` conditions can
 omit them. The `mutation` gate keeps `profiles: [full]`
-(`regulus.json`) but stays `required: true`, so it runs under both
-profiles — `quick` never silently skips mandatory proof. Any other
+(`regulus.json`) and is `required: false`, so it runs full-only —
+`--quick` (and `gate run --quick`) skips it by design, never silently — `quick` never silently skips mandatory proof. Any other
 profile name must be declared by at least one gate, else the run
 refuses rather than running a silent subset.
 

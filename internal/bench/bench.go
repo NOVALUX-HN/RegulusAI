@@ -122,7 +122,7 @@ func Suite() []Task {
 			Prompt: "Write one evidence receipt and read it back unchanged.",
 			Check:  checkReceiptRoundTrip},
 		{ID: "B5", Title: "gate-selection", Kind: "gates",
-			Prompt: "Select which gates run under the quick profile.",
+			Prompt: "Select the lean quick set and the full and quick profiles over the real twelve-gate gauntlet.",
 			Check:  checkGateSelection},
 		{ID: "B6", Title: "security-evidence-jail", Kind: "security",
 			Prompt: "Refuse a task id that escapes the evidence directory.",
@@ -372,25 +372,24 @@ func checkReceiptRoundTrip() (string, error) {
 // boolPtr marks one gate optional: the quick profile must skip it.
 func boolPtr(b bool) *bool { return &b }
 
-// checkGateSelection pins profile selection: full runs everything,
-// quick keeps required gates only, unknown profiles error out.
+// checkGateSelection pins gate selection over the real twelve-gate
+// mirror: full resolves all twelve, the T5 lean preset resolves exactly
+// the six quick names, and an unknown profile refuses. The six names
+// are pinned literally, so selection drift — a renamed gate, or
+// mutation leaking into --quick — fails.
 func checkGateSelection() (string, error) {
-	cfg := gates.Config{Gates: []gates.Gate{
-		{Name: "typecheck", Layer: 1, Command: "echo hi"},
-		{Name: "slow", Layer: 2, Command: "echo slow", Required: boolPtr(false), Profiles: []string{"slow"}},
-	}}
+	cfg := realGateConfig()
 	full, err := gates.SelectGates(cfg, "")
-	if err != nil || len(full) != 2 {
+	if err != nil || len(full) != 12 {
 		return "", fmt.Errorf("full profile: got %d gates (%v)", len(full), err)
 	}
-	quick, err := gates.SelectGates(cfg, "quick")
-	if err != nil || len(quick) != 1 || quick[0].Name != "typecheck" {
-		return "", fmt.Errorf("quick profile: got %+v (%v)", quick, err)
+	if err := assertLeanSelection(cfg); err != nil {
+		return "", err
 	}
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=2, quick=1 required, unknown refused", nil
+	return "full=12, lean=6 (typecheck lint build unit-tests spec gofmt), unknown refused", nil
 }
 
 // checkEvidenceJail accepts a scoped task and refuses a traversal.
@@ -491,12 +490,133 @@ func checkRetrievalGolden() (string, error) {
 	return "golden query pins the rollback drill (1/2/0 hits)", nil
 }
 
-// realGateNames mirrors the shipped twelve-gate gauntlet in declaration
-// order. The mirror is deliberate: the bench stays hermetic (no
-// repo-root lookup, green in any temp dir) while pinning the real
-// profile contract — full and quick select every required gate in
-// order, unknown profiles refuse. Commands are shape-only; selection
-// is what the check pins.
+// gauntletShapeGate is one row of the checked-in gauntlet shape: the
+// selection-relevant fields of regulus.json. Commands never run in
+// bench, so they are not part of the shape.
+type gauntletShapeGate struct {
+	Name     string   `json:"name"`
+	Layer    int      `json:"layer"`
+	Required bool     `json:"required"`
+	Profiles []string `json:"profiles"`
+}
+
+// gauntletShape is the checked-in bench/gauntlet-shape.json: the real
+// twelve-gate gauntlet plus the six T5 --quick names, generated from
+// regulus.json (the file's generation key holds the exact command).
+type gauntletShape struct {
+	Gates     []gauntletShapeGate `json:"gates"`
+	QuickLean []string            `json:"quick_lean"`
+}
+
+// quickLeanExpected pins the T5 --quick preset by name: exactly the six
+// gates gates.QuickLeanNames selects. B5 asserts the checked-in shape
+// and the live selection both equal this list, so a renamed gate or a
+// mutation leaking into --quick fails the suite instead of staying
+// green.
+var quickLeanExpected = []string{"typecheck", "lint", "build", "unit-tests", "spec", "gofmt"}
+
+// parseGauntletShape parses bench/gauntlet-shape.json bytes. Only the
+// suite tests read the file (from the repo); checks stay file-free and
+// hermetic.
+func parseGauntletShape(data []byte) (gauntletShape, error) {
+	var s gauntletShape
+	if err := json.Unmarshal(data, &s); err != nil {
+		return gauntletShape{}, fmt.Errorf("gauntlet shape: %v", err)
+	}
+	if len(s.Gates) == 0 || len(s.QuickLean) == 0 {
+		return gauntletShape{}, fmt.Errorf("gauntlet shape: empty gates or quick_lean")
+	}
+	return s, nil
+}
+
+// shapeFixtureConfig rebuilds a runnable gates.Config from the shape:
+// selection fields carried over, commands synthetic (never executed).
+func shapeFixtureConfig(shape gauntletShape) gates.Config {
+	cfg := gates.Config{}
+	for _, sg := range shape.Gates {
+		g := gates.Gate{Name: sg.Name, Layer: sg.Layer, Command: "shape-only:" + sg.Name}
+		if !sg.Required {
+			g.Required = boolPtr(false)
+		}
+		g.Profiles = append([]string(nil), sg.Profiles...)
+		cfg.Gates = append(cfg.Gates, g)
+	}
+	return cfg
+}
+
+// equalStrings reports element-wise equality (nil and empty both mean
+// "no profiles" for the shape's purposes).
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// configGateNames lists gate names in selection order.
+func configGateNames(gateList []gates.Gate) []string {
+	names := make([]string, 0, len(gateList))
+	for _, g := range gateList {
+		names = append(names, g.Name)
+	}
+	return names
+}
+
+// assertGauntletShapeConformance fails when the hand-maintained
+// realGateConfig mirror drifts from the checked-in shape: renamed
+// gate, flipped required flag, changed profile membership, layer
+// reorder, or gate count. The shape regenerates from regulus.json, so
+// a regenerated shape with a stale mirror fails loudly here.
+func assertGauntletShapeConformance(cfg gates.Config, shape gauntletShape) error {
+	if len(cfg.Gates) != len(shape.Gates) {
+		return fmt.Errorf("gauntlet shape drift: mirror has %d gates, shape has %d (regenerate the shape AND update the mirror)", len(cfg.Gates), len(shape.Gates))
+	}
+	for i, g := range cfg.Gates {
+		want := shape.Gates[i]
+		if g.Name != want.Name {
+			return fmt.Errorf("gauntlet shape drift at position %d: mirror %q, shape %q (renamed gate?)", i, g.Name, want.Name)
+		}
+		if g.Layer != want.Layer {
+			return fmt.Errorf("gauntlet shape drift for %q: mirror layer %d, shape layer %d", g.Name, g.Layer, want.Layer)
+		}
+		if g.IsRequired() != want.Required {
+			return fmt.Errorf("gauntlet shape drift for %q: mirror required=%v, shape required=%v", g.Name, g.IsRequired(), want.Required)
+		}
+		if !equalStrings(g.Profiles, want.Profiles) {
+			return fmt.Errorf("gauntlet shape drift for %q: mirror profiles=%v, shape profiles=%v", g.Name, g.Profiles, want.Profiles)
+		}
+	}
+	return nil
+}
+
+// assertLeanSelection fails unless the live --quick selection over cfg
+// is exactly the pinned six: a renamed gate drops out of the name-based
+// selection, and an extra selected gate (mutation leaking into --quick)
+// breaks the equality.
+func assertLeanSelection(cfg gates.Config) error {
+	lean, err := gates.SelectQuickLean(cfg)
+	if err != nil {
+		return err
+	}
+	if got := configGateNames(lean); !equalStrings(got, quickLeanExpected) {
+		return fmt.Errorf("lean preset drift: selected %v, want %v", got, quickLeanExpected)
+	}
+	return nil
+}
+
+// realGateConfig mirrors the shipped twelve-gate gauntlet in declaration
+// order. The suite tests validate the mirror against the checked-in
+// bench/gauntlet-shape.json (generated from regulus.json), so a renamed
+// gate or a flipped required flag fails `go test` instead of staying
+// green. Checks stay file-free and hermetic (no repo-root lookup, green
+// in any temp dir) while pinning the real profile contract — full and
+// quick select every required gate in order, unknown profiles refuse.
+// Commands are shape-only; selection is what the check pins.
 func realGateConfig() gates.Config {
 	names := []string{"typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt"}
 	cmds := []string{
