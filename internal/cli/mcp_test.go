@@ -12,6 +12,7 @@ import (
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
+	"regulus-ai/internal/receipts"
 )
 
 type mcpResp struct {
@@ -160,7 +161,8 @@ func TestMCPToolsListNames(t *testing.T) {
 		"memory_note", "memory_show", "memory_save", "memory_search",
 		"memory_context", "memory_history", "gate_run", "spec_check",
 		"doctor", "trace_show", "trace_sessions", "trace_files",
-		"audit", "evolve_report",
+		"audit", "evolve_report", "skills_list", "evolve_tick",
+		"evolve_propose",
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools, want %d", len(tools), len(want))
@@ -181,12 +183,15 @@ func TestMCPToolsListNames(t *testing.T) {
 
 func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 	// The OpenCode agent surface is 19 tools; MCP deliberately exposes
-	// 14. The 5-gap (evolve_propose, probe_contrast, probe_compose,
-	// skills_list, evolve_tick) is a Devin-side policy decision, not
-	// drift: audit and evolve_report ported because they are read-only
-	// like trace_show, while evolve_tick writes candidates like
-	// evolve_propose — harness self-modification doesn't transfer.
-	// Evolving this list means updating docs/devin.md too.
+	// 17. The remaining 2-gap (probe_contrast, probe_compose) is a
+	// Devin-side policy decision, not drift: the probes run gates for
+	// minutes with no cancel story in the serveMCP loop. Ported as
+	// read-only: audit and evolve_report (same policy as trace_show),
+	// plus skills_list (pure registry read), evolve_tick (default
+	// --dry-run, writes nothing) and evolve_propose (evidence-pack
+	// assembly, read-only). Destructive or management ops stay
+	// shell-only by policy — see docs/devin.md. Evolving this list
+	// means updating docs/devin.md too.
 	plugin := []string{
 		"gate_run", "spec_check", "doctor", "memory_note",
 		"memory_show", "memory_save", "memory_search", "memory_context",
@@ -198,8 +203,8 @@ func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 	for _, tool := range mcpTools() {
 		mcp[tool.name] = true
 	}
-	if len(mcp) != 14 {
-		t.Fatalf("MCP tools = %d, want 14", len(mcp))
+	if len(mcp) != 17 {
+		t.Fatalf("MCP tools = %d, want 17", len(mcp))
 	}
 	var gap []string
 	for _, name := range plugin {
@@ -208,9 +213,7 @@ func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 		}
 	}
 	want := map[string]bool{
-		"evolve_propose": true, "probe_contrast": true,
-		"probe_compose": true, "skills_list": true,
-		"evolve_tick": true,
+		"probe_contrast": true, "probe_compose": true,
 	}
 	if len(gap) != len(want) {
 		t.Fatalf("plugin-MCP gap = %v, want %v", gap, want)
@@ -278,6 +281,213 @@ func TestMCPMemoryLifecycle(t *testing.T) {
 	resps = runMCP(c, mcpCall(7, "tools/call", map[string]any{"name": "memory_context"}))
 	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "Almanac") {
 		t.Fatalf("context text = %q", text)
+	}
+}
+
+// H7: the three read-only ports — skills_list (pure registry read),
+// evolve_tick (default --dry-run, writes nothing) and evolve_propose
+// (evidence-pack assembly, read-only). Schemas pin the plugin parity:
+// tick takes optional every/dry_run, propose requires task+domain and
+// carries the slow-call long-budget note.
+func TestMCPNewReadOnlyToolsSchemas(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/list", nil))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	raw, err := json.Marshal(resps[0].Result["tools"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tools []struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		InputSchema map[string]any `json:"inputSchema"`
+	}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]map[string]any{}
+	descs := map[string]string{}
+	for _, tool := range tools {
+		byName[tool.Name] = tool.InputSchema
+		descs[tool.Name] = tool.Description
+	}
+	for _, name := range []string{"skills_list", "evolve_tick", "evolve_propose"} {
+		if _, ok := byName[name]; !ok {
+			t.Fatalf("tools/list must carry %q", name)
+		}
+		if descs[name] == "" {
+			t.Fatalf("tool %q must carry a description", name)
+		}
+	}
+	propsOf := func(name string) map[string]any {
+		t.Helper()
+		props, _ := byName[name]["properties"].(map[string]any)
+		if props == nil {
+			t.Fatalf("%s inputSchema must carry properties", name)
+		}
+		return props
+	}
+	requiredOf := func(name string) []any {
+		t.Helper()
+		req, _ := byName[name]["required"].([]any)
+		return req
+	}
+	if req := requiredOf("skills_list"); len(req) != 0 {
+		t.Fatalf("skills_list required must stay empty, got %v", req)
+	}
+	if props := propsOf("skills_list"); len(props) != 0 {
+		t.Fatalf("skills_list must take no arguments, got %v", props)
+	}
+	tickProps := propsOf("evolve_tick")
+	for key, typ := range map[string]string{"every": "integer", "dry_run": "boolean"} {
+		prop, ok := tickProps[key].(map[string]any)
+		if !ok || prop["type"] != typ {
+			t.Fatalf("evolve_tick schema %q must be type %q, got %v", key, typ, tickProps[key])
+		}
+	}
+	if req := requiredOf("evolve_tick"); len(req) != 0 {
+		t.Fatalf("evolve_tick required must stay empty (dry_run defaults true), got %v", req)
+	}
+	proposeProps := propsOf("evolve_propose")
+	for _, key := range []string{"task", "domain"} {
+		prop, ok := proposeProps[key].(map[string]any)
+		if !ok || prop["type"] != "string" {
+			t.Fatalf("evolve_propose schema %q must be type string, got %v", key, proposeProps[key])
+		}
+	}
+	req := requiredOf("evolve_propose")
+	if len(req) != 2 || req[0] != "task" || req[1] != "domain" {
+		t.Fatalf("evolve_propose required must stay [task domain], got %v", req)
+	}
+	if !strings.Contains(descs["evolve_propose"], "long budget") {
+		t.Fatalf("evolve_propose description must carry the slow-call long-budget note, got %q", descs["evolve_propose"])
+	}
+}
+
+func TestMCPSkillsListRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(".opencode", "skills", "wf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: wf-flow\ndescription: Fires when work starts.\n---\n\n## What I do\nThings.\n"
+	if err := os.WriteFile(filepath.Join(".opencode", "skills", "wf", "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "skills_list", "arguments": map[string]any{},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// A pure registry read succeeds even with no Almanac state: the
+	// failure here is the RED (unknown tool -32601), not the fixture.
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "wf-flow — Fires when work starts.") {
+		t.Fatalf("skills_list text = %q", text)
+	}
+}
+
+func seedTickDueSessions(t *testing.T) {
+	t.Helper()
+	rec, _, _ := newCLI(nil)
+	for _, s := range []string{"s1", "s2", "s3"} {
+		if code := rec.Run([]string{"trace", "record", "--session", s, "--message", "m", "--call", "c-" + s, "--tool", "Read", "--status", "completed"}); code != 0 {
+			t.Fatalf("trace record %s exit = %d", s, code)
+		}
+	}
+}
+
+func TestMCPEvolveTickDefaultsDryRun(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	seedTickDueSessions(t)
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_tick", "arguments": map[string]any{},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "dry run:") || !strings.Contains(text, "nothing proposed") {
+		t.Fatalf("default tick must be a dry run proposing nothing, got %q", text)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".regulus", "evolution")); !os.IsNotExist(err) {
+		t.Fatal("default evolve_tick must write nothing under .regulus/evolution")
+	}
+}
+
+func TestMCPEvolveTickEveryReachesCLI(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedTickDueSessions(t)
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_tick", "arguments": map[string]any{"every": float64(100)},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "no tick due") || !strings.Contains(text, "every 100") {
+		t.Fatalf("every=100 must defer the cadence, got %q", text)
+	}
+}
+
+func TestMCPEvolveTickExplicitWetAdvancesCursor(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	seedTickDueSessions(t)
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_tick", "arguments": map[string]any{"dry_run": false},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "tick:") {
+		t.Fatalf("explicit dry_run:false must apply the tick, got %q", text)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".regulus", "evolution", "tick.json")); err != nil {
+		t.Fatalf("explicit dry_run:false must advance the tick cursor: %v", err)
+	}
+}
+
+func TestMCPEvolveProposeAssemblesPack(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(".regulus", "evidence", "demo__T1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	if _, err := receipts.Write(filepath.Join(".regulus", "evidence", "demo__T1"), receipts.Receipt{
+		Task: "demo/T1", Gate: "typecheck", Layer: 1, Command: "echo ok",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_propose", "arguments": map[string]any{"task": "demo/T1", "domain": "go"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	for _, want := range []string{"# Evidence pack — task demo/T1, domain go", "## Candidate template"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("pack must contain %q, got:\n%s", want, text)
+		}
+	}
+	// Assembly is read-only: proposing nothing, advancing nothing.
+	if _, err := os.Stat(filepath.Join(dir, ".regulus", "evolution")); !os.IsNotExist(err) {
+		t.Fatal("evolve_propose must write nothing under .regulus/evolution")
+	}
+	resps = runMCP(c, mcpCall(2, "tools/call", map[string]any{
+		"name": "evolve_propose", "arguments": map[string]any{"task": "demo/T1"},
+	}))
+	if len(resps) != 1 || resps[0].Error == nil || resps[0].Error.Code != -32602 {
+		t.Fatalf("missing domain must be refused with -32602, got %+v", resps)
 	}
 }
 

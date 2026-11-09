@@ -57,6 +57,9 @@ func Tools() []Tool {
 		{Name: "trace_files", Description: "Print the distinct touched paths of a session in call order"},
 		{Name: "audit", Description: "Repo-wide ranked audit: entry points first, then what to fix first"},
 		{Name: "evolve_report", Description: "Lesson economics: proxy price plus evidence state per lesson"},
+		{Name: "skills_list", Description: "List registered skills with one-line triggers"},
+		{Name: "evolve_tick", Description: "Periodic proposer: mine recent sessions into pending candidates"},
+		{Name: "evolve_propose", Description: "Assemble a task's evidence pack (traces, receipts, INDEX, decisions) plus candidate template (slow on large repos: allow a long budget)"},
 	}
 }
 

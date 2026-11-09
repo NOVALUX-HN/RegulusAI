@@ -498,6 +498,56 @@ func mcpTools() []mcpTool {
 				return c.mcpExec(func(sub CLI) int { return sub.evolveReportCmd(argv) })
 			},
 		},
+		{
+			name: "skills_list", desc: "List registered skills with one-line triggers",
+			props: map[string]any{}, required: []string{},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				// H7: a pure registry read — no arguments, no writes.
+				return c.mcpExec(func(sub CLI) int { return sub.skillsCmd([]string{"list"}) })
+			},
+		},
+		{
+			name: "evolve_tick", desc: "Periodic proposer: mine recent sessions into pending candidates",
+			props: props(
+				"every", map[string]any{"type": "integer", "description": "fire once this many traced sessions accumulate (default 3) (optional)"},
+				"dry_run", map[string]any{"type": "boolean", "description": "print findings without proposing (default true) (optional)"},
+			), required: []string{},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				// H7: dry_run defaults true like the plugin (dry_run !==
+				// false pushes --dry-run): a bare call prints findings
+				// and writes nothing. every passes through only when
+				// positive; anything else keeps the CLI default.
+				cliArgs := []string{}
+				if n, ok := mcpInt(args, "every"); ok && n > 0 {
+					cliArgs = append(cliArgs, "--every", strconv.Itoa(n))
+				}
+				if dry, ok := mcpBool(args, "dry_run"); !ok || dry {
+					cliArgs = append(cliArgs, "--dry-run")
+				}
+				return c.mcpExec(func(sub CLI) int { return sub.evolveTickCmd(cliArgs) })
+			},
+		},
+		{
+			name: "evolve_propose", desc: "Assemble a task's evidence pack (traces, receipts, INDEX, decisions) plus candidate template (slow on large repos: allow a long budget)",
+			props: props(
+				"task", mcpProp("string", "task id whose receipts are the evidence"),
+				"domain", mcpProp("string", "lesson domain for the INDEX section"),
+			), required: []string{"task", "domain"},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				task := strings.TrimSpace(mcpStr(args, "task"))
+				domain := strings.TrimSpace(mcpStr(args, "domain"))
+				if task == "" || domain == "" {
+					return "", "evolve propose: missing required params \"task\", \"domain\"", 2
+				}
+				// H7: pack assembly is read-only (records nothing) but
+				// can exceed the generic spawn budget on large repos —
+				// same shared long budget as gate_run (see the
+				// plugin's evolve_propose and memory_context).
+				return c.mcpExec(func(sub CLI) int {
+					return sub.evolveProposeCmd([]string{"--task", task, "--domain", domain})
+				})
+			},
+		},
 	}
 }
 

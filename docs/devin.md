@@ -127,19 +127,20 @@ set `command` to the absolute path of `bin/regulus.exe` on your machine.
 
 | OpenCode (this repo) | Devin equivalent (this feature) |
 |---|---|
-| `.opencode/plugins/regulus.ts` (19 tools, hooks) | `regulus mcp` (14 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
+| `.opencode/plugins/regulus.ts` (19 tools, hooks) | `regulus mcp` (17 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
 | `.opencode/skills/regulus-workflow/` | `.devin/skills/regulus/` (`/regulus`, user-trigger only — the selectable agent entry) |
 | `.opencode/agents/regulus-{worker,scout}.md` | `.devin/agents/regulus-{worker,scout}.md` |
 | `opencode.json` permissions | Devin `permissions` allow/deny/ask (project `.devin/config.json`, yours to create) |
 | `regulus doctor` V2 gate | `regulus contract` version pin (`regulus.contract/v1`) |
 | Almanac on disk (`.regulus/`) | Same files, same CLI — plus the Cloud persistence caveat above |
 
-Deliberately NOT ported (plugin 19 vs MCP 14, gap pinned by
+Deliberately NOT ported (plugin 19 vs MCP 17, gap pinned by
 `TestMCPIntentionalGapPinsPluginDelta`): `probe_contrast/compose`
 (2–3x gate cost per call), `evolve_propose` (harness self-modification
-doesn't transfer), `evolve_tick` (writes pending candidates, same
-reason), `skills_list` (opencode registry; Devin has its own skills).
-Ported as read-only: `audit` and `evolve_report` (same policy as
-`trace_show`). Destructive or management ops (`memory prune/import`,
+doesn't transfer). `evolve_tick` rides dry-run by default (read-only
+unless explicitly asked wet). `skills_list` reads the opencode skill
+registry (Devin keeps its own skills too).
+Ported as read-only: `audit`, `evolve_report`, `skills_list`, `evolve_tick`
+(dry-run default) and `evolve_propose` (same policy as `trace_show`). Destructive or management ops (`memory prune/import`,
 `surface apply`) stay shell-only by policy — see the MCP trust
 boundary above.
