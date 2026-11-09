@@ -1320,6 +1320,8 @@ func TestSurfaceApplyRoundTrip(t *testing.T) {
 }
 
 func TestCommitsBehindSuffix(t *testing.T) {
+	resetStalenessCache()
+	t.Cleanup(resetStalenessCache)
 	// with a fake runner returning count output
 	r := &fakeGateRunner{results: map[string]fakeGateResult{
 		"git rev-list --count abc123..HEAD": {stdout: "42\n"},
@@ -2283,12 +2285,14 @@ func TestInitHarnessFromCopiesConfigNotEnvironment(t *testing.T) {
 }
 
 func TestInitHarnessFromRefusals(t *testing.T) {
-	// missing .opencode in the source
+	// missing .opencode in the source: fail fast with usage (exit 2)
+	// BEFORE writing regulus.json/charts/.gitignore, so a bad --harness-from
+	// never leaves half-scaffolded files behind.
 	empty := t.TempDir()
 	t.Chdir(t.TempDir())
 	c, _, errb := newCLI(nil)
-	if code := c.Run([]string{"init", "--harness-from", empty}); code != 1 {
-		t.Fatalf("missing source exit = %d, want 1", code)
+	if code := c.Run([]string{"init", "--harness-from", empty}); code != 2 {
+		t.Fatalf("missing source exit = %d, want 2", code)
 	}
 	if !strings.Contains(errb.String(), "no .opencode directory") {
 		t.Fatalf("stderr = %q", errb.String())

@@ -54,7 +54,7 @@ func TestBenchListJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.String()), &tasks); err != nil {
 		t.Fatalf("list --json is not JSON: %v\n%s", err, out.String())
 	}
-	if len(tasks) < 5 || len(tasks) > 10 {
+	if len(tasks) < 5 || len(tasks) > 14 {
 		t.Fatalf("suite band broken: %d tasks", len(tasks))
 	}
 	c2, _, errb := newCLI(nil)
@@ -72,10 +72,26 @@ func TestBenchRun(t *testing.T) {
 	if code := c.Run([]string{"bench", "run", "--surface", "tree"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	for _, want := range []string{"B1", "PASS", "bench: 7/7 passed"} {
+	for _, want := range []string{"B1", "PASS", "B14", "bench: 14/14 passed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("run must show %q, got:\n%s", want, out.String())
 		}
+	}
+}
+
+// Item 3 (usuario): bench run es gate - cualquier FAIL sale exit 1.
+func TestBenchRunExitCode(t *testing.T) {
+	allPass := bench.Report{Tasks: []bench.TaskResult{{ID: "B1", Pass: true}, {ID: "B2", Pass: true}}, Passed: 2}
+	if got := benchRunExitCode(allPass); got != 0 {
+		t.Fatalf("all-pass exit = %d, want 0", got)
+	}
+	oneFail := bench.Report{Tasks: []bench.TaskResult{{ID: "B1", Pass: true}, {ID: "B2", Pass: false}}, Passed: 1, Failed: 1}
+	if got := benchRunExitCode(oneFail); got != 1 {
+		t.Fatalf("one-fail exit = %d, want 1", got)
+	}
+	empty := bench.Report{}
+	if got := benchRunExitCode(empty); got != 0 {
+		t.Fatalf("empty exit = %d, want 0", got)
 	}
 }
 
@@ -136,14 +152,14 @@ func TestBenchBaselineSetAndShow(t *testing.T) {
 	if err := json.Unmarshal(raw, &rep); err != nil {
 		t.Fatalf("baseline is not a report: %v", err)
 	}
-	if len(rep.Tasks) != 7 || rep.Passed != 7 {
+	if len(rep.Tasks) != 14 || rep.Passed != 14 {
 		t.Fatalf("baseline = %+v", rep)
 	}
 	c2, out2, _ := newCLI(nil)
 	if code := c2.Run([]string{"bench", "baseline"}); code != 0 {
 		t.Fatalf("show: exit = %d", code)
 	}
-	if !strings.Contains(out2.String(), "7/7 passed") {
+	if !strings.Contains(out2.String(), "14/14 passed") {
 		t.Fatalf("show output = %q", out2.String())
 	}
 	c3, out3, _ := newCLI(nil)

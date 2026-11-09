@@ -27,6 +27,7 @@ const (
 // Isolation vocabulary.
 const (
 	IsolationHostContained = "host-contained"
+	IsolationHostDegraded  = "host-contained:degraded-docker-unavailable"
 	IsolationDocker        = "docker"
 	IsolationUnknown       = "unknown"
 )

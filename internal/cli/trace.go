@@ -1,31 +1,42 @@
 package cli
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"regulus-ai/internal/trace"
 )
 
-// traceCmd implements `regulus trace record|show|files|sessions|prune|cost`:
+// traceCmd implements `regulus trace record|show|files|sessions|prune|cost|usage`:
 // minimal agent-process capture (G2.6). `record` appends one tool
 // execution to the session trace; `show` prints the diffable
 // fingerprint (sequence, tool, status) for probe-with-contrast
 // (G2.7); `files` prints the distinct touched paths in call order;
 // `sessions` lists sessions with traces; `prune` rotates a session
 // trace keeping the last N entries; `cost` reports the per-task proxy
-// cost (calls, wall time, output bytes; tokens only when the host
-// exposes them) folded auditably from the trace logs on disk (F1).
+// cost (calls, wall time, output bytes; host tokens only when the host
+// exposes them, plus the always-measured local token proxy chars/4)
+// folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		return 0
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 	switch args[0] {
 	case "record":
 		return c.traceRecordCmd(args[1:])
+	case "record-batch":
+		return c.traceRecordBatchCmd(args[1:])
 	case "show":
 		return c.traceShowCmd(args[1:])
 	case "files":
@@ -36,9 +47,11 @@ func (c CLI) traceCmd(args []string) int {
 		return c.tracePruneCmd(args[1:])
 	case "cost":
 		return c.traceCostCmd(args[1:])
+	case "usage":
+		return c.traceUsageCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 }
@@ -81,6 +94,75 @@ func (c CLI) traceRecordCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintln(c.Stdout, "trace recorded")
+	return 0
+}
+
+// traceStdin is the NDJSON source for `trace record-batch --ndjson`
+// (os.Stdin in production; tests substitute a strings.Reader so the
+// in-process CLI stays hermetic without touching cli.go surfaces).
+var traceStdin io.Reader = os.Stdin
+
+// traceRecordBatchCmd implements `regulus trace record-batch --ndjson`:
+// appends many tool executions to the session traces in one spawn (T7
+// speed-tokens: one hook flush = one spawn, same fields as `trace
+// record` including duration/output-bytes). Each entry is one NDJSON
+// object per line with the trace.Entry field names (session, message,
+// call, tool, status, files[], task, duration_ms, output_bytes,
+// input_tokens, output_tokens); blank lines are skipped.
+//
+// Entries arrive on stdin; when stdin carries no lines and positional
+// args are present, each arg is one NDJSON line instead — the OpenCode
+// plugin spawn helper cannot inject stdin, so the hook batches through
+// argv while shells pipe stdin. Positional args win without touching
+// stdin, so a spawn with inherited stdin never blocks. Recording stops
+// at the first bad line (exit 1 naming it); earlier lines stay
+// recorded, exactly as sequential `trace record` calls would leave
+// them. Success prints one summary line.
+func (c CLI) traceRecordBatchCmd(args []string) int {
+	fs := flag.NewFlagSet("trace record-batch", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	ndjson := fs.Bool("ndjson", false, "read entries as NDJSON (one object per line)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if !*ndjson {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record-batch --ndjson")
+		return 2
+	}
+	var lines []string
+	if rest := fs.Args(); len(rest) > 0 {
+		for _, ln := range rest {
+			if strings.TrimSpace(ln) == "" {
+				continue
+			}
+			lines = append(lines, ln)
+		}
+	} else {
+		sc := bufio.NewScanner(traceStdin)
+		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for sc.Scan() {
+			if ln := strings.TrimSpace(sc.Text()); ln != "" {
+				lines = append(lines, ln)
+			}
+		}
+		if err := sc.Err(); err != nil {
+			fmt.Fprintf(c.Stderr, "trace record-batch: %v\n", err)
+			return 1
+		}
+	}
+	now := time.Now().UTC()
+	for i, ln := range lines {
+		var e trace.Entry
+		if err := json.Unmarshal([]byte(ln), &e); err != nil {
+			fmt.Fprintf(c.Stderr, "trace record-batch: line %d: malformed entry: %v\n", i+1, err)
+			return 1
+		}
+		if _, err := trace.Record(c.dir(), e, now); err != nil {
+			fmt.Fprintf(c.Stderr, "trace record-batch: line %d: %v\n", i+1, err)
+			return 1
+		}
+	}
+	fmt.Fprintf(c.Stdout, "trace recorded %d entr(y/ies)\n", len(lines))
 	return 0
 }
 
@@ -236,11 +318,12 @@ func (c CLI) traceShowCmd(args []string) int {
 
 // traceCostCmd implements `regulus trace cost [--task <t>]`: reports
 // the per-task proxy cost (F1) folded auditably from the trace logs
-// on disk — calls, errors, wall time, output bytes, and host-exposed
-// token counts when any entry carries them. Every number recomputes
+// on disk — calls, errors, wall time, output bytes, host-exposed
+// token counts when any entry carries them, plus the always-measured
+// local token proxy (chars/4 per entry). Every number recomputes
 // from the same JSONL lines `trace show` and `trace files` read, so
 // the report squares with the traces. Costs the host never measured
-// read as unknown, never zero.
+// read as unknown, never zero; the local proxy reads as measured.
 func (c CLI) traceCostCmd(args []string) int {
 	fs := flag.NewFlagSet("trace cost", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -275,11 +358,12 @@ func (c CLI) traceCostCmd(args []string) int {
 		return 0
 	}
 	for _, tc := range costs {
-		fmt.Fprintf(c.Stdout, "task %s: %d call(s), %d error(s), %s, %s, tokens %s across %d session(s), %d entr(y/ies)\n",
+		fmt.Fprintf(c.Stdout, "task %s: %d call(s), %d error(s), %s, %s, tokens %s, local %s across %d session(s), %d entr(y/ies)\n",
 			tc.Task, tc.Calls, tc.Errors,
 			costKnown(tc.TotalDurationMS, "ms", tc.DurationKnown),
 			costKnown(tc.TotalOutputBytes, "B", tc.BytesKnown),
 			tokensKnown(tc),
+			localTokensKnown(tc),
 			len(tc.Sessions), tc.Entries)
 	}
 	return 0
@@ -294,11 +378,82 @@ func costKnown(total int64, unit string, known bool) string {
 	return fmt.Sprintf("%d%s", total, unit)
 }
 
-// tokensKnown renders the token totals, or unknown when no entry
+// tokensKnown renders the host token totals, or unknown when no entry
 // carried host-exposed counts.
 func tokensKnown(tc trace.TaskCost) string {
 	if !tc.TokensKnown {
 		return "unknown (host exposes none)"
 	}
 	return fmt.Sprintf("%d in + %d out", tc.TotalInputTokens, tc.TotalOutputTokens)
+}
+
+// localTokensKnown renders the measured-local token proxy (chars/4),
+// always measured once the bucket holds any entry.
+func localTokensKnown(tc trace.TaskCost) string {
+	if !tc.LocalTokensKnown {
+		return "unknown (nothing measured locally)"
+	}
+	return fmt.Sprintf("~%d proxy tokens (chars/4, measured-local)", tc.TotalLocalTokens)
+}
+
+// traceUsageCmd implements `regulus trace usage [--json]`: reports the
+// measured per-tool usage (T3) folded auditably from the trace logs on
+// disk — one row per called tool (calls + distinct sessions) plus the
+// session count that carries the evidence floor for pruning. Human
+// text by default, --json for the plugin (which parses the report
+// without scraping prose). Every number recomputes from the same
+// JSONL lines `trace show` reads, so the report squares with the
+// traces. An empty store is an empty report, never an error: a fresh
+// repo must not lose tools for lack of history.
+func (c CLI) traceUsageCmd(args []string) int {
+	fs := flag.NewFlagSet("trace usage", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	asJSON := fs.Bool("json", false, "print the usage report as JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus trace usage [--json]")
+		return 2
+	}
+	sessions, err := trace.UsageSessions(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace usage: %v\n", err)
+		return 1
+	}
+	usage, err := trace.UsageByTool(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace usage: %v\n", err)
+		return 1
+	}
+	if *asJSON {
+		raw, err := json.MarshalIndent(struct {
+			Sessions int               `json:"sessions"`
+			Tools    []trace.ToolUsage `json:"tools"`
+		}{Sessions: sessions, Tools: usageOrEmpty(usage)}, "", "  ")
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "trace usage: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(c.Stdout, string(raw))
+		return 0
+	}
+	if sessions == 0 {
+		fmt.Fprintln(c.Stdout, "(no usage: no sessions traced)")
+		return 0
+	}
+	fmt.Fprintf(c.Stdout, "sessions: %d\n", sessions)
+	for _, u := range usage {
+		fmt.Fprintf(c.Stdout, "tool %s: %d call(s) across %d session(s)\n", u.Tool, u.Calls, len(u.Sessions))
+	}
+	return 0
+}
+
+// usageOrEmpty keeps the JSON report shape stable (tools: [] instead
+// of tools: null) on an empty store.
+func usageOrEmpty(u []trace.ToolUsage) []trace.ToolUsage {
+	if u == nil {
+		return []trace.ToolUsage{}
+	}
+	return u
 }

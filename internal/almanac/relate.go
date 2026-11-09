@@ -8,10 +8,7 @@ package almanac
 // a plain relate.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"os"
 	"sort"
 )
 
@@ -150,10 +147,9 @@ func freshEntries(root string) ([]IndexEntry, bool, error) {
 
 // shaPinned reports whether hdr pins the current observation log.
 func shaPinned(root string, hdr IndexHeader) bool {
-	raw, err := os.ReadFile(File(root))
+	shaHex, err := cachedSourceSHA(root)
 	if err != nil {
 		return false
 	}
-	sum := sha256.Sum256(raw)
-	return hdr.SourceSHAHex() == hex.EncodeToString(sum[:])
+	return hdr.SourceSHAHex() == shaHex
 }

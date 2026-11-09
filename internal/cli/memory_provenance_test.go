@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,5 +86,26 @@ func TestMemoryImportMarksProvenance(t *testing.T) {
 	all, _ := almanac.All(".")
 	if len(all) != 1 {
 		t.Fatalf("re-import must not duplicate, got %d", len(all))
+	}
+}
+
+func TestMemorySaveRefusalNamesRelativeFix(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	inside := filepath.Join(dir, "a.go")
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"memory", "save", "--type", "decision", "--title", "t", "--path", inside, "content"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if got := errb.String(); !strings.Contains(got, `(try "a.go")`) {
+		t.Fatalf("refusal must name the relative fix, got:\n%s", got)
+	}
+	outside := string(filepath.Separator) + "definitely-outside-repo" + string(filepath.Separator) + "x.go"
+	c2, _, errb2 := newCLI(nil)
+	if code := c2.Run([]string{"memory", "save", "--type", "decision", "--title", "t", "--path", outside, "content"}); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if got := errb2.String(); !strings.Contains(got, "must be repo-relative") {
+		t.Fatalf("outside-root refusal must stand, got:\n%s", got)
 	}
 }

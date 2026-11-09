@@ -142,8 +142,8 @@ func TestToolDescriptorsMatchServerTable(t *testing.T) {
 
 func TestToolDescriptorsCarryMetadataWithoutLogic(t *testing.T) {
 	tools := mcp.Tools()
-	if len(tools) != 12 {
-		t.Fatalf("Tools() = %d entries, want 12 to mirror the server table", len(tools))
+	if len(tools) != 14 {
+		t.Fatalf("Tools() = %d entries, want 14 to mirror the server table", len(tools))
 	}
 	names := map[string]bool{}
 	for _, tool := range tools {
@@ -167,8 +167,8 @@ func TestToolDescriptorsCarryMetadataWithoutLogic(t *testing.T) {
 		sorted = append(sorted, n)
 	}
 	sort.Strings(sorted)
-	if len(sorted) != 12 {
-		t.Fatalf("want 12 unique tool names, got %v", sorted)
+	if len(sorted) != 14 {
+		t.Fatalf("want 14 unique tool names, got %v", sorted)
 	}
 }
 

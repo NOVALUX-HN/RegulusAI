@@ -19,6 +19,10 @@ import (
 // [--dimension] [--confidence] <feature-doc>`: admit an evidence-gated lesson (PRD
 // R-E1/R-E2).
 func (c CLI) reflectCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus reflect --domain <d> --task <t> --cue <c> --lesson <l> [--dimension inv|dom] [--confidence low|medium|high] <feature-doc>")
+		return 0
+	}
 	fs := flag.NewFlagSet("reflect", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	domain := fs.String("domain", "", "lesson domain (required)")
@@ -58,6 +62,10 @@ func (c CLI) reflectCmd(args []string) int {
 // forget|retain --domain --task` — dispatched to
 // one handler per subcommand.
 func (c CLI) libraryCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name> | regulus library forget|retain --domain <d> --task <t>")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus library list|candidates|show|domains|forget|retain [--domain <name>] | regulus library admit --domain <d> --candidate <id> --guardian <name> | regulus library forget|retain --domain <d> --task <t>")
 		return 2
@@ -316,6 +324,10 @@ func (c CLI) printLessons(domain string, lessons []library.Lesson) {
 
 // budgetCmd implements `regulus budget show | record --kind probe`.
 func (c CLI) budgetCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus budget show | regulus budget record --kind probe --detail <text>")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus budget show | regulus budget record --kind probe --detail <text>")
 		return 2
@@ -390,16 +402,26 @@ func (c CLI) budgetCmd(args []string) int {
 // `propose` assembles the evidence pack; authoring stays with the
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		return 0
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
 		return 2
 	}
 	switch args[0] {
 	case "propose":
 		return c.evolveProposeCmd(args[1:])
+	case "tick":
+		return c.evolveTickCmd(args[1:])
+	case "report":
+		return c.evolveReportCmd(args[1:])
+	case "validate":
+		return c.evolveValidateCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d>")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
 		return 2
 	}
 }
@@ -425,5 +447,176 @@ func (c CLI) evolveProposeCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintln(c.Stdout, pack)
+	return 0
+}
+
+// evolveTickCmd implements `regulus evolve tick [--every N]
+// [--dry-run]`: the periodic proposer (T4). Every N traced sessions
+// past the last applied tick it mines repeated tool errors and stale
+// lessons into library candidates — proposing, never admitting. Not
+// due prints the cadence position; dry-run prints findings without
+// writing. Exit 0 in all non-error cases: silence would hide the
+// cadence, failure would break hooks that call it best-effort.
+func (c CLI) evolveTickCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve tick", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	every := fs.Int("every", evolve.TickDefaultEvery, "fire once this many traced sessions accumulate past the last tick")
+	dry := fs.Bool("dry-run", false, "print findings without proposing or advancing")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve tick [--every N] [--dry-run]")
+		return 2
+	}
+	res, err := evolve.ComputeTick(c.dir(), *every)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve tick: %v\n", err)
+		return 1
+	}
+	if !res.Due {
+		fmt.Fprintf(c.Stdout, "no tick due (%d sessions, last tick at %d, every %d)\n", res.Sessions, res.AtTick, res.Every)
+		return 0
+	}
+	for _, f := range res.Findings {
+		fmt.Fprintf(c.Stdout, "[%s] %s: %s\n", f.Kind, f.Domain, f.Cue)
+	}
+	if *dry {
+		fmt.Fprintf(c.Stdout, "dry run: %d finding(s), nothing proposed\n", len(res.Findings))
+		return 0
+	}
+	if err := evolve.ApplyTick(c.dir(), res, time.Now().UTC()); err != nil {
+		fmt.Fprintf(c.Stderr, "evolve tick: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "tick: %d finding(s), %d candidate(s) proposed\n", len(res.Findings), len(res.Findings))
+	return 0
+}
+
+// evolveReportCmd implements `regulus evolve report [--domain <d>]`:
+// the lesson economics (T5) — proxy-token price plus evidence state
+// per admitted lesson, totals, and retire lines for rot. Read-only:
+// it proposes nothing, advances nothing, judges nothing. Exit 0 with
+// the numbers; the guardian decides with them.
+func (c CLI) evolveReportCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve report", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only this domain's lessons")
+	save := fs.String("save", "", "pin this report to a snapshot file")
+	compare := fs.String("compare", "", "diff a saved snapshot against the live store")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>]")
+		return 2
+	}
+	for _, f := range []string{*save, *compare} {
+		if strings.HasPrefix(f, "-") {
+			fmt.Fprintln(c.Stderr, "usage: regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>]")
+			return 2
+		}
+	}
+	rep, err := evolve.BuildReport(c.dir(), *domain)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve report: %v\n", err)
+		return 1
+	}
+	for _, l := range rep.Lessons {
+		fmt.Fprintf(c.Stdout, "  - [%s] %s: %s (~%d proxy tokens, evidence %s)\n",
+			l.Domain, l.ID, l.Cue, l.ProxyTokens, l.Evidence)
+	}
+	fmt.Fprintf(c.Stdout, "admitted: %d, proxy tokens: %d, rot: %d\n", rep.Admitted, rep.TotalProxy, rep.Rot)
+	// T10 (speed-tokens): measured-local cost per task on stdout, next to
+	// lesson price — pruning reads measured cost without --save. Empty
+	// when no session left attributed traces (fail-open, never an error).
+	for _, l := range rep.CostLines() {
+		fmt.Fprintf(c.Stdout, "cost: %s\n", l)
+	}
+	for _, id := range rep.Retire {
+		fmt.Fprintf(c.Stdout, "retire: %s — evidence rot, re-validate or retire it\n", id)
+	}
+	if *save != "" {
+		if err := evolve.SaveReport(*save, rep); err != nil {
+			fmt.Fprintf(c.Stderr, "evolve report: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(c.Stdout, "saved to %s\n", *save)
+	}
+	if *compare != "" {
+		base, err := evolve.LoadReport(*compare)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "evolve report: %v\n", err)
+			return 1
+		}
+		cmp := evolve.CompareReports(base, rep)
+		for _, r := range cmp.Rows {
+			fmt.Fprintf(c.Stdout, "  - %s: proxy %+d (%d -> %d), evidence %s -> %s%s%s\n",
+				r.ID, r.DeltaProxy, r.BaseProxy, r.CandProxy,
+				evidenceOrNone(r.BaseEvidence), evidenceOrNone(r.CandEvidence),
+				markAdded(r.Added), markDropped(r.Dropped))
+		}
+		fmt.Fprintf(c.Stdout, "delta proxy: %+d, delta admitted: %+d\n", cmp.DeltaProxy, cmp.DeltaAdmitted)
+	}
+	return 0
+}
+
+func evidenceOrNone(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+func markAdded(added bool) string {
+	if added {
+		return " [added]"
+	}
+	return ""
+}
+
+func markDropped(dropped bool) string {
+	if dropped {
+		return " [dropped]"
+	}
+	return ""
+}
+
+// evolveValidateCmd implements `regulus evolve validate [--domain <d>]
+// [--lesson <id>]`: the deterministic verdict per admitted lesson
+// (P7) — keep, drop, or unreviewable — from evidence alone. Cost is
+// reported, never judged. Read-only: it proposes nothing, retires
+// nothing; the guardian acts on the lines. Exit 0 with the verdicts.
+func (c CLI) evolveValidateCmd(args []string) int {
+	fs := flag.NewFlagSet("evolve validate", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	domain := fs.String("domain", "", "only this domain's lessons")
+	lesson := fs.String("lesson", "", "only this lesson id")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve validate [--domain <d>] [--lesson <id>]")
+		return 2
+	}
+	verdicts, err := evolve.Validate(c.dir(), *domain, *lesson)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "evolve validate: %v\n", err)
+		return 1
+	}
+	var keep, drop, unreviewable int
+	for _, v := range verdicts {
+		fmt.Fprintf(c.Stdout, "  - %s %s: %s (~%d proxy tokens, %s)\n",
+			v.Verdict, v.ID, v.Cue, v.ProxyTokens, v.Reason)
+		switch v.Verdict {
+		case evolve.VerdictKeep:
+			keep++
+		case evolve.VerdictDrop:
+			drop++
+		default:
+			unreviewable++
+		}
+	}
+	fmt.Fprintf(c.Stdout, "keep: %d, drop: %d, unreviewable: %d\n", keep, drop, unreviewable)
 	return 0
 }

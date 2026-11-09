@@ -108,6 +108,16 @@ export function suggestSkills(skills: Skill[], messagesText: string): Skill[] {
     .sort((a, b) => b.score - a.score || (a.skill.name < b.skill.name ? -1 : 1));
   return scored.slice(0, 2).map((e) => e.skill);
 }
+
+// filterSeenSkills dedups suggestions against history (harness-total/T2):
+// drop any suggested skill whose name already appears in recent messages
+// (case-insensitive substring). The agent already saw it; re-injecting
+// costs context without new signal. Pure so bun tests pin it without a
+// host; empty names never match.
+export function filterSeenSkills(suggested: Skill[], messagesText: string): Skill[] {
+  const hay = messagesText.toLowerCase();
+  return suggested.filter((s) => s.name !== "" && !hay.includes(s.name.toLowerCase()));
+}
 // RunBin runs the regulus binary; injected so tests can fake it.
 export type RunBin = (args: string[]) => Promise<{ exitCode: number; output: string }>
 
@@ -161,11 +171,59 @@ export function formatGateResult(output: string, exitCode: number): string {
   return exitCode === 0 ? body : `${body}\nexit code: ${exitCode}`;
 }
 
+// BLOCKED_SPAWN_RE matches a spawn the OS refused before exec, as
+// plain text. On Windows libuv has no errno for a Device Guard / App
+// Control (WDAC) denial, so Bun renders EUNKNOWN ("EUNKNOWN: unknown
+// error, uv_spawn", errno -4094) and Node's spawnSync a bare code with
+// the same errno — never ENOENT. The matchers below are deliberately
+// narrow: a bare `uv_spawn` token also appears in genuine Bun ENOENTs
+// ("no such file or directory, uv_spawn '...'"), and a bare
+// case-insensitive UNKNOWN would match any "unknown ..." prose, so
+// neither rides alone. Structured code/errno (checked in
+// explainSpawnError) is the primary signal; text covers string-only
+// inputs like gate_run failure lines and captured stderr.
+export const BLOCKED_SPAWN_RE = /\bEUNKNOWN\b|unknown error|-4094/i;
+
+export function isBlockedSpawn(message: string): boolean {
+  return BLOCKED_SPAWN_RE.test(message);
+}
+
+// explainSpawnError turns an opaque spawn refusal into an actionable
+// diagnosis. Non-block failures (ENOENT, timeouts, aborts) pass
+// through byte-identical so existing pins keep holding; only a block
+// signature appends the OS-block explanation (confirm steps + real
+// outs). Pure so bun tests pin it without spawning.
+export function explainSpawnError(err: unknown, bin: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const fields = err instanceof Error ? (err as unknown as { code?: unknown; errno?: unknown }) : {};
+  const codeStr = typeof fields.code === "string" ? fields.code : "";
+  const errnoNum = typeof fields.errno === "number" ? fields.errno : undefined;
+  const code = codeStr !== "" ? ` (${codeStr})` : "";
+  const base = raw.trim() === "" ? "spawn failed" : raw.trim();
+  // Structured code/errno is the primary signal (exact codes only:
+  // Bun reports EUNKNOWN/−4094, Node UNKNOWN/−4094, while a genuine
+  // missing file is ENOENT/−4058). Text covers string-only inputs.
+  const blocked =
+    codeStr === "EUNKNOWN" || codeStr === "UNKNOWN" || errnoNum === -4094 || isBlockedSpawn(`${base}${code}`);
+  if (!blocked) return base;
+  const where = bin.trim() !== "" ? ` "${bin}"` : "";
+  const subject = bin.trim() !== "" ? bin : "<bin>";
+  return (
+    `${base}${code} — the OS refused to start${where} before exec. ` +
+    `On Windows this is the Device Guard / App Control (WDAC) block, not a PATH or cwd problem. ` +
+    `Confirm: run cmd.exe /C '"${subject}" doctor' (Device Guard prints its organization banner), ` +
+    `or check Event Viewer > Microsoft-Windows-CodeIntegrity/Operational, events 3033/3077. ` +
+    `Outs: ask IT for a hash/signer exception, or run inside WSL; ` +
+    `self-signing (scripts/sign-local.ps1) only helps SmartScreen, and 'go run' only helps where the Go toolchain itself runs. ` +
+    `See docs/troubleshooting.md (EUNKNOWN uv_spawn).`
+  );
+}
+
 // formatGateFailure turns a gate_run spawn failure (timeout, abort,
 // missing binary) into tool content instead of a thrown null: one
 // diagnostic line carrying the conventional -1 exit code.
 export function formatGateFailure(message: string): string {
-  const detail = message.trim() === "" ? "gate run: spawn failed" : message.trim();
+  const detail = message.trim() === "" ? "gate run: spawn failed" : explainSpawnError(message, "");
   return `${detail}\nexit code: -1`;
 }
 
@@ -300,15 +358,43 @@ export function candidates(dir: string): string[] {
   const platform = process.platform
   const arch = process.arch === "x64" ? "amd64" : process.arch
   const ext = platform === "win32" ? ".exe" : ""
+  // The shipped binaries/ dir uses the Go OS name ("windows" instead of
+  // Node's "win32"), so on Windows the Go spelling is probed as part of
+  // the same slot — order is unchanged, first match wins (S2). Mirrors
+  // bin/regulus.js binariesPrimary + binariesAlias.
+  const primary = `${dir}/binaries/regulus-${platform}-${arch}${ext}`
+  const alias = platform === "win32" ? `${dir}/binaries/regulus-windows-${arch}.exe` : ""
   const list = [
     process.env.REGULUS_BIN,
     `${dir}/bin/regulus.exe`,
     `${dir}/bin/regulus`,
-    `${dir}/binaries/regulus-${platform}-${arch}${ext}`,
+    primary,
+    alias,
     home ? `${home}/.regulus/bin/regulus${ext}` : "",
     "regulus",
   ]
   return list.filter((c): c is string => typeof c === "string" && c !== "")
+}
+
+// STALE_DOCTOR_RE matches doctor's version-mismatch warning: the
+// core runs but reports a different version than the checkout's
+// package.json ("binary says X but package.json says Y"). Such a
+// core answers the contract yet runs an older surface (0.8.1 prints
+// usage for `memory context --limit/--budget`, silently breaking the
+// compaction hook), so it is refused like a contract mismatch — never
+// silently adopted. The unstamped-dev-build warning is a different
+// line and stays accepted (local dev flow).
+export function staleDoctorRefusal(doctorOutput: string): string {
+  const m = doctorOutput.match(/binary says (\S+) but package\.json says (\S+)/);
+  if (!m) return "";
+  // Doctor lines end the versions with a colon ("says 0.12.0: rebuild");
+  // strip trailing punctuation so the refusal reads cleanly.
+  const theirs = m[1].replace(/[:;,]+$/, "");
+  const ours = m[2].replace(/[:;,]+$/, "");
+  return (
+    `stale core: binary says ${theirs} but package.json says ${ours} — ` +
+    `rebuild with npm run build so core and plugin speak the same surface, not just the same contract`
+  );
 }
 
 // ProbeRun probes one candidate binary; injected so tests fake it while
@@ -333,6 +419,14 @@ export async function pickRegulus(bins: string[], probe: ProbeRun): Promise<{ bi
     }
     if (res.exitCode !== 0) {
       failures.push(`${bin}: ${res.output}`)
+      continue
+    }
+    // A runnable core on an older surface answers the contract but
+    // breaks plugin commands (stale-core refusal above): skip it with
+    // its rebuild reason before spending the contract probe.
+    const stale = staleDoctorRefusal(res.output)
+    if (stale !== "") {
+      failures.push(`${bin}: ${stale}`)
       continue
     }
     const refusal = checkContract(await probe(bin, ["contract"]))
@@ -437,20 +531,212 @@ async function getDomains(dir: string, runBin: RunBin): Promise<string[] | null>
   return domains
 }
 
+// TRACE_RECORD_STR/NUM_FLAGS map `trace record` flags to record-batch
+// NDJSON keys (trace.Entry field names). `--files` is the only
+// non-scalar: comma-joined on argv, an array in NDJSON (mirroring Go
+// splitList). T7 speed-tokens: flush converts queued record argv into
+// these objects so one flush costs one `trace record-batch` spawn.
+const TRACE_RECORD_STR_FLAGS: ReadonlyMap<string, string> = new Map([
+  ["--session", "session"],
+  ["--message", "message"],
+  ["--call", "call"],
+  ["--tool", "tool"],
+  ["--status", "status"],
+  ["--task", "task"],
+]);
+
+const TRACE_RECORD_NUM_FLAGS: ReadonlyMap<string, string> = new Map([
+  ["--duration-ms", "duration_ms"],
+  ["--output-bytes", "output_bytes"],
+  ["--input-tokens", "input_tokens"],
+  ["--output-tokens", "output_tokens"],
+]);
+
+// traceRecordArgvToEntry converts one `trace record` argv into its
+// record-batch NDJSON object. Returns null when the argv is not a
+// well-formed record (wrong shape, unknown flag, missing required
+// value, non-numeric/negative cost) — flush then records that entry
+// with its own spawn, preserving the old error surface exactly instead
+// of failing the whole batch on one odd entry. Pure so bun tests pin
+// the field mapping without spawning.
+export function traceRecordArgvToEntry(argv: string[]): Record<string, unknown> | null {
+  if (argv.length < 2 || argv[0] !== "trace" || argv[1] !== "record") return null;
+  const tail = argv.slice(2);
+  if (tail.length === 0 || tail.length % 2 !== 0) return null;
+  const out: Record<string, unknown> = {};
+  let files: string[] | undefined;
+  for (let i = 0; i < tail.length; i += 2) {
+    const flag = tail[i];
+    const value = tail[i + 1];
+    if (value === undefined) return null;
+    const sKey = TRACE_RECORD_STR_FLAGS.get(flag);
+    if (sKey !== undefined) {
+      if (value.trim() === "") return null;
+      out[sKey] = value;
+      continue;
+    }
+    if (flag === "--files") {
+      files = value.split(",").map((p) => p.trim()).filter((p) => p !== "");
+      continue;
+    }
+    const nKey = TRACE_RECORD_NUM_FLAGS.get(flag);
+    if (nKey !== undefined) {
+      if (!/^\d+$/.test(value.trim())) return null;
+      out[nKey] = Number(value);
+      continue;
+    }
+    return null; // unknown flag — never guess, fall back to a single spawn
+  }
+  for (const k of ["session", "message", "call", "tool", "status"]) {
+    if (typeof out[k] !== "string" || (out[k] as string).trim() === "") return null;
+  }
+  if (out["status"] !== "completed" && out["status"] !== "error") return null;
+  if (files !== undefined && files.length > 0) out["files"] = files;
+  return out;
+}
+
+// TraceBatcher (harness-total/V1, T7 speed-tokens): the trace-hook
+// queue. The hook no longer pays one awaited `trace record` spawn per
+// tool call on its critical path: records enqueue and drain in a
+// single-flight background flush (cola+flush). flush() drains until
+// empty — every queued record is attempted exactly once, in FIFO order
+// — so items enqueued mid-flush (concurrent hooks) ride the next batch
+// of the same drain instead of starting a second spawn train.
+// T7 batches each drain round into a single `trace record-batch
+// --ndjson` spawn (entries serialized as NDJSON argv lines): a 10-tool
+// burst costs 1 spawn, not 10 sequential ones. A failed batch is
+// reported on every entry of the round but never skips the rest; the
+// queue is empty afterwards even when every spawn fails. Durability
+// matches the old hook (best-effort, failures logged by the caller,
+// never thrown); behavior pinned by lib/v1-batch.test.ts.
+export interface TraceEntry {
+  argv: string[];
+  label: string;
+}
+
+export interface TraceFlushResult {
+  argv: string[];
+  label: string;
+  ok: boolean;
+  error: string;
+}
+
+export class TraceBatcher {
+  private readonly queue: TraceEntry[] = [];
+
+  enqueue(entry: TraceEntry): void {
+    this.queue.push(entry);
+  }
+
+  pending(): number {
+    return this.queue.length;
+  }
+
+  async flush(runBin: RunBin): Promise<TraceFlushResult[]> {
+    const results: TraceFlushResult[] = [];
+    while (this.queue.length > 0) {
+      const batch = this.queue.splice(0, this.queue.length);
+      const slots: TraceFlushResult[] = new Array(batch.length);
+      const batched: number[] = [];
+      const lines: string[] = [];
+      const singles: number[] = [];
+      batch.forEach((entry, i) => {
+        const obj = traceRecordArgvToEntry(entry.argv);
+        if (obj === null) singles.push(i);
+        else {
+          batched.push(i);
+          lines.push(JSON.stringify(obj));
+        }
+      });
+      if (lines.length > 0) {
+        try {
+          const res = await runBin(["trace", "record-batch", "--ndjson", ...lines]);
+          for (const i of batched) {
+            slots[i] =
+              res.exitCode === 0
+                ? { argv: batch[i].argv, label: batch[i].label, ok: true, error: "" }
+                : { argv: batch[i].argv, label: batch[i].label, ok: false, error: res.output };
+          }
+        } catch (err) {
+          const msg = (err as Error)?.message ?? String(err);
+          for (const i of batched) {
+            slots[i] = { argv: batch[i].argv, label: batch[i].label, ok: false, error: msg };
+          }
+        }
+      }
+      for (const i of singles) {
+        const entry = batch[i];
+        try {
+          const res = await runBin(entry.argv);
+          slots[i] =
+            res.exitCode !== 0
+              ? { argv: entry.argv, label: entry.label, ok: false, error: res.output }
+              : { argv: entry.argv, label: entry.label, ok: true, error: "" };
+        } catch (err) {
+          slots[i] = { argv: entry.argv, label: entry.label, ok: false, error: (err as Error)?.message ?? String(err) };
+        }
+      }
+      results.push(...slots);
+    }
+    return results;
+  }
+}
+
+// domainHitCache (harness-total/V1): memoizes (domain, path) lesson-hit
+// lookups for 60s per OpenCode process. Session trace files change as the
+// session progresses (new paths still spawn), but repeat assemblies over
+// the same files skip the `memory search` spawn. Same staleness class as
+// the domains list above (an admit shows up after the TTL); reversal:
+// restart the host process, or clearDomainHitCache() in tests.
+const DOMAIN_HIT_TTL_MS = 60000;
+const domainHitCache = new TtlCache<boolean>(DOMAIN_HIT_TTL_MS);
+
+export function clearDomainHitCache(): void {
+  domainHitCache.clear();
+}
+
+function domainHitKey(domain: string, path: string): string {
+  return `${domain}\n${path}`;
+}
+
 // domainFromFiles matches session trace files against lesson
 // provenance paths: the first (file, domain) pair with a lesson hit
 // wins. Bounded (3 files) and fully defensive.
+//
+// harness-total/V1: every (file, domain) pair probes concurrently
+// (Promise.all) and the winner is still the first pair in (file,
+// domain) order with a hit — parallelism changes latency, never the
+// decision. Cache hits skip the spawn entirely.
 async function domainFromFiles(runBin: RunBin, sessionID: string, domains: string[]): Promise<string> {
   if (sessionID === "") return ""
   const tf = await runBin(["trace", "files", "--session", sessionID])
   if (tf.exitCode !== 0) return ""
   const files = tf.output.split("\n").map((f) => f.trim()).filter((f) => f !== "" && !f.startsWith("(")).slice(0, 3)
   if (files.length === 0) return ""
+  const pairs: Array<{ file: string; domain: string }> = []
   for (const f of files) {
     for (const d of domains) {
-      const hit = await runBin(["memory", "search", "--type", "lesson", "--domain", d, "--path", f])
-      if (hit.exitCode === 0 && hit.output !== "" && !hit.output.startsWith("no matching")) return d
+      pairs.push({ file: f, domain: d })
     }
+  }
+  const hits = await Promise.all(
+    pairs.map(async (p) => {
+      const key = domainHitKey(p.domain, p.file)
+      const cached = domainHitCache.get(key)
+      if (cached !== undefined) return cached
+      let hit = false
+      try {
+        const res = await runBin(["memory", "search", "--type", "lesson", "--domain", p.domain, "--path", p.file])
+        hit = res.exitCode === 0 && res.output !== "" && !res.output.startsWith("no matching")
+      } catch {
+        hit = false
+      }
+      domainHitCache.set(key, hit)
+      return hit
+    }),
+  )
+  for (let i = 0; i < pairs.length; i++) {
+    if (hits[i]) return pairs[i].domain
   }
   return ""
 }
@@ -479,6 +765,9 @@ export async function resolveDomain(dir: string, runBin: RunBin, messagesText: s
         // trace lookup failed — fall through to the library signal
       }
       if (domains.length === 1) return domains[0]
+      if (domains.length > 1) {
+        console.error(`[regulus] domain: no pin found (${domains.length} domains, no chart/file hit) — using unfiltered lessons (newest-first fallback)`)
+      }
     }
   } catch {
     // never break context assembly on detection
@@ -528,6 +817,19 @@ export function compactionContextArgs(env?: string): string[] {
     return ["memory", "context", "--limit", "0", "--budget", "0"];
   }
   return ["memory", "context", "--limit", String(COMPACTION_CONTEXT_LIMIT), "--budget", String(COMPACTION_CONTEXT_BUDGET)];
+}
+
+// contextResolveArgs builds the single-spawn context hook argv (T1
+// speed-tokens): `memory context --resolve-domain` resolves the lesson
+// domain in-process (chart pins, lone chart, single library domain,
+// trace file-hits) and renders context + scoped lessons in one spawn.
+// Pure so bun tests pin the argv without spawning.
+export function contextResolveArgs(opts?: { sessionID?: string; charts?: string[]; limit?: number; budget?: number; lessons?: number }): string[] {
+  const args = ["memory", "context", "--resolve-domain"];
+  if (opts?.sessionID) args.push("--session", opts.sessionID);
+  for (const c of opts?.charts ?? []) args.push("--chart", c);
+  args.push("--limit", String(opts?.limit ?? COMPACTION_CONTEXT_LIMIT), "--budget", String(opts?.budget ?? COMPACTION_CONTEXT_BUDGET), "--lessons", String(opts?.lessons ?? 3));
+  return args;
 }
 
 // memorySearchArgs builds the `memory search` argv, mirroring the MCP
@@ -596,7 +898,7 @@ export function isLoopGuardEnabled(env?: string): boolean {
 // TE_LOOPGUARD=off reversal inline so the agent sees it where it acts.
 export function formatLoopRedirect(tool: string): string {
   const name = tool.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim() || "tool";
-  return `[regulus loop-guard] parece bucle en ${name} (×3 mismo fallo): prueba otro enfoque (relee el error, cambia de archivo/comando o pide ayuda) — reversible, ignóralo si no aplica (TE_LOOPGUARD=off lo desactiva).`;
+  return `[regulus loop-guard] possible loop in ${name} (×3 same failure): try a different approach (re-read the error, change file/command, or ask for help) — advisory, ignore if not applicable (TE_LOOPGUARD=off disables it).`;
 }
 
 // TOOLSET_FULL / TOOLSET_MINIMAL / resolveToolset — T2 (macizo-tokens):
@@ -638,6 +940,9 @@ export const TOOLSET_FULL: readonly string[] = [
   "trace_sessions",
   "trace_files",
   "probe_compose",
+  "audit",
+  "evolve_report",
+  "evolve_tick",
 ];
 
 // TOOLSET_MINIMAL is the simple-session subset: verify the install
@@ -676,6 +981,134 @@ export function isToolEnabled(mode: ToolsetMode, name: string): boolean {
 // the cost pin counts these (plus their guidance chars).
 export function toolsetTools(mode: ToolsetMode): readonly string[] {
   return mode === "full" ? TOOLSET_FULL : TOOLSET_MINIMAL;
+}
+
+// MINIMAL_CREW_LINE is the 1-line Crew for minimal sessions (T9
+// speed-tokens): simple sessions keep the builder without paying the
+// full scout/worker/verifier/proposer + guardian roster. Guardians
+// stay reachable on demand via `review --lens` (review paths
+// untouched).
+export const MINIMAL_CREW_LINE =
+  "- The Crew: @regulus-worker builds one unit; guardians on demand via `review --lens`.";
+
+// formatDisciplineForToolset renders the discipline text per toolset
+// mode: full returns the text byte-identical (roster intact),
+// minimal swaps the "- The Crew:" roster line for MINIMAL_CREW_LINE.
+// The .md source keeps the full roster (single source); the trim
+// happens at render, so trimming only shrinks the injected prompt
+// and the discipline token-budget cap stays green. Pure so bun tests
+// pin both modes without a host. A missing Crew line passes through
+// unchanged (never break context assembly on wording drift).
+export function formatDisciplineForToolset(discipline: string, mode: ToolsetMode): string {
+  if (mode === "full") return discipline;
+  const lines = discipline.split("\n");
+  const idx = lines.findIndex((l) => l.trimStart().startsWith("- The Crew:"));
+  if (idx < 0) return discipline;
+  const next = [...lines];
+  next[idx] = MINIMAL_CREW_LINE;
+  return next.join("\n");
+}
+
+// TraceToolUsage is one row of `trace usage --json`: a host-side tool
+// name with its measured calls and distinct session count.
+export interface TraceToolUsage {
+  tool: string;
+  calls: number;
+  sessions: number;
+}
+
+// PRUNE_MIN_SESSIONS is the evidence floor for usage pruning: below
+// it nothing prunes — a fresh repo must not lose tools for lack of
+// history. Sessions are cumulative (no recency): a pruned tool
+// returns by itself once traces show calls again, and TE_TOOLSET=full
+// restores everything in one step.
+export const PRUNE_MIN_SESSIONS = 3;
+
+// parseTraceUsage reads `trace usage --json` defensively: any shape
+// violation (bad JSON, missing sessions count, ragged rows) yields an
+// empty report, and the pruner fails open to the full set — measuring
+// must never break setup.
+export function parseTraceUsage(text: string): { sessions: number; tools: TraceToolUsage[] } {
+  try {
+    const raw = JSON.parse(text) as { sessions?: unknown; tools?: unknown };
+    if (typeof raw !== "object" || raw === null) return { sessions: 0, tools: [] };
+    if (typeof raw.sessions !== "number") return { sessions: 0, tools: [] };
+    if (!Array.isArray(raw.tools)) return { sessions: 0, tools: [] };
+    const tools: TraceToolUsage[] = [];
+    for (const row of raw.tools) {
+      if (typeof row !== "object" || row === null) continue;
+      const r = row as { tool?: unknown; calls?: unknown; sessions?: unknown };
+      if (typeof r.tool !== "string" || typeof r.calls !== "number") continue;
+      const n = Array.isArray(r.sessions) ? r.sessions.length : 0;
+      tools.push({ tool: r.tool, calls: r.calls, sessions: n });
+    }
+    return { sessions: raw.sessions, tools };
+  } catch {
+    return { sessions: 0, tools: [] };
+  }
+}
+
+// applyUsagePruning trims the full set by measured use (T3): a
+// full-only tool with zero recorded calls across the evidence floor
+// is left out and named in pruned. The minimal set never prunes
+// (safe floor); explicit modes skip measuring; thin or malformed
+// usage fails open to the unpruned set. Trace names are host-side,
+// so a regulus tool matches by suffix (regulus_gate_run covers
+// gate_run); an exact match counts too.
+export function applyUsagePruning(
+  mode: ToolsetMode,
+  usage: { sessions: number; tools: TraceToolUsage[] },
+  explicit = false,
+): { tools: readonly string[]; pruned: string[] } {
+  const base = toolsetTools(mode);
+  if (mode !== "full" || explicit) return { tools: base, pruned: [] };
+  if (usage.sessions < PRUNE_MIN_SESSIONS) return { tools: base, pruned: [] };
+  const called = (name: string) =>
+    usage.tools.some((u) => u.calls > 0 && (u.tool === name || u.tool.endsWith(`_${name}`)));
+  const tools = base.filter(
+    (name) => (TOOLSET_MINIMAL as readonly string[]).includes(name) || called(name),
+  );
+  const pruned = base.filter((name) => !tools.includes(name));
+  return { tools, pruned };
+}
+
+// usageCache (T6 speed-tokens): memoizes the parsed `trace usage
+// --json` report per project dir for the life of the host process.
+// Every session setup used to pay one spawn for usage pruning; now
+// only the first setup per dir spawns and every later setup for the
+// same dir resolves with zero spawns (pinned by lib/toolset.test.ts).
+//
+// Lazy-vs-cache decision: true laziness — deferring the full/minimal
+// decision until the first actual tool call — is infeasible in this
+// host lifecycle. Tools register once per project load in the sync
+// `transform` callback (no session, no async spawn possible; see
+// TOOLSET_FULL above), so the decision must stay load-time and only
+// the measurement is cached instead. Failures (spawn throw, non-zero
+// exit, malformed JSON) never pin the cache: the setup fails open to
+// the unpruned set and the next setup retries.
+const usageCache = new Map<string, { sessions: number; tools: TraceToolUsage[] }>();
+
+export function clearUsageCache(): void {
+  usageCache.clear();
+}
+
+export async function getCachedUsage(
+  dir: string,
+  runBin: RunBin,
+): Promise<{ sessions: number; tools: TraceToolUsage[] } | null> {
+  const hit = usageCache.get(dir);
+  if (hit !== undefined) return hit;
+  let res: { exitCode: number; output: string };
+  try {
+    res = await runBin(["trace", "usage", "--json"]);
+  } catch (err) {
+    console.error(`[regulus] toolset: usage pruning skipped (${(err as Error)?.message ?? String(err)}) — full set kept`);
+    return null;
+  }
+  if (res.exitCode !== 0) return null;
+  const parsed = parseTraceUsage(res.output);
+  usageCache.set(dir, parsed);
+  return parsed;
 }
 
 // LoopGuard counts consecutive same-signature failures per session.

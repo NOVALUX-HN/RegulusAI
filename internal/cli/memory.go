@@ -4,12 +4,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/almanac"
+	"regulus-ai/internal/gates"
+	"regulus-ai/internal/library"
+	"regulus-ai/internal/trace"
 )
 
 // memoryCmd implements the Almanac surface (docs/memory.md):
@@ -19,8 +24,12 @@ import (
 // Lessons have one door: regulus reflect.
 func (c CLI) memoryCmd(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|context|prune|doctor|reindex|verify|reject|check|status|mine")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine")
 		return 2
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(c.Stdout, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine")
+		return 0
 	}
 	switch args[0] {
 	case "note":
@@ -63,7 +72,7 @@ func (c CLI) memoryCmd(args []string) int {
 		return c.memoryMineCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "memory: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|context|prune|doctor|reindex|verify|reject|check|status|mine")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine")
 		return 2
 	}
 }
@@ -121,6 +130,20 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 		for _, r := range h.OrphanRelations {
 			fmt.Fprintf(c.Stdout, "orphan relations: %s %s %s\n", r.From, r.Relation, r.To)
 		}
+	}
+	// Miss rate (A3): zero-hit searches log their terms; the doctor
+	// reports the count plus the most-missed sets — save the fact,
+	// reword the query, or reindex. A missing log reads as none.
+	if count, top, merr := almanac.MissStats(c.dir()); merr != nil {
+		fmt.Fprintf(c.Stdout, "misses:      unreadable — %v\n", merr)
+	} else if count == 0 {
+		fmt.Fprintln(c.Stdout, "misses:      none — no zero-hit searches logged")
+	} else {
+		quoted := make([]string, 0, len(top))
+		for _, t := range top {
+			quoted = append(quoted, fmt.Sprintf("%q", t))
+		}
+		fmt.Fprintf(c.Stdout, "misses:      %d (top: %s)\n", count, strings.Join(quoted, ", "))
 	}
 	// H3 (S5): doctor also surfaces index freshness with the repairing
 	// command — a save after the last reindex makes hybrid search fall
@@ -183,9 +206,10 @@ func (c CLI) memoryReindexCmd(args []string) int {
 }
 
 // memoryPruneCmd implements `regulus memory prune [--older-than-days N]
-// [--type t1,t2] [--yes]`: drop stale non-lesson observations.
-// Lessons and pinned observations are never pruned (safety
-// invariants in almanac.Prune). Without --yes it is a dry run: lists
+// [--type t1,t2] [--yes]`: drop stale observations. Active lessons and
+// pinned observations are never pruned (safety invariants in
+// almanac.Prune); retired lessons (superseded, invalidated, rejected
+// or expired) prune like any other content when unpinned. Without --yes it is a dry run: lists
 // what WOULD be removed and removes nothing — the human confirmation
 // is the explicit flag. A successful --yes apply refreshes the derived
 // retrieval.bin best-effort (M1 S1: doctor stays fresh without a manual
@@ -194,7 +218,7 @@ func (c CLI) memoryPruneCmd(args []string) int {
 	fs := flag.NewFlagSet("memory prune", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	olderThan := fs.Int("older-than-days", 90, "prune observations older than N days")
-	types := fs.String("type", "", "only these observation types, comma-separated (lessons are never pruned)")
+	types := fs.String("type", "", "only these observation types, comma-separated (active lessons are never pruned)")
 	yes := fs.Bool("yes", false, "execute the prune (default is a dry run)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -248,7 +272,17 @@ func (c CLI) memoryPruneCmd(args []string) int {
 // silent (stdout stays machine-stable), ErrNoLog (empty log, nothing
 // to index) is silent, and any other failure warns on stderr without
 // failing the mutation that already succeeded.
+//
+// T4 (S2-S3) deferred bursts: REGULUS_DEFER_REINDEX=1 skips the
+// synchronous rebuild. The log append already stales the index (sha
+// mismatch), so the next `memory search` honestly degrades to lexical
+// with the stale-index warning; the caller reindexes once with an
+// explicit `memory reindex` (or the next non-deferred write). Unset
+// (default) keeps the synchronous rebuild — backwards compatible.
 func (c CLI) refreshIndexBestEffort(op string) {
+	if os.Getenv("REGULUS_DEFER_REINDEX") == "1" {
+		return
+	}
 	if _, _, err := almanac.Reindex(c.dir()); err != nil {
 		if errors.Is(err, almanac.ErrNoLog) {
 			return
@@ -268,7 +302,7 @@ func (c CLI) memoryNoteCmd(args []string) int {
 	if runes := []rune(title); len(runes) > 60 {
 		title = string(runes[:60])
 	}
-	head := gitHeadBounded(c.runner())
+	head := cachedGitHead(c.runner(), c.dir())
 	obs := &almanac.Observation{
 		Type: almanac.TypeSessionNote, Title: title, Content: text,
 		Provenance: &almanac.Provenance{GitHead: head},
@@ -336,11 +370,20 @@ func (c CLI) memorySaveCmd(args []string) int {
 	}
 	provenancePaths := splitList(*paths)
 	provenanceReceipts := splitList(*receiptsFlag)
-	if err := checkProvenancePaths(provenancePaths, "--path"); err != nil {
+	// Display root for refusal hints: dir() stays "." at the project
+	// root by contract, so resolve it for the message only (never for
+	// storage) — agents can then self-correct an absolute path.
+	provenanceRoot := c.dir()
+	if provenanceRoot == "" || provenanceRoot == "." {
+		if wd, err := os.Getwd(); err == nil && wd != "" {
+			provenanceRoot = wd
+		}
+	}
+	if err := checkProvenancePaths(provenanceRoot, provenancePaths, "--path"); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 2
 	}
-	if err := checkProvenancePaths(provenanceReceipts, "--receipt"); err != nil {
+	if err := checkProvenancePaths(provenanceRoot, provenanceReceipts, "--receipt"); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 2
 	}
@@ -348,7 +391,7 @@ func (c CLI) memorySaveCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "memory save: source import is reserved for memory import")
 		return 2
 	}
-	head := gitHeadBounded(c.runner())
+	head := cachedGitHead(c.runner(), c.dir())
 	var expiry *time.Time
 	if strings.TrimSpace(*expires) != "" {
 		d, err := parseExpiry(*expires)
@@ -423,6 +466,7 @@ func (c CLI) memorySearchCmd(args []string) int {
 	latest := fs.Bool("latest", false, "collapse each topic chain to its best hit (default: all coexist)")
 	includeSuperseded := fs.Bool("include-superseded", false, "show observations a supersedes relation hides")
 	lexical := fs.Bool("lexical", false, "force lexical-only search (skip hybrid semantic ranking)")
+	noStaleness := fs.Bool("no-staleness", false, "skip git staleness probes (no rev-list spawns, no behind annotations)")
 	embedder := fs.String("embedder", "", "encoder id for the vector channel (default "+almanac.EmbedderID+")")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -451,7 +495,15 @@ func (c CLI) memorySearchCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory search: %v\n", err)
 		return 1
 	}
+	if *lexical {
+		fmt.Fprintln(c.Stderr, "ranking: lexical buckets+terms, newest first (forced --lexical)")
+	} else {
+		fmt.Fprintln(c.Stderr, "ranking: hybrid RRF(k=60)+decay+confidence, rot sinks (fresh index) — lexical fallback warns above")
+	}
 	if len(hits) == 0 {
+		// Miss log (A3): a zero-hit search records its terms —
+		// best-effort, never breaking the search itself.
+		_ = almanac.RecordMiss(c.dir(), fs.Args(), time.Now().UTC())
 		fmt.Fprintln(c.Stdout, "no matching observations")
 		return 0
 	}
@@ -473,14 +525,37 @@ func (c CLI) memorySearchCmd(args []string) int {
 	fmt.Fprintln(c.Stderr, trustBanner)
 	fmt.Fprintf(c.Stdout, "%d hit(s)\n", len(hits))
 	now := time.Now().UTC()
-	for _, h := range hits {
-		suffix := c.commitsBehindSuffix(h)
+	// Support grading (almanac-prime A1): every hit carries its cited
+	// support — supported, rot, unchecked — and rot sinks below the
+	// rest (stable). Engram ranks by similarity plus model judgments;
+	// Almanac grades by evidence and says so on the line. Unchecked is
+	// the default state (nothing cited), not a demotion.
+	support := make([]string, len(hits))
+	for i, h := range hits {
+		support[i] = almanac.SupportOf(c.dir(), h)
+	}
+	order := make([]int, len(hits))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		ri := support[order[i]] == almanac.SupportRot
+		rj := support[order[j]] == almanac.SupportRot
+		return !ri && rj
+	})
+	for _, oi := range order {
+		h := hits[oi]
+		suffix := ""
+		if !*noStaleness {
+			suffix = c.commitsBehindSuffix(h)
+		}
 		if by := supersededBy[h.ID]; by != "" {
 			suffix += fmt.Sprintf(" [superseded by %s]", by)
 		}
 		if partners := conflicts[h.ID]; len(partners) > 0 {
 			suffix += fmt.Sprintf(" [conflicts: %s]", strings.Join(partners, ", "))
 		}
+		suffix += fmt.Sprintf(" [%s]", support[oi])
 		fmt.Fprintf(c.Stdout, "%s %s %s (saved %s%s)\n", h.ID, h.Type, h.Title, humanAge(now, h.SavedAt), suffix)
 	}
 	return 0
@@ -613,6 +688,10 @@ func (c CLI) memoryExportCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus memory export [--domain <d>] [--out <dir>]")
 		return 2
 	}
+	if strings.HasPrefix(*out, "-") {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory export [--domain <d>] [--out <dir>]")
+		return 2
+	}
 	if *domain == "" && *out == ".regulus-export" {
 		paths, err := almanac.Export(c.dir())
 		if err != nil {
@@ -666,6 +745,115 @@ func (c CLI) memoryImportCmd(args []string) int {
 	return 0
 }
 
+// chartList is a repeatable --chart flag: --chart a --chart b,c appends all.
+type chartList []string
+
+func (c *chartList) String() string { return strings.Join(*c, ",") }
+func (c *chartList) Set(v string) error {
+	for _, p := range strings.Split(v, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			*c = append(*c, p)
+		}
+	}
+	return nil
+}
+
+// readDomainLine returns the Domain: line value from a chart file, or "".
+func readDomainLine(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, ln := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(ln)
+		if len(t) < 7 {
+			continue
+		}
+		// case-sensitive Domain: to match TS findDomainInChart
+		if !strings.HasPrefix(t, "Domain:") {
+			continue
+		}
+		v := strings.TrimSpace(strings.TrimPrefix(t, "Domain:"))
+		if v == "" {
+			return ""
+		}
+		// keep first token, allow [A-Za-z0-9_][\w.\-]*
+		f := strings.Fields(v)[0]
+		return f
+	}
+	return ""
+}
+
+// resolveDomainInProcess detects the lesson domain without spawning:
+// chart pins first, then the lone chart, then single library domain,
+// then trace file hits, else unfiltered. Returns domain + reason.
+func resolveDomainInProcess(dir, session string, charts []string) (string, string) {
+	for _, ref := range charts {
+		p := ref
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, ref)
+		}
+		if d := readDomainLine(p); d != "" {
+			return d, "chart:" + ref
+		}
+	}
+	// lone chart fallback when caller passed none
+	if len(charts) == 0 {
+		entries, err := os.ReadDir(filepath.Join(dir, "charts"))
+		if err == nil {
+			var mds []string
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+					mds = append(mds, e.Name())
+				}
+			}
+			if len(mds) == 1 {
+				if d := readDomainLine(filepath.Join(dir, "charts", mds[0])); d != "" {
+					return d, "lone-chart:" + mds[0]
+				}
+			}
+		}
+	}
+	domains, err := library.Domains(dir)
+	if err != nil || len(domains) == 0 {
+		return "", "unfiltered"
+	}
+	if len(domains) == 1 {
+		return domains[0], "single-domain"
+	}
+	if session != "" {
+		entries, err := trace.List(dir, session)
+		if err == nil {
+			seen := map[string]bool{}
+			var files []string
+			for _, e := range entries {
+				for _, f := range e.Files {
+					if !seen[f] {
+						seen[f] = true
+						files = append(files, f)
+						if len(files) >= 3 {
+							break
+						}
+					}
+				}
+				if len(files) >= 3 {
+					break
+				}
+			}
+			for _, f := range files {
+				for _, d := range domains {
+					hits, err := almanac.Search(dir, almanac.Query{Domain: d, Path: f, Type: almanac.TypeLesson, Limit: 1})
+					if err == nil && len(hits) > 0 {
+						return d, "file-hit:" + f
+					}
+				}
+			}
+		}
+	}
+	return "", "unfiltered-multi"
+}
+
 // memoryContextCmd implements `regulus memory context [--limit N]` — the
 // resume block, DATA-framed. The default block is BOUNDED (latest
 // DefaultContextLimit notes, DefaultContextBudget items per long list,
@@ -680,7 +868,27 @@ func (c CLI) memoryContextCmd(args []string) int {
 	path := fs.String("path", "", "only observations citing this provenance path")
 	system := fs.String("system", "", "only this memory system (episodic|semantic|decision|procedural|evolution)")
 	budget := fs.Int("budget", almanac.DefaultContextBudget, "cap listed notes/decisions items each (0: all)")
+	resolve := fs.Bool("resolve-domain", false, "resolve lesson domain in-process and scope lessons (single-spawn)")
+	session := fs.String("session", "", "session id for trace file-hit domain detection (with --resolve-domain)")
+	var charts chartList
+	fs.Var(&charts, "chart", "chart ref for Domain: pin (repeatable, with --resolve-domain)")
+	lessonsN := fs.Int("lessons", 3, "scoped lessons to include with --resolve-domain (default 3; unpinned multi-domain fallback trims to 1 unless --lessons is explicit)")
+	noStaleness := fs.Bool("no-staleness", false, "skip git staleness probes (no rev-list spawns)")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	// R3-001 (R1 review, reliability BLOCKER): scoping flags without
+	// --resolve-domain refuse (exit 2) instead of silently discarding
+	// scoping and exiting 0 with unscoped context.
+	lessonsFlagSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "lessons" {
+			lessonsFlagSet = true
+		}
+	})
+	if !*resolve && (*session != "" || len(charts) > 0 || lessonsFlagSet) {
+		fmt.Fprintln(c.Stderr, "memory context: --session/--chart/--lessons need --resolve-domain")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
 	sys, err := almanac.ParseSystem(*system)
@@ -688,18 +896,120 @@ func (c CLI) memoryContextCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
 		return 2
 	}
-	if fs.NArg() != 0 || *limit < 0 || *budget < 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]")
+	if fs.NArg() != 0 || *limit < 0 || *budget < 0 || *lessonsN < 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
+	_ = *noStaleness // context performs no git probes today; the flag keeps the skip symmetric with search and future-proofs staleness annotations.
 	scope := almanac.ContextScope{Task: *task, Path: *path, System: sys, Budget: *budget}
 	ctx, err := almanac.ContextScoped(c.dir(), time.Now().UTC(), *limit, scope)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "memory context: %v\n", err)
 		return 1
 	}
+	if !*resolve {
+		fmt.Fprint(c.Stdout, ctx)
+		return 0
+	}
+	domain, reason := resolveDomainInProcess(c.dir(), *session, []string(charts))
+	domainLabel := domain
+	if domainLabel == "" {
+		domainLabel = "(unfiltered)"
+	}
+	fmt.Fprintf(c.Stdout, "domain: %s (reason: %s)\n\n", domainLabel, reason)
 	fmt.Fprint(c.Stdout, ctx)
+	// T8 (S2,S3) cheap fallback: unpinned-multi (no pin, >1 library
+	// domain) is the most expensive scope — unfiltered newest-first up to
+	// --lessons. Trim the DEFAULT 3 to 1 newest lesson and hint per-domain
+	// `memory search --domain <d>` so the agent pulls more on demand.
+	// Explicit --lessons N wins; pinned resolutions
+	// (chart/lone-chart/single-domain/file-hit) keep full behavior.
+	lessonsExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "lessons" {
+			lessonsExplicit = true
+		}
+	})
+	libDomains, _ := library.Domains(c.dir())
+	unpinnedMulti := reason == "unfiltered-multi" || (reason == "unfiltered" && len(libDomains) > 1)
+	effectiveLessons := *lessonsN
+	if unpinnedMulti && !lessonsExplicit {
+		effectiveLessons = 1
+	}
+	q := almanac.Query{Type: almanac.TypeLesson, Limit: effectiveLessons}
+	if domain != "" {
+		q.Domain = domain
+	}
+	hits, err := almanac.Search(c.dir(), q)
+	if err != nil {
+		fmt.Fprintf(c.Stdout, "\nLessons scoped: (search error: %v)\n", err)
+		return 0
+	}
+	if len(hits) == 0 {
+		fmt.Fprint(c.Stdout, "\nLessons scoped: (none)\n")
+		printDomainHints(c, unpinnedMulti, libDomains)
+		return 0
+	}
+	fmt.Fprint(c.Stdout, "\nLessons scoped:\n")
+	for _, h := range hits {
+		fmt.Fprintf(c.Stdout, "  - [%s] %s: %s\n", h.Domain, h.Title, h.Content)
+	}
+	printDomainHints(c, unpinnedMulti, libDomains)
 	return 0
+}
+
+// printDomainHints renders one on-demand pull line per library domain for
+// the T8 cheap fallback (unpinned-multi only). Pinned resolutions and
+// single/zero-domain stores print nothing.
+func printDomainHints(c CLI, unpinnedMulti bool, libDomains []string) {
+	if !unpinnedMulti || len(libDomains) <= 1 {
+		return
+	}
+	for _, d := range libDomains {
+		fmt.Fprintf(c.Stdout, "  hint: more %q lessons on demand: regulus memory search --domain %s\n", d, d)
+	}
+}
+
+// Staleness probe cache (T3 S2-S3): HEAD (per directory — one process
+// can touch many repos across invocations, and tests retarget cwd per
+// case) and per-head rev-list counts live for the process. Search fans
+// out to one `git rev-list --count` per hit (up to --limit 20); N hits
+// sharing a head cost 1 probe because HEAD cannot move under a single
+// CLI invocation. Negative results (at HEAD / unknown ref) stick too —
+// one probe per head per process, then silence. resetStalenessCache
+// clears it for tests.
+var (
+	headByDir     = map[string]string{}
+	headByDirSeen = map[string]bool{}
+	behindCache   = map[string]string{}
+	behindSeen    = map[string]bool{}
+)
+
+// resetStalenessCache clears the process-life staleness cache (tests).
+func resetStalenessCache() {
+	headByDir = map[string]string{}
+	headByDirSeen = map[string]bool{}
+	behindCache = map[string]string{}
+	behindSeen = map[string]bool{}
+}
+
+// cachedGitHead resolves HEAD once per process and directory with the
+// S3 git bound (30s, same as gates.changedFiles): note/save stamp
+// provenance without re-probing, and a wedged git still degrades
+// to "". The directory key matters: cwd moves between invocations
+// (and between tests), so a single process-wide HEAD would stamp one
+// repo's sha onto another's observations.
+func cachedGitHead(r gates.CmdRunner, dir string) string {
+	key := dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		key = abs
+	}
+	if headByDirSeen[key] {
+		return headByDir[key]
+	}
+	headByDirSeen[key] = true
+	headByDir[key] = gitHeadBounded(r)
+	return headByDir[key]
 }
 
 // commitsBehindSuffix renders the git staleness annotation for an
@@ -709,6 +1019,12 @@ func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
 		return ""
 	}
 	head := o.Provenance.GitHead
+	if behindSeen[head] {
+		return behindCache[head]
+	}
+	// Mark before probing so negatives stick: one probe per head per
+	// process, even for unknown refs.
+	behindSeen[head] = true
 	// S3 hygiene: the rev-list probe shares the git bound so a wedged
 	// repository degrades to no annotation instead of hanging search.
 	ctx, cancel := gitTimeout()
@@ -721,7 +1037,8 @@ func (c CLI) commitsBehindSuffix(o almanac.Observation) string {
 	if n == "0" {
 		return ""
 	}
-	return ", " + n + " commits behind"
+	behindCache[head] = ", " + n + " commits behind"
+	return behindCache[head]
 }
 
 // humanAge renders a coarse age annotation for staleness awareness.

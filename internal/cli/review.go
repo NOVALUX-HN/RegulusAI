@@ -35,6 +35,22 @@ const (
 // writes receipts — delivery is the human reading stdout. The gauntlet
 // and its gates are untouched; full proof stays `gate run`.
 func (c CLI) reviewCmd(args []string) int {
+	// Transactional subcommands (chart pro-harness-rdd) route before
+	// the legacy flag path: start freezes, approve binds, refute sorts.
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus review [--task <t>] [--lens reviewer|crap|mutation|spec|evidence|gate] | review start|approve|refute ...")
+		return 0
+	}
+	if len(args) > 0 {
+		switch args[0] {
+		case "start":
+			return c.reviewStartCmd(args[1:])
+		case "approve":
+			return c.reviewApproveCmd(args[1:])
+		case "refute":
+			return c.reviewRefuteCmd(args[1:])
+		}
+	}
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	task := fs.String("task", "", "scope label for evidence-backed lenses (validated, never written)")

@@ -13,9 +13,6 @@ package almanac
 // offsets + verify suffice at this scale (ADR M1).
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"os"
 	"sort"
 	"time"
 )
@@ -29,12 +26,11 @@ func freshEntriesIfPinned(root string) ([]IndexEntry, bool) {
 	if err != nil {
 		return nil, false
 	}
-	raw, err := os.ReadFile(File(root))
+	shaHex, err := cachedSourceSHA(root)
 	if err != nil {
 		return nil, false
 	}
-	sum := sha256.Sum256(raw)
-	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
+	if hdr.SourceSHAHex() != shaHex {
 		return nil, false
 	}
 	return entries, true

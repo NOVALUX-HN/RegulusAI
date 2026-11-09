@@ -55,6 +55,8 @@ func Tools() []Tool {
 		{Name: "trace_show", Description: "Print the session fingerprint (sequence, tool, status)"},
 		{Name: "trace_sessions", Description: "List session ids with trace logs on disk"},
 		{Name: "trace_files", Description: "Print the distinct touched paths of a session in call order"},
+		{Name: "audit", Description: "Repo-wide ranked audit: entry points first, then what to fix first"},
+		{Name: "evolve_report", Description: "Lesson economics: proxy price plus evidence state per lesson"},
 	}
 }
 

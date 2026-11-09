@@ -158,6 +158,7 @@ func TestMCPToolsListNames(t *testing.T) {
 		"memory_note", "memory_show", "memory_save", "memory_search",
 		"memory_context", "memory_history", "gate_run", "spec_check",
 		"doctor", "trace_show", "trace_sessions", "trace_files",
+		"audit", "evolve_report",
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools, want %d", len(tools), len(want))
@@ -177,22 +178,26 @@ func TestMCPToolsListNames(t *testing.T) {
 }
 
 func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
-	// The OpenCode agent surface is 16 tools; MCP deliberately exposes
-	// 12. The 4-gap (evolve_propose, probe_contrast, probe_compose,
-	// skills_list) is a Devin-side policy decision, not drift: evolving
-	// this list means updating docs/devin.md too.
+	// The OpenCode agent surface is 19 tools; MCP deliberately exposes
+	// 14. The 5-gap (evolve_propose, probe_contrast, probe_compose,
+	// skills_list, evolve_tick) is a Devin-side policy decision, not
+	// drift: audit and evolve_report ported because they are read-only
+	// like trace_show, while evolve_tick writes candidates like
+	// evolve_propose — harness self-modification doesn't transfer.
+	// Evolving this list means updating docs/devin.md too.
 	plugin := []string{
 		"gate_run", "spec_check", "doctor", "memory_note",
 		"memory_show", "memory_save", "memory_search", "memory_context",
 		"memory_history", "evolve_propose", "probe_contrast", "trace_show",
 		"skills_list", "trace_sessions", "trace_files", "probe_compose",
+		"audit", "evolve_report", "evolve_tick",
 	}
 	mcp := map[string]bool{}
 	for _, tool := range mcpTools() {
 		mcp[tool.name] = true
 	}
-	if len(mcp) != 12 {
-		t.Fatalf("MCP tools = %d, want 12", len(mcp))
+	if len(mcp) != 14 {
+		t.Fatalf("MCP tools = %d, want 14", len(mcp))
 	}
 	var gap []string
 	for _, name := range plugin {
@@ -203,6 +208,7 @@ func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 	want := map[string]bool{
 		"evolve_propose": true, "probe_contrast": true,
 		"probe_compose": true, "skills_list": true,
+		"evolve_tick": true,
 	}
 	if len(gap) != len(want) {
 		t.Fatalf("plugin-MCP gap = %v, want %v", gap, want)
@@ -394,6 +400,39 @@ func TestMCPTraceRoundTrip(t *testing.T) {
 	}
 	if got := call(3, "trace_sessions", map[string]any{}); !strings.Contains(got, "s1") {
 		t.Fatalf("trace_sessions = %q", got)
+	}
+}
+
+func TestMCPAuditAndEvolveReport(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module fixture.example/mcpaudit\n\ngo 1.24\n")
+	write("f.go", "package mcpaudit\n\nfunc F(x int) int {\n\tif x > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n")
+	write("profile.out", "mode: set\nfixture.example/mcpaudit/f.go:3.20,9.2 2 1\n")
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	call := func(id int, name string, args map[string]any) string {
+		t.Helper()
+		resps := runMCP(c, mcpCall(id, "tools/call", map[string]any{"name": name, "arguments": args}))
+		if len(resps) != 1 {
+			t.Fatalf("%s: want 1 response, got %d", name, len(resps))
+		}
+		return mcpResultText(t, resps[0])
+	}
+	if got := call(1, "audit", map[string]any{"profile": "profile.out"}); !strings.Contains(got, "Ranked findings") {
+		t.Fatalf("audit = %q", got)
+	}
+	if got := call(2, "evolve_report", map[string]any{}); !strings.Contains(got, "admitted: 0") {
+		t.Fatalf("evolve_report = %q", got)
 	}
 }
 

@@ -6,7 +6,10 @@
 // from receipt cpu_time_ms. F1 adds the trace proxy cost (wall time,
 // output bytes) to the tool-usage line; token counts are measured from
 // trace input/output token fields when any entry carries host-exposed
-// counts, else from caller-supplied figures, else unmeasured. Model
+// counts, else from caller-supplied figures, else unmeasured. A second
+// token line (token_usage_local) always measures the local proxy
+// (chars/4 per entry) whenever traces exist in scope, so budgets show
+// measured-local tokens while host counts stay honestly unknown. Model
 // costs have no backing store: they stay unmeasured (Measured false
 // with a reason) unless the caller supplies reliable figures, which
 // are then recorded as measured caller-supplied values.
@@ -26,6 +29,7 @@ const (
 	BudgetExperiment    = "experiment_budget"
 	BudgetResource      = "resource_consumption"
 	BudgetTokens        = "token_usage"
+	BudgetTokensLocal   = "token_usage_local"
 	BudgetCosts         = "model_costs"
 )
 
@@ -72,7 +76,10 @@ func (u BudgetUsage) Item(name string) (BudgetItem, bool) {
 // Usage aggregates the S5 budget set read-only: receipts for time and
 // resource, trace logs for tool usage, evolution experiments for run
 // budgets. Tokens and costs are measured only from figs; without
-// figures they are unmeasured zeros with a reason. Never invents a cost.
+// figures they are unmeasured zeros with a reason. A second token line
+// (token_usage_local) measures the local proxy (chars/4 per entry)
+// whenever traces exist in scope; host counts stay honestly unknown.
+// Never invents a cost.
 func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 	u := BudgetUsage{Task: task, Session: session}
 
@@ -110,7 +117,7 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 		}
 	}
 	calls, failed := 0, 0
-	var proxyMS, proxyBytes, traceIn, traceOut int64
+	var proxyMS, proxyBytes, traceIn, traceOut, traceLocal int64
 	for _, s := range sessions {
 		got, err := trace.List(root, s)
 		if err != nil {
@@ -125,6 +132,7 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 			proxyBytes += e.OutputBytes
 			traceIn += e.InputTokens
 			traceOut += e.OutputTokens
+			traceLocal += trace.EstimateLocalTokens(e)
 		}
 	}
 	scope := fmt.Sprintf("session %s", session)
@@ -173,6 +181,17 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 		tokens.Reason = "no token-count store and no trace token figures (host exposes none); caller supplied no reliable figures"
 	}
 	u.Items = append(u.Items, tokens)
+
+	local := BudgetItem{Name: BudgetTokensLocal, Unit: "tokens"}
+	if calls > 0 {
+		local.Measured = true
+		local.Value = float64(traceLocal)
+		local.Detail = fmt.Sprintf("%d local token(s) chars/4 across %s", traceLocal, scope)
+		local.Reason = fmt.Sprintf("measured-local proxy chars/4 over trace Tool/Message/Call/Task/Files/OutputBytes; host-exposed counts stay unknown (%d in + %d out across %s)", traceIn, traceOut, scope)
+	} else {
+		local.Reason = "no traces in scope; nothing measured locally"
+	}
+	u.Items = append(u.Items, local)
 
 	costs := BudgetItem{Name: BudgetCosts, Unit: "cost"}
 	if figs != nil && figs.ModelCost != nil {

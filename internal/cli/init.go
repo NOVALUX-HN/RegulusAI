@@ -17,6 +17,10 @@ import (
 // regulus.json already exists — init never overwrites a configured
 // project.
 func (c CLI) initCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus init [--stack go|node|smoke] [--harness-from <repo>] [--devin]")
+		return 0
+	}
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	stack := fs.String("stack", "smoke", "go | node | smoke")
@@ -32,6 +36,12 @@ func (c CLI) initCmd(args []string) int {
 	if _, err := os.Stat("regulus.json"); err == nil {
 		fmt.Fprintln(c.Stderr, "init: regulus.json already exists — refusing to overwrite")
 		return 1
+	}
+	if *harnessFrom != "" {
+		if st, err := os.Stat(filepath.Join(*harnessFrom, ".opencode")); err != nil || !st.IsDir() {
+			fmt.Fprintf(c.Stderr, "init: no .opencode directory at %s\n", filepath.Join(*harnessFrom, ".opencode"))
+			return 2
+		}
 	}
 	gates, ok := initPresets[*stack]
 	if !ok {
@@ -87,7 +97,11 @@ func (c CLI) initCmd(args []string) int {
 		devinNote = ", .devin/mcp_config.json"
 	}
 	fmt.Fprintf(c.Stdout, "initialized: regulus.json, charts/, .gitignore (.regulus/ ignored)%s\n", devinNote)
-	fmt.Fprintln(c.Stdout, "next: copy the .opencode/ harness config in (or re-run with --harness-from <repo>), run bun install in .opencode/, run regulus doctor, open your first Chart")
+	if *stack == "smoke" {
+		fmt.Fprintln(c.Stdout, "next: replace the smoke gate with your real gates in regulus.json, run regulus doctor, open your first Chart in charts/")
+	} else {
+		fmt.Fprintln(c.Stdout, "next: point the gates at your real layout in regulus.json (see the --harness-from option for the full harness), run regulus doctor, open your first Chart in charts/")
+	}
 	return 0
 }
 
@@ -232,8 +246,8 @@ var initPresets = map[string][]map[string]any{
 		{"name": "gofmt", "layer": 8, "command": "gofmt -l ."},
 	},
 	"node": {
-		{"name": "ts-typecheck", "layer": 1, "command": "bunx tsc --noEmit -p .opencode/tsconfig.json"},
-		{"name": "ts-unit-tests", "layer": 2, "command": "bun test ./.opencode/lib/"},
+		{"name": "ts-typecheck", "layer": 1, "command": "bunx tsc --noEmit -p tsconfig.json"},
+		{"name": "ts-unit-tests", "layer": 2, "command": "bun test ./"},
 		{"name": "spec", "layer": 3, "command": "regulus spec check charts/"},
 	},
 	"smoke": {

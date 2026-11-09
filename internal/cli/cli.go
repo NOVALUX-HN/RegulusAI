@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -46,7 +47,13 @@ func (c CLI) dir() string {
 // table: adding a command means adding one line here, Run stays short.
 // doctor takes no arguments; its entry ignores the tail.
 var cliDispatch = map[string]func(c CLI, args []string) int{
-	"doctor":   func(c CLI, _ []string) int { return c.doctor() },
+	"doctor": func(c CLI, args []string) int {
+		if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+			fmt.Fprintln(c.Stdout, "usage: regulus doctor")
+			return 0
+		}
+		return c.doctor()
+	},
 	"spec":     func(c CLI, args []string) int { return c.specCmd(args) },
 	"status":   func(c CLI, args []string) int { return c.statusCmd(args) },
 	"chart":    func(c CLI, args []string) int { return c.chartCmd(args) },
@@ -69,6 +76,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
 	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
+	"audit":    func(c CLI, args []string) int { return c.auditCmd(args) },
 }
 
 // Run executes one CLI invocation and returns the process exit code:
@@ -128,17 +136,17 @@ func (c CLI) runner() gates.CmdRunner {
 // paths, no drive letters, no ".." segments, no empty entries. Provenance
 // is metadata, not file access — the MCP trust boundary documents that the
 // server never reads or writes these paths, it only stores them.
-func checkProvenancePaths(values []string, flag string) error {
+func checkProvenancePaths(root string, values []string, flag string) error {
 	for _, v := range values {
 		p := strings.TrimSpace(v)
 		if p == "" {
 			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
 		}
 		if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\") {
-			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+			return provenanceErr(root, flag, v, p)
 		}
 		if len(p) >= 2 && ((p[0] >= 'A' && p[0] <= 'Z' || p[0] >= 'a' && p[0] <= 'z') && p[1] == ':') {
-			return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+			return provenanceErr(root, flag, v, p)
 		}
 		for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
 			if seg == ".." {
@@ -147,6 +155,29 @@ func checkProvenancePaths(values []string, flag string) error {
 		}
 	}
 	return nil
+}
+
+// provenanceErr refuses an absolute provenance path, naming the
+// repo-relative fix when root is known so agents self-correct instead of
+// retrying the same absolute path. With an unknown root ("" or ".") it
+// keeps the generic refusal.
+func provenanceErr(root, flag, v, p string) error {
+	if root == "" || root == "." {
+		return fmt.Errorf("invalid provenance %s %q: must be repo-relative, no absolute paths or ..", flag, v)
+	}
+	return fmt.Errorf("invalid provenance %s %q: must be repo-relative to %s (try %q), no absolute paths or ..", flag, v, root, suggestRelative(root, p))
+}
+
+// suggestRelative names the repo-relative form of an absolute provenance
+// path when it lives under root, so agents can self-correct a refusal.
+// Outside root (or on failure) it echoes the input back: the refusal
+// stands either way, only the hint degrades.
+func suggestRelative(root, abs string) string {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return abs
+	}
+	return rel
 }
 
 // splitList splits a comma-separated flag value, trimming spaces.
@@ -171,15 +202,16 @@ Usage:
   regulus <command> [arguments]
 
 Commands:
+  audit [--profile <coverprofile>] [--top N]   repo-wide ranked audit: entry points, then what to fix first
   budget show|record   the evolution ledger (show; record a probe run)
   bench list|run|baseline|compare   the self-benchmark: offline suite, baseline, contrast (regulus bench --help)
   chart init <name> | list             scaffold a Chart, list every Chart
-  init [--stack go|node|smoke] [--harness-from <repo>]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
+  init [--stack go|node|smoke] [--harness-from <repo>] [--devin]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
-  evidence list [--task <t>] | show <file> | verify [--task <t>]   audit gauntlet receipts
-  evolve propose --task <t> --domain <d>   assemble the evidence pack a proposer needs
+  evidence list [--task <t>] | show <file> | verify [--task <t>] | prune --task <t> [--keep N] [--yes] [--force]   audit gauntlet receipts
+  evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics + snapshots; deterministic verdicts
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
@@ -188,17 +220,18 @@ Commands:
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
   mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
   serve [--port N] [--bind ADDR]   serve the read-only dashboard (default 127.0.0.1:17817)
-  memory note|show|save|search|history|context|prune|doctor|import|pin|unpin|relate|export|library   the Almanac — persistent memory
+  memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants
   reflect            admit an evidence-gated lesson (regulus reflect --help)
   skills list        trigger registry: skills with their one-line triggers
-  trace record|show|files|sessions|prune|cost   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
+  trace record|show|files|sessions|prune|cost|usage   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
   task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
   decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
-  review [--task <t>] [--lens NAME]   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks)
+  review [--task <t>] [--lens NAME] | review start|approve|refute ...   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks); lineage transactions bind approval to frozen bytes
   spec check <file|dir>  validate the acceptance contract of feature documents
   status             one look at the project: runtime, gauntlet, evolution, receipts
+  surface propose|list|apply   harness-surface edits under guardian control (regulus surface --help)
   yolo [on|off|status]   flip safe auto-approve in opencode.json (deletes stay denied)
   --version          print the regulus version
 

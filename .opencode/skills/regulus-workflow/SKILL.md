@@ -39,7 +39,10 @@ skill needed for those.
    it before anything else.
 5. **LEARN** — report verdicts, receipt ids and the next step; save a
    durable session note with `memory_note`; when the feature
-   closes, admit its lesson with `reflect`. GENERALIZE, don't
+   closes, admit its lesson with `reflect`. Like Engram, the harness
+   also persists without you doing anything: every compaction appends
+   exactly one `[auto]` session note (message count + time) so the
+   session lineage survives restarts. GENERALIZE, don't
    memorize: anchor verified workspace facts ("in this workspace, X
    maps to Y"), write procedure transferable to the next project, and
    prefer a named component (skill, script, subagent) over always-on

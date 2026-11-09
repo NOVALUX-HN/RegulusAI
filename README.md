@@ -73,18 +73,18 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus contract` | the plugin↔core contract version |
 | `regulus spec check <file>` | validate the acceptance contract of a Chart |
 | `regulus gate run <task>` | the layered gauntlet: stop at first failure, one receipt per layer |
-| `regulus evidence list [--task <t>]` | one line per receipt — the audit surface |
-| `regulus evidence show <file>` | one receipt in full (sha256-pinned output) |
+| `regulus evidence list [--task <t>] \| verify [--task <t>] \| prune --task <t> [--keep N] [--yes] [--force]` | receipts: one line each, full sha256-pinned output, verified proofs, retention-gc |
 | `regulus crap --profile <p> [--max 30]` | CRAP scores: complexity × (1 − coverage)³ + complexity |
+| `regulus audit --profile <p> [--top 10] [--max N]` | Repo-wide ranked audit: entry points first, then must-fix / should-fix / nice with the top item named |
 | `regulus memory note <text>` | a durable session note (survives restarts and compaction) |
 | `regulus memory save --type <t> --title <t> …` | a typed observation with provenance (decision, discovery, preference) |
 | `regulus memory search [terms]` | deterministic bucket-then-match, age annotations |
 | `regulus memory history --topic-key <k>` | the revision chain of an evolving topic |
-| `regulus memory context [--limit N]` | the deterministic resume block (bounded by default: latest 20 notes, 20 items per long list; `--limit 0 --budget 0` = full store): project identity, charts, notes, lessons with content, decisions/discoveries/preferences |
+| `regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N]` | the deterministic resume block (bounded by default: latest 20 notes, 20 items per long list; `--limit 0 --budget 0` = full store): project identity, charts, notes, lessons with content, decisions/discoveries/preferences |
 | `regulus init [--stack go\|node\|smoke] [--devin]` | onboard a fresh repo: regulus.json, charts/, .gitignore, optional `.devin/mcp_config.json` |
-| `regulus mcp` | stdio MCP server for Devin CLI/Desktop/Cloud (12 tools, MCP trust boundary in docs/devin.md) |
+| `regulus mcp` | stdio MCP server for Devin CLI/Desktop/Cloud (14 tools, MCP trust boundary in docs/devin.md) |
 | `regulus yolo [on\|off\|status]` | safe YOLO toggle: flips only the bash/edit catch-alls, destructive denies always stay |
-| `regulus surface propose/apply` | harness-surface edits: guardian allowlist, per-extension markers, never creates files |
+| `regulus surface propose/list/apply` | harness-surface edits: guardian allowlist, per-extension markers, never creates files |
 | `regulus probe contrast/compose` | behavioral contrast evidence under the evolution budget (daily + per-task caps) |
 | `regulus trace show/sessions/files` | session tool-execution fingerprints and touched paths |
 | `regulus reflect --domain --task --cue --lesson <doc>` | propose an evidence-gated lesson candidate (nothing admitted without a guardian) |

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"regulus-ai/internal/almanac"
@@ -98,8 +100,8 @@ func (c CLI) memoryRejectCmd(args []string) int {
 	return 0
 }
 
-// memoryStatusCmd implements `regulus memory status <id>`: effective state
-// plus its audit trail.
+// memoryStatusCmd implements `regulus memory status [<id>]`: effective
+// state plus its audit trail; bare (no id) lists every observation.
 func (c CLI) memoryStatusCmd(args []string) int {
 	fs := flag.NewFlagSet("memory status", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -107,9 +109,12 @@ func (c CLI) memoryStatusCmd(args []string) int {
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
-	if len(pos) != 1 || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory status <id>")
+	if len(pos) > 1 || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory status [<id>]")
 		return 2
+	}
+	if len(pos) == 0 {
+		return c.memoryStatusList()
 	}
 	id := pos[0]
 	st, err := almanac.EffectiveStatus(c.dir(), id)
@@ -136,6 +141,79 @@ func (c CLI) memoryStatusCmd(args []string) int {
 	}
 	return 0
 }
+
+// memoryStatusList prints one line per observation: id, state, system
+// and title (file order, oldest first). Bare `memory status` is the
+// governed-memory inventory; per-id shows the audit trail.
+func (c CLI) memoryStatusList() int {
+	all, err := almanac.All(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory status: %v\n", err)
+		return 1
+	}
+	if len(all) == 0 {
+		fmt.Fprintln(c.Stdout, "(no observations)")
+		return 0
+	}
+	for _, o := range all {
+		st, err := almanac.EffectiveStatus(c.dir(), o.ID)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(c.Stdout, "%s: %s (system %s) %s\n", o.ID, st, almanac.SystemOf(o.Type), o.Title)
+	}
+	return 0
+}
+
+// touchedSinceHead reports cited provenance paths that changed since
+// the observation's git head: "<n> file(s) since <short>: <csv>".
+// Empty when nothing cited, when head/paths look unsafe for the shell,
+// or when git is unavailable — fail-open like commitsBehindSuffix.
+// A non-empty result makes `memory check` actionable: the knowledge
+// may be stale because the ground moved, not just old.
+func (c CLI) touchedSinceHead(o almanac.Observation) string {
+	if o.Provenance == nil || o.Provenance.GitHead == "" || len(o.Provenance.Paths) == 0 {
+		return ""
+	}
+	head := o.Provenance.GitHead
+	if !gitHeadSafe(head) {
+		return ""
+	}
+	for _, p := range o.Provenance.Paths {
+		if !provenancePathSafe(p) {
+			return ""
+		}
+	}
+	ctx, cancel := gitTimeout()
+	defer cancel()
+	out, _, _, err := c.runner().Run(ctx, "git diff --name-only "+head+"..HEAD -- "+strings.Join(o.Provenance.Paths, " "))
+	if err != nil {
+		return ""
+	}
+	var touched []string
+	for _, line := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			touched = append(touched, t)
+		}
+	}
+	if len(touched) == 0 {
+		return ""
+	}
+	short := head
+	if len(short) > 7 {
+		short = short[:7]
+	}
+	return fmt.Sprintf("%d file(s) since %s: %s", len(touched), short, strings.Join(touched, ", "))
+}
+
+var (
+	gitHeadSafeRe  = regexp.MustCompile(`^[0-9a-f]{4,40}$`)
+	provPathSafeRe = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
+)
+
+func gitHeadSafe(s string) bool { return gitHeadSafeRe.MatchString(s) }
+
+func provenancePathSafe(s string) bool { return provPathSafeRe.MatchString(s) }
 
 // memoryCheckCmd implements `regulus memory check`: live contradictions,
 // retired knowledge still presented as current, and expired-but-active
@@ -175,6 +253,12 @@ func (c CLI) memoryCheckCmd(args []string) int {
 		}
 		if almanac.IsExpired(&o, now) && st != almanac.StatusRejected && !sup[o.ID] && !inv[o.ID] {
 			fmt.Fprintf(c.Stdout, "STALE: %s expired but reads %s\n", o.ID, st)
+			problems++
+		}
+	}
+	for _, o := range all {
+		if touched := c.touchedSinceHead(o); touched != "" {
+			fmt.Fprintf(c.Stdout, "TOUCHED: %s %s\n", o.ID, touched)
 			problems++
 		}
 	}

@@ -10,6 +10,10 @@ import (
 // every skill with its one-line trigger, so agents (and the context
 // hook) know what each skill fires on.
 func (c CLI) skillsCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus skills list")
+		return 0
+	}
 	if len(args) == 0 || args[0] != "list" || len(args) != 1 {
 		if len(args) > 0 && args[0] != "list" {
 			fmt.Fprintf(c.Stderr, "skills: unknown subcommand %q\n", args[0])

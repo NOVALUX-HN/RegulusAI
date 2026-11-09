@@ -5,12 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Prune selects the observations that fail keep (candidates for
 // removal) without touching disk — the dry-run half. Pinned
-// observations and lessons are always kept: pins protect intent,
-// lessons are evidence. The caller executes with ApplyPrune.
+// observations are always kept: pins protect intent. Active lessons
+// are evidence and stay immune; retired lessons (superseded,
+// invalidated, rejected or expired) prune like any other content when
+// unpinned — GC without touching live knowledge. The caller executes
+// with ApplyPrune.
 func Prune(root string, keep func(Observation) bool) ([]Observation, error) {
 	all, err := All(root)
 	if err != nil {
@@ -20,13 +24,61 @@ func Prune(root string, keep func(Observation) bool) ([]Observation, error) {
 	if err != nil {
 		return nil, err
 	}
+	retired, err := retiredIDs(root)
+	if err != nil {
+		return nil, err
+	}
 	var out []Observation
 	for _, o := range all {
-		if pins[o.ID] || o.Type == TypeLesson {
+		if pins[o.ID] {
+			continue
+		}
+		if o.Type == TypeLesson && !retired[o.ID] {
 			continue
 		}
 		if !keep(o) {
 			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
+// retiredIDs folds every retirement signal for lessons: superseded and
+// invalidated relations (endpoints must exist), REJECTED governance
+// state, and expired temporal validity. Active knowledge is absent.
+func retiredIDs(root string) (map[string]bool, error) {
+	out := map[string]bool{}
+	sup, err := SupersededIDs(root)
+	if err != nil {
+		return nil, err
+	}
+	for id := range sup {
+		out[id] = true
+	}
+	inv, err := InvalidatedIDs(root)
+	if err != nil {
+		return nil, err
+	}
+	for id := range inv {
+		out[id] = true
+	}
+	ends, err := statusEnds(root)
+	if err != nil {
+		return nil, err
+	}
+	for id, to := range ends {
+		if to == StatusRejected {
+			out[id] = true
+		}
+	}
+	now := time.Now().UTC()
+	all, err := All(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range all {
+		if o.Type == TypeLesson && IsExpired(&o, now) {
+			out[o.ID] = true
 		}
 	}
 	return out, nil

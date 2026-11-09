@@ -7,18 +7,26 @@
 // impossible and the Chart's Then-alternative applies to that branch:
 // load-time subsets (TE_TOOLSET) + documented why. These tests pin the
 // subset selection, the cost saving, and the plugin wiring.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach } from "bun:test";
 import {
+  applyUsagePruning,
+  clearUsageCache,
+  formatDisciplineForToolset,
+  getCachedUsage,
   isToolEnabled,
+  MINIMAL_CREW_LINE,
   parseToolGuidance,
+  parseTraceUsage,
   resolveToolset,
   TOOLSET_FULL,
   TOOLSET_MINIMAL,
   toolsetTools,
+  type RunBin,
 } from "./domain";
+import { extractGuidanceBlock, renderGuidanceDefaults } from "../../scripts/sync-plugin-defaults";
 
 describe("toolset lists (T2 subset pin)", () => {
-  test("full pins the 16 registered definitions in registration order", () => {
+  test("full pins the 19 registered definitions in registration order", () => {
     expect([...TOOLSET_FULL]).toEqual([
       "gate_run",
       "spec_check",
@@ -36,6 +44,9 @@ describe("toolset lists (T2 subset pin)", () => {
       "trace_sessions",
       "trace_files",
       "probe_compose",
+      "audit",
+      "evolve_report",
+      "evolve_tick",
     ]);
   });
 
@@ -91,13 +102,13 @@ describe("resolveToolset (TE_TOOLSET selection + reversal)", () => {
 });
 
 describe("simple sessions pay fewer definitions (T2 cost pin)", () => {
-  test("3/16 definitions and under half the guidance chars", async () => {
+  test("3/19 definitions and under half the guidance chars", async () => {
     const md = await Bun.file(`${import.meta.dir}/../tool-guidance.md`).text();
     const guidance = parseToolGuidance(md);
     const chars = (names: readonly string[]) =>
       names.reduce((n, name) => n + (guidance[name] ?? "").length, 0) + (guidance["regulus"] ?? "").length;
     expect(toolsetTools("minimal").length).toBe(3);
-    expect(toolsetTools("full").length).toBe(16);
+    expect(toolsetTools("full").length).toBe(19);
     const full = chars(toolsetTools("full"));
     const minimal = chars(toolsetTools("minimal"));
     expect(full).toBeGreaterThan(500);
@@ -128,5 +139,216 @@ describe("toolset plugin wiring (T2 intentional pin)", () => {
     expect(setup).toContain("hasChartFiles(dir)");
     expect(setup).toContain("TE_TOOLSET=full");
     expect(src).toContain("TE_TOOLSET");
+  });
+});
+
+describe("lens migration (T8 review transaction)", () => {
+  // The verify command wraps the guardian protocol in a review
+  // lineage: start freezes, lenses file per-lens verdicts (4R),
+  // findings sort through refute, approve binds, and approval never
+  // delivers (no commit/push/release from a review).
+  async function verifyText(): Promise<string> {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const at = src.indexOf('name: "regulus-verify"');
+    return src.slice(at, at + 3000);
+  }
+  test("verify opens a lineage and closes it with approve", async () => {
+    const text = await verifyText();
+    expect(text).toContain("review start");
+    expect(text).toContain("review approve");
+  });
+  test("verify files verdicts per 4R lens and sorts findings via refute", async () => {
+    const text = await verifyText();
+    for (const lens of ["risk", "resilience", "readability", "reliability"]) {
+      expect(text).toContain(lens);
+    }
+    expect(text).toContain("review refute");
+  });
+  test("approval never delivers", async () => {
+    const text = await verifyText();
+    expect(text).toContain("Approval is not delivery");
+    expect(text).toContain("never commit");
+  });
+});
+
+describe("usage pruning (T3 measured toolset)", () => {
+  // The plugin prunes the full set by measured use: a full-only tool
+  // with zero recorded calls across the evidence floor (>= 3 traced
+  // sessions) is left out; the minimal set never prunes (safe floor);
+  // explicit modes skip measuring; malformed usage fails open to full.
+  // Trace tool names are host-side (suffix match); usage JSON comes
+  // from `trace usage --json`.
+  const usage3 = JSON.stringify({
+    sessions: 3,
+    tools: [
+      { tool: "regulus_doctor", calls: 5, sessions: ["s1", "s2", "s3"] },
+      { tool: "regulus_memory_search", calls: 2, sessions: ["s1"] },
+    ],
+  });
+  test("unused full-only tools prune, minimal tools stay", () => {
+    const got = applyUsagePruning("full", parseTraceUsage(usage3));
+    expect(got.tools).not.toContain("probe_compose");
+    expect(got.tools).not.toContain("gate_run");
+    expect(got.tools).toContain("doctor");
+    expect(got.tools).toContain("memory_search");
+    expect(got.tools).toContain("memory_context");
+    expect(got.pruned.length).toBeGreaterThan(0);
+    expect(got.pruned).toContain("probe_compose");
+  });
+  test("below the evidence floor nothing prunes", () => {
+    const thin = JSON.stringify({ sessions: 2, tools: [] });
+    const got = applyUsagePruning("full", parseTraceUsage(thin));
+    expect([...got.tools]).toEqual([...TOOLSET_FULL]);
+    expect(got.pruned).toEqual([]);
+  });
+  test("explicit modes skip measuring", () => {
+    for (const mode of ["full", "minimal"] as const) {
+      const got = applyUsagePruning(mode, parseTraceUsage(usage3), true);
+      expect([...got.tools]).toEqual([...toolsetTools(mode)]);
+      expect(got.pruned).toEqual([]);
+    }
+  });
+  test("malformed usage fails open to full", () => {
+    for (const bad of ["", "not json", JSON.stringify({ tools: [] })]) {
+      const got = applyUsagePruning("full", parseTraceUsage(bad));
+      expect([...got.tools]).toEqual([...TOOLSET_FULL]);
+      expect(got.pruned).toEqual([]);
+    }
+  });
+});
+
+describe("toolset lazy usage cache (T6 speed-tokens)", () => {
+  // Every session setup used to pay one `trace usage --json` spawn for
+  // usage pruning. The measurement is now cached per project dir for
+  // the life of the host process: the first setup per dir spawns once,
+  // every later setup for the same dir resolves with zero spawns.
+  beforeEach(() => {
+    clearUsageCache();
+  });
+  const usageJson = JSON.stringify({ sessions: 5, tools: [] });
+  test("repeat setups for one project pay zero spawns", async () => {
+    let spawns = 0;
+    const run: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 0, output: usageJson };
+    };
+    const first = await getCachedUsage("/proj", run);
+    expect(first).not.toBeNull();
+    expect(spawns).toBe(1);
+    const second = await getCachedUsage("/proj", run);
+    expect(second).toEqual(first);
+    expect(spawns).toBe(1);
+  });
+  test("the cache is per project dir", async () => {
+    let spawns = 0;
+    const run: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 0, output: usageJson };
+    };
+    await getCachedUsage("/proj-a", run);
+    await getCachedUsage("/proj-b", run);
+    expect(spawns).toBe(2);
+    await getCachedUsage("/proj-a", run);
+    await getCachedUsage("/proj-b", run);
+    expect(spawns).toBe(2);
+  });
+  test("failed usage never pins the cache (fail-open, retry next setup)", async () => {
+    let spawns = 0;
+    const failing: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 1, output: "boom" };
+    };
+    expect(await getCachedUsage("/proj", failing)).toBeNull();
+    expect(await getCachedUsage("/proj", failing)).toBeNull();
+    expect(spawns).toBe(2);
+    const ok: RunBin = async (_a) => {
+      spawns++;
+      return { exitCode: 0, output: usageJson };
+    };
+    expect(await getCachedUsage("/proj", ok)).not.toBeNull();
+    expect(spawns).toBe(3);
+    expect(await getCachedUsage("/proj", ok)).not.toBeNull();
+    expect(spawns).toBe(3);
+  });
+});
+
+describe("single table (T6 md is the source)", () => {
+  // tool-guidance.md is the single source: every TOOLSET_FULL tool
+  // plus the regulus namespace must have a ## section, and the
+  // compiled literals must match that table (minus the skill-moved
+  // exclusion). The sync harness (--check) pins the byte-equality;
+  // these pins name the table shape so a new tool without a section
+  // (or a section without a tool) trips here first.
+  test("every registered tool has a ## section in tool-guidance.md", async () => {
+    const md = await Bun.file(`${import.meta.dir}/../tool-guidance.md`).text();
+    const table = renderGuidanceDefaults(md);
+    for (const name of TOOLSET_FULL) expect(table[name]).toBeDefined();
+    expect(table["regulus"]).toBeDefined();
+  });
+  test("search-default lives in its skill, not the compiled defaults", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = extractGuidanceBlock(src);
+    expect(block).not.toContain("search-default");
+  });
+});
+
+describe("minimal hides proposer/evolve/guardian surface (T9 speed-tokens)", () => {
+  // Minimal sessions (TE_TOOLSET=minimal or auto-resolving minimal)
+  // must not pay the proposer/evolve/guardian definitions: every
+  // evolve_*/probe_*/trace_* tool plus audit stays full-only.
+  // Registration already limits tools (TOOLSET_MINIMAL is 3); this
+  // pins the hiding so a new evolve/probe/trace/audit tool trips
+  // here instead of leaking into simple sessions.
+  const HIDDEN = [
+    "evolve_propose",
+    "evolve_report",
+    "evolve_tick",
+    "probe_contrast",
+    "probe_compose",
+    "trace_show",
+    "trace_sessions",
+    "trace_files",
+    "audit",
+  ];
+  test("isToolEnabled hides every evolve_/probe_/trace_/audit tool in minimal", () => {
+    for (const name of HIDDEN) expect(isToolEnabled("minimal", name)).toBe(false);
+  });
+  test("no evolve_/probe_/trace_ prefix or audit leaks via toolsetTools(minimal)", () => {
+    for (const name of toolsetTools("minimal")) {
+      expect(name.startsWith("evolve_")).toBe(false);
+      expect(name.startsWith("probe_")).toBe(false);
+      expect(name.startsWith("trace_")).toBe(false);
+      expect(name).not.toBe("audit");
+    }
+  });
+  test("full keeps the surface (no regression)", () => {
+    for (const name of HIDDEN) expect(isToolEnabled("full", name)).toBe(true);
+  });
+});
+
+describe("discipline minimal Crew (T9 speed-tokens)", () => {
+  // Minimal mode trims the Crew roster to one line; full keeps the
+  // roster byte-identical. Guardians stay reachable on demand via
+  // `review --lens` (review paths untouched).
+  test("minimal renders the 1-line Crew, full keeps the roster", async () => {
+    const md = await Bun.file(`${import.meta.dir}/../discipline.md`).text();
+    const { renderDisciplineDefault } = await import("../../scripts/sync-plugin-defaults");
+    const full = renderDisciplineDefault(md);
+    expect(full).toContain("@regulus-scout");
+    expect(formatDisciplineForToolset(full, "full")).toBe(full);
+    const minimal = formatDisciplineForToolset(full, "minimal");
+    expect(minimal).toContain(MINIMAL_CREW_LINE);
+    expect(minimal).not.toContain("@regulus-scout");
+    expect(minimal).not.toContain("@regulus-proposer");
+    expect(minimal).not.toContain("@regulus-verifier");
+    expect(minimal).toContain("review --lens");
+    expect(minimal.length).toBeLessThan(full.length);
+    // The Crew entry stays exactly one line in minimal.
+    const crewLines = minimal.split("\n").filter((l) => l.includes("The Crew:"));
+    expect(crewLines).toHaveLength(1);
+  });
+  test("context hook renders discipline through the toolset (wiring pin)", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    expect(src).toContain("formatDisciplineForToolset(");
   });
 });

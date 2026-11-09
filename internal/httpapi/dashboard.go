@@ -11,6 +11,7 @@ import (
 
 	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/budget"
+	"regulus-ai/internal/evolve"
 	"regulus-ai/internal/library"
 	"regulus-ai/internal/observability"
 	"regulus-ai/internal/reflect"
@@ -32,6 +33,44 @@ type almanacSummaryData struct {
 	Oldest      string         `json:"oldest,omitempty"`
 	Newest      string         `json:"newest,omitempty"`
 	IndexStatus string         `json:"index_status"`
+}
+
+// evolutionData is the evolution economics aggregate: admitted
+// lessons, proxy tokens, rot count, pending candidates, tick
+// position. Counts only, never collections (D3 aggregates policy).
+type evolutionData struct {
+	Admitted    int   `json:"admitted"`
+	ProxyTokens int64 `json:"proxy_tokens"`
+	Rot         int   `json:"rot"`
+	Pending     int   `json:"pending"`
+	Sessions    int   `json:"sessions"`
+	TickAt      int   `json:"tick_at"`
+}
+
+func (s Server) handleEvolution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
+		return
+	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
+	rep, _ := evolve.BuildReport(root, "")
+	pending := 0
+	if domains, err := library.Domains(root); err == nil {
+		for _, d := range domains {
+			if cs, err := library.Candidates(root, d); err == nil {
+				pending += len(cs)
+			}
+		}
+	}
+	sessions, atTick := evolve.TickPosition(root)
+	status, env := MapResult(evolutionData{
+		Admitted: rep.Admitted, ProxyTokens: rep.TotalProxy, Rot: rep.Rot,
+		Pending: pending, Sessions: sessions, TickAt: atTick,
+	}, "", 0)
+	writeEnvelope(w, status, env)
 }
 
 func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {

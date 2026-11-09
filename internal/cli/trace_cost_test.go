@@ -78,6 +78,9 @@ func TestTraceCostGroupsTasksAndMarksUnknown(t *testing.T) {
 	if !strings.Contains(got, "tokens unknown (host exposes none)") {
 		t.Fatalf("tokenless report must read unknown:\n%s", got)
 	}
+	if !strings.Contains(got, "proxy tokens (chars/4, measured-local)") {
+		t.Fatalf("report must carry the measured-local proxy alongside unknown host tokens:\n%s", got)
+	}
 	if !strings.Contains(got, "task (unattributed): 1 call(s)") {
 		t.Fatalf("legacy bucket missing:\n%s", got)
 	}

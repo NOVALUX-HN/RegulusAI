@@ -19,6 +19,10 @@ import (
 //	baseline [--set] [--json]  show (or record) the tracked baseline
 //	compare --base A --candidate B [--json]  contrast table + ADOPT/REJECT
 func (c CLI) benchCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
 		return 2
@@ -96,6 +100,14 @@ func benchSurface(s string) bool {
 // benchRunCmd runs the suite offline and prints the per-task table
 // plus totals. --save writes the comparable report for later
 // contrast; without it nothing is written.
+// benchRunExitCode is the gate verdict: 0 when every task passed, 1 otherwise.
+func benchRunExitCode(rep bench.Report) int {
+	if rep.Failed > 0 || rep.Passed != len(rep.Tasks) {
+		return 1
+	}
+	return 0
+}
+
 func (c CLI) benchRunCmd(args []string) int {
 	fs := flag.NewFlagSet("bench run", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -106,6 +118,10 @@ func (c CLI) benchRunCmd(args []string) int {
 		return 2
 	}
 	if fs.NArg() != 0 || !benchSurface(*surface) {
+		fmt.Fprintln(c.Stderr, "usage: regulus bench run [--surface <name>] [--save <path>] [--json]")
+		return 2
+	}
+	if strings.HasPrefix(*save, "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus bench run [--surface <name>] [--save <path>] [--json]")
 		return 2
 	}
@@ -123,7 +139,7 @@ func (c CLI) benchRunCmd(args []string) int {
 			return 1
 		}
 		fmt.Fprintln(c.Stdout, string(raw))
-		return 0
+		return benchRunExitCode(rep)
 	}
 	for _, t := range rep.Tasks {
 		mark := "PASS"
@@ -137,7 +153,7 @@ func (c CLI) benchRunCmd(args []string) int {
 	if *save != "" {
 		fmt.Fprintf(c.Stdout, "bench: report saved to %s\n", *save)
 	}
-	return 0
+	return benchRunExitCode(rep)
 }
 
 // benchBaselineCmd shows the tracked baseline, or records it with
@@ -215,7 +231,7 @@ func (c CLI) benchCompareCmd(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *base == "" || *cand == "" || fs.NArg() != 0 {
+	if *base == "" || *cand == "" || fs.NArg() != 0 || strings.HasPrefix(*base, "-") || strings.HasPrefix(*cand, "-") {
 		fmt.Fprintln(c.Stderr, "usage: regulus bench compare --base <path> --candidate <path> [--json]")
 		return 2
 	}

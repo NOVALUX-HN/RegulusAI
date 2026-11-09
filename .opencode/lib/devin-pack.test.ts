@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 
 const ROOT = `${import.meta.dir}/../..`;
-const SKILL = `${ROOT}/.devin/skills/regulus-workflow/SKILL.md`;
+const SKILL = `${ROOT}/.devin/skills/regulus/SKILL.md`;
 const WORKER = `${ROOT}/.devin/agents/regulus-worker.md`;
 const SCOUT = `${ROOT}/.devin/agents/regulus-scout.md`;
 const MCP_CONFIG = `${ROOT}/.devin/mcp_config.json`;
@@ -31,10 +31,10 @@ describe("devin skill", () => {
     expect(Array.isArray(fm["allowed-tools"])).toBe(true);
     for (const t of ["read", "grep", "glob", "exec"]) expect(fm["allowed-tools"]).toContain(t);
     expect(fm.triggers).toContain("user");
-    expect(fm.triggers).toContain("model");
+    expect(fm.triggers).not.toContain("model");
     const perms = JSON.stringify(fm.permissions ?? {});
     expect(perms).toContain("Read(**)");
-    expect(perms).toContain("Exec(regulus *)");
+    expect(perms).toContain("Exec(regulus)");
     expect(perms).toContain("Write(**/.env*)");
   });
 

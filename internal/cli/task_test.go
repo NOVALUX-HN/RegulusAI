@@ -98,7 +98,7 @@ func TestTaskCheckFlagsViolation(t *testing.T) {
 	if err := os.MkdirAll("charts", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n\n## Tasks\n\n| ID | Spec | Work | Route |\n|----|------|------|-------|\n| T1 | S1 | w | @regulus-ghost |\n\n## Log\n\n- L1.\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n\n## Tasks\n\n| ID | Spec | Work | Route |\n|----|------|------|-------|\n| T1 | S1 | w | @regulus-ghost |\n\n## Log\n\n- L1.\n"
 	if err := os.WriteFile(filepath.Join("charts", "bad.md"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestTaskStatusShowsBlocker(t *testing.T) {
 	if err := os.MkdirAll("charts", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n\n## Tasks\n\n| ID | Spec | Work | Route | Status |\n|----|------|------|-------|--------|\n| T1 | s | w | inline | blocked: waiting on key |\n\n## Log\n\n- L1.\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n\n## Tasks\n\n| ID | Spec | Work | Route | Status |\n|----|------|------|-------|--------|\n| T1 | s | w | inline | blocked: waiting on key |\n\n## Log\n\n- L1.\n"
 	if err := os.WriteFile(filepath.Join("charts", "b.md"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}

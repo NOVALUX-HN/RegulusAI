@@ -3,7 +3,7 @@
 One stdio MCP server (`regulus mcp`, zero dependencies) plus the
 committed `.devin/` pack (skill, two subagent profiles, MCP config)
 covers all three Devin surfaces. No OpenCode runtime needed anywhere.
-The opencode plugin (hooks, 16 namespaced tools, opencode agents) does
+The opencode plugin (hooks, 19 namespaced tools, opencode agents) does
 NOT transfer — the table below shows what maps to what instead.
 
 ## What runs where
@@ -55,6 +55,10 @@ Cloud caveats (honest limits, not bugs):
 - `regulus gate run` works (pure Go + shell), but gates that assume
   interactive tools will refuse — read the refusal, don't fight it.
 
+## Global install — use Regulus in any project
+
+`scripts/install-devin.bash` S4 copies `.devin/skills/regulus/` and `.devin/agents/*.md` into `~/.config/devin/` (refreshed when changed) and registers MCP at user scope, so `/regulus` and the `regulus-*` profiles resolve outside this repo too. The repo `.devin/` stays the source of truth; global files are copies. `devin skills show regulus` from any directory proves it.
+
 ## Devin CLI — quickstart (Windows PowerShell, CLI-only)
 
 CLI path, documented separately — Devin Desktop users skip this section
@@ -66,15 +70,15 @@ powershell -File scripts/install-devin.ps1
 
 # pre-approve regulus tool calls (CLI permissions, project config)
 # .devin/config.json — YOUR file, not committed by this repo:
-# { "permissions": { "allow": ["Exec(regulus *)"], "ask": ["Write(**/.env*)"] } }
+# { "permissions": { "allow": ["Exec(regulus)"], "ask": ["Write(**/.env*)"] } }
 
-# use it
+# use it (`/regulus` is user-trigger only: inert unless you invoke it)
 devin
-> /regulus-workflow implement feature/T2 against charts/feature.md
+> /regulus implement feature/T2 against charts/feature.md
 ```
 
-Non-Windows shells run the bash mirror instead (same S1+S2):
-`bash scripts/install-devin.bash` (needs Go, node, GNU timeout + grep).
+Non-Windows shells run the bash mirror instead (same S1+S2, plus S3 Devin surface and S4 global sync):
+`bash scripts/install-devin.bash` (needs Go, node, GNU timeout + grep; Devin CLI checked, not installed — see S3 remedy).
 
 ### CLI-only: `devin mcp add` (never needed on Desktop)
 
@@ -91,7 +95,7 @@ The `.devin/mcp_config.json` in this repo already points at
 
 `regulus mcp` has no permission layer: OpenCode `permission` blocks do not
 apply over MCP. Treat every MCP client as untrusted input — Devin project
-permissions (`allow: ["Exec(regulus *)"]`, `ask: ["Write(**/.env*)"]`) are
+permissions (`allow: ["Exec(regulus)"]`, `ask: ["Write(**/.env*)"]`) are
 the enforcement point, not the server. Provenance fields (`memory_save
 --path/--receipt`) are metadata only: the server never reads or writes
 those paths, stores repo-relative values only, and refuses absolute paths
@@ -111,7 +115,7 @@ CLI on PATH, and none is needed. The committed `.devin/mcp_config.json`
    (user-level overrides live under `%APPDATA%\devin\` on Windows).
 3. Verify in the MCP panel that the `regulus` server is listed and
    connected — no registration command needed.
-4. Invoke `/regulus-workflow`; subagents `regulus-worker` and
+4. Invoke `/regulus`; subagents `regulus-worker` and
    `regulus-scout` appear alongside the built-ins (no model pinned, so the
    router picks the cheaper default — pin one only if you need a frontier
    model for writes).
@@ -123,15 +127,19 @@ set `command` to the absolute path of `bin/regulus.exe` on your machine.
 
 | OpenCode (this repo) | Devin equivalent (this feature) |
 |---|---|
-| `.opencode/plugins/regulus.ts` (16 tools, hooks) | `regulus mcp` (12 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
-| `.opencode/skills/regulus-workflow/` | `.devin/skills/regulus-workflow/` |
+| `.opencode/plugins/regulus.ts` (19 tools, hooks) | `regulus mcp` (14 tools, no hooks — Devin lifecycle hooks are separate opt-in) |
+| `.opencode/skills/regulus-workflow/` | `.devin/skills/regulus/` (`/regulus`, user-trigger only — the selectable agent entry) |
 | `.opencode/agents/regulus-{worker,scout}.md` | `.devin/agents/regulus-{worker,scout}.md` |
 | `opencode.json` permissions | Devin `permissions` allow/deny/ask (project `.devin/config.json`, yours to create) |
 | `regulus doctor` V2 gate | `regulus contract` version pin (`regulus.contract/v1`) |
 | Almanac on disk (`.regulus/`) | Same files, same CLI — plus the Cloud persistence caveat above |
 
-Deliberately NOT ported: `probe_contrast/compose` (2–3x gate cost per
-call), `evolve_propose` (harness self-modification doesn't transfer),
-`skills_list` (opencode registry; Devin has its own skills),
-`memory prune/import/export` (destructive or management ops — run them
-in a local shell, not through the agent).
+Deliberately NOT ported (plugin 19 vs MCP 14, gap pinned by
+`TestMCPIntentionalGapPinsPluginDelta`): `probe_contrast/compose`
+(2–3x gate cost per call), `evolve_propose` (harness self-modification
+doesn't transfer), `evolve_tick` (writes pending candidates, same
+reason), `skills_list` (opencode registry; Devin has its own skills).
+Ported as read-only: `audit` and `evolve_report` (same policy as
+`trace_show`). Destructive or management ops (`memory prune/import`,
+`surface apply`) stay shell-only by policy — see the MCP trust
+boundary above.

@@ -15,6 +15,10 @@ func (c CLI) surfaceCmd(args []string) int {
 		fmt.Fprintln(c.Stderr, "usage: regulus surface propose --target <f> --content <c> --reason <r> | list | apply --id <id> --guardian <name>")
 		return 2
 	}
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(c.Stdout, "usage: regulus surface propose --target <f> --content <c> --reason <r> | list | apply --id <id> --guardian <name>")
+		return 0
+	}
 	switch args[0] {
 	case "propose":
 		fs := flag.NewFlagSet("surface propose", flag.ContinueOnError)

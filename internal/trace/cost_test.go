@@ -183,7 +183,9 @@ func TestCostByTaskGroupsAndAudits(t *testing.T) {
 		if a.Calls != c.Calls || a.Errors != c.Errors ||
 			a.TotalDurationMS != c.TotalDurationMS || a.TotalOutputBytes != c.TotalOutputBytes ||
 			a.TotalInputTokens != c.TotalInputTokens || a.TotalOutputTokens != c.TotalOutputTokens ||
+			a.TotalLocalTokens != c.TotalLocalTokens ||
 			a.DurationKnown != c.DurationKnown || a.BytesKnown != c.BytesKnown || a.TokensKnown != c.TokensKnown ||
+			a.LocalTokensKnown != c.LocalTokensKnown ||
 			strings.Join(a.Sessions, ",") != strings.Join(c.Sessions, ",") {
 			t.Fatalf("bucket %q not reproducible by hand fold:\nreport %+v\naudit  %+v", c.Task, c, a)
 		}
@@ -248,5 +250,60 @@ func TestCostMalformedLineFails(t *testing.T) {
 	}
 	if _, err := CostByTask(root); err == nil {
 		t.Fatal("CostByTask hid a malformed line; want the error surfaced")
+	}
+}
+
+// T1 local proxy: chars/4 over the stored descriptor fields plus
+// OutputBytes, rounded up; host token fields never feed it.
+func TestEstimateLocalTokensCharsOverFour(t *testing.T) {
+	// Tool+Message+Call+Task = 1+1+1+8 = 11 chars -> ceil(11/4) = 3.
+	e := Entry{Tool: "t", Message: "m", Call: "c", Task: "bench/B7"}
+	if got := EstimateLocalTokens(e); got != 3 {
+		t.Fatalf("EstimateLocalTokens(descriptor 11 chars) = %d, want 3", got)
+	}
+	// OutputBytes counts as chars: 11 + 5 = 16 -> 4.
+	withOut := Entry{Tool: "t", Message: "m", Call: "c", Task: "bench/B7", OutputBytes: 5}
+	if got := EstimateLocalTokens(withOut); got != 4 {
+		t.Fatalf("EstimateLocalTokens(+5 output bytes) = %d, want 4", got)
+	}
+	// Files add their chars: 11 + len("a.go")=4 -> 15 -> ceil(15/4) = 4.
+	withFiles := Entry{Tool: "t", Message: "m", Call: "c", Task: "bench/B7", Files: []string{"a.go"}}
+	if got := EstimateLocalTokens(withFiles); got != 4 {
+		t.Fatalf("EstimateLocalTokens(+file a.go) = %d, want 4", got)
+	}
+	// Host token counts never feed the proxy: same estimate with or
+	// without them.
+	withHost := Entry{Tool: "t", Message: "m", Call: "c", Task: "bench/B7", InputTokens: 100, OutputTokens: 50}
+	if got := EstimateLocalTokens(withHost); got != 3 {
+		t.Fatalf("EstimateLocalTokens must ignore host tokens, got %d want 3", got)
+	}
+	// Nothing measurable measures 0 (never written by Record, which
+	// requires Tool/Message/Call).
+	if got := EstimateLocalTokens(Entry{}); got != 0 {
+		t.Fatalf("EstimateLocalTokens(empty) = %d, want 0", got)
+	}
+}
+
+// T1 honesty: a tokenless entry keeps host tokens unknown while the
+// local proxy measures; CostByTask distinguishes both.
+func TestCostByTaskMeasuresLocalWhileHostStaysUnknown(t *testing.T) {
+	root := t.TempDir()
+	now := time.Unix(1700000000, 0).UTC()
+	e := Entry{Session: "s", Message: "m", Call: "c", Tool: "t",
+		Status: StatusCompleted, Task: "T1", DurationMS: 10, OutputBytes: 8}
+	if _, err := Record(root, e, now); err != nil {
+		t.Fatal(err)
+	}
+	costs, err := CostByTask(root)
+	if err != nil || len(costs) != 1 {
+		t.Fatalf("CostByTask = %v (%v), want 1 bucket", costs, err)
+	}
+	got := costs[0]
+	if got.TokensKnown || got.TotalInputTokens != 0 || got.TotalOutputTokens != 0 {
+		t.Fatalf("host tokens must stay unknown: %+v", got)
+	}
+	wantLocal := EstimateLocalTokens(Entry{Tool: "t", Message: "m", Call: "c", Task: "T1", OutputBytes: 8})
+	if !got.LocalTokensKnown || got.TotalLocalTokens != wantLocal || got.TotalLocalTokens <= 0 {
+		t.Fatalf("local proxy must measure %d, got %+v", wantLocal, got)
 	}
 }

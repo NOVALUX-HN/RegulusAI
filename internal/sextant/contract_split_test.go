@@ -59,7 +59,7 @@ func TestContractSectionEndWithoutAcceptance(t *testing.T) {
 }
 
 func TestParseContractSplitParityOnViolations(t *testing.T) {
-	doc := "# F\n\nClass: CRITICAL\n\n## Contract\n\n- Objective: x\n- Risk: standard\n- Magic: z\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n"
+	doc := "# F\n\nClass: CRITICAL\n\n## Contract\n\n- Objective: x\n- Risk: standard\n- Magic: z\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	_, violations := ParseContract(doc)
 	joined := strings.Join(violations, "\n")
 	for _, want := range []string{"Magic", "Risk", "Constraints", "Verifier", "Completion"} {

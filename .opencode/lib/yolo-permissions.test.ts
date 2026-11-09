@@ -5,6 +5,7 @@
 // worker agent frontmatter to allow (denies stay denied); `off` restores
 // ask. Run with `bun test` from .opencode/ (also in CI).
 import { describe, expect, test } from "bun:test";
+import { explainSpawnError, isBlockedSpawn } from "./domain";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -169,13 +170,27 @@ describe("yolo permissions", () => {
         );
         // Build first (module context), then run the binary in the
         // fixture dir: `go run` cannot resolve a module from a cwd
-        // outside one.
+        // outside one. When the OS blocks the toolchain itself
+        // (Windows Device Guard / WDAC surfaces as EUNKNOWN/UNKNOWN,
+        // never as ENOENT), fail with the diagnosis, not with bun's
+        // bare "unknown error".
         const binName = `regulus-yolo-test${process.platform === "win32" ? ".exe" : ""}`;
         const binPath = join(dir, binName);
         const build = await Bun.$`go build -o ${binPath} ./cmd/regulus`.cwd(repoRoot).quiet().nothrow();
-        if (build.exitCode !== 0) throw new Error(`build failed: ${build.stderr.toString()}`);
+        if (build.exitCode !== 0) {
+          const raw = build.stderr.toString();
+          if (isBlockedSpawn(raw)) throw new Error(explainSpawnError(raw, "go"));
+          throw new Error(`build failed: ${raw}`);
+        }
         const on = await Bun.$`${binPath} yolo on`.cwd(dir).quiet().nothrow();
-        if (on.exitCode !== 0) throw new Error(`yolo on failed: ${on.stderr.toString()}`);
+        if (on.exitCode !== 0) {
+          const raw = on.stderr.toString();
+          // Fresh binaries in Temp are prime WDAC targets (flapping
+          // blocks surface here, past a successful build): name the
+          // OS block instead of a bare unknown error.
+          if (isBlockedSpawn(raw)) throw new Error(explainSpawnError(raw, binPath));
+          throw new Error(`yolo on failed: ${raw}`);
+        }
         expect(on.exitCode).toBe(0);
         const onOut = on.stdout.toString();
         expect(onOut).toContain("yolo: on");
@@ -187,7 +202,11 @@ describe("yolo permissions", () => {
         expect(worker).toContain('"go *": allow');
 
         const off = await Bun.$`${binPath} yolo off`.cwd(dir).quiet().nothrow();
-        if (off.exitCode !== 0) throw new Error(`yolo off failed: ${off.stderr.toString()}`);
+        if (off.exitCode !== 0) {
+          const raw = off.stderr.toString();
+          if (isBlockedSpawn(raw)) throw new Error(explainSpawnError(raw, binPath));
+          throw new Error(`yolo off failed: ${raw}`);
+        }
         expect(off.exitCode).toBe(0);
         const offOut = off.stdout.toString();
         expect(offOut).toContain("yolo: off");

@@ -41,7 +41,7 @@ Domain: sextant
 ### Scenario: S4 mensajes honestos
 
 - Given `yolo status` con bash/edit en desacuerdo, `trace files/show` sin sesión, `.md` corrupto
-- When corren
+- When the affected commands run
 - Then yolo deriva el titular de ambos o advierte desacuerdo (+hinto `/reload`); trace distingue "sin sesión" de "sin ficheros"; fallbacks del plugin loguean a stderr qué archivo falló
 
 ## Tasks

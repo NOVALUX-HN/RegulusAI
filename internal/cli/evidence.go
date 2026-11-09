@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"regulus-ai/internal/evidence"
@@ -14,6 +15,10 @@ import (
 // the human audit surface (PRD R-G6) — receipts, never diffs — plus the
 // Phase 1 integrity verifier and the retention-gc pruner.
 func (c CLI) evidenceCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>] | regulus evidence prune --task <task> [--keep N] [--yes] [--force]")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus evidence list [--task <task>] | regulus evidence show <file> | regulus evidence verify [--task <task>] | regulus evidence prune --task <task> [--keep N] [--yes] [--force]")
 		return 2
@@ -60,6 +65,10 @@ func (c CLI) evidenceCmd(args []string) int {
 		// jailed into the evidence dir; the jail applies to task
 		// resolution (List/Plan/Verify), not to this explicit path.
 		if len(args) != 2 {
+			fmt.Fprintln(c.Stderr, "usage: regulus evidence show <file>")
+			return 2
+		}
+		if strings.HasPrefix(args[1], "-") {
 			fmt.Fprintln(c.Stderr, "usage: regulus evidence show <file>")
 			return 2
 		}

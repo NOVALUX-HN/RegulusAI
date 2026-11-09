@@ -68,7 +68,7 @@ func TestParseContractValid(t *testing.T) {
 }
 
 func TestParseContractMissingSection(t *testing.T) {
-	doc := "# Legacy\n\nClass: TRIVIAL\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n"
+	doc := "# Legacy\n\nClass: TRIVIAL\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	ct, violations := ParseContract(doc)
 	if len(violations) != 0 {
 		t.Fatalf("absent contract section must not violate, got %v", violations)
@@ -80,7 +80,7 @@ func TestParseContractMissingSection(t *testing.T) {
 
 func TestParseContractRequiredKeysByLevel(t *testing.T) {
 	// STANDARD without Scope/Acceptance/Verification must fail naming lines.
-	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	_, violations := ParseContract(doc)
 	if len(violations) == 0 {
 		t.Fatal("missing STANDARD keys must violate")
@@ -97,7 +97,7 @@ func TestParseContractRequiredKeysByLevel(t *testing.T) {
 		}
 	}
 	// CRITICAL additionally demands Constraints + Verifier + Completion.
-	crit := "# F\n\nClass: CRITICAL\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n- Artifacts: a\n- Dependencies: none\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n"
+	crit := "# F\n\nClass: CRITICAL\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n- Artifacts: a\n- Dependencies: none\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	_, violations = ParseContract(crit)
 	joined = strings.Join(violations, "\n")
 	for _, want := range []string{"Constraints", "Verifier", "Completion"} {
@@ -109,7 +109,7 @@ func TestParseContractRequiredKeysByLevel(t *testing.T) {
 
 func TestParseContractAcceptanceTraceability(t *testing.T) {
 	// Named scenario that does not exist must fail.
-	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: ghost scenario\n- Verification: g\n\n## Acceptance\n\n### Scenario: real scenario\n\n- Given a\n- When b\n- Then c\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: ghost scenario\n- Verification: g\n\n## Acceptance\n\n### Scenario: real scenario\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	_, violations := ParseContract(doc)
 	if len(violations) == 0 || !strings.Contains(strings.Join(violations, "\n"), "ghost scenario") {
 		t.Fatalf("missing scenario must be named, got %v", violations)
@@ -123,7 +123,7 @@ func TestParseContractAcceptanceTraceability(t *testing.T) {
 }
 
 func TestParseContractRiskClassConsistency(t *testing.T) {
-	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n- Risk: critical\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n- Risk: critical\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	_, violations := ParseContract(doc)
 	if len(violations) == 0 || !strings.Contains(strings.Join(violations, "\n"), "Risk") {
 		t.Fatalf("Risk/Class mismatch must be flagged, got %v", violations)
@@ -131,7 +131,7 @@ func TestParseContractRiskClassConsistency(t *testing.T) {
 }
 
 func TestParseContractUnknownKeysRejected(t *testing.T) {
-	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n- Magic: z\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Contract\n\n- Objective: x\n- Scope: y\n- Acceptance: s\n- Verification: g\n- Magic: z\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n"
 	_, violations := ParseContract(doc)
 	if len(violations) == 0 || !strings.Contains(strings.Join(violations, "\n"), "Magic") {
 		t.Fatalf("unknown keys must be rejected, got %v", violations)

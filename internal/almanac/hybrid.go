@@ -5,10 +5,7 @@
 package almanac
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -55,12 +52,11 @@ func hybridAt(root string, q Query, emb Embedder, now time.Time) ([]Observation,
 	if err != nil {
 		return degradedLexical(root, q)
 	}
-	raw, err := os.ReadFile(File(root))
+	shaHex, err := cachedSourceSHA(root)
 	if err != nil {
 		return degradedLexical(root, q)
 	}
-	sum := sha256.Sum256(raw)
-	if hdr.SourceSHAHex() != hex.EncodeToString(sum[:]) {
+	if hdr.SourceSHAHex() != shaHex {
 		return degradedLexical(root, q)
 	}
 	ranked, err := hybridFresh(root, q, entries, emb, now)

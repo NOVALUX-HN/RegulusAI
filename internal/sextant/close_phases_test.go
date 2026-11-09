@@ -27,7 +27,7 @@ func TestSplitContractMissing(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
 	writePassRun(t, root, "feat/T1", "run_splitcontract001", at, "build")
-	doc := "# F\n\nClass: STANDARD\n\n## Acceptance\n\n### Scenario: s\n\n- Given a\n- When b\n- Then c\n\n## Tasks\n\n| ID | Spec | Work | Route |\n|----|------|------|-------|\n| T1 | s | w | inline |\n\n## Log\n\n- L1.\n"
+	doc := "# F\n\nClass: STANDARD\n\n## Acceptance\n\n### Scenario: s\n\n- Given a ready fixture\n- When the checker runs\n- Then it passes\n\n## Tasks\n\n| ID | Spec | Work | Route |\n|----|------|------|-------|\n| T1 | s | w | inline |\n\n## Log\n\n- L1.\n"
 	res := CheckClose(doc, root, "feat", "T1")
 	mustContain(t, res, "no structured ## Contract")
 }
@@ -36,7 +36,7 @@ func TestSplitSpecBroken(t *testing.T) {
 	root := t.TempDir()
 	at := time.Unix(1700000000, 0).UTC()
 	writePassRun(t, root, "feat/T1", "run_splitspec000001", at, "build")
-	broken := strings.Replace(closeChart("STANDARD", ""), "- Then c", "- And c", 1)
+	broken := strings.Replace(closeChart("STANDARD", ""), "- Then it passes", "- And it passes", 1)
 	res := CheckClose(broken, root, "feat", "T1")
 	mustContain(t, res, "spec")
 }

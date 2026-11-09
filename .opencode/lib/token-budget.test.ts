@@ -8,7 +8,11 @@
 import { describe, expect, test } from "bun:test";
 
 const DISCIPLINE_CAP = 1400; // .opencode/discipline.md is ~1280
-const GUIDANCE_CAP = 1500; // 17 sections are ~1360 collapsed chars
+// 20 sections are ~1690 collapsed chars (19 tools + namespace): the
+// P6 parity tools (audit, evolve_report, evolve_tick) each earned one
+// lean line. Same ~4% headroom policy as before — new tools narrow
+// their wording or widen this number deliberately, never silently.
+const GUIDANCE_CAP = 1760;
 const TS_DESCRIPTIONS_CAP = 2000; // all description literals are ~1820
 
 describe("token budget", () => {

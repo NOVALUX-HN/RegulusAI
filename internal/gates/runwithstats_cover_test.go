@@ -112,10 +112,10 @@ func TestRunWithStatsDockerNoImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker-no-image echo must still run host fallback, got err=%v", err)
 	}
-	if iso != IsolationHostContained {
-		t.Fatalf("isolation = %q, want host-contained", iso)
+	if iso != IsolationHostDegraded {
+		t.Fatalf("isolation = %q, want degraded", iso)
 	}
-	if !strings.Contains(stderr, "no docker image configured") || !strings.Contains(stderr, "ran host-contained") {
+	if !strings.Contains(stderr, "no docker image configured") || !strings.Contains(stderr, "ran host-contained:degraded") {
 		t.Fatalf("fallback stderr must name missing image, got %q", stderr)
 	}
 }
@@ -127,7 +127,7 @@ func TestRunWithStatsDockerNoImageWithStderr(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("probe with stderr: code=%d err=%v stderr=%q", code, err, stderr)
 	}
-	if iso != IsolationHostContained {
+	if iso != IsolationHostDegraded {
 		t.Fatalf("isolation = %q", iso)
 	}
 	if !strings.Contains(stderr, "prev") || !strings.Contains(stderr, "no docker image configured") {
@@ -144,10 +144,10 @@ func TestRunWithStatsDockerFallbackEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker fallback must run host, got err=%v", err)
 	}
-	if iso != IsolationHostContained {
+	if iso != IsolationHostDegraded {
 		t.Fatalf("isolation = %q", iso)
 	}
-	if !strings.Contains(stderr, "docker daemon unavailable") || !strings.Contains(stderr, "ran host-contained") {
+	if !strings.Contains(stderr, "docker daemon unavailable") || !strings.Contains(stderr, "ran host-contained:degraded") {
 		t.Fatalf("fallback stderr must carry note, got %q", stderr)
 	}
 }
@@ -162,7 +162,7 @@ func TestRunWithStatsDockerFallbackWithStderr(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("probe fallback: code=%d err=%v stderr=%q", code, err, stderr)
 	}
-	if iso != IsolationHostContained {
+	if iso != IsolationHostDegraded {
 		t.Fatalf("isolation = %q", iso)
 	}
 	if !strings.Contains(stderr, "prev") || !strings.Contains(stderr, "docker daemon unavailable") {

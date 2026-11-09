@@ -9,8 +9,11 @@ import (
 
 func TestSuiteBand(t *testing.T) {
 	tasks := Suite()
-	if len(tasks) < 5 || len(tasks) > 10 {
-		t.Fatalf("suite has %d tasks, want 5-10", len(tasks))
+	// 8 behavior tasks within the 5-10 band, plus reported-never-judged
+	// cost tasks (B7, B10, B11): measurement rides along, judgment stays
+	// on behavior.
+	if len(tasks) < 5 || len(tasks) > 14 {
+		t.Fatalf("suite has %d tasks, want 5-14", len(tasks))
 	}
 	seen := map[string]bool{}
 	for _, task := range tasks {
@@ -30,10 +33,149 @@ func TestSuiteBand(t *testing.T) {
 func TestSuitePromptsHideAnswers(t *testing.T) {
 	for _, task := range Suite() {
 		lower := strings.ToLower(task.Prompt)
-		for _, leak := range []string{"want 2", "2.5", "traversal", "sha"} {
+		for _, leak := range []string{"want 2", "2.5", "traversal", "sha", "rollback", "estimatelocaltokens", "local proxy"} {
 			if strings.Contains(lower, leak) {
 				t.Fatalf("task %s prompt leaks its check %q", task.ID, leak)
 			}
+		}
+	}
+}
+
+// P1: the B8-B10 prompts are golden — fixed reference strings. Any edit
+// must update this pin deliberately, never drift silently.
+func TestSuiteGoldenPromptsPinned(t *testing.T) {
+	golden := map[string]string{
+		"B8":  "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
+		"B9":  "Select the full and quick gate profiles over a realistic twelve-gate gauntlet and refuse unknown profiles.",
+		"B10": "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
+	}
+	for _, task := range Suite() {
+		want, ok := golden[task.ID]
+		if !ok {
+			continue
+		}
+		if task.Prompt != want {
+			t.Fatalf("task %s prompt drifted from its golden:\n got: %q\nwant: %q", task.ID, task.Prompt, want)
+		}
+	}
+	if len(golden) != 3 {
+		t.Fatalf("golden pin covers %d tasks, want 3", len(golden))
+	}
+}
+
+// T0 (pro-harness): B11 pins the lesson-context cost golden — the
+// deterministic proxy-token price of one Almanac resume assembly over
+// a fixed fixture store. Fase 4 diffs this number per lesson; the
+// check reports, never judges (like wall-clock durations).
+func TestB11LessonContextCostGolden(t *testing.T) {
+	var b11 *Task
+	for i, task := range Suite() {
+		if task.ID == "B11" {
+			b11 = &Suite()[i]
+			break
+		}
+	}
+	if b11 == nil {
+		t.Fatal("suite has no B11 lesson-context-cost task")
+	}
+	wantPrompt := "Assemble one Almanac resume block over a fixed fixture store and report its token-proxy cost."
+	if b11.Prompt != wantPrompt {
+		t.Fatalf("B11 prompt drifted:\n got: %q\nwant: %q", b11.Prompt, wantPrompt)
+	}
+	detail, err := b11.Check()
+	if err != nil {
+		t.Fatalf("B11 check failed: %v", err)
+	}
+	for _, want := range []string{"fixture lessons", "proxy tokens"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B11 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// T4 (S1,S3): B12 pins the quantitative decision score on its golden
+// values — the same formula decisions.Score computes, machine-checked
+// from the bench side so score drift breaks the suite.
+func TestB12DecisionScoringGolden(t *testing.T) {
+	var b12 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B12" {
+			b12 = &tasks[i]
+			break
+		}
+	}
+	if b12 == nil {
+		t.Fatal("B12 task absent from the suite")
+	}
+	wantPrompt := "Rate a structured choice from its support, open objections, priced options, and safety nets."
+	if b12.Prompt != wantPrompt {
+		t.Fatalf("B12 prompt drifted:\n got: %q\nwant: %q", b12.Prompt, wantPrompt)
+	}
+	detail, err := b12.Check()
+	if err != nil {
+		t.Fatalf("B12 check failed: %v", err)
+	}
+	for _, want := range []string{"94/A", "10/F", "75/B"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B12 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// T4 (S1,S3): B13 pins the cost/precision gate-profile decision — lean
+// quick set for docs-only edits, full gauntlet when gate code moves or
+// full is forced.
+func TestB13GateProfileDecision(t *testing.T) {
+	var b13 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B13" {
+			b13 = &tasks[i]
+			break
+		}
+	}
+	if b13 == nil {
+		t.Fatal("B13 task absent from the suite")
+	}
+	wantPrompt := "Pick the lean gate set for a docs-only edit and the full set when gate code moves."
+	if b13.Prompt != wantPrompt {
+		t.Fatalf("B13 prompt drifted:\n got: %q\nwant: %q", b13.Prompt, wantPrompt)
+	}
+	detail, err := b13.Check()
+	if err != nil {
+		t.Fatalf("B13 check failed: %v", err)
+	}
+	for _, want := range []string{"quick=10", "full=12", "docs-only"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B13 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+func TestB14MissRateGolden(t *testing.T) {
+	var b14 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B14" {
+			b14 = &tasks[i]
+			break
+		}
+	}
+	if b14 == nil {
+		t.Fatal("B14 task absent from the suite")
+	}
+	wantPrompt := "Recall the right field note when the wording shifts or a word is mistyped, and miss honestly when nothing matches."
+	if b14.Prompt != wantPrompt {
+		t.Fatalf("B14 prompt drifted:\n got: %q\nwant: %q", b14.Prompt, wantPrompt)
+	}
+	detail, err := b14.Check()
+	if err != nil {
+		t.Fatalf("B14 check failed: %v", err)
+	}
+	for _, want := range []string{"4/4 lexical-miss", "4/4 hybrid top-3", "paraphrase", "typo"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B14 detail must contain %q, got %q", want, detail)
 		}
 	}
 }
@@ -142,6 +284,171 @@ func TestEachCheckPasses(t *testing.T) {
 		}
 		if strings.TrimSpace(detail) == "" {
 			t.Fatalf("task %s check returned empty detail", task.ID)
+		}
+	}
+}
+
+// P1: B8 pins the real retrieval path on its golden corpus.
+func TestB8RetrievalGolden(t *testing.T) {
+	detail, err := checkRetrievalGolden()
+	if err != nil {
+		t.Fatalf("B8 check failed: %v", err)
+	}
+	for _, want := range []string{"rollback drill", "1/2/0"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B8 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: B9 pins the real twelve-gate profile contract (quick=10, full-only mutation/vulncheck).
+func TestB9RealGateProfile(t *testing.T) {
+	detail, err := checkRealGateProfile()
+	if err != nil {
+		t.Fatalf("B9 check failed: %v", err)
+	}
+	for _, want := range []string{"full=12", "quick=10", "unknown refused"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B9 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: B10 pins golden T1 proxy values plus the per-task fold.
+func TestB10TokenProxyGolden(t *testing.T) {
+	detail, err := checkTokenProxyGolden()
+	if err != nil {
+		t.Fatalf("B10 check failed: %v", err)
+	}
+	for _, want := range []string{"5/8/7", "13 tokens", "host unknown"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B10 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// T10 (S2,S3): the budget gate — B10/B11 pin their goldens as
+// ceilings, so `bench run` FAILS when collapsed guidance bytes or the
+// default bounded context bytes grow past their pins. At-budget passes;
+// one byte or token over refuses with a gate error.
+func TestBudgetGateRefusesOverrun(t *testing.T) {
+	if err := checkTokenProxyBudget(b10CollapsedProxyBudget, b10CollapsedProxyBudget); err != nil {
+		t.Fatalf("at-budget proxy fold must pass: %v", err)
+	}
+	if err := checkTokenProxyBudget(b10CollapsedProxyBudget+1, b10CollapsedProxyBudget); err == nil {
+		t.Fatal("over-budget proxy fold must fail the gate")
+	}
+	if err := checkContextBudget(defaultContextBytesBudget, defaultContextProxyBudget); err != nil {
+		t.Fatalf("at-budget context block must pass: %v", err)
+	}
+	if err := checkContextBudget(defaultContextBytesBudget+1, defaultContextProxyBudget); err == nil {
+		t.Fatal("over-budget context bytes must fail the gate")
+	}
+	if err := checkContextBudget(defaultContextBytesBudget, defaultContextProxyBudget+1); err == nil {
+		t.Fatal("over-budget context proxy must fail the gate")
+	}
+}
+
+// T10 (S2,S3): B10/B11 details name the budget they gate, so a `bench
+// run` failure tells the reader which pin grew and by policy (narrow
+// the text or widen the pin deliberately, never drift silently).
+func TestB10B11DetailsNameBudgetGate(t *testing.T) {
+	b10, err := checkTokenProxyGolden()
+	if err != nil {
+		t.Fatalf("B10 check failed: %v", err)
+	}
+	if !strings.Contains(b10, "budget") {
+		t.Errorf("B10 detail must name its budget gate, got %q", b10)
+	}
+	b11, err := checkLessonContextCost()
+	if err != nil {
+		t.Fatalf("B11 check failed: %v", err)
+	}
+	for _, want := range []string{"budget", "546"} {
+		if !strings.Contains(b11, want) {
+			t.Errorf("B11 detail must contain %q, got %q", want, b11)
+		}
+	}
+}
+
+// P1: B3 now machine-checks the spec hardening — Then-less,
+// single-word and disordered scenarios all refuse.
+func TestB3RefusesHardenedShapes(t *testing.T) {
+	detail, err := checkSpecGWT()
+	if err != nil {
+		t.Fatalf("B3 check failed: %v", err)
+	}
+	for _, want := range []string{"Then-less", "single-word", "disordered"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B3 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// P1: the v3 suite keeps Compare ADOPT semantics — zero regressions and
+// no pass-count drop across green runs, now 14 tasks.
+func TestCompareAdoptV2(t *testing.T) {
+	base := Run("tree", "a")
+	cand := Run("candidate", "b")
+	if len(base.Tasks) != 14 || base.Passed != 14 {
+		t.Fatalf("v3 suite = %d tasks %d passed, want 14/14", len(base.Tasks), base.Passed)
+	}
+	cmp := Compare(base, cand)
+	if cmp.Verdict != "ADOPT" {
+		t.Fatalf("identical green runs: verdict = %s (%s)", cmp.Verdict, cmp.Reason)
+	}
+}
+
+// P1: B1-B7 keep their IDs, titles and kinds so v1 baseline rows stay
+// comparable task by task.
+func TestLegacyTasksUnchanged(t *testing.T) {
+	want := map[string][2]string{
+		"B1": {"cover-crap-formula", "cover"},
+		"B2": {"split-bounded-parse", "split"},
+		"B3": {"prose-spec-gwt", "prose"},
+		"B4": {"veracity-receipt-roundtrip", "veracity"},
+		"B5": {"gate-selection", "gates"},
+		"B6": {"security-evidence-jail", "security"},
+		"B7": {"honest-zero-cost", "cost"},
+	}
+	for _, task := range Suite() {
+		w, ok := want[task.ID]
+		if !ok {
+			continue
+		}
+		if task.Title != w[0] || task.Kind != w[1] {
+			t.Fatalf("task %s drifted: got title %q kind %q, want %q %q",
+				task.ID, task.Title, task.Kind, w[0], w[1])
+		}
+		delete(want, task.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("legacy tasks missing from the suite: %v", want)
+	}
+}
+
+// T1 honesty: B7 keeps host tokens unknown (0-regresiones semantics:
+// Compare still ADOPTs on green runs) while reporting the
+// measured-local proxy in its detail.
+func TestB7HonestLocalProxy(t *testing.T) {
+	var b7 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B7" {
+			b7 = &tasks[i]
+			break
+		}
+	}
+	if b7 == nil {
+		t.Fatal("B7 task absent from the suite")
+	}
+	detail, err := b7.Check()
+	if err != nil {
+		t.Fatalf("B7 check failed: %v", err)
+	}
+	for _, want := range []string{"host tokens unknown", "local proxy"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B7 detail must contain %q, got %q", want, detail)
 		}
 	}
 }

@@ -102,11 +102,12 @@ func resolveRunRunner(cfg Config, absRoot string, r CmdRunner) CmdRunner {
 }
 
 // executeTaskRun runs the gauntlet with a bounded git probe and a
-// root-pinned runner.
-func executeTaskRun(ctx context.Context, cfg Config, absRoot, task, runID, profile string, r CmdRunner, evidenceDir string) (Result, error) {
+// root-pinned runner. cfgBytes pins the coverage cache key: an unchanged
+// config+HEAD reuses the existing coverprofile instead of recomputing it.
+func executeTaskRun(ctx context.Context, cfg Config, cfgBytes []byte, absRoot, task, runID, profile string, r CmdRunner, evidenceDir string) (Result, error) {
 	head := taskGitHead(ctx, r)
 	rForRun := resolveRunRunner(cfg, absRoot, r)
-	return run(ctx, cfg, evidenceDir, task, head, rForRun, runStamp{runID: runID, manifestFile: manifest.FileName(runID)}, profile)
+	return run(ctx, cfg, cfgBytes, evidenceDir, task, head, rForRun, runStamp{runID: runID, manifestFile: manifest.FileName(runID)}, profile, absRoot)
 }
 
 // collectArtifactRefs fingerprints every written receipt for the manifest.

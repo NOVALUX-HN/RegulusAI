@@ -7,7 +7,7 @@ import (
 	"regulus-ai/internal/crap"
 )
 
-// gateCmd implements `regulus gate run [--profile NAME] [--dry-run] <task>`:
+// gateCmd implements `regulus gate run [--profile NAME] [--quick] [--dry-run] <task>`:
 // run the layered gauntlet and write one append-only receipt per executed
 // gate (PRD R-G2, R-G4). --dry-run prints the execution plan and writes
 // nothing. --profile selects required gates plus the profile's members
@@ -18,8 +18,12 @@ import (
 // nothing); execAndReport preflights binaries then runs the gauntlet.
 // Behavior, messages and exit codes are unchanged.
 func (c CLI) gateCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus gate run [--profile NAME] [--quick] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
+		return 0
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
+		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--quick] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
 		return 2
 	}
 	switch args[0] {
@@ -29,7 +33,7 @@ func (c CLI) gateCmd(args []string) int {
 		return c.gateVerdictCmd(args[1:])
 	case "run":
 	default:
-		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
+		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--quick] [--dry-run] <task> | regulus gate evaluate ... | regulus gate verdict <task>")
 		return 2
 	}
 	plan, code, ok := c.parseGateRunArgs(args[1:])
@@ -46,6 +50,10 @@ func (c CLI) gateCmd(args []string) int {
 // [--top N]`: the layer-7 gauntlet gate (PRD R-G2) — Uncle Bob's CRAP
 // formula over a go cover profile.
 func (c CLI) crapCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus crap --profile <coverprofile> [--max N] [--top N]")
+		return 0
+	}
 	fs := flag.NewFlagSet("crap", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	profile := fs.String("profile", "", "go cover profile path (required)")

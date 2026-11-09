@@ -31,14 +31,14 @@ func TestGateRunMissingAndExtraTask(t *testing.T) {
 	if code := c.Run([]string{"gate", "run"}); code != 2 {
 		t.Fatalf("no task: exit = %d, want 2", code)
 	}
-	if !strings.Contains(errb.String(), "usage: regulus gate run [--profile NAME] [--dry-run] <task>") {
+	if !strings.Contains(errb.String(), "usage: regulus gate run [--profile NAME] [--quick] [--dry-run] <task>") {
 		t.Fatalf("stderr must print run usage, got %q", errb.String())
 	}
 	c2, _, errb2 := newCLI(nil)
 	if code := c2.Run([]string{"gate", "run", "a/T1", "b/T2"}); code != 2 {
 		t.Fatalf("two tasks: exit = %d, want 2", code)
 	}
-	if !strings.Contains(errb2.String(), "usage: regulus gate run [--profile NAME] [--dry-run] <task>") {
+	if !strings.Contains(errb2.String(), "usage: regulus gate run [--profile NAME] [--quick] [--dry-run] <task>") {
 		t.Fatalf("stderr must print run usage, got %q", errb2.String())
 	}
 }

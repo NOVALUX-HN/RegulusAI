@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 type gateRunArgs struct {
 	task    string
 	profile string
+	quick   bool
 	dryRun  bool
 	cfg     gates.Config
 	runner  gates.CmdRunner
@@ -35,11 +37,16 @@ func (c CLI) parseGateRunArgs(args []string) (gateRunArgs, int, bool) {
 	fs.SetOutput(c.Stderr)
 	dryRun := fs.Bool("dry-run", false, "print the execution plan without running gates")
 	profile := fs.String("profile", "", "run required gates plus this profile's members (quick, full, or a declared name)")
+	quick := fs.Bool("quick", false, "run the lean daily-loop set only: typecheck, lint, build, unit-tests, spec, gofmt")
 	if err := fs.Parse(args); err != nil {
 		return gateRunArgs{}, 2, false
 	}
+	if *quick && *profile != "" {
+		fmt.Fprintln(c.Stderr, "gate run: --quick and --profile are mutually exclusive (quick is the lean preset, not a profile)")
+		return gateRunArgs{}, 2, false
+	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--dry-run] <task>")
+		fmt.Fprintln(c.Stderr, "usage: regulus gate run [--profile NAME] [--quick] [--dry-run] <task>")
 		return gateRunArgs{}, 2, false
 	}
 	task := fs.Arg(0)
@@ -56,14 +63,26 @@ func (c CLI) parseGateRunArgs(args []string) (gateRunArgs, int, bool) {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return gateRunArgs{}, 1, false
 	}
-	return gateRunArgs{task: task, profile: *profile, dryRun: *dryRun, cfg: cfg, runner: r}, 0, true
+	return gateRunArgs{task: task, profile: *profile, quick: *quick, dryRun: *dryRun, cfg: cfg, runner: r}, 0, true
+}
+
+// selectPlanGates resolves which gates the plan runs: the --quick lean
+// preset (exactly typecheck/lint/build/unit-tests/spec/gofmt) or the
+// --profile mechanism (unchanged: quick = required only, full =
+// everything, custom names by declaration). --quick is mutually exclusive
+// with --profile, so the profile path never sees a quick run.
+func selectPlanGates(cfg gates.Config, plan gateRunArgs) ([]gates.Gate, error) {
+	if plan.quick {
+		return gates.SelectQuickLean(cfg)
+	}
+	return gates.SelectGates(cfg, plan.profile)
 }
 
 // renderDryRunPlan prints the execution plan without running anything and
 // writes nothing. Selection, layer order, timeout budget, isolation and
 // annotations all match the historical dry-run output exactly.
 func (c CLI) renderDryRunPlan(plan gateRunArgs) int {
-	ordered, err := gates.SelectGates(plan.cfg, plan.profile)
+	ordered, err := selectPlanGates(plan.cfg, plan)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1
@@ -241,7 +260,7 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 	// never reaches here: the plan only prints commands and writes
 	// nothing, so preflight is exec-only by design.
 	if plan.runner == nil || dryRunIsSh(plan.runner) {
-		ordered, serr := gates.SelectGates(plan.cfg, plan.profile)
+		ordered, serr := selectPlanGates(plan.cfg, plan)
 		if serr != nil {
 			fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
 			return 1
@@ -251,7 +270,24 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 			return 1
 		}
 	}
-	res, mpath, err := gates.RunTask(context.Background(), plan.cfg, cfgBytes, c.dir(), plan.task, c.Version, contract.Version, plan.profile, plan.runner)
+	// --quick runs the lean preset through the same RunTask path by
+	// narrowing the config: full-of-the-narrowed-config is exactly the
+	// lean set, so selection, receipts and the manifest stay consistent.
+	runCfg, runBytes, runProfile := plan.cfg, cfgBytes, plan.profile
+	if plan.quick {
+		lean, serr := gates.SelectQuickLean(plan.cfg)
+		if serr != nil {
+			fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
+			return 1
+		}
+		runCfg = plan.cfg
+		runCfg.Gates = lean
+		runProfile = ""
+		if marshaled, merr := json.Marshal(runCfg); merr == nil {
+			runBytes = marshaled
+		}
+	}
+	res, mpath, err := gates.RunTask(context.Background(), runCfg, runBytes, c.dir(), plan.task, c.Version, contract.Version, runProfile, plan.runner)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1

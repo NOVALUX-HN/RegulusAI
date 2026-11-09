@@ -293,9 +293,17 @@ func warnWorkerYolo(c CLI, err error) {
 // subagent stops asking too; guardians stay deny and the primary agent
 // is never touched. Config applies on /reload or restart.
 func (c CLI) yoloCmd(args []string) int {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(c.Stdout, "usage: regulus yolo [on|off|status]")
+		return 0
+	}
 	mode := "status"
 	if len(args) > 0 {
 		mode = args[0]
+	}
+	if len(args) > 1 {
+		fmt.Fprintln(c.Stderr, "usage: regulus yolo [on|off|status]")
+		return 2
 	}
 	switch mode {
 	case "on", "off", "status":
