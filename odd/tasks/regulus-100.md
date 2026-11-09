@@ -12,7 +12,7 @@ Read until `## Log` before edits.
 ## Tasks
 
 - [x] H1 (S2,S3) — serveMCP: sc.Err al salir + techo 1MB documentado — route: inline — commit: a801bc3
-- [x] H2 (S2,S3) — mcpInt: rehusar floats no enteros — route: inline — commit: H2
+- [x] H2 (S2,S3) — mcpInt: rehusar floats no enteros — route: inline — commit: 39f3388
 - [ ] H3 (S2,S3) — HTTP 500 en store-errors (6 sitios, envelope igual) — route: inline — commit: —
 - [ ] H4 (S2,S3) — serve timeouts + graceful shutdown en main — route: inline — commit: —
 - [ ] H5 (S2,S3) — dashboard cache headers/memo (medir primero) — route: worker — commit: —
