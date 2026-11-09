@@ -13,7 +13,7 @@ Read until `## Log` before edits.
 
 - [ ] C1 (S2,S3) — CRAP paydown mcpTools/serve/initCmd/resolveDomainInProcess — route: mixed — commit: —
 - [ ] C2 (S2,S3) — perf rerun + veredicto flake/regresión — route: inline — commit: —
-- [x] C3 (S2,S3) — release 0.13.0 (bump/CHANGELOG/chart, tag en main pendiente) — route: inline — commit: C3
+- [x] C3 (S2,S3) — release 0.13.0 (bump/CHANGELOG/chart, tag en main pendiente) — route: inline — commit: 5742955
 
 ## Log
 
