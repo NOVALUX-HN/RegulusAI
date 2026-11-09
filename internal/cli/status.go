@@ -28,7 +28,9 @@ func (c CLI) doctor() int {
 		return 0
 	}
 	fmt.Fprintf(c.Stderr, "doctor: %s\n", res.Reason)
-	fmt.Fprintln(c.Stdout, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
+	// F9: the caveat rides stderr on failure so stdout stays clean
+	// for script parsers (and MCP stops leading failure payloads with it).
+	fmt.Fprintln(c.Stderr, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
 	return 1
 }
 

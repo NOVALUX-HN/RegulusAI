@@ -2428,3 +2428,20 @@ func TestUnknownCommandSuggestsNearest(t *testing.T) {
 		t.Fatalf("gibberish must get no hint, got %q", errb2.String())
 	}
 }
+
+// F9: on refusal the plugin caveat rides stderr, never stdout -
+// script parsers read a clean stdout and MCP stops leading with caveat-as-data.
+func TestDoctorRefusalCaveatOnStderr(t *testing.T) {
+	c, out, errb := newCLI(func() doctor.Result {
+		return doctor.Result{Reason: "OpenCode V1 is not supported"}
+	})
+	if code := c.Run([]string{"doctor"}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if strings.Contains(out.String(), "cannot be verified") {
+		t.Fatalf("stdout must not carry the caveat on failure, got %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "cannot be verified") {
+		t.Fatalf("stderr must carry the caveat on failure, got %q", errb.String())
+	}
+}
