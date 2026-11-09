@@ -46,7 +46,7 @@ func File(root string) string {
 	return filepath.Join(root, ".regulus", "surface", "edits.jsonl")
 }
 
-func validateTarget(root, target string) error {
+func validateTarget(target string) error {
 	normalized := filepath.ToSlash(filepath.Clean(target))
 	for _, prefix := range Whitelist {
 		if strings.HasPrefix(normalized, prefix) {
@@ -160,7 +160,7 @@ func IsReserved(target string) bool {
 // evolution cap must not be reached. The proposal is recorded in the
 // budget ledger (KindSurface, surface-proposed).
 func Propose(root, target, content, reason string, now time.Time) (Edit, error) {
-	if err := validateTarget(root, target); err != nil {
+	if err := validateTarget(target); err != nil {
 		return Edit{}, err
 	}
 	if IsReserved(target) {

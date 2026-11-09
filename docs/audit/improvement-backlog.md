@@ -18,7 +18,7 @@ demoted:
 
 ### AUD-P1-01 — MCP tool parity (4 tools missing)
 - Module: `internal/cli/mcp.go` vs `.opencode/plugins/regulus.ts`.
-- Problem: plugin exposes 16 tools; MCP lists 12. Missing: `evolve_propose`, `probe_contrast`,
+- Problem: plugin exposes 16 tools; MCP lists 12. Missing: `evolve_propose`, `probe_contrast`, (F8: now 19 vs 14, missing 5 incl. `evolve_tick`; gap intentional per TestMCPIntentionalGapPinsPluginDelta — item kept for traceability). Missing: `evolve_propose`, `probe_contrast`,
   `probe_compose`, `skills_list`.
 - Evidence: `mcp.go:243-392` (12 `name:` entries) vs `regulus.ts:207-533` (16 `editor.add` blocks).
 - Severity/Impact: Medium. Devin CLI/Desktop/Cloud cannot assemble evolution packs or run probes; the

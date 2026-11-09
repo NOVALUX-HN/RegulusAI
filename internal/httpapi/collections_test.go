@@ -5,7 +5,10 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -299,6 +302,143 @@ func TestCollectionsMethodNotAllowed(t *testing.T) {
 			if int(errObj["code"].(float64)) != mcp.CodeInvalidRequest {
 				t.Fatalf("%s %s code = %v, want %d", method, path, errObj["code"], mcp.CodeInvalidRequest)
 			}
+		}
+	}
+}
+
+// H6: the no-?session= listing must not List every session (N+1 full
+// decodes for N sessions on one page). Counts come from a cheap
+// per-file scan: one listing over N sessions performs O(1) full-List
+// calls and still reports exact per-session totals, including under
+// ?task=, with pagination and the single-session detail path intact.
+func TestTracesListingCountsWithoutNPlusOneLists(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	now := time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC)
+	const nSessions = 12
+	wantTotal := map[string]int{}
+	wantTask := map[string]int{}
+	for i := 0; i < nSessions; i++ {
+		name := fmt.Sprintf("h6s%02d", i)
+		lines := i + 1
+		matched := 0
+		for j := 0; j < lines; j++ {
+			task := "demo/other"
+			if j%2 == 0 {
+				task = "demo/H6"
+				matched++
+			}
+			if _, err := trace.Record(dir, trace.Entry{
+				Session: name, Message: fmt.Sprintf("m%d", j), Call: fmt.Sprintf("c%d", j),
+				Tool: "read", Status: trace.StatusCompleted, Task: task,
+			}, now.Add(time.Duration(j)*time.Second)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		wantTotal[name] = lines
+		wantTask[name] = matched
+	}
+	old := traceList
+	calls := 0
+	traceList = func(root, session string) ([]trace.Entry, error) {
+		calls++
+		return old(root, session)
+	}
+	defer func() { traceList = old }()
+	srv := newTestServer()
+
+	code, body := get(t, srv, "/v1/traces?limit=200")
+	if code != 200 {
+		t.Fatalf("GET /v1/traces = %d, want 200 (%s)", code, body)
+	}
+	total, _, _, items := decodePage(t, body)
+	if total != nSessions || len(items) != nSessions {
+		t.Fatalf("listing = total %d items %d, want %d/%d (%s)", total, len(items), nSessions, nSessions, body)
+	}
+	for _, it := range items {
+		m := it.(map[string]any)
+		name := m["session"].(string)
+		want, ok := wantTotal[name]
+		if !ok {
+			t.Fatalf("listing returned unexpected session %q (%s)", name, body)
+		}
+		if got := int(m["entries"].(float64)); got != want {
+			t.Fatalf("session %s entries = %d, want %d (%s)", name, got, want, body)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("no-session listing called trace.List %d times over %d sessions, want 0 (cheap per-file counts)", calls, nSessions)
+	}
+
+	// The ?task= filter uses the same cheap path with identical counts.
+	calls = 0
+	code, body = get(t, srv, "/v1/traces?task=demo%2FH6&limit=200")
+	if code != 200 {
+		t.Fatalf("GET task filter = %d, want 200 (%s)", code, body)
+	}
+	if total, _, _, items = decodePage(t, body); total != nSessions || len(items) != nSessions {
+		t.Fatalf("task filter = total %d items %d, want %d/%d (%s)", total, len(items), nSessions, nSessions, body)
+	}
+	for _, it := range items {
+		m := it.(map[string]any)
+		name := m["session"].(string)
+		if got, want := int(m["entries"].(float64)), wantTask[name]; got != want {
+			t.Fatalf("session %s task entries = %d, want %d (%s)", name, got, want, body)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("task-filtered listing called trace.List %d times, want 0", calls)
+	}
+
+	// Pagination still windows the session list with the total preserved.
+	code, body = get(t, srv, "/v1/traces?limit=5&offset=10")
+	if code != 200 {
+		t.Fatalf("GET paged listing = %d, want 200 (%s)", code, body)
+	}
+	if total, _, _, items = decodePage(t, body); total != nSessions || len(items) != 2 {
+		t.Fatalf("paged listing = total %d items %d, want %d/2 (%s)", total, len(items), nSessions, body)
+	}
+
+	// The single-session detail path still serves full entries.
+	calls = 0
+	code, body = get(t, srv, "/v1/traces?session=h6s00")
+	if code != 200 {
+		t.Fatalf("GET session detail = %d, want 200 (%s)", code, body)
+	}
+	if total, _, _, _ := decodePage(t, body); total != 1 {
+		t.Fatalf("session detail total = %d, want 1 (%s)", total, body)
+	}
+	if !strings.Contains(string(body), "m0") {
+		t.Fatalf("session detail must list the session entry (%s)", body)
+	}
+	if calls != 1 {
+		t.Fatalf("session detail called trace.List %d times, want 1", calls)
+	}
+}
+
+// H3: store I/O failures answer HTTP 500 with ok:false, never 200 -
+// uptime monitors keyed on status must see failure. Envelope shape intact.
+func TestStoreErrorsAreFiveHundred(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".regulus", "almanac", "observations.jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".regulus", "traces", "s1.jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srv := newTestServer()
+	for _, path := range []string{"/v1/observations", "/v1/almanac/summary", "/v1/traces"} {
+		code, body := get(t, srv, path)
+		if code != http.StatusInternalServerError {
+			t.Fatalf("GET %s with broken store = %d, want 500 (%s)", path, code, body)
+		}
+		var env map[string]any
+		if err := json.Unmarshal(body, &env); err != nil {
+			t.Fatalf("response is not JSON: %v (%s)", err, body)
+		}
+		if env["ok"] != false {
+			t.Fatalf("GET %s must keep ok:false envelope (%s)", path, body)
 		}
 	}
 }

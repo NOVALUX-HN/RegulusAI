@@ -26,6 +26,7 @@ func TestGremlinsAvailableForStatus(t *testing.T) {
 	}
 
 	t.Run("PATH hit wins", func(t *testing.T) {
+		resetGremlinsStatusCache()
 		bin := t.TempDir()
 		mkexe(bin, "gremlins")
 		t.Setenv("PATH", bin)
@@ -35,6 +36,7 @@ func TestGremlinsAvailableForStatus(t *testing.T) {
 	})
 
 	t.Run("Go bin fallback", func(t *testing.T) {
+		resetGremlinsStatusCache()
 		home := t.TempDir()
 		gobin := filepath.Join(home, "go", "bin")
 		if err := os.MkdirAll(gobin, 0o755); err != nil {
@@ -53,6 +55,7 @@ func TestGremlinsAvailableForStatus(t *testing.T) {
 	})
 
 	t.Run("absent everywhere", func(t *testing.T) {
+		resetGremlinsStatusCache()
 		t.Setenv("PATH", "")
 		if runtime.GOOS == "windows" {
 			t.Setenv("USERPROFILE", t.TempDir())

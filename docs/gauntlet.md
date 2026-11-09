@@ -35,6 +35,30 @@ Required gates always run: neither profiles nor `when` conditions can omit
 them. `gate run --dry-run` prints the resolved plan — including policy,
 conditions and reproducibility — and executes nothing.
 
+### Gate roster (pinned)
+
+The twelve gates below are the contract: `bench/gauntlet-shape.json`
+mirrors this table (generated from `regulus.json` plus the T5 `--quick`
+preset in `internal/gates/quick_lean.go`), and the bench suite fails
+when any of the three drifts. `required` is the `regulus.json` value
+(`true` for every gate except `mutation` and `vulncheck`); `profiles`
+lists the declared memberships (`—` means none).
+
+| gate | layer | required | profiles |
+|------|-------|----------|----------|
+| typecheck | 1 | true | — |
+| lint | 2 | true | — |
+| build | 3 | true | — |
+| unit-tests | 4 | true | — |
+| coverage-floor | 5 | true | — |
+| mutation | 6 | false | full |
+| crap | 7 | true | — |
+| vulncheck | 8 | false | full, security |
+| spec | 9 | true | — |
+| ts-typecheck | 10 | true | — |
+| ts-unit-tests | 11 | true | — |
+| gofmt | 12 | true | — |
+
 ## 3. Semantic verification: guardians
 
 The six guardians (`regulus-gate-verifier`, `spec-keeper`,
@@ -96,8 +120,9 @@ with the install hint, instead of a mid-run command-not-found.
 Profiles select cost, never mandatory proof (§2): `quick` runs
 required gates only (fast feedback), `full` runs everything and is the
 default. Required gates always run under every profile. The `mutation`
-gate keeps `profiles: [full]` but stays `required: true`, so it runs
-under `quick` too.
+gate keeps `profiles: [full]` and is `required: false`, so it runs
+under `full` only (like `vulncheck`, which is `required: false` with
+`profiles: [full, security]`).
 
 Since T1, mutation is hermetic: the gate exports `git archive HEAD`
 (tracked files only) into a fresh temp dir and runs gremlins there, so

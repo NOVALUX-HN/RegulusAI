@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"reflect"
 	"strings"
 	"testing"
+
+	"regulus-ai/internal/cli"
 )
 
 func TestServeHelp(t *testing.T) {
@@ -69,6 +72,10 @@ func TestParseServeFlags(t *testing.T) {
 		{"unknown flag", []string{"--foo"}, def, 2, false},
 		{"bare positional", []string{"extra"}, def, 2, false},
 		{"port without equals", []string{"--port"}, def, 2, false},
+		{"port space form", []string{"--port", "8080"}, serveConfig{port: 8080, bind: "127.0.0.1"}, 0, true},
+		{"bind space form", []string{"--bind", "0.0.0.0"}, serveConfig{port: 17817, bind: "0.0.0.0"}, 0, true},
+		{"projects space form", []string{"--projects", "/a,/b"}, serveConfig{port: 17817, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
+		{"space form missing value at end", []string{"--port=8080", "--bind"}, serveConfig{port: 8080, bind: "127.0.0.1"}, 2, false},
 		{"bind without equals", []string{"--bind"}, def, 2, false},
 		{"port+bind valid", []string{"--port=8080", "--bind=0.0.0.0"}, serveConfig{port: 8080, bind: "0.0.0.0"}, 0, true},
 		{"valid then bogus", []string{"--port=8080", "--bogus"}, serveConfig{port: 8080, bind: "127.0.0.1"}, 2, false},
@@ -98,19 +105,23 @@ func TestParseServeFlags(t *testing.T) {
 // H6: listenAndServe announces and delegates; the fake serveFn proves both
 // the ready path (nil error → 0) and the failure path (error → 1) without
 // binding any port.
+
+// H6: listenAndServe announces and delegates; the fake serveFn proves both
+// the ready path (nil error -> 0) and the failure path (error -> 1) without
+// binding any port.
 func TestListenAndServe(t *testing.T) {
 	h := http.NewServeMux()
 	if got := listenAndServe(serveConfig{port: 17817, bind: "127.0.0.1"}, h,
-		func(addr string, _ http.Handler) error {
-			if addr != "127.0.0.1:17817" {
-				t.Errorf("serveFn addr = %q, want %q", addr, "127.0.0.1:17817")
+		func(srv *http.Server) error {
+			if srv.Addr != "127.0.0.1:17817" {
+				t.Errorf("serveFn addr = %q, want %q", srv.Addr, "127.0.0.1:17817")
 			}
 			return nil
 		}); got != 0 {
 		t.Errorf("listenAndServe ready = %d, want 0", got)
 	}
 	if got := listenAndServe(serveConfig{port: 8080, bind: "0.0.0.0"}, h,
-		func(string, http.Handler) error { return errors.New("boom") }); got != 1 {
+		func(*http.Server) error { return errors.New("boom") }); got != 1 {
 		t.Errorf("listenAndServe failure = %d, want 1", got)
 	}
 }
@@ -156,5 +167,77 @@ func TestServeInvalidArgs(t *testing.T) {
 				t.Errorf("serve(%q) = %d, want %d", tc.args, got, tc.want)
 			}
 		})
+	}
+}
+
+// C1 (serve slice): resolveServeRoots carries the P4 root-resolution
+// branch matrix (empty -> default ".", entries mapped through the same
+// auto-detection as the CLI) without binding any port.
+func TestResolveServeRoots(t *testing.T) {
+	for _, projects := range [][]string{nil, {}} {
+		got := resolveServeRoots(projects)
+		want := []string{cli.ResolveRoot(".")}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("resolveServeRoots(%v) = %v, want %v", projects, got, want)
+		}
+	}
+	// Temp dirs live outside any checkout, so ResolveRoot returns them
+	// verbatim: the mapping preserves entries and order.
+	a := t.TempDir()
+	b := t.TempDir()
+	if got, want := resolveServeRoots([]string{a}), []string{a}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resolveServeRoots single = %v, want %v", got, want)
+	}
+	if got, want := resolveServeRoots([]string{a, b}), []string{a, b}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resolveServeRoots pair = %v, want %v", got, want)
+	}
+}
+
+// C1 (serve slice): serveRunner carries the H4 blocking-serve branch
+// matrix (immediate failure, ErrServerClosed -> clean nil, cancelled ctx
+// -> graceful Shutdown) through fakes, without binding any port or
+// blocking.
+func TestServeRunner(t *testing.T) {
+	ctx := context.Background()
+	srv := &http.Server{Addr: "127.0.0.1:1"}
+
+	if err := serveRunner(ctx, func(*http.Server) error { return errors.New("boom") })(srv); err == nil || err.Error() != "boom" {
+		t.Errorf("serveRunner failure = %v, want boom", err)
+	}
+	if err := serveRunner(ctx, func(*http.Server) error { return http.ErrServerClosed })(srv); err != nil {
+		t.Errorf("serveRunner closed = %v, want nil", err)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	release := make(chan struct{})
+	listening := serveRunner(cancelled, func(*http.Server) error {
+		<-release
+		return errors.New("listen released")
+	})
+	if err := listening(&http.Server{Addr: "127.0.0.1:1"}); err != nil {
+		t.Errorf("serveRunner shutdown = %v, want nil", err)
+	}
+	close(release)
+}
+
+// H4: the server carries timeouts and the fake proves the ready/failure
+// paths through the *http.Server form (timeouts configured, addr intact).
+func TestListenAndServeTimeouts(t *testing.T) {
+	h := http.NewServeMux()
+	var gotSrv *http.Server
+	if got := listenAndServe(serveConfig{port: 17817, bind: "127.0.0.1"}, h,
+		func(srv *http.Server) error { gotSrv = srv; return nil }); got != 0 {
+		t.Fatalf("ready = %d, want 0", got)
+	}
+	if gotSrv == nil || gotSrv.Addr != "127.0.0.1:17817" {
+		t.Fatalf("server addr = %+v, want 127.0.0.1:17817", gotSrv)
+	}
+	if gotSrv.ReadHeaderTimeout <= 0 || gotSrv.WriteTimeout <= 0 {
+		t.Fatalf("server must carry timeouts, got %+v", gotSrv)
+	}
+	if got := listenAndServe(serveConfig{port: 8080, bind: "0.0.0.0"}, h,
+		func(*http.Server) error { return errors.New("boom") }); got != 1 {
+		t.Fatalf("failure = %d, want 1", got)
 	}
 }

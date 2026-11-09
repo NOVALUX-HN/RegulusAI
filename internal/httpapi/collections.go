@@ -7,7 +7,11 @@
 package httpapi
 
 import (
+	"bufio"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -237,7 +241,7 @@ func (s Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		Type:  typ,
 	})
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("observations: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("observations: "+observability.RedactText(err.Error())))
 		return
 	}
 	if task != "" {
@@ -285,7 +289,7 @@ func (s Server) handleLessons(w http.ResponseWriter, r *http.Request) {
 	}
 	all, storeErr := loadLessons(root, domain, status)
 	if storeErr != "" {
-		writeEnvelope(w, http.StatusOK, Internal("lessons: "+observability.RedactText(storeErr)))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("lessons: "+observability.RedactText(storeErr)))
 		return
 	}
 	all = filterLessons(all, task, needles)
@@ -391,6 +395,51 @@ func matchLesson(l library.Lesson, needles []string) bool {
 	return true
 }
 
+// traceList is the seam for reading one full session trace. The
+// single-session detail path needs whole entries (filter, paginate,
+// redact); the no-?session= listing path must NOT fan out through it
+// (H6: N sessions on a page meant N full decodes just to count).
+var traceList = trace.List
+
+// countTraceEntries counts the entries of one session trace without
+// materializing the whole entry slice (H6): a streaming per-file scan
+// reporting the same total trace.List reports — blank lines skipped,
+// the first malformed JSONL line failing like List does, a missing
+// trace reading as empty. The optional task filter narrows the count
+// to entries served for that task, mirroring the listing loop.
+func countTraceEntries(root, session, task string) (int, error) {
+	f, err := os.Open(trace.File(root, session))
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	n := 0
+	ln := 0
+	for sc.Scan() {
+		ln++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var e trace.Entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			return 0, fmt.Errorf("malformed trace at line %d: %v", ln, err)
+		}
+		if task == "" || e.Task == task {
+			n++
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // traceSessionItem names one session trace plus its entry count.
 type traceSessionItem struct {
 	Session string `json:"session"`
@@ -421,26 +470,16 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	if session == "" {
 		sessions, err := trace.Sessions(root)
 		if err != nil {
-			writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
+			writeEnvelope(w, http.StatusInternalServerError, Internal("traces: "+observability.RedactText(err.Error())))
 			return
 		}
 		lo, hi := paginate(len(sessions), limit, offset)
 		items := make([]traceSessionItem, 0, hi-lo)
 		for _, name := range sessions[lo:hi] {
-			entries, err := trace.List(root, name)
+			n, err := countTraceEntries(root, name, task)
 			if err != nil {
-				writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
+				writeEnvelope(w, http.StatusInternalServerError, Internal("traces: "+observability.RedactText(err.Error())))
 				return
-			}
-			n := 0
-			if task == "" {
-				n = len(entries)
-			} else {
-				for _, e := range entries {
-					if e.Task == task {
-						n++
-					}
-				}
 			}
 			items = append(items, traceSessionItem{
 				Session: observability.RedactText(name),
@@ -453,9 +492,9 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		writePage(w, len(sessions), limit, offset, items)
 		return
 	}
-	entries, err := trace.List(root, session)
+	entries, err := traceList(root, session)
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("traces: "+observability.RedactText(err.Error())))
 		return
 	}
 	if task != "" {
@@ -498,7 +537,7 @@ func (s Server) handleBudget(w http.ResponseWriter, r *http.Request) {
 	task := strings.TrimSpace(r.URL.Query().Get("task"))
 	entries, err := budget.Show(root)
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("budget: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("budget: "+observability.RedactText(err.Error())))
 		return
 	}
 	if task != "" {

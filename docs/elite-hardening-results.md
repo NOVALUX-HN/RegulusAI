@@ -1,5 +1,7 @@
 # Elite-hardening — tabla comparativa probada (T6)
 
+> **Nota (H10):** documento point-in-time (2026-11-06, branch feat/elite-hardening) — se conserva como evidencia histórica.
+
 Fecha: 2026-11-06 · Branch: `feat/elite-hardening` · Superficie: este repo (`tree`).
 Cómo reproducir cada cifra: comandos en `Verificación`. Todo lo que sigue fue observado, no estimado.
 

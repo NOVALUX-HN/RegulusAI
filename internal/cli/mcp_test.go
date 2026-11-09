@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
+	"regulus-ai/internal/receipts"
 )
 
 type mcpResp struct {
@@ -158,7 +161,8 @@ func TestMCPToolsListNames(t *testing.T) {
 		"memory_note", "memory_show", "memory_save", "memory_search",
 		"memory_context", "memory_history", "gate_run", "spec_check",
 		"doctor", "trace_show", "trace_sessions", "trace_files",
-		"audit", "evolve_report",
+		"audit", "evolve_report", "skills_list", "evolve_tick",
+		"evolve_propose",
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools, want %d", len(tools), len(want))
@@ -179,12 +183,15 @@ func TestMCPToolsListNames(t *testing.T) {
 
 func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 	// The OpenCode agent surface is 19 tools; MCP deliberately exposes
-	// 14. The 5-gap (evolve_propose, probe_contrast, probe_compose,
-	// skills_list, evolve_tick) is a Devin-side policy decision, not
-	// drift: audit and evolve_report ported because they are read-only
-	// like trace_show, while evolve_tick writes candidates like
-	// evolve_propose — harness self-modification doesn't transfer.
-	// Evolving this list means updating docs/devin.md too.
+	// 17. The remaining 2-gap (probe_contrast, probe_compose) is a
+	// Devin-side policy decision, not drift: the probes run gates for
+	// minutes with no cancel story in the serveMCP loop. Ported as
+	// read-only: audit and evolve_report (same policy as trace_show),
+	// plus skills_list (pure registry read), evolve_tick (default
+	// --dry-run, writes nothing) and evolve_propose (evidence-pack
+	// assembly, read-only). Destructive or management ops stay
+	// shell-only by policy — see docs/devin.md. Evolving this list
+	// means updating docs/devin.md too.
 	plugin := []string{
 		"gate_run", "spec_check", "doctor", "memory_note",
 		"memory_show", "memory_save", "memory_search", "memory_context",
@@ -196,8 +203,8 @@ func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 	for _, tool := range mcpTools() {
 		mcp[tool.name] = true
 	}
-	if len(mcp) != 14 {
-		t.Fatalf("MCP tools = %d, want 14", len(mcp))
+	if len(mcp) != 17 {
+		t.Fatalf("MCP tools = %d, want 17", len(mcp))
 	}
 	var gap []string
 	for _, name := range plugin {
@@ -206,9 +213,7 @@ func TestMCPIntentionalGapPinsPluginDelta(t *testing.T) {
 		}
 	}
 	want := map[string]bool{
-		"evolve_propose": true, "probe_contrast": true,
-		"probe_compose": true, "skills_list": true,
-		"evolve_tick": true,
+		"probe_contrast": true, "probe_compose": true,
 	}
 	if len(gap) != len(want) {
 		t.Fatalf("plugin-MCP gap = %v, want %v", gap, want)
@@ -276,6 +281,213 @@ func TestMCPMemoryLifecycle(t *testing.T) {
 	resps = runMCP(c, mcpCall(7, "tools/call", map[string]any{"name": "memory_context"}))
 	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "Almanac") {
 		t.Fatalf("context text = %q", text)
+	}
+}
+
+// H7: the three read-only ports — skills_list (pure registry read),
+// evolve_tick (default --dry-run, writes nothing) and evolve_propose
+// (evidence-pack assembly, read-only). Schemas pin the plugin parity:
+// tick takes optional every/dry_run, propose requires task+domain and
+// carries the slow-call long-budget note.
+func TestMCPNewReadOnlyToolsSchemas(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/list", nil))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	raw, err := json.Marshal(resps[0].Result["tools"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tools []struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		InputSchema map[string]any `json:"inputSchema"`
+	}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]map[string]any{}
+	descs := map[string]string{}
+	for _, tool := range tools {
+		byName[tool.Name] = tool.InputSchema
+		descs[tool.Name] = tool.Description
+	}
+	for _, name := range []string{"skills_list", "evolve_tick", "evolve_propose"} {
+		if _, ok := byName[name]; !ok {
+			t.Fatalf("tools/list must carry %q", name)
+		}
+		if descs[name] == "" {
+			t.Fatalf("tool %q must carry a description", name)
+		}
+	}
+	propsOf := func(name string) map[string]any {
+		t.Helper()
+		props, _ := byName[name]["properties"].(map[string]any)
+		if props == nil {
+			t.Fatalf("%s inputSchema must carry properties", name)
+		}
+		return props
+	}
+	requiredOf := func(name string) []any {
+		t.Helper()
+		req, _ := byName[name]["required"].([]any)
+		return req
+	}
+	if req := requiredOf("skills_list"); len(req) != 0 {
+		t.Fatalf("skills_list required must stay empty, got %v", req)
+	}
+	if props := propsOf("skills_list"); len(props) != 0 {
+		t.Fatalf("skills_list must take no arguments, got %v", props)
+	}
+	tickProps := propsOf("evolve_tick")
+	for key, typ := range map[string]string{"every": "integer", "dry_run": "boolean"} {
+		prop, ok := tickProps[key].(map[string]any)
+		if !ok || prop["type"] != typ {
+			t.Fatalf("evolve_tick schema %q must be type %q, got %v", key, typ, tickProps[key])
+		}
+	}
+	if req := requiredOf("evolve_tick"); len(req) != 0 {
+		t.Fatalf("evolve_tick required must stay empty (dry_run defaults true), got %v", req)
+	}
+	proposeProps := propsOf("evolve_propose")
+	for _, key := range []string{"task", "domain"} {
+		prop, ok := proposeProps[key].(map[string]any)
+		if !ok || prop["type"] != "string" {
+			t.Fatalf("evolve_propose schema %q must be type string, got %v", key, proposeProps[key])
+		}
+	}
+	req := requiredOf("evolve_propose")
+	if len(req) != 2 || req[0] != "task" || req[1] != "domain" {
+		t.Fatalf("evolve_propose required must stay [task domain], got %v", req)
+	}
+	if !strings.Contains(descs["evolve_propose"], "long budget") {
+		t.Fatalf("evolve_propose description must carry the slow-call long-budget note, got %q", descs["evolve_propose"])
+	}
+}
+
+func TestMCPSkillsListRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(".opencode", "skills", "wf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: wf-flow\ndescription: Fires when work starts.\n---\n\n## What I do\nThings.\n"
+	if err := os.WriteFile(filepath.Join(".opencode", "skills", "wf", "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "skills_list", "arguments": map[string]any{},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// A pure registry read succeeds even with no Almanac state: the
+	// failure here is the RED (unknown tool -32601), not the fixture.
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "wf-flow — Fires when work starts.") {
+		t.Fatalf("skills_list text = %q", text)
+	}
+}
+
+func seedTickDueSessions(t *testing.T) {
+	t.Helper()
+	rec, _, _ := newCLI(nil)
+	for _, s := range []string{"s1", "s2", "s3"} {
+		if code := rec.Run([]string{"trace", "record", "--session", s, "--message", "m", "--call", "c-" + s, "--tool", "Read", "--status", "completed"}); code != 0 {
+			t.Fatalf("trace record %s exit = %d", s, code)
+		}
+	}
+}
+
+func TestMCPEvolveTickDefaultsDryRun(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	seedTickDueSessions(t)
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_tick", "arguments": map[string]any{},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "dry run:") || !strings.Contains(text, "nothing proposed") {
+		t.Fatalf("default tick must be a dry run proposing nothing, got %q", text)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".regulus", "evolution")); !os.IsNotExist(err) {
+		t.Fatal("default evolve_tick must write nothing under .regulus/evolution")
+	}
+}
+
+func TestMCPEvolveTickEveryReachesCLI(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedTickDueSessions(t)
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_tick", "arguments": map[string]any{"every": float64(100)},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "no tick due") || !strings.Contains(text, "every 100") {
+		t.Fatalf("every=100 must defer the cadence, got %q", text)
+	}
+}
+
+func TestMCPEvolveTickExplicitWetAdvancesCursor(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	seedTickDueSessions(t)
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_tick", "arguments": map[string]any{"dry_run": false},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "tick:") {
+		t.Fatalf("explicit dry_run:false must apply the tick, got %q", text)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".regulus", "evolution", "tick.json")); err != nil {
+		t.Fatalf("explicit dry_run:false must advance the tick cursor: %v", err)
+	}
+}
+
+func TestMCPEvolveProposeAssemblesPack(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(".regulus", "evidence", "demo__T1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1700000000, 0).UTC()
+	if _, err := receipts.Write(filepath.Join(".regulus", "evidence", "demo__T1"), receipts.Receipt{
+		Task: "demo/T1", Gate: "typecheck", Layer: 1, Command: "echo ok",
+		ExitCode: 0, Verdict: receipts.VerdictPass, StartedAt: start, DurationMS: 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "evolve_propose", "arguments": map[string]any{"task": "demo/T1", "domain": "go"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	for _, want := range []string{"# Evidence pack — task demo/T1, domain go", "## Candidate template"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("pack must contain %q, got:\n%s", want, text)
+		}
+	}
+	// Assembly is read-only: proposing nothing, advancing nothing.
+	if _, err := os.Stat(filepath.Join(dir, ".regulus", "evolution")); !os.IsNotExist(err) {
+		t.Fatal("evolve_propose must write nothing under .regulus/evolution")
+	}
+	resps = runMCP(c, mcpCall(2, "tools/call", map[string]any{
+		"name": "evolve_propose", "arguments": map[string]any{"task": "demo/T1"},
+	}))
+	if len(resps) != 1 || resps[0].Error == nil || resps[0].Error.Code != -32602 {
+		t.Fatalf("missing domain must be refused with -32602, got %+v", resps)
 	}
 }
 
@@ -436,6 +648,78 @@ func TestMCPAuditAndEvolveReport(t *testing.T) {
 	}
 }
 
+func TestMCPMemoryContextManualResolve(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "charts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "charts", "app.md"), []byte("# App\n\nDomain: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := almanac.Save(dir, &almanac.Observation{
+		Type: almanac.TypeLesson, Title: "go manual lesson", Content: "manual resolve proves lessons",
+		Domain: "go", Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low"},
+	}, time.Now()); err != nil {
+		t.Fatalf("seed lesson: %v", err)
+	}
+	c := mcpTestCLI()
+	call := func(id int, args map[string]any) string {
+		t.Helper()
+		resps := runMCP(c, mcpCall(id, "tools/call", map[string]any{"name": "memory_context", "arguments": args}))
+		if len(resps) != 1 {
+			t.Fatalf("want 1 response, got %d", len(resps))
+		}
+		return mcpResultText(t, resps[0])
+	}
+	if got := call(1, map[string]any{}); strings.Contains(got, "domain:") || strings.Contains(got, "Lessons scoped:") {
+		t.Fatalf("bare memory_context must stay lesson-less, got:\n%s", got)
+	}
+	if got := call(2, map[string]any{"session": "s1", "charts": "charts/app.md"}); !strings.Contains(got, "domain: go") || !strings.Contains(got, "go manual lesson") {
+		t.Fatalf("manual memory_context with session/charts must return the domain-scoped block, got:\n%s", got)
+	}
+}
+
+func TestMCPMemoryContextSchemaCarriesSessionCharts(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/list", nil))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	raw, err := json.Marshal(resps[0].Result["tools"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tools []struct {
+		Name        string         `json:"name"`
+		InputSchema map[string]any `json:"inputSchema"`
+	}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools {
+		if tool.Name != "memory_context" {
+			continue
+		}
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		if props == nil {
+			t.Fatal("memory_context inputSchema must carry properties")
+		}
+		if _, ok := props["session"]; !ok {
+			t.Fatal("memory_context schema must carry optional \"session\"")
+		}
+		if _, ok := props["charts"]; !ok {
+			t.Fatal("memory_context schema must carry optional \"charts\"")
+		}
+		req, _ := tool.InputSchema["required"].([]any)
+		if len(req) != 0 {
+			t.Fatalf("memory_context required must stay empty, got %v", req)
+		}
+		return
+	}
+	t.Fatal("memory_context missing from tools/list")
+}
+
 func TestMCPGateRunPassReportsVerdicts(t *testing.T) {
 	dir := writeGatesProject(t, `{"gates":[
 		{"name":"typecheck","layer":1,"command":"echo hi"},
@@ -495,6 +779,139 @@ func TestMCPGateRunFailureReportsExitCode(t *testing.T) {
 	}
 }
 
+func TestMCPGateRunBareUnchanged(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// Bare calls stay byte-identical to today: no flags means the full
+	// default set (all 12 gates), exactly as `gate run <task>`.
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "gauntlet: 12/12 gates passed") {
+		t.Fatalf("bare gate_run must run the full default set, got %q", text)
+	}
+}
+
+func TestMCPGateRunSchemaCarriesQuickProfileDryRun(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/list", nil))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	for _, tool := range mcpTools() {
+		if tool.name != "gate_run" {
+			continue
+		}
+		for key, typ := range map[string]string{"quick": "boolean", "profile": "string", "dry_run": "boolean"} {
+			prop, ok := tool.props[key].(map[string]any)
+			if !ok || prop["type"] != typ {
+				t.Fatalf("gate_run schema %q must be type %q, got %v", key, typ, tool.props[key])
+			}
+		}
+		if len(tool.required) != 1 || tool.required[0] != "task" {
+			t.Fatalf("gate_run required must stay [task], got %v", tool.required)
+		}
+		return
+	}
+	t.Fatal("gate_run missing from tools")
+}
+
+func TestMCPGateRunQuickRunsLeanSet(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "quick": true},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	for _, want := range []string{"typecheck", "lint", "build", "unit-tests", "spec", "gofmt"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("quick output must contain lean gate %q, got:\n%s", want, text)
+		}
+	}
+	for _, skip := range []string{"coverage-floor", "mutation", "crap", "vulncheck", "ts-typecheck", "ts-unit-tests"} {
+		if strings.Contains(text, skip) {
+			t.Fatalf("quick must not run full-only gate %q, got:\n%s", skip, text)
+		}
+	}
+	if !strings.Contains(text, "gauntlet: 6/6 gates passed") {
+		t.Fatalf("counts must reflect the lean set, got:\n%s", text)
+	}
+}
+
+func TestMCPGateRunProfilePassthrough(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{results: map[string]fakeGateResult{}}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "profile": "quick"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// profile=quick selects required only (10 of 12: the optional
+	// mutation/vulncheck drop out), proving the profile reached the CLI
+	// instead of the default full set (bare gives 12/12).
+	if text := mcpResultText(t, resps[0]); !strings.Contains(text, "gauntlet: 10/10 gates passed") {
+		t.Fatalf("profile=quick must run required only, got:\n%s", text)
+	}
+}
+
+func TestMCPGateRunQuickPlusProfileRefused(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	c.Runner = &fakeGateRunner{}
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "quick": true, "profile": "full"},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	// quick+profile stay mutually exclusive: the CLI usage error (exit
+	// 2) surfaces as -32602, mirroring gate run semantics.
+	if resps[0].Error == nil || resps[0].Error.Code != -32602 {
+		t.Fatalf("quick+profile must be refused with -32602, got %+v", resps[0])
+	}
+	if !strings.Contains(resps[0].Error.Message, "mutually exclusive") {
+		t.Fatalf("refusal must name the conflict, got %q", resps[0].Error.Message)
+	}
+}
+
+func TestMCPGateRunDryRunPrintsPlan(t *testing.T) {
+	dir := writeGatesProject(t, twelveGateConfig())
+	t.Chdir(dir)
+	c := mcpTestCLI()
+	r := &fakeGateRunner{results: map[string]fakeGateResult{}}
+	c.Runner = r
+	resps := runMCP(c, mcpCall(1, "tools/call", map[string]any{
+		"name": "gate_run", "arguments": map[string]any{"task": "demo/T5", "dry_run": true},
+	}))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	text := mcpResultText(t, resps[0])
+	if !strings.Contains(text, "timeout=") {
+		t.Fatalf("dry run must print the plan lines, got:\n%s", text)
+	}
+	if strings.Contains(text, "gauntlet:") {
+		t.Fatalf("dry run must print only the plan, got:\n%s", text)
+	}
+	if len(r.calls) != 0 {
+		t.Fatalf("dry run must not execute gates, ran %v", r.calls)
+	}
+}
+
 func TestMCPContentNeverEmpty(t *testing.T) {
 	if got := mcpContent("", "", 0); got == "" {
 		t.Fatal("empty success must not stay empty")
@@ -542,6 +959,9 @@ func TestMCPIntCoercion(t *testing.T) {
 		{"missing", map[string]any{}, 0, false},
 		{"nil", map[string]any{"limit": nil}, 0, false},
 		{"float64", map[string]any{"limit": float64(7)}, 7, true},
+		{"fractional float refused", map[string]any{"limit": float64(2.9)}, 0, false},
+		{"negative fractional float refused", map[string]any{"limit": float64(-1.5)}, 0, false},
+		{"integral float still passes", map[string]any{"limit": float64(3.0)}, 3, true},
 		{"int", map[string]any{"limit": 5}, 5, true},
 		{"numeric string", map[string]any{"limit": "42"}, 42, true},
 		{"padded numeric string", map[string]any{"limit": "  12  "}, 12, true},
@@ -555,5 +975,19 @@ func TestMCPIntCoercion(t *testing.T) {
 				t.Fatalf("mcpInt(%v) = (%d,%v), want (%d,%v)", tc.args["limit"], got, ok, tc.want, tc.wantOK)
 			}
 		})
+	}
+}
+
+// H1: an over-long (>1MB) JSON-RPC line ends serving loudly -
+// exit 1 plus a stderr diagnostic, never a silent exit-0 death.
+func TestMCPOversizeLineFailsLoudly(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	big := `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"` + strings.Repeat("x", 2*1024*1024) + `"}}` + string(rune(10))
+	var out bytes.Buffer
+	if code := c.serveMCP(strings.NewReader(big), &out); code != 1 {
+		t.Fatalf("oversize line exit = %d, want 1", code)
+	}
+	if got := errb.String(); !strings.Contains(got, "too long") {
+		t.Fatalf("stderr must name the over-long line, got %q", got)
 	}
 }

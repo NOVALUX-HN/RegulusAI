@@ -399,6 +399,15 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     expect(src).toContain('include_superseded: { type: "boolean"');
   });
 
+  test("memory_search requires no terms (F2: browse without a term)", async () => {
+    // Plugin/MCP/CLI parity: empty search lists everything; the schema
+    // must not force a term the argv builder already handles as absent.
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = src.slice(src.indexOf('name: "memory_search"'), src.indexOf('name: "memory_search"') + 2000);
+    const req = block.match(/required: \[([^\]]*)\]/);
+    expect(req?.[1].trim()).toBe("");
+  });
+
   test("compaction resume is bounded by default (T1)", () => {
     expect(COMPACTION_CONTEXT_LIMIT).toBe(20);
     expect(COMPACTION_CONTEXT_BUDGET).toBe(20);
@@ -448,6 +457,80 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
     expect(hook).toContain('"evolve", "tick"');
     expect(hook).toContain("regulus_almanac_context");
     expect(hook.indexOf("regulus_almanac_context")).toBeLessThan(hook.indexOf("Promise.allSettled"));
+  });
+});
+
+describe("memory_context manual passthrough (F3)", () => {
+  // F3: agent-invoked memory_context runs plain `memory context` with
+  // no lessons while its description promises admitted lessons. Both
+  // the plugin tool and the MCP tool gain optional `session` (string)
+  // and `charts` (string, comma-separated chart refs) params; when
+  // either is present the call passes --resolve-domain --session S
+  // [--chart C...] --lessons 3 through (plugin side via
+  // contextResolveArgs), and stays byte-identical plain otherwise.
+  test("schema carries optional session + charts, neither required", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const start = src.indexOf('name: "memory_context"');
+    const block = src.slice(start, start + 2500);
+    expect(block).toContain("session");
+    expect(block).toContain("charts");
+    const req = block.match(/required: \[([^\]]*)\]/);
+    expect(req?.[1]).not.toContain("session");
+    expect(req?.[1]).not.toContain("charts");
+  });
+
+  test("execute reuses contextResolveArgs when session/charts present, plain otherwise", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const start = src.indexOf('name: "memory_context"');
+    const end = src.indexOf('name: "memory_history"');
+    const block = src.slice(start, end);
+    expect(block).toContain("contextResolveArgs(");
+    expect(block).toContain('["memory", "context"]');
+  });
+});
+
+describe("gate_run quick/profile/dry_run passthrough (F4)", () => {
+  // F4: agent tools accept only `task`, forcing the full 12-layer
+  // gauntlet — the lean T5 --quick path and --profile/--dry-run are
+  // CLI-only. Both gate_run schemas gain optional `quick` (boolean),
+  // `profile` (string) and `dry_run` (boolean), passed through to the
+  // CLI (--quick, --profile NAME, --dry-run; quick+profile refused by
+  // the CLI with exit 2). Bare calls stay byte-identical to today.
+  // The lean-set semantics themselves live in gate_quick_test.go and
+  // the MCP end-to-end below; here the plugin side pins the schema
+  // and the flags-before-task argv (Go flag parsing stops at the
+  // first positional).
+  function gateRunBlock(src: string): string {
+    const start = src.indexOf('name: "gate_run"');
+    const end = src.indexOf('name: "spec_check"');
+    return src.slice(start, end);
+  }
+
+  test("schema carries optional quick + profile + dry_run, only task required", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = gateRunBlock(src);
+    expect(block).toContain('quick: { type: "boolean"');
+    expect(block).toContain('profile: { type: "string"');
+    expect(block).toContain('dry_run: { type: "boolean"');
+    const req = block.match(/required: \[([^\]]*)\]/);
+    expect(req?.[1]).toContain('"task"');
+    expect(req?.[1]).not.toContain("quick");
+    expect(req?.[1]).not.toContain("profile");
+    expect(req?.[1]).not.toContain("dry_run");
+  });
+
+  test("execute builds flags-before-task argv, bare stays [gate run task]", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const block = gateRunBlock(src);
+    expect(block).toContain('"--quick"');
+    expect(block).toContain('"--profile"');
+    expect(block).toContain('"--dry-run"');
+    // Bare base is unchanged; the positional task is appended last so
+    // flags always precede it.
+    expect(block).toContain('["gate", "run"]');
+    const pushTask = block.indexOf("args.push(task)");
+    expect(pushTask).toBeGreaterThan(-1);
+    expect(block.indexOf('"--dry-run"')).toBeLessThan(pushTask);
   });
 });
 

@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"regulus-ai/internal/cli"
 	"regulus-ai/internal/doctor"
@@ -51,7 +53,18 @@ type serveConfig struct {
 // the caller must return code without serving.
 func parseServeFlags(args []string) (serveConfig, int, bool) {
 	cfg := serveConfig{port: httpapi.DefaultDashboardPort, bind: "127.0.0.1"}
-	for _, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		// F5: space form (--port N) normalizes into =-form so the single
+		// validation below serves both spellings; a trailing bare flag is a usage error.
+		if a == "--port" || a == "--bind" || a == "--projects" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+				return cfg, 2, false
+			}
+			i++
+			a = a + "=" + args[i]
+		}
 		if a == "--help" || a == "-h" {
 			fmt.Println("usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
 			return cfg, 0, false
@@ -95,19 +108,63 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 }
 
 // listenAndServe announces the dashboard, warns on non-loopback binds and
-// blocks serving. serveFn is http.ListenAndServe in production; tests
-// substitute a fake so both the ready and the failure paths stay covered.
-func listenAndServe(cfg serveConfig, handler http.Handler, serveFn func(addr string, h http.Handler) error) int {
+// blocks serving. H4: the server carries timeouts (slowloris-grade exposure
+// on non-loopback binds) and production shuts down gracefully on SIGINT/SIGTERM.
+// serveFn receives the configured *http.Server; tests substitute a fake so
+// the ready and the failure paths stay covered without binding any port.
+func listenAndServe(cfg serveConfig, handler http.Handler, serveFn func(srv *http.Server) error) int {
 	addr := net.JoinHostPort(cfg.bind, strconv.Itoa(cfg.port))
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 30 * time.Second}
 	fmt.Printf("regulus dashboard: http://localhost:%d/ (bind %s, read-only)\n", cfg.port, addr)
 	if warn := nonLoopbackWarning(cfg.bind); warn != "" {
 		fmt.Fprintln(os.Stderr, warn)
 	}
-	if err := serveFn(addr, handler); err != nil {
+	if err := serveFn(srv); err != nil {
 		fmt.Fprintf(os.Stderr, "regulus serve: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// resolveServeRoots maps every served root (the default "." and each
+// --projects entry) through the same auto-detection as the CLI, so
+// serving from a subdirectory shares that checkout's stores instead
+// of splitting .regulus/ per subdirectory. At the top level (or
+// outside git/regulus.json) ResolveRoot returns the input verbatim,
+// preserving today's allowlist exactly. Extracted verbatim from serve.
+func resolveServeRoots(projects []string) []string {
+	roots := make([]string, 0, len(projects))
+	for _, p := range projects {
+		roots = append(roots, cli.ResolveRoot(p))
+	}
+	if len(roots) == 0 {
+		return []string{cli.ResolveRoot(".")}
+	}
+	return roots
+}
+
+// serveRunner builds the blocking serve function handed to listenAndServe.
+// H4: the select carries graceful shutdown on ctx cancel (SIGINT/SIGTERM)
+// and maps http.ErrServerClosed to a clean exit. listen is
+// (*http.Server).ListenAndServe in production; tests substitute a fake so
+// the failure, ready and shutdown paths stay covered without binding any
+// port. Extracted verbatim from serve.
+func serveRunner(ctx context.Context, listen func(srv *http.Server) error) func(srv *http.Server) error {
+	return func(srv *http.Server) error {
+		serveErr := make(chan error, 1)
+		go func() { serveErr <- listen(srv) }()
+		select {
+		case err := <-serveErr:
+			if err == http.ErrServerClosed {
+				return nil
+			}
+			return err
+		case <-ctx.Done():
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return srv.Shutdown(shutCtx)
+		}
+	}
 }
 
 func serve(args []string) int {
@@ -115,23 +172,15 @@ func serve(args []string) int {
 	if !ok {
 		return code
 	}
-	// P4: resolve every served root (the default "." and each
-	// --projects entry) through the same auto-detection as the CLI, so
-	// serving from a subdirectory shares that checkout's stores instead
-	// of splitting .regulus/ per subdirectory. At the top level (or
-	// outside git/regulus.json) ResolveRoot returns the input verbatim,
-	// preserving today's allowlist exactly.
-	roots := make([]string, 0, len(cfg.projects))
-	for _, p := range cfg.projects {
-		roots = append(roots, cli.ResolveRoot(p))
-	}
-	if len(roots) == 0 {
-		roots = []string{cli.ResolveRoot(".")}
-	}
+	// P4: resolve every served root through resolveServeRoots (same
+	// auto-detection as the CLI; see its doc for the allowlist note).
+	roots := resolveServeRoots(cfg.projects)
 	srv := httpapi.New(version, func() doctor.Result {
 		return doctor.Probe(context.Background(), doctor.DefaultRunner())
 	}, gates.ShRunner{}, roots...)
-	return listenAndServe(cfg, srv.Handler(), http.ListenAndServe)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return listenAndServe(cfg, srv.Handler(), serveRunner(ctx, (*http.Server).ListenAndServe))
 }
 
 // nonLoopbackWarning reports a visible exposure warning when serve binds

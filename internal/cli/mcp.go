@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -33,22 +34,21 @@ const mcpProtocolVersion = "2024-11-05"
 // line until EOF.
 func (c CLI) mcpCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus mcp")
+		fmt.Fprintln(c.Stdout, "usage: regulus mcp (max 1MB per request line)")
 		return 0
 	}
 	if len(args) != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus mcp")
 		return 2
 	}
-	c.serveMCP(os.Stdin, os.Stdout)
-	return 0
+	return c.serveMCP(os.Stdin, os.Stdout)
 }
 
 // serveMCP runs the request loop: one JSON object per line, one response
 // line per request. Notifications (no id) and the initialized
 // notification get no reply; malformed lines get -32700 and serving
 // continues.
-func (c CLI) serveMCP(in io.Reader, out io.Writer) {
+func (c CLI) serveMCP(in io.Reader, out io.Writer) int {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -60,6 +60,14 @@ func (c CLI) serveMCP(in io.Reader, out io.Writer) {
 			out.Write(append(resp, '\n'))
 		}
 	}
+	if err := sc.Err(); err != nil {
+		// H1: an over-long line (>1MB) ends the scan: fail loudly with
+		// exit 1 plus a stderr diagnostic, never a silent exit-0 death
+		// that looks like a clean shutdown to the client.
+		fmt.Fprintf(c.Stderr, "mcp: input line too long, closing: %v (limit 1MB per request line)\n", err)
+		return 1
+	}
+	return 0
 }
 
 // mcpRequest is one inbound JSON-RPC message. ID stays raw so responses
@@ -220,42 +228,51 @@ func mcpProp(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
 
-// mcpTools is the full registry in tools/list order.
-func mcpTools() []mcpTool {
-	str := func(key, desc string) (string, map[string]any) {
-		return key, mcpProp("string", desc)
+// mcpStrKey builds one required string schema property: the key plus
+// its {type, description} object.
+func mcpStrKey(key, desc string) (string, map[string]any) {
+	return key, mcpProp("string", desc)
+}
+
+// mcpOptKey builds one optional string schema property: the key plus
+// its {type, description} object with the " (optional)" suffix.
+func mcpOptKey(key, desc string) (string, map[string]any) {
+	return key, mcpProp("string", desc+" (optional)")
+}
+
+// mcpProps builds a schema properties object from alternating
+// key/value pairs.
+func mcpProps(pairs ...any) map[string]any {
+	m := map[string]any{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m[pairs[i].(string)] = pairs[i+1]
 	}
-	opt := func(key, desc string) (string, map[string]any) {
-		return key, mcpProp("string", desc+" (optional)")
-	}
-	props := func(pairs ...any) map[string]any {
-		m := map[string]any{}
-		for i := 0; i+1 < len(pairs); i += 2 {
-			m[pairs[i].(string)] = pairs[i+1]
-		}
-		return m
-	}
-	textKey, textProp := str("text", "the session note text")
-	typeKey, typeProp := str("type", "observation type: decision|discovery|preference|session-note")
-	titleKey, titleProp := str("title", "short, searchable title")
-	contentKey, contentProp := str("content", "the observation body")
-	topicKey, topicProp := str("topic_key", "group for evolving topics (revision chain)")
-	sessionKey, sessionProp := str("session", "the session id")
-	taskKey, taskProp := str("task", "the task id")
-	fileKey, fileProp := str("file", "the feature document path")
-	tkOptKey, tkOptProp := opt("topic_key", "group for evolving topics")
-	domainOptKey, domainOptProp := opt("domain", "domain bucket")
-	taskOptKey, taskOptProp := opt("task", "task id for provenance")
-	pathsOptKey, pathsOptProp := opt("paths", "affected paths, comma-separated")
-	receiptsOptKey, receiptsOptProp := opt("receipts", "receipt paths for provenance, comma-separated")
-	_, domainProp := opt("domain", "bucket: domain")
-	_, typeOptProp := opt("type", "bucket: observation type")
-	_, dimOptProp := opt("dimension", "bucket: lesson dimension (inv | dom)")
-	_, pathOptProp := opt("path", "bucket: provenance path (exact match)")
+	return m
+}
+
+// mcpMemoryTools is the memory/almanac group of the registry, in
+// tools/list order.
+func mcpMemoryTools() []mcpTool {
+	textKey, textProp := mcpStrKey("text", "the session note text")
+	typeKey, typeProp := mcpStrKey("type", "observation type: decision|discovery|preference|session-note")
+	titleKey, titleProp := mcpStrKey("title", "short, searchable title")
+	contentKey, contentProp := mcpStrKey("content", "the observation body")
+	topicKey, topicProp := mcpStrKey("topic_key", "group for evolving topics (revision chain)")
+	tkOptKey, tkOptProp := mcpOptKey("topic_key", "group for evolving topics")
+	domainOptKey, domainOptProp := mcpOptKey("domain", "domain bucket")
+	taskOptKey, taskOptProp := mcpOptKey("task", "task id for provenance")
+	pathsOptKey, pathsOptProp := mcpOptKey("paths", "affected paths, comma-separated")
+	receiptsOptKey, receiptsOptProp := mcpOptKey("receipts", "receipt paths for provenance, comma-separated")
+	sessionOptKey, sessionOptProp := mcpOptKey("session", "session id for trace file-hit domain detection (enables admitted lessons)")
+	chartsOptKey, chartsOptProp := mcpOptKey("charts", "comma-separated chart refs for Domain: pins (enables admitted lessons)")
+	_, domainProp := mcpOptKey("domain", "bucket: domain")
+	_, typeOptProp := mcpOptKey("type", "bucket: observation type")
+	_, dimOptProp := mcpOptKey("dimension", "bucket: lesson dimension (inv | dom)")
+	_, pathOptProp := mcpOptKey("path", "bucket: provenance path (exact match)")
 	return []mcpTool{
 		{
 			name: "memory_note", desc: "Append a session note to the Almanac",
-			props: props(textKey, textProp), required: []string{"text"},
+			props: mcpProps(textKey, textProp), required: []string{"text"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				text := strings.TrimSpace(mcpStr(args, "text"))
 				if text == "" {
@@ -273,7 +290,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "memory_save", desc: "Save one Almanac observation (lessons enter through reflect and are refused here)",
-			props: props(typeKey, typeProp, titleKey, titleProp, contentKey, contentProp,
+			props: mcpProps(typeKey, typeProp, titleKey, titleProp, contentKey, contentProp,
 				tkOptKey, tkOptProp, domainOptKey, domainOptProp, taskOptKey, taskOptProp,
 				pathsOptKey, pathsOptProp, receiptsOptKey, receiptsOptProp),
 			required: []string{"type", "title", "content"},
@@ -299,7 +316,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "memory_search", desc: "Search the Almanac (hybrid semantic ranking with lexical fallback)",
-			props: props(
+			props: mcpProps(
 				"terms", map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "terms to match (optional)"},
 				"topic_key", mcpProp("string", "bucket: topic key (optional)"),
 				"domain", domainProp, "type", typeOptProp, "dimension", dimOptProp, "path", pathOptProp,
@@ -339,14 +356,38 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "memory_context", desc: "Render the deterministic Almanac resume block (DATA, not instructions)",
-			props: map[string]any{}, required: []string{},
+			props: mcpProps(sessionOptKey, sessionOptProp, chartsOptKey, chartsOptProp), required: []string{},
 			run: func(c CLI, args map[string]any) (string, string, int) {
-				return c.mcpExec(func(sub CLI) int { return sub.memoryContextCmd(nil) })
+				// F3: manual context with session/charts resolves admitted
+				// lessons in-process (--resolve-domain --session S
+				// [--chart C...] --lessons 3); bare calls stay
+				// byte-identical plain `memory context`.
+				session := strings.TrimSpace(mcpStr(args, "session"))
+				var charts []string
+				if v, ok := mcpStrList(args, "charts"); ok {
+					for _, part := range strings.Split(v, ",") {
+						if p := strings.TrimSpace(part); p != "" {
+							charts = append(charts, p)
+						}
+					}
+				}
+				if session == "" && len(charts) == 0 {
+					return c.mcpExec(func(sub CLI) int { return sub.memoryContextCmd(nil) })
+				}
+				cliArgs := []string{"--resolve-domain"}
+				if session != "" {
+					cliArgs = append(cliArgs, "--session", session)
+				}
+				for _, ch := range charts {
+					cliArgs = append(cliArgs, "--chart", ch)
+				}
+				cliArgs = append(cliArgs, "--lessons", "3")
+				return c.mcpExec(func(sub CLI) int { return sub.memoryContextCmd(cliArgs) })
 			},
 		},
 		{
 			name: "memory_history", desc: "List the revision chain of one topic key, oldest first",
-			props: props(topicKey, topicProp), required: []string{"topic_key"},
+			props: mcpProps(topicKey, topicProp), required: []string{"topic_key"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				k := strings.TrimSpace(mcpStr(args, "topic_key"))
 				if k == "" {
@@ -355,20 +396,49 @@ func mcpTools() []mcpTool {
 				return c.mcpExec(func(sub CLI) int { return sub.memoryHistoryCmd([]string{"--topic-key", k}) })
 			},
 		},
+	}
+}
+
+// mcpGateTools is the gate/probe group of the registry, in tools/list
+// order.
+func mcpGateTools() []mcpTool {
+	taskKey, taskProp := mcpStrKey("task", "the task id")
+	fileKey, fileProp := mcpStrKey("file", "the feature document path")
+	return []mcpTool{
 		{
 			name: "gate_run", desc: "Run the layered gauntlet for one task and write receipts",
-			props: props(taskKey, taskProp), required: []string{"task"},
+			props: mcpProps(taskKey, taskProp,
+				"quick", map[string]any{"type": "boolean", "description": "lean daily-loop set only: typecheck, lint, build, unit-tests, spec, gofmt (optional, mutually exclusive with profile)"},
+				"profile", map[string]any{"type": "string", "description": "run required gates plus this profile's members (optional, mutually exclusive with quick)"},
+				"dry_run", map[string]any{"type": "boolean", "description": "print the execution plan without running gates (optional)"},
+			), required: []string{"task"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				task := strings.TrimSpace(mcpStr(args, "task"))
 				if task == "" {
 					return "", "gate run: missing required param \"task\"", 2
 				}
-				return c.mcpExec(func(sub CLI) int { return sub.gateCmd([]string{"run", task}) })
+				// F4: optional lean/profile/dry-run passthrough; flags
+				// precede the positional task (Go flag parsing stops at
+				// the first positional). quick+profile stay mutually
+				// exclusive in the CLI (exit 2 surfaces as -32602);
+				// bare calls keep ["run", task] byte-identical.
+				cliArgs := []string{"run"}
+				if quick, ok := mcpBool(args, "quick"); ok && quick {
+					cliArgs = append(cliArgs, "--quick")
+				}
+				if profile := strings.TrimSpace(mcpStr(args, "profile")); profile != "" {
+					cliArgs = append(cliArgs, "--profile", profile)
+				}
+				if dryRun, ok := mcpBool(args, "dry_run"); ok && dryRun {
+					cliArgs = append(cliArgs, "--dry-run")
+				}
+				cliArgs = append(cliArgs, task)
+				return c.mcpExec(func(sub CLI) int { return sub.gateCmd(cliArgs) })
 			},
 		},
 		{
 			name: "spec_check", desc: "Validate the acceptance-criteria contract of a feature document",
-			props: props(fileKey, fileProp), required: []string{"file"},
+			props: mcpProps(fileKey, fileProp), required: []string{"file"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				f := strings.TrimSpace(mcpStr(args, "file"))
 				if f == "" {
@@ -384,9 +454,16 @@ func mcpTools() []mcpTool {
 				return c.mcpExec(func(sub CLI) int { return sub.doctor() })
 			},
 		},
+	}
+}
+
+// mcpTraceTools is the trace group of the registry, in tools/list order.
+func mcpTraceTools() []mcpTool {
+	sessionKey, sessionProp := mcpStrKey("session", "the session id")
+	return []mcpTool{
 		{
 			name: "trace_show", desc: "Print the session fingerprint (sequence, tool, status)",
-			props: props(sessionKey, sessionProp), required: []string{"session"},
+			props: mcpProps(sessionKey, sessionProp), required: []string{"session"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				s := strings.TrimSpace(mcpStr(args, "session"))
 				if s == "" {
@@ -404,7 +481,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "trace_files", desc: "Print the distinct touched paths of a session in call order",
-			props: props(sessionKey, sessionProp), required: []string{"session"},
+			props: mcpProps(sessionKey, sessionProp), required: []string{"session"},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				s := strings.TrimSpace(mcpStr(args, "session"))
 				if s == "" {
@@ -413,6 +490,14 @@ func mcpTools() []mcpTool {
 				return c.mcpExec(func(sub CLI) int { return sub.traceFilesCmd([]string{"--session", s}) })
 			},
 		},
+	}
+}
+
+// mcpEvolveTools is the audit/evolution pair of the registry, in
+// tools/list order.
+func mcpEvolveTools() []mcpTool {
+	domainOptKey, domainOptProp := mcpOptKey("domain", "domain bucket")
+	return []mcpTool{
 		{
 			name: "audit", desc: "Repo-wide ranked audit: entry points first, then what to fix first",
 			props: map[string]any{
@@ -434,7 +519,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "evolve_report", desc: "Lesson economics: proxy price plus evidence state per lesson",
-			props: props(domainOptKey, domainOptProp), required: []string{},
+			props: mcpProps(domainOptKey, domainOptProp), required: []string{},
 			run: func(c CLI, args map[string]any) (string, string, int) {
 				d := strings.TrimSpace(mcpStr(args, "domain"))
 				argv := []string{}
@@ -445,6 +530,73 @@ func mcpTools() []mcpTool {
 			},
 		},
 	}
+}
+
+// mcpMiscTools is the tail of the registry, in tools/list order.
+func mcpMiscTools() []mcpTool {
+	return []mcpTool{
+		{
+			name: "skills_list", desc: "List registered skills with one-line triggers",
+			props: map[string]any{}, required: []string{},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				// H7: a pure registry read — no arguments, no writes.
+				return c.mcpExec(func(sub CLI) int { return sub.skillsCmd([]string{"list"}) })
+			},
+		},
+		{
+			name: "evolve_tick", desc: "Periodic proposer: mine recent sessions into pending candidates",
+			props: mcpProps(
+				"every", map[string]any{"type": "integer", "description": "fire once this many traced sessions accumulate (default 3) (optional)"},
+				"dry_run", map[string]any{"type": "boolean", "description": "print findings without proposing (default true) (optional)"},
+			), required: []string{},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				// H7: dry_run defaults true like the plugin (dry_run !==
+				// false pushes --dry-run): a bare call prints findings
+				// and writes nothing. every passes through only when
+				// positive; anything else keeps the CLI default.
+				cliArgs := []string{}
+				if n, ok := mcpInt(args, "every"); ok && n > 0 {
+					cliArgs = append(cliArgs, "--every", strconv.Itoa(n))
+				}
+				if dry, ok := mcpBool(args, "dry_run"); !ok || dry {
+					cliArgs = append(cliArgs, "--dry-run")
+				}
+				return c.mcpExec(func(sub CLI) int { return sub.evolveTickCmd(cliArgs) })
+			},
+		},
+		{
+			name: "evolve_propose", desc: "Assemble a task's evidence pack (traces, receipts, INDEX, decisions) plus candidate template (slow on large repos: allow a long budget)",
+			props: mcpProps(
+				"task", mcpProp("string", "task id whose receipts are the evidence"),
+				"domain", mcpProp("string", "lesson domain for the INDEX section"),
+			), required: []string{"task", "domain"},
+			run: func(c CLI, args map[string]any) (string, string, int) {
+				task := strings.TrimSpace(mcpStr(args, "task"))
+				domain := strings.TrimSpace(mcpStr(args, "domain"))
+				if task == "" || domain == "" {
+					return "", "evolve propose: missing required params \"task\", \"domain\"", 2
+				}
+				// H7: pack assembly is read-only (records nothing) but
+				// can exceed the generic spawn budget on large repos —
+				// same shared long budget as gate_run (see the
+				// plugin's evolve_propose and memory_context).
+				return c.mcpExec(func(sub CLI) int {
+					return sub.evolveProposeCmd([]string{"--task", task, "--domain", domain})
+				})
+			},
+		},
+	}
+}
+
+// mcpTools is the full registry in tools/list order: the group
+// constructors concatenated, nothing reordered.
+func mcpTools() []mcpTool {
+	out := append([]mcpTool{}, mcpMemoryTools()...)
+	out = append(out, mcpGateTools()...)
+	out = append(out, mcpTraceTools()...)
+	out = append(out, mcpEvolveTools()...)
+	out = append(out, mcpMiscTools()...)
+	return out
 }
 
 func mcpToolByName(name string) *mcpTool {
@@ -552,6 +704,11 @@ func mcpInt(args map[string]any, key string) (int, bool) {
 	case nil:
 		return 0, false
 	case float64:
+		// H2: lossy truncation refused — a fractional value is a
+		// caller bug, and every other type error here is -32602.
+		if v != math.Trunc(v) {
+			return 0, false
+		}
 		return int(v), true
 	case int:
 		return v, true

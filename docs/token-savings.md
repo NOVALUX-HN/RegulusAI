@@ -1,5 +1,7 @@
 # Ahorro de tokens por mecanismo — medición antes/después (T4)
 
+> **Nota (H10):** documento point-in-time (medición 2026-11-01) — se conserva como evidencia histórica; el comportamiento actual vive en el código, sus tests y `docs/memory.md`.
+
 Spec T4 (verbatim de `charts/macizo-tokens.md:41-45`, no parafraseado):
 
 - Given F1 (contabilidad) + T1–T3 activos

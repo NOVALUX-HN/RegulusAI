@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"sync"
 	"time"
 
 	"regulus-ai/internal/almanac"
@@ -27,7 +28,9 @@ func (c CLI) doctor() int {
 		return 0
 	}
 	fmt.Fprintf(c.Stderr, "doctor: %s\n", res.Reason)
-	fmt.Fprintln(c.Stdout, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
+	// F9: the caveat rides stderr on failure so stdout stays clean
+	// for script parsers (and MCP stops leading failure payloads with it).
+	fmt.Fprintln(c.Stderr, "plugin: cannot be verified outside OpenCode — open this repo in OpenCode to load .opencode/plugins/regulus.ts")
 	return 1
 }
 
@@ -110,7 +113,7 @@ func (c CLI) statusCmd(args []string) int {
 		n  int
 	}
 	byTask := map[string]*taskTime{}
-	for _, p := range found {
+	for _, p := range capStatusTimeFiles(found) {
 		rec, err := receipts.ReadFile(p)
 		if err != nil {
 			continue
@@ -140,12 +143,83 @@ func (c CLI) statusCmd(args []string) int {
 	return 0
 }
 
+// statusTimeReceiptCap bounds how many receipt files the `time:`
+// aggregation reads: the newest 200 by mtime. The dashboard reuses
+// status per poll, so a full ReadFile per receipt on every poll does
+// not scale; small stores (at or under the cap) still scan everything
+// and stay byte-identical.
+const statusTimeReceiptCap = 200
+
+// capStatusTimeFiles limits the time aggregation to the newest
+// statusTimeReceiptCap files by mtime. At or under the cap it returns
+// found unchanged: no extra stats, byte-identical full scan.
+func capStatusTimeFiles(found []string) []string {
+	if len(found) <= statusTimeReceiptCap {
+		return found
+	}
+	type aged struct {
+		path string
+		mod  time.Time
+	}
+	entries := make([]aged, 0, len(found))
+	for _, p := range found {
+		fi, err := os.Stat(p)
+		if err != nil {
+			continue // unreadable files are skipped by the aggregation anyway
+		}
+		entries = append(entries, aged{path: p, mod: fi.ModTime()})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].mod.Equal(entries[j].mod) {
+			return entries[i].path < entries[j].path
+		}
+		return entries[i].mod.After(entries[j].mod)
+	})
+	if len(entries) > statusTimeReceiptCap {
+		entries = entries[:statusTimeReceiptCap]
+	}
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.path
+	}
+	return out
+}
+
 // gremlinsAvailableForStatus reports whether the mutation gate's binary
 // resolves: PATH first, then the default Go bin dir of this OS
 // ($HOME/go/bin on unix, %USERPROFILE%\go\bin on Windows). Pure Go, no
 // shell: `command -v` does not exist in pwsh/cmd, so a shell probe
 // always fails on Windows without sh (false "NOT found").
+//
+// The result is memoized per process: status runs on every dashboard
+// poll, so re-running the exec.LookPath+Stat probe per call is wasted
+// work — the binary is not going to appear or vanish mid-process.
 func gremlinsAvailableForStatus() bool {
+	gremlinsStatusMu.Lock()
+	defer gremlinsStatusMu.Unlock()
+	if gremlinsStatusProbed {
+		return gremlinsStatusResult
+	}
+	gremlinsStatusResult = probeGremlinsAvailableForStatus()
+	gremlinsStatusProbed = true
+	return gremlinsStatusResult
+}
+
+var (
+	gremlinsStatusMu     sync.Mutex
+	gremlinsStatusProbed bool
+	gremlinsStatusResult bool
+)
+
+// resetGremlinsStatusCache drops the memoized probe result (tests only:
+// each test case re-probes with its own PATH/HOME).
+func resetGremlinsStatusCache() {
+	gremlinsStatusMu.Lock()
+	defer gremlinsStatusMu.Unlock()
+	gremlinsStatusProbed = false
+}
+
+func probeGremlinsAvailableForStatus() bool {
 	if _, err := exec.LookPath("gremlins"); err == nil {
 		return true
 	}

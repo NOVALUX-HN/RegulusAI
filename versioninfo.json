@@ -22,14 +22,14 @@
 		"Comments": "Regulus AI core CLI",
 		"CompanyName": "NOVALUX-HN",
 		"FileDescription": "Regulus AI core CLI",
-		"FileVersion": "0.12.0.0",
+		"FileVersion": "0.13.0.0",
 		"InternalName": "regulus",
 		"LegalCopyright": "© NOVALUX-HN. All rights reserved.",
 		"LegalTrademarks": "",
 		"OriginalFilename": "regulus.exe",
 		"PrivateBuild": "",
 		"ProductName": "Regulus AI",
-		"ProductVersion": "0.12.0.0",
+		"ProductVersion": "0.13.0.0",
 		"SpecialBuild": ""
 	},
 	"VarFileInfo": {

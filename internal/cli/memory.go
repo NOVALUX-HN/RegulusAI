@@ -785,34 +785,102 @@ func readDomainLine(path string) string {
 	return ""
 }
 
-// resolveDomainInProcess detects the lesson domain without spawning:
-// chart pins first, then the lone chart, then single library domain,
-// then trace file hits, else unfiltered. Returns domain + reason.
-func resolveDomainInProcess(dir, session string, charts []string) (string, string) {
+// resolveChartPin returns the first chart Domain: pin (elite-hardening
+// loadLiveCache split pattern: one named step per resolution stage, so
+// the orchestrator below stays flat and each step keeps its own CRAP
+// small). Callers keep passing the raw ref through in the reason.
+func resolveChartPin(dir string, charts []string) (string, string, bool) {
 	for _, ref := range charts {
 		p := ref
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(dir, ref)
 		}
 		if d := readDomainLine(p); d != "" {
-			return d, "chart:" + ref
+			return d, "chart:" + ref, true
 		}
+	}
+	return "", "", false
+}
+
+// resolveLoneChart falls back to the single charts/*.md entry when the
+// caller passed no chart refs. More (or fewer) than one candidate, a
+// missing charts dir, or no Domain: line all miss — the caller moves on.
+func resolveLoneChart(dir string) (string, string, bool) {
+	entries, err := os.ReadDir(filepath.Join(dir, "charts"))
+	if err != nil {
+		return "", "", false
+	}
+	var mds []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			mds = append(mds, e.Name())
+		}
+	}
+	if len(mds) != 1 {
+		return "", "", false
+	}
+	if d := readDomainLine(filepath.Join(dir, "charts", mds[0])); d != "" {
+		return d, "lone-chart:" + mds[0], true
+	}
+	return "", "", false
+}
+
+// traceSessionFiles collects up to 3 unique trace files for a session,
+// newest-entry order. A trace miss (unknown session, unreadable log)
+// yields nothing — the file-hit stage then misses and resolution falls
+// through to unfiltered-multi, exactly as the inline loop did.
+func traceSessionFiles(dir, session string) []string {
+	entries, err := trace.List(dir, session)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var files []string
+	for _, e := range entries {
+		for _, f := range e.Files {
+			if !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+				if len(files) >= 3 {
+					break
+				}
+			}
+		}
+		if len(files) >= 3 {
+			break
+		}
+	}
+	return files
+}
+
+// resolveTraceFileHit matches trace files against per-domain lessons:
+// the first file with a lesson in a library domain wins. Pure search
+// loop — file collection lives in traceSessionFiles.
+func resolveTraceFileHit(dir string, files, domains []string) (string, string, bool) {
+	for _, f := range files {
+		for _, d := range domains {
+			hits, err := almanac.Search(dir, almanac.Query{Domain: d, Path: f, Type: almanac.TypeLesson, Limit: 1})
+			if err == nil && len(hits) > 0 {
+				return d, "file-hit:" + f, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// resolveDomainInProcess detects the lesson domain without spawning:
+// chart pins first, then the lone chart, then single library domain,
+// then trace file hits, else unfiltered. Returns domain + reason.
+// The stages above run in that fixed order with byte-identical
+// outcomes — this body only sequences them.
+func resolveDomainInProcess(dir, session string, charts []string) (string, string) {
+	if d, reason, ok := resolveChartPin(dir, charts); ok {
+		return d, reason
 	}
 	// lone chart fallback when caller passed none
 	if len(charts) == 0 {
-		entries, err := os.ReadDir(filepath.Join(dir, "charts"))
-		if err == nil {
-			var mds []string
-			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-					mds = append(mds, e.Name())
-				}
-			}
-			if len(mds) == 1 {
-				if d := readDomainLine(filepath.Join(dir, "charts", mds[0])); d != "" {
-					return d, "lone-chart:" + mds[0]
-				}
-			}
+		if d, reason, ok := resolveLoneChart(dir); ok {
+			return d, reason
 		}
 	}
 	domains, err := library.Domains(dir)
@@ -823,32 +891,8 @@ func resolveDomainInProcess(dir, session string, charts []string) (string, strin
 		return domains[0], "single-domain"
 	}
 	if session != "" {
-		entries, err := trace.List(dir, session)
-		if err == nil {
-			seen := map[string]bool{}
-			var files []string
-			for _, e := range entries {
-				for _, f := range e.Files {
-					if !seen[f] {
-						seen[f] = true
-						files = append(files, f)
-						if len(files) >= 3 {
-							break
-						}
-					}
-				}
-				if len(files) >= 3 {
-					break
-				}
-			}
-			for _, f := range files {
-				for _, d := range domains {
-					hits, err := almanac.Search(dir, almanac.Query{Domain: d, Path: f, Type: almanac.TypeLesson, Limit: 1})
-					if err == nil && len(hits) > 0 {
-						return d, "file-hit:" + f
-					}
-				}
-			}
+		if d, reason, ok := resolveTraceFileHit(dir, traceSessionFiles(dir, session), domains); ok {
+			return d, reason
 		}
 	}
 	return "", "unfiltered-multi"
@@ -888,7 +932,7 @@ func (c CLI) memoryContextCmd(args []string) int {
 	})
 	if !*resolve && (*session != "" || len(charts) > 0 || lessonsFlagSet) {
 		fmt.Fprintln(c.Stderr, "memory context: --session/--chart/--lessons need --resolve-domain")
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
 	sys, err := almanac.ParseSystem(*system)
@@ -897,10 +941,14 @@ func (c CLI) memoryContextCmd(args []string) int {
 		return 2
 	}
 	if fs.NArg() != 0 || *limit < 0 || *budget < 0 || *lessonsN < 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--no-staleness] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
 		return 2
 	}
-	_ = *noStaleness // context performs no git probes today; the flag keeps the skip symmetric with search and future-proofs staleness annotations.
+	if *noStaleness {
+		fmt.Fprintln(c.Stderr, "memory context: --no-staleness is a search-only flag (context performs no git probes)")
+		fmt.Fprintln(c.Stderr, "usage: regulus memory context [--limit N] [--task T] [--path P] [--system S] [--budget N] [--resolve-domain [--session S] [--chart C] [--lessons N]]")
+		return 2
+	}
 	scope := almanac.ContextScope{Task: *task, Path: *path, System: sys, Budget: *budget}
 	ctx, err := almanac.ContextScoped(c.dir(), time.Now().UTC(), *limit, scope)
 	if err != nil {

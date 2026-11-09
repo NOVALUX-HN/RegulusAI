@@ -179,12 +179,13 @@ func TestMemorySearchStalenessProbesCached(t *testing.T) {
 	if got := countRevList(r2); got != 0 {
 		t.Fatalf("--no-staleness = %d rev-list probes, want 0", got)
 	}
-	// --no-staleness on context: accepted, zero probes.
+	// F7: --no-staleness on context refuses (R3-001 doctrine) — context
+	// performs no git probes, so accepting the skip would pretend.
 	r3 := &fakeGateRunner{}
 	c3, _, _ := newCLI(nil)
 	c3.Runner = r3
-	if code := c3.Run([]string{"memory", "context", "--no-staleness"}); code != 0 {
-		t.Fatalf("context --no-staleness exit = %d, want 0", code)
+	if code := c3.Run([]string{"memory", "context", "--no-staleness"}); code != 2 {
+		t.Fatalf("context --no-staleness exit = %d, want 2 (refused: search-only flag)", code)
 	}
 	if got := countRevList(r3); got != 0 {
 		t.Fatalf("context --no-staleness = %d rev-list probes, want 0", got)

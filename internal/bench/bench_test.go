@@ -1,8 +1,10 @@
 package bench
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -451,4 +453,165 @@ func TestB7HonestLocalProxy(t *testing.T) {
 			t.Errorf("B7 detail must contain %q, got %q", want, detail)
 		}
 	}
+}
+
+// H8 (S2,S3): the checked-in shape mirrors the bench's twelve-gate
+// selection surface — mirror and shape agree on every name, layer,
+// required flag and profile membership, and the shape's quick_lean is
+// exactly the pinned six. A rename in regulus.json (regenerated into
+// the shape) with a stale mirror fails here until both agree again.
+func TestGauntletShapeMatchesMirror(t *testing.T) {
+	shape := readGauntletShape(t)
+	if err := assertGauntletShapeConformance(realGateConfig(), shape); err != nil {
+		t.Fatalf("shape/mirror conformance: %v", err)
+	}
+	if !equalStrings(shape.QuickLean, quickLeanExpected) {
+		t.Fatalf("shape quick_lean=%v, want %v", shape.QuickLean, quickLeanExpected)
+	}
+}
+
+// H8 (S2,S3): B5 rides the real twelve-gate mirror — the lean preset is
+// exactly the six T5 quick names, never the old 2-gate toy.
+func TestB5LeanPreset(t *testing.T) {
+	var b5 *Task
+	tasks := Suite()
+	for i := range tasks {
+		if tasks[i].ID == "B5" {
+			b5 = &tasks[i]
+		}
+	}
+	if b5 == nil {
+		t.Fatal("B5 task absent from the suite")
+	}
+	detail, err := b5.Check()
+	if err != nil {
+		t.Fatalf("B5 check failed: %v", err)
+	}
+	for _, want := range []string{"full=12", "lean=6", "unknown refused"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("B5 detail must contain %q, got %q", want, detail)
+		}
+	}
+}
+
+// H8 (S2,S3): RED — a renamed gate breaks conformance. A rename in
+// regulus.json (regenerated into the shape) with a stale bench mirror
+// must fail the suite instead of staying green.
+func TestGauntletShapeRejectsRename(t *testing.T) {
+	shape := readGauntletShape(t)
+	shape.Gates[1].Name = "vet"
+	if err := assertGauntletShapeConformance(realGateConfig(), shape); err == nil {
+		t.Fatal("renamed gate must fail shape conformance")
+	} else if !strings.Contains(err.Error(), "vet") {
+		t.Fatalf("conformance error must name the renamed gate, got: %v", err)
+	}
+	if err := assertLeanSelection(shapeFixtureConfig(shape)); err == nil {
+		t.Fatal("renamed gate must fail the lean preset (name-based selection drops it)")
+	}
+}
+
+// H8 (S2,S3): RED — mutation leaking into --quick breaks the preset.
+// Appending a full-only gate to the shape's quick_lean must fail B5's
+// pin even though profile selection still resolves.
+func TestGauntletShapeRejectsMutationInQuick(t *testing.T) {
+	shape := readGauntletShape(t)
+	shape.QuickLean = append(append([]string(nil), shape.QuickLean...), "mutation")
+	if equalStrings(shape.QuickLean, quickLeanExpected) {
+		t.Fatal("mutation in quick_lean must break the pinned six")
+	}
+}
+
+// H8 (S2,S3): the checked-in shape matches the docs/gauntlet.md gate
+// roster — names, layers, required flags and profile memberships. Any
+// of the three drifting (regulus.json via regen, shape, doc table)
+// fails here until all three agree again.
+func TestGauntletShapeMatchesDocTable(t *testing.T) {
+	shape := readGauntletShape(t)
+	raw, err := os.ReadFile("../../docs/gauntlet.md")
+	if err != nil {
+		t.Fatalf("read docs/gauntlet.md: %v", err)
+	}
+	rows, err := parseDocGateTable(string(raw))
+	if err != nil {
+		t.Fatalf("parseDocGateTable: %v", err)
+	}
+	if len(rows) != len(shape.Gates) {
+		t.Fatalf("doc table has %d gates, shape has %d", len(rows), len(shape.Gates))
+	}
+	for i, want := range shape.Gates {
+		got := rows[i]
+		if got.Name != want.Name || got.Layer != want.Layer || got.Required != want.Required || !equalStrings(got.Profiles, want.Profiles) {
+			t.Fatalf("row %d: doc %+v, shape %+v", i, got, want)
+		}
+	}
+}
+
+// readGauntletShape loads the checked-in bench/gauntlet-shape.json.
+// Tests run with cwd=internal/bench, so this is a fixed relative path
+// (never a repo-root lookup by the bench checks themselves).
+func readGauntletShape(t *testing.T) gauntletShape {
+	t.Helper()
+	raw, err := os.ReadFile("../../bench/gauntlet-shape.json")
+	if err != nil {
+		t.Fatalf("read bench/gauntlet-shape.json: %v", err)
+	}
+	shape, err := parseGauntletShape(raw)
+	if err != nil {
+		t.Fatalf("parseGauntletShape: %v", err)
+	}
+	return shape
+}
+
+// parseDocGateTable extracts the pinned gate roster from
+// docs/gauntlet.md: rows under the "| gate |" header, "—" meaning no
+// profiles.
+func parseDocGateTable(doc string) ([]gauntletShapeGate, error) {
+	lines := strings.Split(doc, "\n")
+	var rows []gauntletShapeGate
+	inTable := false
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "| gate |") {
+			inTable = true
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		if !strings.HasPrefix(ln, "|") {
+			break
+		}
+		cells := strings.Split(ln, "|")
+		if len(cells) < 5 {
+			return nil, fmt.Errorf("malformed roster row: %q", ln)
+		}
+		for i := range cells {
+			cells[i] = strings.TrimSpace(cells[i])
+		}
+		if strings.Trim(cells[1], "-") == "" || cells[1] == "gate" {
+			continue // separator or repeated header
+		}
+		layer, err := strconv.Atoi(cells[2])
+		if err != nil {
+			return nil, fmt.Errorf("bad layer in roster row %q: %v", ln, err)
+		}
+		var required bool
+		switch cells[3] {
+		case "true":
+			required = true
+		case "false":
+		default:
+			return nil, fmt.Errorf("bad required in roster row %q", ln)
+		}
+		var profiles []string
+		if prof := cells[4]; prof != "" && prof != "—" && prof != "-" {
+			for _, p := range strings.Split(prof, ",") {
+				profiles = append(profiles, strings.TrimSpace(p))
+			}
+		}
+		rows = append(rows, gauntletShapeGate{Name: cells[1], Layer: layer, Required: required, Profiles: profiles})
+	}
+	if !inTable {
+		return nil, fmt.Errorf("no | gate | roster found")
+	}
+	return rows, nil
 }
