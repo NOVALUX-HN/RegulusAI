@@ -84,12 +84,12 @@ func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := observability.Summarize(root, "")
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("metrics: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("metrics: "+observability.RedactText(err.Error())))
 		return
 	}
 	used, err := budget.TodayEvolutionCount(root, time.Now().UTC())
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("metrics budget: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("metrics budget: "+observability.RedactText(err.Error())))
 		return
 	}
 	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(root)}, "", 0)
@@ -107,7 +107,7 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	all, err := almanac.All(root)
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("almanac: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("almanac: "+observability.RedactText(err.Error())))
 		return
 	}
 	byType := map[string]int{}

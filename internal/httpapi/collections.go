@@ -237,7 +237,7 @@ func (s Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		Type:  typ,
 	})
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("observations: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("observations: "+observability.RedactText(err.Error())))
 		return
 	}
 	if task != "" {
@@ -285,7 +285,7 @@ func (s Server) handleLessons(w http.ResponseWriter, r *http.Request) {
 	}
 	all, storeErr := loadLessons(root, domain, status)
 	if storeErr != "" {
-		writeEnvelope(w, http.StatusOK, Internal("lessons: "+observability.RedactText(storeErr)))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("lessons: "+observability.RedactText(storeErr)))
 		return
 	}
 	all = filterLessons(all, task, needles)
@@ -421,7 +421,7 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	if session == "" {
 		sessions, err := trace.Sessions(root)
 		if err != nil {
-			writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
+			writeEnvelope(w, http.StatusInternalServerError, Internal("traces: "+observability.RedactText(err.Error())))
 			return
 		}
 		lo, hi := paginate(len(sessions), limit, offset)
@@ -429,7 +429,7 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		for _, name := range sessions[lo:hi] {
 			entries, err := trace.List(root, name)
 			if err != nil {
-				writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
+				writeEnvelope(w, http.StatusInternalServerError, Internal("traces: "+observability.RedactText(err.Error())))
 				return
 			}
 			n := 0
@@ -455,7 +455,7 @@ func (s Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := trace.List(root, session)
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("traces: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("traces: "+observability.RedactText(err.Error())))
 		return
 	}
 	if task != "" {
@@ -498,7 +498,7 @@ func (s Server) handleBudget(w http.ResponseWriter, r *http.Request) {
 	task := strings.TrimSpace(r.URL.Query().Get("task"))
 	entries, err := budget.Show(root)
 	if err != nil {
-		writeEnvelope(w, http.StatusOK, Internal("budget: "+observability.RedactText(err.Error())))
+		writeEnvelope(w, http.StatusInternalServerError, Internal("budget: "+observability.RedactText(err.Error())))
 		return
 	}
 	if task != "" {

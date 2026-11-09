@@ -192,7 +192,7 @@ func TestAlmanacSummaryStoreError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	// observations.jsonl as a directory breaks almanac.All: the
-	// handler reports the store error inside a 200 envelope.
+	// handler reports the store error as HTTP 500 (H3: monitors see failure).
 	target := almanac.File(dir)
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatal(err)
@@ -204,8 +204,8 @@ func TestAlmanacSummaryStoreError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/almanac/summary", nil)
 	rec := httptest.NewRecorder()
 	srv.handleAlmanacSummary(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET = %d, want 200", rec.Code)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("GET = %d, want 500", rec.Code)
 	}
 	var env map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {

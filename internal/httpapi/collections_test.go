@@ -6,6 +6,8 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -299,6 +301,33 @@ func TestCollectionsMethodNotAllowed(t *testing.T) {
 			if int(errObj["code"].(float64)) != mcp.CodeInvalidRequest {
 				t.Fatalf("%s %s code = %v, want %d", method, path, errObj["code"], mcp.CodeInvalidRequest)
 			}
+		}
+	}
+}
+
+// H3: store I/O failures answer HTTP 500 with ok:false, never 200 -
+// uptime monitors keyed on status must see failure. Envelope shape intact.
+func TestStoreErrorsAreFiveHundred(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".regulus", "almanac", "observations.jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".regulus", "traces", "s1.jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srv := newTestServer()
+	for _, path := range []string{"/v1/observations", "/v1/almanac/summary", "/v1/traces"} {
+		code, body := get(t, srv, path)
+		if code != http.StatusInternalServerError {
+			t.Fatalf("GET %s with broken store = %d, want 500 (%s)", path, code, body)
+		}
+		var env map[string]any
+		if err := json.Unmarshal(body, &env); err != nil {
+			t.Fatalf("response is not JSON: %v (%s)", err, body)
+		}
+		if env["ok"] != false {
+			t.Fatalf("GET %s must keep ok:false envelope (%s)", path, body)
 		}
 	}
 }
