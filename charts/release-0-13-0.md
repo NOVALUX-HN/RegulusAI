@@ -39,3 +39,5 @@ Domain: sextant
 ## Log
 
 - L1: "aplica el C3 con aumento en 0.13.0"
+- L2: merge develop->main 664a232 + tag v0.13.0 pusheados.
+- L3: CI main verde (run 42569292270 success, serves 0.13.0). V1 bump consistente, V2 suite+gauntlet verdes, V3 CI main verde. Release CLOSED.
