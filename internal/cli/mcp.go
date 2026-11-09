@@ -33,22 +33,21 @@ const mcpProtocolVersion = "2024-11-05"
 // line until EOF.
 func (c CLI) mcpCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus mcp")
+		fmt.Fprintln(c.Stdout, "usage: regulus mcp (max 1MB per request line)")
 		return 0
 	}
 	if len(args) != 0 {
 		fmt.Fprintln(c.Stderr, "usage: regulus mcp")
 		return 2
 	}
-	c.serveMCP(os.Stdin, os.Stdout)
-	return 0
+	return c.serveMCP(os.Stdin, os.Stdout)
 }
 
 // serveMCP runs the request loop: one JSON object per line, one response
 // line per request. Notifications (no id) and the initialized
 // notification get no reply; malformed lines get -32700 and serving
 // continues.
-func (c CLI) serveMCP(in io.Reader, out io.Writer) {
+func (c CLI) serveMCP(in io.Reader, out io.Writer) int {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -60,6 +59,14 @@ func (c CLI) serveMCP(in io.Reader, out io.Writer) {
 			out.Write(append(resp, '\n'))
 		}
 	}
+	if err := sc.Err(); err != nil {
+		// H1: an over-long line (>1MB) ends the scan: fail loudly with
+		// exit 1 plus a stderr diagnostic, never a silent exit-0 death
+		// that looks like a clean shutdown to the client.
+		fmt.Fprintf(c.Stderr, "mcp: input line too long, closing: %v (limit 1MB per request line)\n", err)
+		return 1
+	}
+	return 0
 }
 
 // mcpRequest is one inbound JSON-RPC message. ID stays raw so responses

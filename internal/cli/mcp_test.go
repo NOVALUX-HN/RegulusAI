@@ -764,3 +764,17 @@ func TestMCPIntCoercion(t *testing.T) {
 		})
 	}
 }
+
+// H1: an over-long (>1MB) JSON-RPC line ends serving loudly -
+// exit 1 plus a stderr diagnostic, never a silent exit-0 death.
+func TestMCPOversizeLineFailsLoudly(t *testing.T) {
+	c, _, errb := newCLI(nil)
+	big := `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"` + strings.Repeat("x", 2*1024*1024) + `"}}` + string(rune(10))
+	var out bytes.Buffer
+	if code := c.serveMCP(strings.NewReader(big), &out); code != 1 {
+		t.Fatalf("oversize line exit = %d, want 1", code)
+	}
+	if got := errb.String(); !strings.Contains(got, "too long") {
+		t.Fatalf("stderr must name the over-long line, got %q", got)
+	}
+}
