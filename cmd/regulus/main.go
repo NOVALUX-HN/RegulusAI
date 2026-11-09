@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"regulus-ai/internal/cli"
 	"regulus-ai/internal/doctor"
@@ -106,15 +108,18 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 }
 
 // listenAndServe announces the dashboard, warns on non-loopback binds and
-// blocks serving. serveFn is http.ListenAndServe in production; tests
-// substitute a fake so both the ready and the failure paths stay covered.
-func listenAndServe(cfg serveConfig, handler http.Handler, serveFn func(addr string, h http.Handler) error) int {
+// blocks serving. H4: the server carries timeouts (slowloris-grade exposure
+// on non-loopback binds) and production shuts down gracefully on SIGINT/SIGTERM.
+// serveFn receives the configured *http.Server; tests substitute a fake so
+// the ready and the failure paths stay covered without binding any port.
+func listenAndServe(cfg serveConfig, handler http.Handler, serveFn func(srv *http.Server) error) int {
 	addr := net.JoinHostPort(cfg.bind, strconv.Itoa(cfg.port))
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 30 * time.Second}
 	fmt.Printf("regulus dashboard: http://localhost:%d/ (bind %s, read-only)\n", cfg.port, addr)
 	if warn := nonLoopbackWarning(cfg.bind); warn != "" {
 		fmt.Fprintln(os.Stderr, warn)
 	}
-	if err := serveFn(addr, handler); err != nil {
+	if err := serveFn(srv); err != nil {
 		fmt.Fprintf(os.Stderr, "regulus serve: %v\n", err)
 		return 1
 	}
@@ -142,7 +147,23 @@ func serve(args []string) int {
 	srv := httpapi.New(version, func() doctor.Result {
 		return doctor.Probe(context.Background(), doctor.DefaultRunner())
 	}, gates.ShRunner{}, roots...)
-	return listenAndServe(cfg, srv.Handler(), http.ListenAndServe)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return listenAndServe(cfg, srv.Handler(), func(srv *http.Server) error {
+		serveErr := make(chan error, 1)
+		go func() { serveErr <- srv.ListenAndServe() }()
+		select {
+		case err := <-serveErr:
+			if err == http.ErrServerClosed {
+				return nil
+			}
+			return err
+		case <-ctx.Done():
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return srv.Shutdown(shutCtx)
+		}
+	})
 }
 
 // nonLoopbackWarning reports a visible exposure warning when serve binds

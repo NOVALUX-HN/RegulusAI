@@ -102,19 +102,23 @@ func TestParseServeFlags(t *testing.T) {
 // H6: listenAndServe announces and delegates; the fake serveFn proves both
 // the ready path (nil error → 0) and the failure path (error → 1) without
 // binding any port.
+
+// H6: listenAndServe announces and delegates; the fake serveFn proves both
+// the ready path (nil error -> 0) and the failure path (error -> 1) without
+// binding any port.
 func TestListenAndServe(t *testing.T) {
 	h := http.NewServeMux()
 	if got := listenAndServe(serveConfig{port: 17817, bind: "127.0.0.1"}, h,
-		func(addr string, _ http.Handler) error {
-			if addr != "127.0.0.1:17817" {
-				t.Errorf("serveFn addr = %q, want %q", addr, "127.0.0.1:17817")
+		func(srv *http.Server) error {
+			if srv.Addr != "127.0.0.1:17817" {
+				t.Errorf("serveFn addr = %q, want %q", srv.Addr, "127.0.0.1:17817")
 			}
 			return nil
 		}); got != 0 {
 		t.Errorf("listenAndServe ready = %d, want 0", got)
 	}
 	if got := listenAndServe(serveConfig{port: 8080, bind: "0.0.0.0"}, h,
-		func(string, http.Handler) error { return errors.New("boom") }); got != 1 {
+		func(*http.Server) error { return errors.New("boom") }); got != 1 {
 		t.Errorf("listenAndServe failure = %d, want 1", got)
 	}
 }
@@ -160,5 +164,26 @@ func TestServeInvalidArgs(t *testing.T) {
 				t.Errorf("serve(%q) = %d, want %d", tc.args, got, tc.want)
 			}
 		})
+	}
+}
+
+// H4: the server carries timeouts and the fake proves the ready/failure
+// paths through the *http.Server form (timeouts configured, addr intact).
+func TestListenAndServeTimeouts(t *testing.T) {
+	h := http.NewServeMux()
+	var gotSrv *http.Server
+	if got := listenAndServe(serveConfig{port: 17817, bind: "127.0.0.1"}, h,
+		func(srv *http.Server) error { gotSrv = srv; return nil }); got != 0 {
+		t.Fatalf("ready = %d, want 0", got)
+	}
+	if gotSrv == nil || gotSrv.Addr != "127.0.0.1:17817" {
+		t.Fatalf("server addr = %+v, want 127.0.0.1:17817", gotSrv)
+	}
+	if gotSrv.ReadHeaderTimeout <= 0 || gotSrv.WriteTimeout <= 0 {
+		t.Fatalf("server must carry timeouts, got %+v", gotSrv)
+	}
+	if got := listenAndServe(serveConfig{port: 8080, bind: "0.0.0.0"}, h,
+		func(*http.Server) error { return errors.New("boom") }); got != 1 {
+		t.Fatalf("failure = %d, want 1", got)
 	}
 }
