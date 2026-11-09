@@ -18,7 +18,7 @@ Read until `## Log` before edits.
 - [x] H5 (S2,S3) — dashboard cache headers/memo (medir primero) — route: worker mw8qg7yp-i-s1e7 — commit: e9e9e39
 - [x] H6 (S2,S3) — traces sin N+1 (glob o cap) — route: worker mw8qiduq-j-p49p — commit: 9a83063
 - [x] H7 (S2,S3) — portar skills_list/evolve_tick/evolve_propose a MCP — route: worker mw8qik59-k-ilhe — commit: 8e00584
-- [ ] H8 (S2,S3) — bench gauntlet-shape.json + B5 con 6 quick — route: worker — commit: —
+- [x] H8 (S2,S3) — bench gauntlet-shape.json + B5 con 6 quick — route: worker mw8qinv6-l-gjvl — commit: b135706
 - [x] H9 (S2,S3) — init: refusal con ancestro + --force + validación — route: worker mw8qiu6j-m-2jt9 — commit: 559d1c6
 - [x] H10 (S2,S3) — golden de rutas + point-in-time a audit — route: inline — commit: e41696b
 
@@ -27,6 +27,7 @@ Read until `## Log` before edits.
 - L1: "revisa nuevamente que otros puntos de mejora tenemos"
 - L2: "procede papi. hay que dejar Regulus al 100"
 - L9: H6 done — RED N-List -> GREEN streaming counter (misma semántica error/task, path detalle intacto); suite httpapi verde, vet/fmt limpios, diff revisado.
+- L12: H8 done — RED shape/mirror/doc/B5-lean -> GREEN (5 tests); shape generado con comando documentado; gauntlet.md roster 12 + §6 y troubleshooting corregidos; embed revertido (toolchain bans ..); suite + vivo 14/14.
 - L11: H5 done — RED headers+memo -> GREEN; max-age=10 en 3 agregados, fold memo por mtime+size, shapes intactos; suite verde.
 - L10: H7 done — RED schemas -> GREEN; 3 tools read-only (tick dry-run default), tools/list 14->17, gap pin en probe_*; devin.md al día; suites verdes.
 - L9: H9 done — RED 5 tests -> GREEN; refusal con ancestro nombrado, --force explícito (+usage), validación best-effort; suite verde.
