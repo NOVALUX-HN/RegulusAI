@@ -241,6 +241,7 @@ recarga sin perder la página de cada tabla. Muestra
 - `GET /v1/status`, `/v1/version` (las de siempre; textos libres redactados).
 - `GET /v1/metrics`: `Summarize` + evolution hoy vs cap.
 - `GET /v1/almanac/summary`: conteos por tipo, admitidas, pendientes, índice.
+- `GET /v1/evolution`: reporte de evolution (lecciones admitidas/rot, candidatas pendientes, costos medidos por task); solo lectura.
 - `GET /v1/receipts?task=&limit=&offset=`: receipts del gauntlet, redactados, paginados.
 - `GET /v1/executions?limit=&offset=`: ciclos numerados (1 = más antiguo) con task, resultado, compuertas pass/total, duración, fecha y rama del manifest (`—` sin manifest o sin rama), paginados.
 - `GET /v1/git`: rama + head corto del checkout servido (`—` fuera de git).

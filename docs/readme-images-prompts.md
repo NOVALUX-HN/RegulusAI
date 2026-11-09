@@ -1,5 +1,7 @@
 # Prompts de imágenes para el README de Regulus AI
 
+> **Nota (H10):** documento de tarea puntual ya cumplida (prompts usados para las imágenes del README) — se conserva como referencia.
+
 Pega el **estilo común** al inicio de cada prompt. Textos de las imágenes en inglés
 (igual que el README). Fondo Obsidian `#0C1018`, dorado `#D9A441`, texto `#E7EAF0`.
 
