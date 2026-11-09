@@ -20,7 +20,7 @@ Read until `## Log` before edits.
 - [x] F7 (S2,S3) — podar muertos: --no-staleness en context + root en validateTarget — route: inline — commit: b8918a9
 - [x] F8 (S2,S3) — docs drift: server.go rutas + audit 19/14 (con pin) — route: inline — commit: 807a9f7
 - [ ] F9 (S2,S3) — caveat del plugin a stderr en failure — route: inline — commit: —
-- [x] F10 (S2,S3) — did-you-mean en comando desconocido (exit 2 intacto) — route: inline — commit: F10
+- [x] F10 (S2,S3) — did-you-mean en comando desconocido (exit 2 intacto) — route: inline — commit: 851035a
 
 ## Log
 
