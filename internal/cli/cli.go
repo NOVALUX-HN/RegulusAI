@@ -265,7 +265,7 @@ Commands:
   budget show|record   the evolution ledger (show; record a probe run)
   bench list|run|baseline|compare   the self-benchmark: offline suite, baseline, contrast (regulus bench --help)
   chart init <name> | list             scaffold a Chart, list every Chart
-  init [--stack go|node|smoke] [--harness-from <repo>] [--devin]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
+  init [--stack go|node|smoke] [--harness-from <repo>] [--devin] [--force]   scaffold regulus.json, charts/, .gitignore (+ .opencode config) for a fresh repo
   contract           print the plugin<->core contract version
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
