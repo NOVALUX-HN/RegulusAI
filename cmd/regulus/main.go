@@ -126,32 +126,33 @@ func listenAndServe(cfg serveConfig, handler http.Handler, serveFn func(srv *htt
 	return 0
 }
 
-func serve(args []string) int {
-	cfg, code, ok := parseServeFlags(args)
-	if !ok {
-		return code
-	}
-	// P4: resolve every served root (the default "." and each
-	// --projects entry) through the same auto-detection as the CLI, so
-	// serving from a subdirectory shares that checkout's stores instead
-	// of splitting .regulus/ per subdirectory. At the top level (or
-	// outside git/regulus.json) ResolveRoot returns the input verbatim,
-	// preserving today's allowlist exactly.
-	roots := make([]string, 0, len(cfg.projects))
-	for _, p := range cfg.projects {
+// resolveServeRoots maps every served root (the default "." and each
+// --projects entry) through the same auto-detection as the CLI, so
+// serving from a subdirectory shares that checkout's stores instead
+// of splitting .regulus/ per subdirectory. At the top level (or
+// outside git/regulus.json) ResolveRoot returns the input verbatim,
+// preserving today's allowlist exactly. Extracted verbatim from serve.
+func resolveServeRoots(projects []string) []string {
+	roots := make([]string, 0, len(projects))
+	for _, p := range projects {
 		roots = append(roots, cli.ResolveRoot(p))
 	}
 	if len(roots) == 0 {
-		roots = []string{cli.ResolveRoot(".")}
+		return []string{cli.ResolveRoot(".")}
 	}
-	srv := httpapi.New(version, func() doctor.Result {
-		return doctor.Probe(context.Background(), doctor.DefaultRunner())
-	}, gates.ShRunner{}, roots...)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	return listenAndServe(cfg, srv.Handler(), func(srv *http.Server) error {
+	return roots
+}
+
+// serveRunner builds the blocking serve function handed to listenAndServe.
+// H4: the select carries graceful shutdown on ctx cancel (SIGINT/SIGTERM)
+// and maps http.ErrServerClosed to a clean exit. listen is
+// (*http.Server).ListenAndServe in production; tests substitute a fake so
+// the failure, ready and shutdown paths stay covered without binding any
+// port. Extracted verbatim from serve.
+func serveRunner(ctx context.Context, listen func(srv *http.Server) error) func(srv *http.Server) error {
+	return func(srv *http.Server) error {
 		serveErr := make(chan error, 1)
-		go func() { serveErr <- srv.ListenAndServe() }()
+		go func() { serveErr <- listen(srv) }()
 		select {
 		case err := <-serveErr:
 			if err == http.ErrServerClosed {
@@ -163,7 +164,23 @@ func serve(args []string) int {
 			defer cancel()
 			return srv.Shutdown(shutCtx)
 		}
-	})
+	}
+}
+
+func serve(args []string) int {
+	cfg, code, ok := parseServeFlags(args)
+	if !ok {
+		return code
+	}
+	// P4: resolve every served root through resolveServeRoots (same
+	// auto-detection as the CLI; see its doc for the allowlist note).
+	roots := resolveServeRoots(cfg.projects)
+	srv := httpapi.New(version, func() doctor.Result {
+		return doctor.Probe(context.Background(), doctor.DefaultRunner())
+	}, gates.ShRunner{}, roots...)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return listenAndServe(cfg, srv.Handler(), serveRunner(ctx, (*http.Server).ListenAndServe))
 }
 
 // nonLoopbackWarning reports a visible exposure warning when serve binds

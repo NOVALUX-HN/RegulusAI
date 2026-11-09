@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"reflect"
 	"strings"
 	"testing"
+
+	"regulus-ai/internal/cli"
 )
 
 func TestServeHelp(t *testing.T) {
@@ -165,6 +168,57 @@ func TestServeInvalidArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// C1 (serve slice): resolveServeRoots carries the P4 root-resolution
+// branch matrix (empty -> default ".", entries mapped through the same
+// auto-detection as the CLI) without binding any port.
+func TestResolveServeRoots(t *testing.T) {
+	for _, projects := range [][]string{nil, {}} {
+		got := resolveServeRoots(projects)
+		want := []string{cli.ResolveRoot(".")}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("resolveServeRoots(%v) = %v, want %v", projects, got, want)
+		}
+	}
+	// Temp dirs live outside any checkout, so ResolveRoot returns them
+	// verbatim: the mapping preserves entries and order.
+	a := t.TempDir()
+	b := t.TempDir()
+	if got, want := resolveServeRoots([]string{a}), []string{a}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resolveServeRoots single = %v, want %v", got, want)
+	}
+	if got, want := resolveServeRoots([]string{a, b}), []string{a, b}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resolveServeRoots pair = %v, want %v", got, want)
+	}
+}
+
+// C1 (serve slice): serveRunner carries the H4 blocking-serve branch
+// matrix (immediate failure, ErrServerClosed -> clean nil, cancelled ctx
+// -> graceful Shutdown) through fakes, without binding any port or
+// blocking.
+func TestServeRunner(t *testing.T) {
+	ctx := context.Background()
+	srv := &http.Server{Addr: "127.0.0.1:1"}
+
+	if err := serveRunner(ctx, func(*http.Server) error { return errors.New("boom") })(srv); err == nil || err.Error() != "boom" {
+		t.Errorf("serveRunner failure = %v, want boom", err)
+	}
+	if err := serveRunner(ctx, func(*http.Server) error { return http.ErrServerClosed })(srv); err != nil {
+		t.Errorf("serveRunner closed = %v, want nil", err)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	release := make(chan struct{})
+	listening := serveRunner(cancelled, func(*http.Server) error {
+		<-release
+		return errors.New("listen released")
+	})
+	if err := listening(&http.Server{Addr: "127.0.0.1:1"}); err != nil {
+		t.Errorf("serveRunner shutdown = %v, want nil", err)
+	}
+	close(release)
 }
 
 // H4: the server carries timeouts and the fake proves the ready/failure
