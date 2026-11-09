@@ -19,5 +19,5 @@ Read until `## Log` before edits.
 
 - L1: "que mas nos falta resolver antes de hacer merge a main?"
 - L2: "procede"
-- L4: C1 mcpTools done ad0ff1e (pending hash) — split en 5 grupos, orden/schemas byte-identical (pin 17 en orden PASS), CRAP 44.03->fuera de lista (max 28.69 yolo).
+- L4: C1 mcpTools done 13f39f8 — split en 5 grupos, orden/schemas byte-identical (pin 17 en orden PASS), CRAP 44.03->fuera de lista (max 28.69 yolo).
 - L3: evidencia CI (artifacts ci__push): run 42560200062 cae en unit-tests solo por TestPerfHybridP95Budget10k (p95 261 vs 250, resto verde, coverage 86.8%); run 42560036217 pasa unit-tests y cae en crap (mcpTools 44.03, serve 39.22, initCmd 32.79, resolveDomainInProcess 31.61; yolo 28.69 pasa).
