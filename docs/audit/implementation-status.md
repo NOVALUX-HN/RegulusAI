@@ -43,7 +43,7 @@ not a missing piece.
 
 ## 6. Plugin boundary (OpenCode V2): IMPLEMENTED
 
-16 tools, 4 hooks, 3 slash commands (`repository-inventory.md` §4). Contract `regulus.contract/v1` enforced
+16 tools, 4 hooks, 3 slash commands (`repository-inventory.md` §4). (F8: 19 tools now.) Contract `regulus.contract/v1` enforced
 both sides (`internal/contract/contract.go`, `domain.ts`, `regulus.ts:169`). Stale header comment ("two slash
 commands") → docs bug AUD-P1-02, not a code gap.
 
@@ -62,8 +62,8 @@ named in `docs/architecture.md` §2 have no directory under `.opencode/skills/` 
 
 ## 9. MCP server: PARTIALLY_IMPLEMENTED
 
-Stdio JSON-RPC 2.0, zero deps, 12 tools (`internal/cli/mcp.go:243-392`, 19 `mcp_test.go` tests). 4 plugin tools
-have no MCP equivalent: `evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list` → Devin surfaces
+Stdio JSON-RPC 2.0, zero deps, 14 tools (F8: was 12). 5 plugin tools
+have no MCP equivalent: `evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`, `evolve_tick` → Devin surfaces
 cannot propose evolution or run probes (AUD-P0-01). No server-side permission layer by documented design
 (`mcp.go:10-13`) → accepted trust boundary, recorded in security-assessment.
 
@@ -122,8 +122,8 @@ Almanac v2.1 ONNX (`memory-v2.md` S8); broader mutation scope beyond `internal/r
 |---|---|
 | Gauntlet 12 gates, receipts, spec, traces, doctor, yolo, crap | IMPLEMENTED |
 | Almanac + v2.0 retrieval, library, budget, reflect, surface, evolve pack, probe | IMPLEMENTED |
-| Plugin 16 tools / 4 hooks / 3 commands, 11 agents, Devin pack, CI | IMPLEMENTED |
-| Skills 1/3, MCP 12/16 tools, distribution (unpublished npm, committed binaries) | PARTIALLY_IMPLEMENTED |
+| Plugin 19 tools (F8: was 16) / 4 hooks / 3 commands, 11 agents, Devin pack, CI | IMPLEMENTED |
+| Skills 1/3, MCP 14/19 tools (F8: was 12/16; intentional gap, pinned), distribution (unpublished npm, committed binaries) | PARTIALLY_IMPLEMENTED |
 | `regulus-gauntlet` / `regulus-reflect` skills | DOCUMENTED_ONLY |
 | ONNX v2.1, F5 chart items | PROPOSED |
 | EVIDENCE bot-loop, god files, unstamped builds | DEPRECATED (retired) |

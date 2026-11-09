@@ -67,7 +67,7 @@ Package: `regulus-ai@0.9.0` · Module: `regulus-ai` · Go 1.27 · Zero Go depend
 
 ## 4. Plugin surface (OpenCode boundary)
 
-- **16 namespaced tools** (`editor.add`, `regulus.ts:207-533`): `gate_run`, `spec_check`, `doctor`, `memory_note`, `memory_show`, `memory_save`, `memory_search`, `memory_context`, `memory_history`, `evolve_propose`, `probe_contrast`, `probe_compose`, `trace_show`, `trace_sessions`, `trace_files`, `skills_list`.
+- **19 namespaced tools** (F8: was 16 at audit time; +audit, +evolve_report, +evolve_tick) (`editor.add`, `regulus.ts:207-533`): `gate_run`, `spec_check`, `doctor`, `memory_note`, `memory_show`, `memory_save`, `memory_search`, `memory_context`, `memory_history`, `evolve_propose`, `probe_contrast`, `probe_compose`, `trace_show`, `trace_sessions`, `trace_files`, `skills_list`.
 - **3 slash commands** (`ctx.command.transform`, `regulus.ts:537-576`): `/regulus-doctor`, `/regulus-verify`, `/regulus-gauntlet`. NOTE: file header comment says "two slash commands" — stale (see improvement-backlog AUD-P1-02).
 - **4 hooks**: `tool.execute.after` (trace capture, never breaks execution), 2× `session.context` (discipline + lessons/skills; almanac context), `session.compaction` (resume). (`regulus.ts:580-660`).
 - Binary resolution order prefers `bin/regulus[.exe]` then PATH; contract mismatch refuses before any tool executes (`regulus.ts:157-169`).
@@ -76,7 +76,7 @@ Package: `regulus-ai@0.9.0` · Module: `regulus-ai` · Go 1.27 · Zero Go depend
 
 - **Agents (11 files)**: primary `regulus.md` (allow + destructive denies, `webfetch: deny`); 6 guardians read-only (`edit: deny`, bash allowlist, `*`: deny): gate-verifier, spec-keeper, mutation-auditor, crap-analyst, evidence-auditor, reviewer; 4 crew (scout/worker read+write bounded by Chart, verifier, proposer). `docs/agents.md` table matches the tree.
 - **Skills**: 1 committed (`regulus-workflow`, the Sextant). `docs/architecture.md` §2 names 3 (`regulus-gauntlet`, `regulus-reflect`, `regulus-workflow`) — 2 have no directory (see AUD-P1-01).
-- **MCP (`regulus mcp`, stdio JSON-RPC 2.0, zero deps)**: 12 tools in `tools/list` order (`internal/cli/mcp.go:243-392`): `memory_note/show/save/search/context/history`, `gate_run`, `spec_check`, `doctor`, `trace_show/sessions/files`. Missing vs plugin: `evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list` (see AUD-P0-01). Trust boundary documented in code: server enforces no permission layer; clients enforce (`mcp.go:10-13`).
+- **MCP (`regulus mcp`, stdio JSON-RPC 2.0, zero deps)**: 14 tools (F8: was 12 at audit time; +audit, +evolve_report) in `tools/list` order (`internal/cli/mcp.go:243-392`): `memory_note/show/save/search/context/history`, `gate_run`, `spec_check`, `doctor`, `trace_show/sessions/files`. Missing vs plugin: `evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`, `evolve_tick` (see AUD-P0-01; pinned by TestMCPIntentionalGapPinsPluginDelta). Trust boundary documented in code: server enforces no permission layer; clients enforce (`mcp.go:10-13`).
 - **Devin pack**: mirrors agents + skill + MCP config; `docs/devin.md` maps surfaces; Cloud caveat (snapshots immutable → `.regulus/` per-session) documented.
 
 ## 6. Runtime state (observed, not source)

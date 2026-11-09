@@ -41,7 +41,7 @@ audit (Phase 0 rule: no invented results). Coverage numbers below are read from 
    resume, binary resolution, contract refusal) have no harness — `domain.ts` purity is tested, host-coupled
    `regulus.ts` is not. A broken hook fails silently (by design: never break tool execution) which hides
    regressions. → AUD-P3-04.
-4. **MCP↔plugin parity untested (G4).** No test asserts the 16 plugin tools and 12 MCP tools cover the same
+4. **MCP↔plugin parity untested (G4).** No test asserts the 16 plugin tools and 12 MCP tools cover the same (F8: now pinned — TestMCPIntentionalGapPinsPluginDelta asserts 19 vs 14)
    CLI surface; drift already occurred (AUD-P0-01). A registry-diff test is cheap and mechanical. → folded
    into AUD-P1-06 acceptance criteria.
 5. **Stale-index fallback untested (G5).** `status` reports "semantic index stale" but no journey pins the

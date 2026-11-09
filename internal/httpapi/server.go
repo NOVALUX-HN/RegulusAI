@@ -3,13 +3,16 @@
 // buffers-out pattern as the MCP server in internal/cli/mcp.go, which
 // never shells out so HTTP semantics match CLI stderr semantics exactly.
 //
-// Exposed read-only core paths:
+// Exposed read-only core paths (F8: keep this list in sync with Handler below):
 //   - GET /v1/status  reuses `regulus status` (the project readout).
 //   - GET /v1/projects lists the startup allowlist ([{name, root}],
 //     first entry is the default served when ?project= is absent).
 //   - GET /v1/version reuses `regulus --version` plus `regulus contract`
 //     (the two version readouts), returned verbatim under the
 //     "version"/"contract" fields.
+//   - GET /v1/metrics /v1/almanac/summary /v1/evolution /v1/receipts
+//     /v1/executions /v1/git /v1/observations /v1/lessons /v1/traces
+//     /v1/budget plus / (dashboard) — same read-only core paths.
 //
 // Non-GET verbs on known paths are refused with 405; unknown paths
 // (including the unversioned /status and /version equivalents, which have

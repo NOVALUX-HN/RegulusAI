@@ -34,7 +34,7 @@ Three loops: **Gauntlet** (per change), **Discipline** (per task — Chart + Sex
 - Internal Go coupling is disciplined: `evolve` only assembles (reads traces/receipts/INDEX), `reflect`
   proposes, `library` admits, `budget` ledgers, `surface` gates — one direction, no cycles observed in
   imports (`budget ← reflect/probe/surface`, `receipts ← gates/evidence/reflect`).
-- Blemish 1: MCP (12 tools) and plugin (16 tools) are **two hand-maintained registries** over the same CLI
+- Blemish 1: MCP (12 tools) and plugin (16 tools) are **two hand-maintained registries** (F8: now 14 vs 19; gap pinned by TestMCPIntentionalGapPinsPluginDelta) over the same CLI
   (`mcpTools()` vs `editor.add` blocks) with no shared tool table and no parity test — drift already
   happened (AUD-P0-01). The sync guard mentioned in the 0.8.1 changelog covers plugin↔CLI flags, not MCP↔plugin.
 - Blemish 2: the harness-surface whitelist (`surface.go`) covers 5 paths while agents/skills evolve;
