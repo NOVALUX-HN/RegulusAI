@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -605,6 +606,11 @@ func mcpInt(args map[string]any, key string) (int, bool) {
 	case nil:
 		return 0, false
 	case float64:
+		// H2: lossy truncation refused — a fractional value is a
+		// caller bug, and every other type error here is -32602.
+		if v != math.Trunc(v) {
+			return 0, false
+		}
 		return int(v), true
 	case int:
 		return v, true

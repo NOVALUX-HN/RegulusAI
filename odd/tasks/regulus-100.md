@@ -12,7 +12,7 @@ Read until `## Log` before edits.
 ## Tasks
 
 - [x] H1 (S2,S3) — serveMCP: sc.Err al salir + techo 1MB documentado — route: inline — commit: a801bc3
-- [ ] H2 (S2,S3) — mcpInt: rehusar floats no enteros — route: inline — commit: —
+- [x] H2 (S2,S3) — mcpInt: rehusar floats no enteros — route: inline — commit: H2
 - [ ] H3 (S2,S3) — HTTP 500 en store-errors (6 sitios, envelope igual) — route: inline — commit: —
 - [ ] H4 (S2,S3) — serve timeouts + graceful shutdown en main — route: inline — commit: —
 - [ ] H5 (S2,S3) — dashboard cache headers/memo (medir primero) — route: worker — commit: —
@@ -26,5 +26,6 @@ Read until `## Log` before edits.
 
 - L1: "revisa nuevamente que otros puntos de mejora tenemos"
 - L2: "procede papi. hay que dejar Regulus al 100"
+- L5: H2 done — RED 3 casos tabla (2.9/-1.5/3.0) -> GREEN con math.Trunc; strings enteros e ints intactos; suite verde, vet/fmt limpios.
 - L4: H1 done — RED build-fail (serveMCP void) -> GREEN; sc.Err sale exit 1 + stderr, techo en usage; suite verde, vet/fmt limpios.
 - L3: scan mw8q46dm-h-gz93 + spot-checks del parent (serveMCP loop, mcpInt, ListenAndServe pelado, init cwd, 200-vs-400) — 10 items verificados como reales antes de implementar.
