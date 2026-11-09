@@ -39,3 +39,4 @@ Domain: sextant
 ## Log
 
 - L1: "aplica el C3 con aumento en 0.13.0"
+- L2: merge develop->main 664a232 + tag v0.13.0 pusheados; CI main run 42569292270 en watch (cierre al verde).
