@@ -16,7 +16,7 @@ Read until `## Log` before edits.
 - [x] H3 (S2,S3) — HTTP 500 en store-errors (9 sitios, envelope igual) — route: inline — commit: f706c39
 - [x] H4 (S2,S3) — serve timeouts + graceful shutdown en main — route: inline — commit: ce855c5
 - [ ] H5 (S2,S3) — dashboard cache headers/memo (medir primero) — route: worker — commit: —
-- [x] H6 (S2,S3) — traces sin N+1 (glob o cap) — route: worker mw8qiduq-j-p49p — commit: H6
+- [x] H6 (S2,S3) — traces sin N+1 (glob o cap) — route: worker mw8qiduq-j-p49p — commit: 9a83063
 - [ ] H7 (S2,S3) — portar skills_list/evolve_tick/evolve_propose a MCP — route: worker — commit: —
 - [ ] H8 (S2,S3) — bench gauntlet-shape.json + B5 con 6 quick — route: worker — commit: —
 - [ ] H9 (S2,S3) — init: refusal con ancestro + --force + validación — route: worker — commit: —
