@@ -460,6 +460,35 @@ describe("memory argv builders (S4 flag parity, behavior)", () => {
   });
 });
 
+describe("memory_context manual passthrough (F3)", () => {
+  // F3: agent-invoked memory_context runs plain `memory context` with
+  // no lessons while its description promises admitted lessons. Both
+  // the plugin tool and the MCP tool gain optional `session` (string)
+  // and `charts` (string, comma-separated chart refs) params; when
+  // either is present the call passes --resolve-domain --session S
+  // [--chart C...] --lessons 3 through (plugin side via
+  // contextResolveArgs), and stays byte-identical plain otherwise.
+  test("schema carries optional session + charts, neither required", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const start = src.indexOf('name: "memory_context"');
+    const block = src.slice(start, start + 2500);
+    expect(block).toContain("session");
+    expect(block).toContain("charts");
+    const req = block.match(/required: \[([^\]]*)\]/);
+    expect(req?.[1]).not.toContain("session");
+    expect(req?.[1]).not.toContain("charts");
+  });
+
+  test("execute reuses contextResolveArgs when session/charts present, plain otherwise", async () => {
+    const src = await Bun.file(import.meta.dir + "/../plugins/regulus.ts").text();
+    const start = src.indexOf('name: "memory_context"');
+    const end = src.indexOf('name: "memory_history"');
+    const block = src.slice(start, end);
+    expect(block).toContain("contextResolveArgs(");
+    expect(block).toContain('["memory", "context"]');
+  });
+});
+
 describe("withTimeout", () => {
   test("fast work resolves", async () => {
     await expect(withTimeout(Promise.resolve("ok"), 100)).resolves.toBe("ok");

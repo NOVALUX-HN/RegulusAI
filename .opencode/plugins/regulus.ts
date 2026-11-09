@@ -407,14 +407,31 @@ export default Plugin.define({
       add({
         name: "memory_context",
         description: guidance["memory_context"],
-        input: { type: "object", properties: {}, additionalProperties: false },
+        input: {
+          type: "object",
+          properties: {
+            session: { type: "string", description: "session id for trace file-hit domain detection (optional; enables admitted lessons)" },
+            charts: { type: "string", description: "comma-separated chart refs for Domain: pins, e.g. charts/app.md (optional; enables admitted lessons)" },
+          },
+          required: [],
+          additionalProperties: false,
+        },
         options: { namespace: "regulus", codemode: true },
-        execute: async (_input, context) => {
-          // S1 (plugin-ux): memory context assembles charts + notes +
-          // lessons and can exceed the generic 30s spawn budget on large
-          // repos — reuse the gate_run long budget (1h default, 600s floor,
-          // REGULUS_GATE_RUN_TIMEOUT_MS override) instead of aborting.
-          const res = await run(bin, ["memory", "context"], dir, context.signal, gateRunTimeoutMs())
+        execute: async (input, context) => {
+          // F3: manual context with session/charts resolves admitted
+          // lessons in-process via contextResolveArgs (--resolve-domain
+          // --session S [--chart C...] --lessons 3); bare calls stay
+          // byte-identical plain `memory context`. S1 (plugin-ux): the
+          // assembly can exceed the generic 30s spawn budget on large
+          // repos — reuse the gate_run long budget (1h default, 600s
+          // floor, REGULUS_GATE_RUN_TIMEOUT_MS override) instead of
+          // aborting.
+          const { session, charts } = input as { session?: string; charts?: string }
+          const chartList = String(charts ?? "").split(",").map((c) => c.trim()).filter((c) => c !== "")
+          const args = session || chartList.length > 0
+            ? contextResolveArgs({ sessionID: session || undefined, charts: chartList })
+            : ["memory", "context"]
+          const res = await run(bin, args, dir, context.signal, gateRunTimeoutMs())
           return { content: res.output }
         },
       })

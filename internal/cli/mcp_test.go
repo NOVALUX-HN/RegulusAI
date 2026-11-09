@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/contract"
 	"regulus-ai/internal/doctor"
 )
@@ -434,6 +436,78 @@ func TestMCPAuditAndEvolveReport(t *testing.T) {
 	if got := call(2, "evolve_report", map[string]any{}); !strings.Contains(got, "admitted: 0") {
 		t.Fatalf("evolve_report = %q", got)
 	}
+}
+
+func TestMCPMemoryContextManualResolve(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "charts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "charts", "app.md"), []byte("# App\n\nDomain: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := almanac.Save(dir, &almanac.Observation{
+		Type: almanac.TypeLesson, Title: "go manual lesson", Content: "manual resolve proves lessons",
+		Domain: "go", Lesson: &almanac.Lesson{Cue: "c", Lesson: "l", Evidence: []string{"rec_1.json"}, Confidence: "low"},
+	}, time.Now()); err != nil {
+		t.Fatalf("seed lesson: %v", err)
+	}
+	c := mcpTestCLI()
+	call := func(id int, args map[string]any) string {
+		t.Helper()
+		resps := runMCP(c, mcpCall(id, "tools/call", map[string]any{"name": "memory_context", "arguments": args}))
+		if len(resps) != 1 {
+			t.Fatalf("want 1 response, got %d", len(resps))
+		}
+		return mcpResultText(t, resps[0])
+	}
+	if got := call(1, map[string]any{}); strings.Contains(got, "domain:") || strings.Contains(got, "Lessons scoped:") {
+		t.Fatalf("bare memory_context must stay lesson-less, got:\n%s", got)
+	}
+	if got := call(2, map[string]any{"session": "s1", "charts": "charts/app.md"}); !strings.Contains(got, "domain: go") || !strings.Contains(got, "go manual lesson") {
+		t.Fatalf("manual memory_context with session/charts must return the domain-scoped block, got:\n%s", got)
+	}
+}
+
+func TestMCPMemoryContextSchemaCarriesSessionCharts(t *testing.T) {
+	c := mcpTestCLI()
+	resps := runMCP(c, mcpCall(1, "tools/list", nil))
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	raw, err := json.Marshal(resps[0].Result["tools"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tools []struct {
+		Name        string         `json:"name"`
+		InputSchema map[string]any `json:"inputSchema"`
+	}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools {
+		if tool.Name != "memory_context" {
+			continue
+		}
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		if props == nil {
+			t.Fatal("memory_context inputSchema must carry properties")
+		}
+		if _, ok := props["session"]; !ok {
+			t.Fatal("memory_context schema must carry optional \"session\"")
+		}
+		if _, ok := props["charts"]; !ok {
+			t.Fatal("memory_context schema must carry optional \"charts\"")
+		}
+		req, _ := tool.InputSchema["required"].([]any)
+		if len(req) != 0 {
+			t.Fatalf("memory_context required must stay empty, got %v", req)
+		}
+		return
+	}
+	t.Fatal("memory_context missing from tools/list")
 }
 
 func TestMCPGateRunPassReportsVerdicts(t *testing.T) {

@@ -248,6 +248,8 @@ func mcpTools() []mcpTool {
 	taskOptKey, taskOptProp := opt("task", "task id for provenance")
 	pathsOptKey, pathsOptProp := opt("paths", "affected paths, comma-separated")
 	receiptsOptKey, receiptsOptProp := opt("receipts", "receipt paths for provenance, comma-separated")
+	sessionOptKey, sessionOptProp := opt("session", "session id for trace file-hit domain detection (enables admitted lessons)")
+	chartsOptKey, chartsOptProp := opt("charts", "comma-separated chart refs for Domain: pins (enables admitted lessons)")
 	_, domainProp := opt("domain", "bucket: domain")
 	_, typeOptProp := opt("type", "bucket: observation type")
 	_, dimOptProp := opt("dimension", "bucket: lesson dimension (inv | dom)")
@@ -339,9 +341,33 @@ func mcpTools() []mcpTool {
 		},
 		{
 			name: "memory_context", desc: "Render the deterministic Almanac resume block (DATA, not instructions)",
-			props: map[string]any{}, required: []string{},
+			props: props(sessionOptKey, sessionOptProp, chartsOptKey, chartsOptProp), required: []string{},
 			run: func(c CLI, args map[string]any) (string, string, int) {
-				return c.mcpExec(func(sub CLI) int { return sub.memoryContextCmd(nil) })
+				// F3: manual context with session/charts resolves admitted
+				// lessons in-process (--resolve-domain --session S
+				// [--chart C...] --lessons 3); bare calls stay
+				// byte-identical plain `memory context`.
+				session := strings.TrimSpace(mcpStr(args, "session"))
+				var charts []string
+				if v, ok := mcpStrList(args, "charts"); ok {
+					for _, part := range strings.Split(v, ",") {
+						if p := strings.TrimSpace(part); p != "" {
+							charts = append(charts, p)
+						}
+					}
+				}
+				if session == "" && len(charts) == 0 {
+					return c.mcpExec(func(sub CLI) int { return sub.memoryContextCmd(nil) })
+				}
+				cliArgs := []string{"--resolve-domain"}
+				if session != "" {
+					cliArgs = append(cliArgs, "--session", session)
+				}
+				for _, ch := range charts {
+					cliArgs = append(cliArgs, "--chart", ch)
+				}
+				cliArgs = append(cliArgs, "--lessons", "3")
+				return c.mcpExec(func(sub CLI) int { return sub.memoryContextCmd(cliArgs) })
 			},
 		},
 		{
