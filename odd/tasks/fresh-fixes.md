@@ -17,7 +17,7 @@ Read until `## Log` before edits.
 - [ ] F4 (S2,S3) — gate_run tools con quick/profile/dry_run — route: worker — commit: —
 - [x] F5 (S2,S3) — serve acepta forma con espacio — route: inline — commit: 48108c2
 - [ ] F6 (S2,S3) — status sin full-scan (medir, cap 200 newest, memo gremlins) — route: worker — commit: —
-- [x] F7 (S2,S3) — podar muertos: --no-staleness en context + root en validateTarget — route: inline — commit: F7
+- [x] F7 (S2,S3) — podar muertos: --no-staleness en context + root en validateTarget — route: inline — commit: b8918a9
 - [ ] F8 (S2,S3) — docs drift: server.go rutas + audit 19/14 (con pin) — route: inline — commit: —
 - [ ] F9 (S2,S3) — caveat del plugin a stderr en failure — route: inline — commit: —
 - [ ] F10 (S2,S3) — did-you-mean en comando desconocido (exit 2 intacto) — route: inline — commit: —
