@@ -66,7 +66,7 @@ func TestV06Functional(t *testing.T) {
 	}
 
 	// Gauntlet: the initialized gates run and leave receipts.
-	code, out = run("gate", "run", "v06/T1")
+	code, out = run("gate", "run", "--yes", "v06/T1")
 	if code != 0 || !strings.Contains(out, "gauntlet: 1/1 gates passed") {
 		t.Fatalf("gate run: exit=%d out=%q", code, out)
 	}

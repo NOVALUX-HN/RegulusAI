@@ -105,7 +105,7 @@ func TestSextantGuidedFlow(t *testing.T) {
 	}
 
 	// BUILD→PROVE: gauntlet runs and leaves receipts.
-	if code, out := runSextantCLI("gate", "run", "demo/T1"); code != 0 {
+	if code, out := runSextantCLI("gate", "run", "--yes", "demo/T1"); code != 0 {
 		t.Fatalf("gate run fixed: exit=%d out=%q", code, out)
 	}
 

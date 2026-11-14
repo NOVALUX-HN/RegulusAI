@@ -289,7 +289,7 @@ func TestS8WindowsHideJourney(t *testing.T) {
 	if err := os.WriteFile("regulus.json", []byte(`{"gates":[{"name":"typecheck","layer":1,"command":"echo windows-hide-probe"}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, out := s8Run(t, "gate", "run", "hide/T1")
+	code, out := s8Run(t, "gate", "run", "--yes", "hide/T1")
 	if code != 0 || !strings.Contains(out, "gauntlet: 1/1 gates passed") {
 		t.Fatalf("hidden gate run: exit=%d out=%q", code, out)
 	}

@@ -183,7 +183,7 @@ func main() {
 		Stdout: &out,
 		Stderr: &errb,
 	}
-	if code := c.Run([]string{"gate", "run", "fixture/T1"}); code != 0 {
+	if code := c.Run([]string{"gate", "run", "--yes", "fixture/T1"}); code != 0 {
 		t.Fatalf("gate run exit = %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errb.String())
 	}
 	if !strings.Contains(out.String(), "gauntlet: 7/7 gates passed") {
