@@ -20,11 +20,11 @@ import (
 //	compare --base A --candidate B [--json]  contrast table + ADOPT/REJECT
 func (c CLI) benchCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
+		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V]")
 		return 2
 	}
 	switch args[0] {
@@ -36,9 +36,11 @@ func (c CLI) benchCmd(args []string) int {
 		return c.benchBaselineCmd(args[1:])
 	case "compare":
 		return c.benchCompareCmd(args[1:])
+	case "agent-tasks":
+		return c.benchAgentTasksCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "bench: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V]")
 		return 2
 	}
 }

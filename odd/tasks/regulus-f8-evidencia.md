@@ -9,7 +9,7 @@ Cerrar 10 issues Backlog en develop, solo main+develop, comentando en Linear qu�
 - S5: F8 NOV-65 fuzz/bench/strict env (P2); NOV-66 suite Windows completa (P2); NOV-67 modularización + límite 800 líneas (P2); NOV-70 releases verificables (P3)
 
 ## Tasks
-- T42 NOV-62 Paso 42 tokens reales | S3 | route: inline | commit: _
+- T42 NOV-62 Paso 42 tokens reales | S3 | route: inline | commit: 2ba77da Done
 - T43 NOV-68 Paso 43 evals agente | S3 | route: inline | commit: _
 - T44 NOV-63 Paso 44 deriva docs | S4 | route: inline | commit: _
 - T45 NOV-64 Paso 46 trazabilidad | S4 | route: inline | commit: _
