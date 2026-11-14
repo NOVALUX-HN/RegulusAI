@@ -1,0 +1,3 @@
+[mcp_servers.regulus]
+command = "regulus"
+args = ["mcp"]

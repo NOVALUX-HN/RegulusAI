@@ -17,11 +17,11 @@ F4 16.6% + F5/F6/F7 0%. Cerrar 24 issues Backlog en develop, solo main+develop, 
 - T20 NOV-21 Paso 20 MCP externa | S5 | route: inline | commit: 8d20fa4 Done
 - T21 NOV-23 Paso 21 firma receipts decision | S5 | route: inline | commit: 8d20fa4 Done
 - T22 NOV-36 Paso 22 instalacion versionado | S5 | route: inline | commit: 8d20fa4 Done
-- T23 NOV-43 Paso 23 diagnostico Windows | S6 | route: inline | commit: _
-- T24 NOV-45 Paso 24 runner sin shell | S6 | route: inline | commit: _
-- T25 NOV-46 Paso 26 CI Windows | S6 | route: inline | commit: _
-- T26 NOV-44 Paso 25 Authenticode opcional | S6 | route: inline | commit: _
-- T27 NOV-47 Paso 27 docs Windows | S6 | route: inline | commit: _
+- T23 NOV-43 Paso 23 diagnostico Windows | S6 | route: inline | commit: 2fe01cf Done
+- T24 NOV-45 Paso 24 runner sin shell | S6 | route: inline | commit: 2fe01cf Done
+- T25 NOV-46 Paso 26 CI Windows | S6 | route: inline | commit: 2fe01cf Done
+- T26 NOV-44 Paso 25 Authenticode opcional | S6 | route: inline | commit: 2fe01cf Done
+- T27 NOV-47 Paso 27 docs Windows | S6 | route: inline | commit: 2fe01cf Done
 - T28 NOV-48 Paso 28 contrato neutral | S7 | route: inline | commit: _
 - T29 NOV-55 Paso 35 E2E conformidad | S7 | route: inline | commit: _
 - T30 NOV-49 Paso 29 Codex | S7 | route: inline | commit: _
