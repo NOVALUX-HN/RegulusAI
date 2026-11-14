@@ -218,6 +218,12 @@ func validate(o *Observation) error {
 // full-scanning — the per-write cost stays bounded by the reindex the
 // CLI runs after, not by an extra full parse.
 func Save(root string, o *Observation, now time.Time) (Observation, error) {
+	// NOV-22: scrub secrets before anything else touches the
+	// observation — Save is the choke point for note/save/reflect/
+	// autonote/mine, so no caller needs its own redaction.
+	if o != nil {
+		*o = RedactObservation(*o)
+	}
 	if err := validate(o); err != nil {
 		return Observation{}, err
 	}

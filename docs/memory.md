@@ -216,3 +216,22 @@ governance transitions — states mutate, the log does not).
   `history` print an untrusted-content banner on stderr (stdout stays
   machine-stable); the resume block keeps its DATA framing; imported
   knowledge stays PROPOSED and is never instructions.
+
+## 8. Secret redaction in the Almanac (NOV-22)
+
+- **What is redacted**: `Save` (the choke point for
+  `note`/`save`/`reflect`/auto-note/`mine`) and `appendImported` (the
+  choke point for `import`) scrub `title`, `content`, `topic_key`,
+  `domain`, the lesson `cue`/`lesson`/`evidence` block and provenance
+  `paths` before persistence (`internal/almanac/redact.go:
+  RedactObservation`). Patterns reuse the observability deny-list
+  (`bearer`, `key=value` / `"key": "value"` over sensitive key names)
+  plus PEM `PRIVATE KEY` blocks, URLs with `://user:pass@` credentials
+  and prefixed tokens (`ghp_`, `gho_`, `sk-live_`, `sk-proj_`,
+  `AKIA…`); values become `[redacted]`, preserving the surrounding
+  structure. The lists are extensible — no scattered literals.
+- **What is NOT redacted**: receipts and traces keep their exact bytes
+  for evidence and hash integrity and never pass through redaction.
+  Operative rule: do not dump secrets into gate outputs in the first
+  place. There is no retro-scrub of already-persisted lines; old
+  secrets leave the log through `prune` or `--expires`.

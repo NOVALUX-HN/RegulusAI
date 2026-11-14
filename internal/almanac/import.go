@@ -106,6 +106,11 @@ func parseObservationData(data []byte, have map[string]bool, label string) (fres
 // against torn interleaves with prune/reindex, and re-importing stays
 // idempotent.
 func appendImported(root string, fresh []Observation, skipped int, mark []string) (imported, skippedOut int, err error) {
+	// NOV-22: scrub secrets at the import choke point — every bundle
+	// line (single file or directory form) funnels through here.
+	for i := range fresh {
+		fresh[i] = RedactObservation(fresh[i])
+	}
 	if len(fresh) == 0 {
 		return 0, skipped, nil
 	}
