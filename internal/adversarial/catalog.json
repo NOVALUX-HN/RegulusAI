@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "framing-evasion-upper",
+      "component": "gates/classify+allowlist",
+      "risk": "prompt-injection framing via case folding",
+      "scenario": "Uppercase destructive command must still classify destructive and fail a tight allowlist",
+      "seed": "framing-evasion-upper.txt",
+      "expected": "contained:classification=destructive,allowlist=refused"
+    },
+    {
+      "id": "framing-evasion-unicode",
+      "component": "gates/allowlist",
+      "risk": "prompt-injection framing via unicode homoglyph",
+      "scenario": "Homoglyph command the classifier misses must still be refused by deny-by-default allowlist",
+      "seed": "framing-evasion-unicode.txt",
+      "expected": "contained:classifier-miss,allowlist=refused"
+    },
+    {
+      "id": "traversal-slug",
+      "component": "evidence/taskdir",
+      "risk": "path traversal via task id",
+      "scenario": "Slug traversal and absolute inputs must be refused by the evidence jail, never joined",
+      "seed": "traversal-slug.txt",
+      "expected": "blocked:error-evidence-task-escapes-evidence-dir"
+    },
+    {
+      "id": "gate-subshell",
+      "component": "gates/allowlist+classify",
+      "risk": "gate escape via separators and command substitution",
+      "scenario": "Gate with ; plus $(...) or backtick payload must be refused even when the outer token is allowlisted",
+      "seed": "gate-subshell.txt",
+      "expected": "contained:allowlist=refused,subshell-scanned"
+    },
+    {
+      "id": "receipt-stdout-hostile",
+      "component": "receipts/capture",
+      "risk": "receipt corruption via hostile stdout",
+      "scenario": "Oversized hostile stdout must be truncated, sha-pinned, and round-trip byte-identical",
+      "seed": "receipt-stdout-hostile.txt",
+      "expected": "contained:truncated+sha-pinned+roundtrip-clean"
+    },
+    {
+      "id": "jsonl-corrupto",
+      "component": "evidence/listskipping",
+      "risk": "miner poisoning via corrupt receipt interleaved",
+      "scenario": "Corrupt receipt between healthy ones is skipped and counted while healthy flow continues; strict list aborts",
+      "seed": "jsonl-corrupto.txt",
+      "expected": "contained:skipped+counted,healthy-flow,strict-aborts"
+    },
+    {
+      "id": "batch-falla-parcial",
+      "component": "gates/run",
+      "risk": "batch ambiguity on partial failure",
+      "scenario": "Batch stops at the first failing gate: honest partial receipts, no further execution",
+      "seed": "batch-falla-parcial.txt",
+      "expected": "contained:stop-at-first-failure,partial-honest,no-extra-execution"
+    },
+    {
+      "id": "timeout-cero",
+      "component": "gates/run-timeout",
+      "risk": "timeout abuse via zero or huge values",
+      "scenario": "Timeout 0 clamps to the default and huge timeouts clamp to the max, observed on outcomes",
+      "seed": "timeout-cero.txt",
+      "expected": "contained:clamped-to-default/max"
+    }
+  ]
+}

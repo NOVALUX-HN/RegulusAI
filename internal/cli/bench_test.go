@@ -72,7 +72,7 @@ func TestBenchRun(t *testing.T) {
 	if code := c.Run([]string{"bench", "run", "--surface", "tree"}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	for _, want := range []string{"B1", "PASS", "B14", "bench: 14/14 passed"} {
+	for _, want := range []string{"B1", "PASS", "B14", "bench: quality 14/14 passed", "bench: cost proxy=", "quality per kproxy="} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("run must show %q, got:\n%s", want, out.String())
 		}

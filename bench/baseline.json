@@ -1,8 +1,8 @@
 {
   "suite": "macizo-bench-v3",
   "surface": "tree",
-  "git_head": "f19ea93074efc7002590ab675c208a8b23a901a8",
-  "started_at": "2026-11-04T03:56:52.8847944Z",
+  "git_head": "5947c5927193523b7da62266de57fb6d476a26c1",
+  "started_at": "2026-11-14T17:12:51.0355224Z",
   "tasks": [
     {
       "id": "B1",
@@ -10,7 +10,9 @@
       "kind": "cover",
       "pass": true,
       "duration_ms": 0,
-      "detail": "formula holds on 3 points"
+      "detail": "formula holds on 3 points",
+      "proxy_tokens": 25,
+      "proxy_known": true
     },
     {
       "id": "B2",
@@ -18,7 +20,9 @@
       "kind": "split",
       "pass": true,
       "duration_ms": 0,
-      "detail": "2 bounded units, second carries spec"
+      "detail": "2 bounded units, second carries spec",
+      "proxy_tokens": 24,
+      "proxy_known": true
     },
     {
       "id": "B3",
@@ -26,15 +30,19 @@
       "kind": "prose",
       "pass": true,
       "duration_ms": 0,
-      "detail": "good accepted, Then-less/single-word/disordered refused"
+      "detail": "good accepted, Then-less/single-word/disordered refused",
+      "proxy_tokens": 29,
+      "proxy_known": true
     },
     {
       "id": "B4",
       "title": "veracity-receipt-roundtrip",
       "kind": "veracity",
       "pass": true,
-      "duration_ms": 2,
-      "detail": "receipt byte-identical with SHA pins"
+      "duration_ms": 1,
+      "detail": "receipt byte-identical with SHA pins",
+      "proxy_tokens": 23,
+      "proxy_known": true
     },
     {
       "id": "B5",
@@ -42,7 +50,9 @@
       "kind": "gates",
       "pass": true,
       "duration_ms": 0,
-      "detail": "full=2, quick=1 required, unknown refused"
+      "detail": "full=2, quick=1 required, unknown refused",
+      "proxy_tokens": 22,
+      "proxy_known": true
     },
     {
       "id": "B6",
@@ -50,15 +60,19 @@
       "kind": "security",
       "pass": true,
       "duration_ms": 0,
-      "detail": "scoped accepted, traversal refused"
+      "detail": "scoped accepted, traversal refused",
+      "proxy_tokens": 22,
+      "proxy_known": true
     },
     {
       "id": "B7",
       "title": "honest-zero-cost",
       "kind": "cost",
       "pass": true,
-      "duration_ms": 2,
-      "detail": "1 call counted, host tokens unknown + 3 local proxy tokens (chars/4)"
+      "duration_ms": 1,
+      "detail": "1 call counted, host tokens unknown + 3 local proxy tokens (chars/4)",
+      "proxy_tokens": 32,
+      "proxy_known": true
     },
     {
       "id": "B8",
@@ -66,7 +80,9 @@
       "kind": "retrieval",
       "pass": true,
       "duration_ms": 4,
-      "detail": "golden query pins the rollback drill (1/2/0 hits)"
+      "detail": "golden query pins the rollback drill (1/2/0 hits)",
+      "proxy_tokens": 44,
+      "proxy_known": true
     },
     {
       "id": "B9",
@@ -74,7 +90,9 @@
       "kind": "gates",
       "pass": true,
       "duration_ms": 0,
-      "detail": "full=12, quick=12 required in order, unknown refused"
+      "detail": "full=12, quick=10 required in order, unknown refused",
+      "proxy_tokens": 40,
+      "proxy_known": true
     },
     {
       "id": "B10",
@@ -82,19 +100,56 @@
       "kind": "tokens",
       "pass": true,
       "duration_ms": 2,
-      "detail": "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown"
+      "detail": "proxy golden 5/8/7, fold 2 calls 1 error 13 tokens, host unknown",
+      "proxy_tokens": 39,
+      "proxy_known": true
     },
     {
       "id": "B11",
       "title": "lesson-context-cost",
       "kind": "tokens",
       "pass": true,
-      "duration_ms": 33,
-      "detail": "fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble 550 chars = 138 proxy tokens, host unknown"
+      "duration_ms": 32,
+      "detail": "fixture lessons priced: 3 observations (2 notes + 1 lesson) assemble 550 chars = 138 proxy tokens, host unknown",
+      "proxy_tokens": 51,
+      "proxy_known": true
+    },
+    {
+      "id": "B12",
+      "title": "decision-scoring-golden",
+      "kind": "decision",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "scoring golden 94/A 10/F 75/B",
+      "proxy_tokens": 31,
+      "proxy_known": true
+    },
+    {
+      "id": "B13",
+      "title": "gate-profile-decision",
+      "kind": "decision",
+      "pass": true,
+      "duration_ms": 0,
+      "detail": "docs-only edits ride quick=10, gate code rides full=12, forced full honored",
+      "proxy_tokens": 40,
+      "proxy_known": true
+    },
+    {
+      "id": "B14",
+      "title": "missrate-golden",
+      "kind": "retrieval",
+      "pass": true,
+      "duration_ms": 9,
+      "detail": "missrate 4/4 lexical-miss, 4/4 hybrid top-3 (2 paraphrase + 2 typo), unknown 0 hits",
+      "proxy_tokens": 50,
+      "proxy_known": true
     }
   ],
-  "passed": 11,
+  "passed": 14,
   "failed": 0,
-  "total_duration_ms": 43,
-  "output_bytes": 571
+  "total_duration_ms": 49,
+  "output_bytes": 758,
+  "total_proxy_tokens": 472,
+  "proxy_known": true,
+  "quality_per_kproxy": 29.661016949152543
 }

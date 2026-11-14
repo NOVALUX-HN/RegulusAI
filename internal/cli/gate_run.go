@@ -17,13 +17,15 @@ import (
 )
 
 // gateRunArgs is the validated budget of one `gate run`: the task, the
-// profile selector, the dry-run flag, the loaded config and the runner.
-// parseGateRunArgs builds it; renderDryRunPlan and execAndReport consume it.
+// profile selector, the consent flag, the dry-run flag, the loaded config
+// and the runner. parseGateRunArgs builds it; renderDryRunPlan and
+// execAndReport consume it.
 type gateRunArgs struct {
 	task    string
 	profile string
 	quick   bool
 	dryRun  bool
+	yes     bool
 	cfg     gates.Config
 	runner  gates.CmdRunner
 }
@@ -36,6 +38,7 @@ func (c CLI) parseGateRunArgs(args []string) (gateRunArgs, int, bool) {
 	fs := flag.NewFlagSet("gate run", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	dryRun := fs.Bool("dry-run", false, "print the execution plan without running gates")
+	yes := fs.Bool("yes", false, "explicitly consent to run gates here (required for untrusted repos and when no allowlist is configured)")
 	profile := fs.String("profile", "", "run required gates plus this profile's members (quick, full, or a declared name)")
 	quick := fs.Bool("quick", false, "run the lean daily-loop set only: typecheck, lint, build, unit-tests, spec, gofmt")
 	if err := fs.Parse(args); err != nil {
@@ -63,7 +66,7 @@ func (c CLI) parseGateRunArgs(args []string) (gateRunArgs, int, bool) {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return gateRunArgs{}, 1, false
 	}
-	return gateRunArgs{task: task, profile: *profile, quick: *quick, dryRun: *dryRun, cfg: cfg, runner: r}, 0, true
+	return gateRunArgs{task: task, profile: *profile, quick: *quick, dryRun: *dryRun, yes: *yes, cfg: cfg, runner: r}, 0, true
 }
 
 // selectPlanGates resolves which gates the plan runs: the --quick lean
@@ -80,7 +83,8 @@ func selectPlanGates(cfg gates.Config, plan gateRunArgs) ([]gates.Gate, error) {
 
 // renderDryRunPlan prints the execution plan without running anything and
 // writes nothing. Selection, layer order, timeout budget, isolation and
-// annotations all match the historical dry-run output exactly.
+// annotations all match the historical dry-run output exactly, plus the
+// S6 plan header (dir, gate count) and per-line allowlist verdict.
 func (c CLI) renderDryRunPlan(plan gateRunArgs) int {
 	ordered, err := selectPlanGates(plan.cfg, plan)
 	if err != nil {
@@ -88,6 +92,7 @@ func (c CLI) renderDryRunPlan(plan gateRunArgs) int {
 		return 1
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Layer < ordered[j].Layer })
+	fmt.Fprintf(c.Stdout, "plan: dir=%s gates=%d\n", c.dir(), len(ordered))
 	max := 3600
 	if plan.cfg.Execution != nil && plan.cfg.Execution.MaxTimeoutSec > 0 {
 		max = plan.cfg.Execution.MaxTimeoutSec
@@ -97,8 +102,12 @@ func (c CLI) renderDryRunPlan(plan gateRunArgs) int {
 		dockerImage = plan.cfg.Execution.DockerImage
 	}
 	isSh := dryRunIsSh(plan.runner)
+	var allow []string
+	if plan.cfg.Execution != nil {
+		allow = plan.cfg.Execution.Allowlist
+	}
 	for _, g := range ordered {
-		fmt.Fprint(c.Stdout, dryRunGateLine(g, max, dockerImage, isSh))
+		fmt.Fprint(c.Stdout, dryRunGateLine(g, max, dockerImage, isSh, allow...))
 	}
 	return 0
 }
@@ -116,9 +125,12 @@ func dryRunIsSh(r gates.CmdRunner) bool {
 }
 
 // dryRunGateLine renders one dry-run plan line: timeout clamp, command
-// classification, isolation, reproducibility, failure policy, required mark
-// and when-condition. Pure formatting: no I/O, no execution.
-func dryRunGateLine(g gates.Gate, max int, dockerImage string, isSh bool) string {
+// classification, isolation, reproducibility, failure policy, required mark,
+// when-condition, the S6 allowlist verdict (allow/deny, deny by default
+// without an allowlist) and the destructive mark. The verdict shows the
+// pre-consent policy outcome: --yes consent applies at execution time.
+// Pure formatting: no I/O, no execution.
+func dryRunGateLine(g gates.Gate, max int, dockerImage string, isSh bool, allowlist ...string) string {
 	timeout := g.TimeoutSec
 	if timeout <= 0 {
 		timeout = gates.DefaultTimeoutSec
@@ -152,7 +164,12 @@ func dryRunGateLine(g gates.Gate, max int, dockerImage string, isSh bool) string
 	if len(g.When) > 0 {
 		cond = "when " + strings.Join(g.When, ",")
 	}
-	return fmt.Sprintf("layer %d %-16s %q timeout=%ds classification=%s isolation=%s reproducibility=%s on_fail=%s %s %s\n", g.Layer, g.Name, g.Command, timeout, classification, isolation, repro, policy, required, cond)
+	verdict := "deny"
+	if gates.AllowedByAllowlist(g.Command, allowlist) {
+		verdict = "allow"
+	}
+	destructive := classification == gates.ClassificationDestructive
+	return fmt.Sprintf("layer %d %-16s %q timeout=%ds classification=%s isolation=%s reproducibility=%s on_fail=%s %s %s allowlist=%s destructive=%t\n", g.Layer, g.Name, g.Command, timeout, classification, isolation, repro, policy, required, cond, verdict, destructive)
 }
 
 // gateToolHint maps a gate binary to its install hint. Pinned versions
@@ -240,6 +257,25 @@ func preflightMissingTools(selected []gates.Gate, lookPath func(string) (string,
 	return missing
 }
 
+// isTrustedRepo reports whether dir is a trusted repo (S6): the marker
+// <root>/.regulus/trusted exists. The marker is created by explicit
+// operator action, never by a gate run.
+func isTrustedRepo(dir string) bool {
+	st, err := os.Stat(filepath.Join(dir, ".regulus", "trusted"))
+	return err == nil && !st.IsDir()
+}
+
+// consentCtx carries explicit --yes consent to the executor so executed
+// receipts record consent:true (S6). Without --yes the background context
+// rides unchanged.
+func consentCtx(plan gateRunArgs) context.Context {
+	ctx := context.Background()
+	if plan.yes {
+		ctx = gates.ContextWithConsent(ctx, true)
+	}
+	return ctx
+}
+
 // execAndReport runs the gauntlet for one task and prints the per-layer
 // lines plus the gauntlet/verdict/manifest footers. Before any layer it
 // preflights the selected gates' binaries (LookPath, fail-fast with
@@ -247,10 +283,45 @@ func preflightMissingTools(selected []gates.Gate, lookPath func(string) (string,
 // or gate failure; exit 0 when the gauntlet passes (advisory-only
 // failures also exit 0, exactly as before).
 func (c CLI) execAndReport(plan gateRunArgs) int {
+	if base, _, ok := strings.Cut(plan.task, "/"); ok && base != "" {
+		for _, cand := range []string{filepath.Join("charts", base+".md"), filepath.Join(c.dir(), "charts", base+".md")} {
+			if data, rerr := os.ReadFile(cand); rerr == nil {
+				if violations := collectViolations(string(data)); len(violations) != 0 {
+					fmt.Fprintf(c.Stdout, "gate run blocked: chart %s has %d violation(s) — BUILD refused before layer 1\n", cand, len(violations))
+					for _, v := range violations {
+						fmt.Fprintf(c.Stdout, "violation: %s\n", v)
+					}
+					fmt.Fprintln(c.Stdout, "why: running gates on an unverifiable chart wastes evidence and hides the real defect")
+					fmt.Fprintf(c.Stdout, "next: fix the chart, then run: regulus task check %s\n", cand)
+					return 1
+				}
+				break
+			}
+		}
+	}
 	cfgBytes, err := os.ReadFile(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1
+	}
+	// S6 consent gates (real-shell runs only, mirroring preflight: test
+	// doubles provide their own commands, so policy consent does not
+	// apply to them). Deny-by-default is armed here and an untrusted
+	// repo (missing .regulus/trusted) must show the plan and carry
+	// explicit --yes before anything executes or is written.
+	if plan.runner == nil || dryRunIsSh(plan.runner) {
+		if plan.cfg.Execution == nil {
+			plan.cfg.Execution = &gates.ExecutionConfig{}
+		}
+		plan.cfg.Execution.EnforceDenyByDefault = true
+		plan.cfg.Execution.ExplicitYes = plan.yes
+		if !plan.yes && !isTrustedRepo(c.dir()) {
+			if code := c.renderDryRunPlan(plan); code != 0 {
+				return code
+			}
+			fmt.Fprintf(c.Stderr, "gate run: untrusted repo (missing .regulus/trusted) — inspect the plan above and re-run with --yes to consent (or --dry-run to inspect only)\n")
+			return 1
+		}
 	}
 	// Preflight (S2): before any layer runs and before any receipt is
 	// written, resolve the binary of every SELECTED gate (profile-aware)
@@ -287,7 +358,7 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 			runBytes = marshaled
 		}
 	}
-	res, mpath, err := gates.RunTask(context.Background(), runCfg, runBytes, c.dir(), plan.task, c.Version, contract.Version, runProfile, plan.runner)
+	res, mpath, err := gates.RunTask(consentCtx(plan), runCfg, runBytes, c.dir(), plan.task, c.Version, contract.Version, runProfile, plan.runner)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
 		return 1
@@ -319,6 +390,8 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 	fmt.Fprintf(c.Stdout, "verdict: %s (%s)\n", res.Status, res.Reason)
 	fmt.Fprintf(c.Stdout, "manifest: %s\n", mpath)
 	if res.Failed {
+		fmt.Fprintf(c.Stdout, "why: gate %q failed — task close stays blocked until the gauntlet passes\n", res.FailedGate)
+		fmt.Fprintf(c.Stdout, "next: fix gate %q, inspect evidence with regulus evidence show %s, then re-run: regulus gate run %s\n", res.FailedGate, mpath, plan.task)
 		return 1
 	}
 	return 0

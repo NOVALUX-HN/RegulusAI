@@ -7,8 +7,13 @@
 package evolve
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -210,6 +215,395 @@ func RunExperiments(root string, strategy Strategy, exps []Experiment, cap RunCa
 			go func(i int) {
 				defer wg.Done()
 				errs[i] = runOne(i)
+			}(i)
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				return out, err
+			}
+		}
+	}
+	return out, nil
+}
+
+// F7 exploration engine (NOV-58, f7-protocol-v1): hard-budgeted fan-out
+// over lightweight candidates. INV and DOM share one protocol, one probe
+// shape and one budget; sequential chains carry parent_id lineage without
+// touching the baseline; the workspace is isolated (optional checkpoint
+// dir) and never promotes (no Adopt/Advance path here); the fallback is
+// inline goroutines — no subagents, no exec, hermetic under App Control.
+// Statuses mirror the manifest taxonomy (pass/fail/timeout/infra/
+// non-evaluable/missing) so metrics stay separable downstream.
+
+// RunMode selects the exploration order.
+type RunMode string
+
+const (
+	RunModeParallel   RunMode = "parallel"
+	RunModeSequential RunMode = "sequential"
+)
+
+// F7 exploration statuses (protocol §5).
+const (
+	ExplorePass         = "pass"
+	ExploreFail         = "fail"
+	ExploreTimeout      = "timeout"
+	ExploreInfra        = "infra"
+	ExploreNonEvaluable = "non-evaluable"
+	ExploreMissing      = "missing"
+)
+
+// ErrExplorationBudget stops a run when a hard budget fires. Partial
+// outcomes collected so far accompany the error.
+var ErrExplorationBudget = errors.New("evolve: exploration budget exhausted")
+
+// RunBudget holds the hard F7 limits. Zero means uncapped except where
+// noted; negative values are refused.
+type RunBudget struct {
+	MaxWallTime    time.Duration
+	MaxTokens      int64
+	MaxCandidates  int
+	MaxConcurrency int
+	MaxRetries     int
+	MaxDiffBytes   int64
+}
+
+// RunOptions controls one exploration run.
+type RunOptions struct {
+	K         int
+	Mode      RunMode
+	Budget    RunBudget
+	Seed      int64
+	Workspace string
+}
+
+// ExplorationCandidate is one unit to explore: id + domain + lineage.
+// Proposals carry no rubrics, answers or holdout content (anti-leakage).
+type ExplorationCandidate struct {
+	ID       string
+	Domain   string
+	ParentID string
+}
+
+// ExplorationOutcome is the per-candidate result, indexed by input order.
+type ExplorationOutcome struct {
+	ID       string
+	Domain   string
+	ParentID string
+	Status   string
+	Detail   string
+	Attempts int
+	Tokens   int64
+}
+
+// ExploreProbe runs one attempt. It must be deterministic in
+// (seed, candidate, attempt) and must not depend on wall time. Returning
+// a non-nil error records a fail ("probe error: ...") and retries per
+// budget; only ctx cancellation, timeout and token/candidate budgets
+// abort the whole run.
+type ExploreProbe func(ctx context.Context, cand ExplorationCandidate, attempt int) (ExplorationOutcome, error)
+
+// validExploreStatus reports protocol membership.
+func validExploreStatus(s string) bool {
+	switch s {
+	case ExplorePass, ExploreFail, ExploreTimeout, ExploreInfra, ExploreNonEvaluable, ExploreMissing:
+		return true
+	}
+	return false
+}
+
+// ValidateRunOptions checks K, mode, seed and budget signs without firing
+// any probe.
+func ValidateRunOptions(opts RunOptions, nCandidates int) error {
+	if opts.K < 1 {
+		return fmt.Errorf("evolve: exploration K must be >= 1, got %d", opts.K)
+	}
+	switch opts.Mode {
+	case RunModeParallel, RunModeSequential:
+	default:
+		return fmt.Errorf("evolve: unknown exploration mode %q (want parallel or sequential)", opts.Mode)
+	}
+	if opts.Seed == 0 {
+		return errors.New("evolve: exploration needs a non-zero seed for reproducibility")
+	}
+	if nCandidates < 0 {
+		return errors.New("evolve: negative candidate count")
+	}
+	b := opts.Budget
+	if b.MaxTokens < 0 || b.MaxCandidates < 0 || b.MaxConcurrency < 0 || b.MaxRetries < 0 || b.MaxDiffBytes < 0 || b.MaxWallTime < 0 {
+		return errors.New("evolve: exploration budgets must not be negative")
+	}
+	return nil
+}
+
+// effectiveSelection caps the run: first N in input order where
+// N = min(K, len, MaxCandidates when > 0). Input order is stable so
+// resume stays idempotent under the same seed and candidate list.
+func effectiveSelection(opts RunOptions, cands []ExplorationCandidate) []ExplorationCandidate {
+	n := len(cands)
+	if opts.K < n {
+		n = opts.K
+	}
+	if opts.Budget.MaxCandidates > 0 && opts.Budget.MaxCandidates < n {
+		n = opts.Budget.MaxCandidates
+	}
+	return cands[:n]
+}
+
+// truncateDiff enforces the MaxDiffBytes hard ceiling by truncation.
+func truncateDiff(detail string, max int64) string {
+	if max > 0 && int64(len(detail)) > max {
+		return detail[:max]
+	}
+	return detail
+}
+
+// retryable reports whether another attempt may help. Pass,
+// non-evaluable and missing are terminal; fail/timeout/infra retry
+// while attempts remain.
+func retryable(status string) bool {
+	switch status {
+	case ExploreFail, ExploreTimeout, ExploreInfra:
+		return true
+	}
+	return false
+}
+
+// checkpointPath confines resume state to the isolated workspace.
+func checkpointPath(workspace string) string {
+	return filepath.Join(workspace, "checkpoint.json")
+}
+
+// loadCheckpoint reads previously completed outcomes from the workspace.
+// A missing workspace or checkpoint reads as empty, never an error.
+func loadCheckpoint(workspace string) map[string]ExplorationOutcome {
+	done := map[string]ExplorationOutcome{}
+	if strings.TrimSpace(workspace) == "" {
+		return done
+	}
+	data, err := os.ReadFile(checkpointPath(workspace))
+	if err != nil {
+		return done
+	}
+	var outs []ExplorationOutcome
+	if err := json.Unmarshal(data, &outs); err != nil {
+		return map[string]ExplorationOutcome{}
+	}
+	for _, o := range outs {
+		done[o.ID] = o
+	}
+	return done
+}
+
+// saveCheckpoint rewrites the workspace checkpoint atomically (temp+rename).
+func saveCheckpoint(workspace string, outs []ExplorationOutcome) {
+	if strings.TrimSpace(workspace) == "" {
+		return
+	}
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return
+	}
+	raw, err := json.MarshalIndent(outs, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(workspace, "checkpoint-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(append(raw, '\n')); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return
+	}
+	os.Rename(tmpName, checkpointPath(workspace))
+}
+
+// RunExploration runs opts.K candidates under opts with hard budgets.
+// Outcomes follow input order; partial failures never abort the run —
+// only ctx cancellation, wall-time timeout and token/candidate budgets
+// do, returning the partial outcomes with the cause. The baseline is
+// never touched (no root, no store writes outside Workspace) and nothing
+// here can promote: adoption lives in the NOV-42 cycle, not in exploration.
+func RunExploration(ctx context.Context, opts RunOptions, cands []ExplorationCandidate, probe ExploreProbe) ([]ExplorationOutcome, error) {
+	return RunExplorationResume(ctx, opts, cands, nil, probe)
+}
+
+// RunExplorationResume resumes idempotently: ids present in done (or in
+// the workspace checkpoint when Workspace is set) are reused without
+// re-firing the probe. Repeating the same call with the outcomes of the
+// previous attempt fires zero new probes for completed ids.
+func RunExplorationResume(ctx context.Context, opts RunOptions, cands []ExplorationCandidate, done map[string]ExplorationOutcome, probe ExploreProbe) ([]ExplorationOutcome, error) {
+	if err := ValidateRunOptions(opts, len(cands)); err != nil {
+		return nil, err
+	}
+	if probe == nil {
+		return nil, errors.New("evolve: exploration needs a probe function")
+	}
+	for _, c := range cands {
+		if strings.TrimSpace(c.ID) == "" {
+			return nil, errors.New("evolve: exploration candidate needs an id")
+		}
+		if c.Domain != DomainINV && c.Domain != DomainDOM {
+			return nil, fmt.Errorf("evolve: exploration domain %q must be INV or DOM", c.Domain)
+		}
+	}
+	if opts.Workspace != "" {
+		if err := os.MkdirAll(opts.Workspace, 0o755); err != nil {
+			return nil, err
+		}
+		for id, o := range loadCheckpoint(opts.Workspace) {
+			if done == nil {
+				done = map[string]ExplorationOutcome{}
+			}
+			if _, ok := done[id]; !ok {
+				done[id] = o
+			}
+		}
+	}
+	if opts.Budget.MaxWallTime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Budget.MaxWallTime)
+		defer cancel()
+	}
+	sel := effectiveSelection(opts, cands)
+	out := make([]ExplorationOutcome, len(sel))
+	doneCount := 0
+	for i, c := range sel {
+		if d, ok := done[c.ID]; ok {
+			out[i] = d
+			doneCount++
+			continue
+		}
+		out[i] = ExplorationOutcome{ID: c.ID, Domain: c.Domain, ParentID: c.ParentID, Status: ExploreMissing}
+	}
+	if doneCount == len(sel) {
+		return out, nil
+	}
+	var mu sync.Mutex
+	var totalTokens int64
+	for _, d := range done {
+		totalTokens += d.Tokens
+	}
+	claimTokens := func(t int64) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if opts.Budget.MaxTokens > 0 && totalTokens+t > opts.Budget.MaxTokens {
+			return ErrExplorationBudget
+		}
+		totalTokens += t
+		return nil
+	}
+	// attemptOne fires a single probe attempt and folds budget/detail rules.
+	attemptOne := func(cand ExplorationCandidate, attempt int) (ExplorationOutcome, bool, error) {
+		if err := ctx.Err(); err != nil {
+			return ExplorationOutcome{}, false, err
+		}
+		got, err := probe(ctx, cand, attempt)
+		if err != nil {
+			got = ExplorationOutcome{ID: cand.ID, Domain: cand.Domain, ParentID: cand.ParentID, Status: ExploreFail, Detail: "probe error: " + err.Error()}
+		}
+		if strings.TrimSpace(got.ID) == "" {
+			got.ID = cand.ID
+		}
+		got.Domain = cand.Domain
+		got.ParentID = cand.ParentID
+		if !validExploreStatus(got.Status) {
+			got.Status = ExploreFail
+		}
+		got.Detail = truncateDiff(got.Detail, opts.Budget.MaxDiffBytes)
+		if got.Attempts == 0 {
+			got.Attempts = attempt
+		}
+		if err := claimTokens(got.Tokens); err != nil {
+			return got, false, err
+		}
+		return got, true, nil
+	}
+	runCandidate := func(i int) error {
+		cand := sel[i]
+		if _, ok := done[cand.ID]; ok {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		maxAttempts := 1 + opts.Budget.MaxRetries
+		var last ExplorationOutcome
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			got, ok, err := attemptOne(cand, attempt)
+			if err != nil {
+				if errors.Is(err, ErrExplorationBudget) {
+					last = got
+					last.Attempts = attempt
+					mu.Lock()
+					out[i] = last
+					mu.Unlock()
+					return ErrExplorationBudget
+				}
+				return err
+			}
+			if !ok {
+				return ctx.Err()
+			}
+			got.Attempts = attempt
+			last = got
+			if !retryable(got.Status) {
+				break
+			}
+			if got.Status == ExplorePass {
+				break
+			}
+		}
+		mu.Lock()
+		out[i] = last
+		completed := append([]ExplorationOutcome(nil), out...)
+		mu.Unlock()
+		saveCheckpoint(opts.Workspace, completed)
+		return nil
+	}
+	switch opts.Mode {
+	case RunModeSequential:
+		for i := range sel {
+			if _, ok := done[sel[i].ID]; ok {
+				continue
+			}
+			if err := runCandidate(i); err != nil {
+				return out, err
+			}
+		}
+	case RunModeParallel:
+		maxConc := opts.Budget.MaxConcurrency
+		if maxConc <= 0 {
+			maxConc = len(sel)
+		}
+		sem := make(chan struct{}, maxConc)
+		var wg sync.WaitGroup
+		errs := make([]error, len(sel))
+		for i := range sel {
+			if _, ok := done[sel[i].ID]; ok {
+				continue
+			}
+			if err := ctx.Err(); err != nil {
+				for j := range errs {
+					if errs[j] == nil {
+						errs[j] = err
+					}
+				}
+				break
+			}
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				errs[i] = runCandidate(i)
 			}(i)
 		}
 		wg.Wait()

@@ -25,6 +25,20 @@ markers) and evolve experiments. Kinds with no backing store (guardian
 detail, memory retrieval log, external calls) project empty, honestly —
 never invented.
 
+## 2b. Correlated executions (one ID across receipts, traces and spans)
+
+Every gate run mints one run id (receipts/manifest `run_id`). The trace hook records the same id as the
+trace entry's `execution_id`, and every projected span carries it as the `execution_id` attribute — so one
+execution joins across receipts (`run_id`), trace entries (`execution_id`), timeline spans
+(`execution_id`), structured events (`execution_id`) and `GET /v1/executions` (`errors`/`tool_calls` count the
+trace entries tagged with the cycle's run id). The task still groups work; the execution id correlates one
+run within (and across) tasks and sessions: `ProjectReceipts` also finds receipts by run id, and
+`ProjectToolCalls`/`ProjectTimeline` also pull tool calls from other sessions tagged with the task's run
+ids. Compatibility: `execution_id`/`correlation_id` are optional (`omitempty`, single-line like every other
+field); hook calls that omit them keep working unchanged, legacy lines without an id read as
+`"(unattributed)"` (never forced into an execution), and `Fingerprint` ignores both ids so contrast diffs
+stay stable.
+
 ## 3. Metrics and budgets
 
 `Summarize` aggregates the S3 rates read-only; empty input yields zeros,

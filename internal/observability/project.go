@@ -45,6 +45,10 @@ const (
 
 // ReceiptSpan projects one gauntlet receipt as a verification span:
 // one span per receipt, correlated by task (S2 gauntlet tracking).
+// The receipt's run id rides as the execution_id attribute (NOV-34):
+// the same id the gate run mints and the trace hook records as
+// execution_id, so receipts and tool calls of one execution join
+// besides the task.
 func ReceiptSpan(r receipts.Receipt, traceID, correlationID string) (Span, error) {
 	s, err := StartSpan("gauntlet", "verification."+r.Gate, r.Task, correlationID, r.StartedAt)
 	if err != nil {
@@ -68,6 +72,9 @@ func ReceiptSpan(r receipts.Receipt, traceID, correlationID string) (Span, error
 	s.Attributes["command"] = r.Command
 	s.Attributes["duration_ms"] = r.DurationMS
 	s.Attributes["receipt_id"] = r.ID
+	if r.RunID != "" {
+		s.Attributes["execution_id"] = r.RunID
+	}
 	return RedactSpan(s), nil
 }
 
@@ -105,6 +112,17 @@ func ToolCallSpan(e trace.Entry, taskID, traceID, correlationID string) (Span, e
 	// metrics and budgets instead.
 	if e.Task != "" {
 		s.Attributes["task"] = e.Task
+	}
+	// NOV-34 execution join: the gate run's runID recorded as
+	// execution_id (empty on legacy lines, which carry no attribute).
+	if e.ExecutionID != "" {
+		s.Attributes["execution_id"] = e.ExecutionID
+	}
+	// The entry's own correlation id is storage for the hook's intent;
+	// the projected timeline still mints one shared correlation id (see
+	// ProjectTimeline), so it is not promoted to the span field here.
+	if e.CorrelationID != "" {
+		s.Attributes["entry_correlation_id"] = e.CorrelationID
 	}
 	if e.DurationMS > 0 {
 		s.Attributes["duration_ms"] = e.DurationMS
@@ -224,12 +242,64 @@ func ExternalSpan(component, name, taskID, correlationID string, start time.Time
 	return RedactSpan(s), nil
 }
 
+// runIDsForTask collects the run ids of one task's receipts: the
+// execution ids its tool calls must join on (NOV-34). taskID may itself
+// be a run id (no task dir then): the fallback scans every task for
+// receipts stamped with that run. Unknown tasks yield no ids and no
+// error.
+func runIDsForTask(root, taskID string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if taskID == "" {
+		return out, nil
+	}
+	entries, err := evidence.List(root, taskID)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.Receipt.RunID != "" {
+			out[e.Receipt.RunID] = true
+		}
+	}
+	if len(out) == 0 {
+		all, err := evidence.List(root, "")
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range all {
+			if e.Receipt.RunID != "" && e.Receipt.RunID == taskID {
+				out[e.Receipt.RunID] = true
+			}
+		}
+	}
+	return out, nil
+}
+
 // ProjectReceipts projects one verification span per receipt of a
-// task, oldest first. A task with no receipts yields no spans.
+// task, oldest first. A task with no receipts yields no spans. The
+// task selector also accepts a run id (NOV-34): receipts stamped with
+// that run join besides the task, so one execution reads whole even
+// when the caller only knows its id.
 func ProjectReceipts(root, taskID, traceID, correlationID string) ([]Span, error) {
 	entries, err := evidence.List(root, taskID)
 	if err != nil {
 		return nil, err
+	}
+	if taskID != "" {
+		seen := map[string]bool{}
+		for _, e := range entries {
+			seen[e.Receipt.ID] = true
+		}
+		all, err := evidence.List(root, "")
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range all {
+			if e.Receipt.RunID != "" && e.Receipt.RunID == taskID && !seen[e.Receipt.ID] {
+				seen[e.Receipt.ID] = true
+				entries = append(entries, e)
+			}
+		}
 	}
 	out := make([]Span, 0, len(entries))
 	for _, e := range entries {
@@ -244,7 +314,11 @@ func ProjectReceipts(root, taskID, traceID, correlationID string) ([]Span, error
 
 // ProjectToolCalls projects one tool-call span per trace entry of a
 // session ("" lists every session on disk), in call order. Unknown
-// sessions yield no spans.
+// sessions yield no spans. When a specific session is requested for a
+// task with runs (NOV-34), entries from every other session tagged with
+// one of the task's run ids join besides the session: one execution
+// reads whole even when its tool calls span sessions. A malformed
+// trace aborts with the line error, never a silent partial read.
 func ProjectToolCalls(root, session, taskID, traceID, correlationID string) ([]Span, error) {
 	sessions := []string{session}
 	if session == "" {
@@ -266,6 +340,37 @@ func ProjectToolCalls(root, session, taskID, traceID, correlationID string) ([]S
 				return nil, err
 			}
 			out = append(out, s)
+		}
+	}
+	if session != "" {
+		runIDs, err := runIDsForTask(root, taskID)
+		if err != nil {
+			return nil, err
+		}
+		if len(runIDs) > 0 {
+			all, err := trace.Sessions(root)
+			if err != nil {
+				return nil, err
+			}
+			for _, sess := range all {
+				if sess == session {
+					continue
+				}
+				entries, err := trace.List(root, sess)
+				if err != nil {
+					return nil, err
+				}
+				for _, e := range entries {
+					if e.ExecutionID == "" || !runIDs[e.ExecutionID] {
+						continue
+					}
+					s, err := ToolCallSpan(e, taskID, traceID, correlationID)
+					if err != nil {
+						return nil, err
+					}
+					out = append(out, s)
+				}
+			}
 		}
 	}
 	return out, nil

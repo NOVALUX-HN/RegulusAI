@@ -13,12 +13,12 @@ audit (Phase 0 rule: no invented results). Coverage numbers below are read from 
 | Contract | `contract_test.go` (2), `checkContract` cases in `domain.test.ts`, CI smoke (`contract` line in Devin blueprint) | `internal/contract/contract_test.go` |
 | Integration | CLI end-to-end via `CLI.Run` with fixture dirs (memory/reindex/relate/status suites under `internal/cli/`) | `internal/cli/memory_*_test.go` |
 | E2E journeys | Deterministic fixture-project journeys: F1 spine, F2/F3/F4, S8, V06/V07 (`internal/journey/`, 7 files) | `journey_test.go:TestF1VerticalSpine` + `f2/f3/f4/s8/v06/v07` |
-| Mutation | gremlins, threshold efficacy 70, scope `internal/receipts`, workers 1, timeout-coefficient 10, 600s cap | `regulus.json` layer 6 |
+| Mutation | gremlins, threshold efficacy 70 per module, scopes `internal/receipts` (300s, layer 7) + `internal/gates` (600s, layer 8), workers 4, timeout-coefficient 10 | `regulus.json` layers 7-8 |
 | CRAP | max 30, top 5, gate layer 7; scorer unit-tested (6 tests) | `regulus.json`, `crap_test.go` |
 | Security | refusal-path tests (doctor V1 refusal, `yolo` deny preservation, trace `nobody` refusal in CI smoke) — no adversarial/security suite | `version_test.go`, `yolo_test.go`, `gauntlet.yml` smoke |
-| Concurrency | none (no parallel code paths; no `-race` gate) | architecture-assessment §6 |
+| Concurrency | race-almanac layer 15 (`go test -race -count=1 ./internal/almanac/`, full-only) + `concurrency_test.go` (dedup race, identical import, repeat-save idempotency) | `regulus.json` layer 15, `internal/almanac/concurrency_test.go` |
 | Perf | `perf_test.go`, `missrate_test.go` (retrieval depth/latency evidence) | `internal/almanac/*perf*, *missrate*` |
-| Formatting | `gofmt` as gate layer 12 + `gofmt_test.go` | `regulus.json`, `internal/gates/gofmt_test.go` |
+| Formatting | `gofmt` as gate layer 14 + `gofmt_test.go` | `regulus.json`, `internal/gates/gofmt_test.go` |
 
 ## 2. Coverage and determinism — strengths
 
@@ -35,8 +35,7 @@ audit (Phase 0 rule: no invented results). Coverage numbers below are read from 
    (gates runner, surface whitelist, reflect evidence-gate, budget caps, MCP dispatch) has unit tests but no
    mutation proof that the tests would catch inverted conditions. → AUD-P2-01 (widen scope incrementally;
    cost is gremlins runtime, hence P2 not P1).
-2. **No `-race` gate (G2).** Justified today (no parallel paths), but nothing would catch a future data race
-   at introduction time. → AUD-P3-05 (cheap insurance when/if concurrency lands; do not add ceremony now).
+2. **No `-race` gate (G2).** Addressed by NOV-29: `race-almanac` (layer 15, full-only) runs `go test -race -count=1 ./internal/almanac/` in CI full; local quick stays race-free. → AUD-P3-05 closed for `internal/almanac`; reopen only if new parallel paths land without coverage.
 3. **Plugin hooks untested (G3).** `regulus.ts` hook bodies (trace capture, context assembly, compaction
    resume, binary resolution, contract refusal) have no harness — `domain.ts` purity is tested, host-coupled
    `regulus.ts` is not. A broken hook fails silently (by design: never break tool execution) which hides

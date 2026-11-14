@@ -146,10 +146,11 @@ func (c CLI) benchRunCmd(args []string) int {
 		if !t.Pass {
 			mark = "FAIL"
 		}
-		fmt.Fprintf(c.Stdout, "%-4s %-28s %s (%dms) %s\n", t.ID, t.Title, mark, t.DurationMS, t.Detail)
+		fmt.Fprintf(c.Stdout, "%-4s %-28s %s (%dms, proxy=%d) %s\n", t.ID, t.Title, mark, t.DurationMS, t.ProxyTokens, t.Detail)
 	}
-	fmt.Fprintf(c.Stdout, "bench: %d/%d passed on surface %q (%dms wall, %dB detail)\n",
-		rep.Passed, len(rep.Tasks), rep.Surface, rep.TotalMS, rep.OutputBytes)
+	fmt.Fprintf(c.Stdout, "bench: quality %d/%d passed on surface %q\n", rep.Passed, len(rep.Tasks), rep.Surface)
+	fmt.Fprintf(c.Stdout, "bench: cost proxy=%d tokens (measured-local chars/4, host tokens unknown) wall=%dms detail=%dB\n", rep.TotalProxyTokens, rep.TotalMS, rep.OutputBytes)
+	fmt.Fprintf(c.Stdout, "bench: quality per kproxy=%.2f passes/kproxy (informational, never gates ADOPT)\n", rep.QualityPerKProxy)
 	if *save != "" {
 		fmt.Fprintf(c.Stdout, "bench: report saved to %s\n", *save)
 	}
@@ -177,7 +178,7 @@ func (c CLI) benchBaselineCmd(args []string) int {
 			fmt.Fprintf(c.Stderr, "bench baseline: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(c.Stdout, "bench: baseline recorded to %s (%d/%d passed)\n", bench.BaselinePath, rep.Passed, len(rep.Tasks))
+		fmt.Fprintf(c.Stdout, "bench: baseline recorded to %s (%d/%d passed, proxy=%d, q/kproxy=%.2f)\n", bench.BaselinePath, rep.Passed, len(rep.Tasks), rep.TotalProxyTokens, rep.QualityPerKProxy)
 		return 0
 	}
 	rep, err := bench.Load(bench.BaselinePath)
@@ -194,8 +195,8 @@ func (c CLI) benchBaselineCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, string(raw))
 		return 0
 	}
-	fmt.Fprintf(c.Stdout, "bench baseline %s surface %q head=%s: %d/%d passed (%dms wall)\n",
-		rep.Suite, rep.Surface, shortBenchHead(rep.GitHead), rep.Passed, len(rep.Tasks), rep.TotalMS)
+	fmt.Fprintf(c.Stdout, "bench baseline %s surface %q head=%s: quality %d/%d passed cost proxy=%d (q/kproxy=%.2f, host unknown, %dms wall)\n",
+		rep.Suite, rep.Surface, shortBenchHead(rep.GitHead), rep.Passed, len(rep.Tasks), rep.TotalProxyTokens, rep.QualityPerKProxy, rep.TotalMS)
 	for _, t := range rep.Tasks {
 		mark := "PASS"
 		if !t.Pass {
@@ -259,9 +260,11 @@ func (c CLI) benchCompareCmd(args []string) int {
 		baseRep.Surface, baseRep.Passed, len(baseRep.Tasks),
 		candRep.Surface, candRep.Passed, len(candRep.Tasks))
 	for _, r := range cmp.Rows {
-		fmt.Fprintf(c.Stdout, "  %-4s %-28s base=%s cand=%s delta=%+dms\n",
-			r.ID, r.Title, benchPassWord(r.Base), benchPassWord(r.Cand), r.DeltaMS)
+		fmt.Fprintf(c.Stdout, "  %-4s %-28s base=%s cand=%s delta=%+dms proxydelta=%+d\n",
+			r.ID, r.Title, benchPassWord(r.Base), benchPassWord(r.Cand), r.DeltaMS, r.DeltaProxy)
 	}
+	fmt.Fprintf(c.Stdout, "bench cost: base proxy=%d vs candidate proxy=%d (delta=%+d, reported only, host tokens unknown)\n", cmp.BaseProxy, cmp.CandProxy, cmp.DeltaProxy)
+	fmt.Fprintf(c.Stdout, "bench quality per kproxy: base=%.2f vs candidate=%.2f\n", baseRep.QualityPerKProxy, candRep.QualityPerKProxy)
 	fmt.Fprintf(c.Stdout, "bench verdict: %s — %s\n", cmp.Verdict, cmp.Reason)
 	return benchCompareCode(cmp)
 }

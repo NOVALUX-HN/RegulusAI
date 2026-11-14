@@ -403,11 +403,11 @@ func (c CLI) budgetCmd(args []string) int {
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		fmt.Fprintln(c.Stdout, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | "+evolveCycleUsage)
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | "+evolveCycleUsage)
 		return 2
 	}
 	switch args[0] {
@@ -419,9 +419,19 @@ func (c CLI) evolveCmd(args []string) int {
 		return c.evolveReportCmd(args[1:])
 	case "validate":
 		return c.evolveValidateCmd(args[1:])
+	case "baseline":
+		return c.evolveBaselineCmd(args[1:])
+	case "evaluate":
+		return c.evolveEvaluateCmd(args[1:])
+	case "adopt":
+		return c.evolveAdoptCmd(args[1:])
+	case "reject":
+		return c.evolveRejectCmd(args[1:])
+	case "rollback":
+		return c.evolveRollbackCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "evolve: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | "+evolveCycleUsage)
 		return 2
 	}
 }

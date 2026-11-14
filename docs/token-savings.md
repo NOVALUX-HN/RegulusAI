@@ -78,3 +78,59 @@ Notas por mecanismo:
 - Ningún mecanismo revierte en esta tarea: T1 paga, T2 paga donde
   aplica, T3 cuesta ~0. Si alguno dejara de pagar, su reversión está
   en la tabla de arriba.
+
+---
+
+# A/B context budget 20/20 vs 10/10 — experimento con calidad primero (NOV-39, S14, T14)
+
+> **Nota:** sección point-in-time (medición 2026-11-14) — el experimento
+> vive en `internal/bench/context_ab_test.go` (`TestContextBudgetABQualityFirst`);
+> los números absolutos dependen del store del fixture, el comportamiento
+> (veredicto) vive en el test.
+
+## Diseño
+
+- **Mismo fixture, dos presupuestos:** 1 store determinista (12 session
+  notes — incluye el dúo B11 `harbor deploy done` / `rollback drill done` —
+  + 1 lesson con evidencia `harbor rollback first`, pin sobre la nota más
+  vieja), timestamps fijos. Se ensambla con `ContextScoped` 20/20
+  (estándar) y 10/10 (trivial) sobre la misma raíz: mismo header, bloques
+  comparables.
+- **Calidad primero:** essentials estilo `TestBoundedResumeKeepsEssentials`
+  (pin visible, última nota, cue Y contenido de la lesson — nunca solo
+  conteo) sobre ambos bloques. La baseline 20/20 debe preservarlos (si no,
+  el test falla: regresión real). Si 10/10 los pierde, el test declara
+  **NOT ADOPTABLE** y pasa igual: ese veredicto ES el resultado válido.
+- **Costo reportado, nunca juzgado:** `DeltaProxy = proxy20 − proxy10`
+  (chars/4, redondeo arriba, misma convención que
+  `trace.EstimateLocalTokens`). B11 sigue gateando su golden (546B/137t)
+  como precio baseline del experimento.
+
+## Resultado observado (1 corrida, este repo)
+
+| Bloque | Chars | Proxy tokens | Cap |
+|--------|-------|--------------|-----|
+| 20/20 estándar | 1294 | 324 | sin cap (12 notas < 20) |
+| 10/10 trivial | 1211 | 303 | `showing latest 10 of 12` |
+| **DeltaProxy** | **−83 chars** | **−21 proxy (−6.5%)** | — |
+
+- **Veredicto: ADOPTABLE** — 10/10 preserva todos los essentials (pin,
+  última nota, cue `harbor deploy fails` + contenido
+  `Roll back first, questions later.`) y ahorra 21 proxy tokens en el fixture.
+- La B11 baseline confirma su golden sin cambios: 546 chars = 137 proxy
+  tokens (presupuesto 546B/137t), host unknown.
+
+## Límites honestos
+
+- **Proxy ≠ host:** todo ahorro es chars/4 medido-local; el host no expone
+  conteos y `host unknown` aplica a ambas ramas por igual.
+- **n pequeño:** 1 store × 12 notas + 1 lesson; 1 runner, 1 fecha fijada
+  (`saved 1h ago` estable). El ahorro absoluto (−21) escala con el exceso
+  sobre el cap, no es una tasa general del repo.
+- **Variabilidad:** los números absolutos dependen del contenido del store
+  (cada char cuenta); lo estable entre corridas es el veredicto
+  (essentials preservados) y el signo de DeltaProxy, no el 21 exacto.
+- **Adopción por clase, no global:** el 10/10 es el preset `trivial`
+  (`observability.ContextPresetFor`), no un nuevo default. `standard`
+  sigue 20/20; `critical` es full-store solo con justificación escrita.
+  Ver `internal/observability/budgets.go` (ruta de escalamiento por preset).

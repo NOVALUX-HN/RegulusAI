@@ -51,7 +51,7 @@ func TestF4Evolution(t *testing.T) {
 	}
 
 	// Real work first: the gauntlet leaves receipts.
-	code, out := run("gate", "run", "evo/T1")
+	code, out := run("gate", "run", "--yes", "evo/T1")
 	if code != 0 || !strings.Contains(out, "gauntlet: 1/1 gates passed") {
 		t.Fatalf("gate run: exit=%d out=%q", code, out)
 	}
@@ -93,7 +93,7 @@ func TestF4Evolution(t *testing.T) {
 
 	// A second proposal fits inside the cap; the third is refused and
 	// the refusal is recorded in the ledger.
-	code, out = run("gate", "run", "evo/T2")
+	code, out = run("gate", "run", "--yes", "evo/T2")
 	if code != 0 {
 		t.Fatalf("gate run T2: exit=%d out=%q", code, out)
 	}
@@ -102,7 +102,7 @@ func TestF4Evolution(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "candidate proposed: les_") {
 		t.Fatalf("second reflect (within cap): exit=%d out=%q", code, out)
 	}
-	code, out = run("gate", "run", "evo/T3")
+	code, out = run("gate", "run", "--yes", "evo/T3")
 	if code != 0 {
 		t.Fatalf("gate run T3: exit=%d out=%q", code, out)
 	}

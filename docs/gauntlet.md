@@ -37,27 +37,30 @@ conditions and reproducibility — and executes nothing.
 
 ### Gate roster (pinned)
 
-The twelve gates below are the contract: `bench/gauntlet-shape.json`
+The fifteen gates below are the contract: `bench/gauntlet-shape.json`
 mirrors this table (generated from `regulus.json` plus the T5 `--quick`
 preset in `internal/gates/quick_lean.go`), and the bench suite fails
 when any of the three drifts. `required` is the `regulus.json` value
-(`true` for every gate except `mutation` and `vulncheck`); `profiles`
+(`true` for every gate except `mutation-receipts`, `mutation-gates`, `vulncheck` and `race-almanac`); `profiles`
 lists the declared memberships (`—` means none).
 
 | gate | layer | required | profiles |
 |------|-------|----------|----------|
-| typecheck | 1 | true | — |
-| lint | 2 | true | — |
-| build | 3 | true | — |
-| unit-tests | 4 | true | — |
-| coverage-floor | 5 | true | — |
-| mutation | 6 | false | full |
-| crap | 7 | true | — |
-| vulncheck | 8 | false | full, security |
-| spec | 9 | true | — |
-| ts-typecheck | 10 | true | — |
-| ts-unit-tests | 11 | true | — |
-| gofmt | 12 | true | — |
+| manifest-check | 1 | true | — |
+| typecheck | 2 | true | — |
+| lint | 3 | true | — |
+| build | 4 | true | — |
+| unit-tests | 5 | true | — |
+| coverage-floor | 6 | true | — |
+| mutation-receipts | 7 | false | full |
+| mutation-gates | 8 | false | full |
+| crap | 9 | true | — |
+| vulncheck | 10 | false | full, security |
+| spec | 11 | true | — |
+| ts-typecheck | 12 | true | — |
+| ts-unit-tests | 13 | true | — |
+| gofmt | 14 | true | — |
+| race-almanac | 15 | false | full |
 
 ## 3. Semantic verification: guardians
 
@@ -111,16 +114,16 @@ go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 `bun` comes from the upstream installer (https://bun.sh), then
 `bun install` for the project deps (same file, `setup-bun` +
-typecheck/test steps). `gremlins` drives layer 6 (mutation),
-`govulncheck` layer 8 (vulncheck), `bun` layers 10–11 (TypeScript).
+typecheck/test steps). `gremlins` drives layers 7–8 (mutation-receipts, mutation-gates),
+`govulncheck` layer 10 (vulncheck), `bun` layers 12–13 (TypeScript).
 Troubleshooting details live in `docs/troubleshooting.md` ("Toolchain
 installs (pinned)"); a missing binary fails the run before layer 1
 with the install hint, instead of a mid-run command-not-found.
 
 Profiles select cost, never mandatory proof (§2): `quick` runs
 required gates only (fast feedback), `full` runs everything and is the
-default. Required gates always run under every profile. The `mutation`
-gate keeps `profiles: [full]` and is `required: false`, so it runs
+default. Required gates always run under every profile. The `mutation-receipts`
+and `mutation-gates` gates keep `profiles: [full]` and are `required: false`, so they run
 under `full` only (like `vulncheck`, which is `required: false` with
 `profiles: [full, security]`).
 
@@ -137,6 +140,6 @@ efficacy/exit facts.
 Wontfix, with evidence (see `docs/troubleshooting.md` "Wontfix" for
 the full citations): no npm publish (owner decision,
 `CHANGELOG.md:331-333` G3.8 + `README.md:19-23` build-from-repo); the
-plugin-16 vs MCP-12 gap-4 is an intentional pinned divergence
+plugin-19 vs MCP-17 gap-2 is an intentional pinned divergence
 (`internal/cli/mcp_test.go:179-215` +
 `docs/devin.md:133-137`).

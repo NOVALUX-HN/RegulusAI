@@ -216,3 +216,51 @@ governance transitions — states mutate, the log does not).
   `history` print an untrusted-content banner on stderr (stdout stays
   machine-stable); the resume block keeps its DATA framing; imported
   knowledge stays PROPOSED and is never instructions.
+
+## 8. Secret redaction in the Almanac (NOV-22)
+
+- **What is redacted**: `Save` (the choke point for
+  `note`/`save`/`reflect`/auto-note/`mine`) and `appendImported` (the
+  choke point for `import`) scrub `title`, `content`, `topic_key`,
+  `domain`, the lesson `cue`/`lesson`/`evidence` block and provenance
+  `paths` before persistence (`internal/almanac/redact.go:
+  RedactObservation`). Patterns reuse the observability deny-list
+  (`bearer`, `key=value` / `"key": "value"` over sensitive key names)
+  plus PEM `PRIVATE KEY` blocks, URLs with `://user:pass@` credentials
+  and prefixed tokens (`ghp_`, `gho_`, `sk-live_`, `sk-proj_`,
+  `AKIA…`); values become `[redacted]`, preserving the surrounding
+  structure. The lists are extensible — no scattered literals.
+- **What is NOT redacted**: receipts and traces keep their exact bytes
+  for evidence and hash integrity and never pass through redaction.
+  Operative rule: do not dump secrets into gate outputs in the first
+  place. There is no retro-scrub of already-persisted lines; old
+  secrets leave the log through `prune` or `--expires`.
+
+## 9. Concurrencia e idempotencia (NOV-29)
+
+- **Qué es atómico**: `SaveChecked` verifica y escribe dentro del mismo
+  `withStoreLock` (un solo escritor del WAL). La instantánea leída
+  dentro del lock decide las tres cosas: hash de contenido, dedup por
+  vectores y colisión de id — ningún escritor concurrente se intercala
+  entre la comprobación y el append (cierra el TOCTOU All→Save): N
+  escritores concurrentes con el mismo contenido aterrizan exactamente
+  una línea. `Save` queda intacto (compatibilidad con llamadores y
+  tests existentes); el CLI aún usa `CheckDuplicate`+`Save` fuera del
+  lock y debe migrar a `SaveChecked` para cerrar su TOCTOU.
+- **Idempotencia por hash**: `sha256(type|title|content|topic)` dentro
+  del lock; repetir un `Save` idéntico es un no-op que devuelve la
+  observación existente (sin línea nueva ni id nuevo), incluso con
+  timestamps distintos. Se comprueba antes que el dedup vectorial (el
+  contenido idéntico tiene coseno 1.0 y de otro modo refutaría en vez
+  de no-op). Solo participan esos cuatro campos.
+- **Bundle bajo el mismo lock**: `importBundle` valida fuera del lock
+  y confirma dentro de un único `withStoreLock` las observaciones
+  (re-chequeo de ids vivos) y las tres tiendas de eventos
+  (`pins.jsonl`, `relations.jsonl`, `status.jsonl`, filtradas por
+  presencia verbatim). Dos imports idénticos concurrentes del mismo
+  bundle serializan: el perdedor añade 0 observaciones y deja las
+  tiendas byte-idénticas; re-importar sigue siendo no-op.
+- **Dedup dentro del lock**: el `CheckDuplicate` previo del CLI queda
+  como aviso temprano; `SaveChecked` decide con `checkDuplicateWithAll`
+  sobre la misma instantánea (sin deadlock: el decider es solo lectura
+  y nunca toma el lock).

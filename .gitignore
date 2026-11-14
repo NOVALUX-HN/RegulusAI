@@ -1,5 +1,6 @@
 # Regulus runtime state — per-project, never committed
 .regulus/
+.almanac/
 
 # OpenCode plugin development
 node_modules/

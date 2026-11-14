@@ -23,6 +23,8 @@ package almanac
 // values at commit time.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"os"
@@ -86,6 +88,19 @@ func (e *DuplicateError) Error() string {
 	return fmt.Sprintf("refusing near-duplicate save (matches %s at similarity %.2f, threshold %.2f) — set a topic key to link it as a revision", e.ID, e.Similarity, th)
 }
 
+// contentHash is the NOV-29 idempotency key: sha256 over
+// type|title|content|topic. Repeating a Save with the same four fields
+// is a no-op returning the existing observation, even when the
+// timestamps (and therefore the minted ids) differ. Checked FIRST
+// inside the store lock, before the vector dedup below (identical
+// content has cosine 1.0 and would otherwise refuse instead of
+// no-op). Only these four fields participate — source, domain,
+// provenance and expiry do not affect identity.
+func contentHash(o Observation) string {
+	sum := sha256.Sum256([]byte(o.Type + "|" + o.Title + "|" + o.Content + "|" + o.TopicKey))
+	return hex.EncodeToString(sum[:])
+}
+
 // CheckDuplicate decides one save: nil lets it through, *DuplicateError
 // refuses it. It never fails for index reasons (missing/stale/corrupt
 // retrieval.bin falls back to on-the-fly vectors); only log or relation
@@ -95,6 +110,15 @@ func CheckDuplicate(root string, candidate *Observation) error {
 	if err != nil {
 		return err
 	}
+	return checkDuplicateWithAll(root, all, candidate)
+}
+
+// checkDuplicateWithAll is the shared decider over an already-loaded log
+// (NOV-29: lets Save reuse the All it already read inside the store
+// lock, so the check-then-append holds atomically with no second scan
+// racing a concurrent writer). Pure read path — never takes the store
+// lock itself, so calling it inside withStoreLock cannot deadlock.
+func checkDuplicateWithAll(root string, all []Observation, candidate *Observation) error {
 	if len(all) == 0 {
 		return nil
 	}

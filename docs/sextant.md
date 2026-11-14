@@ -68,3 +68,28 @@ task's receipts (hash-verified, all PASS), closed dependencies, and — for
 CRITICAL — passing verifier evidence. On success it flips Status to done
 and appends the CLOSED record; otherwise it lists every unmet condition
 and changes nothing. Re-running close on closed work stays closed.
+
+## 6. Guided flow and actionable feedback
+
+AUTHORIZE → CHART → BUILD → PROVE → LEARN. Each phase leaves evidence:
+chart + `task check` clean (CHART), gauntlet receipts (BUILD/PROVE),
+`CLOSED` in `## Log` (LEARN entry point via reflect/evolve).
+
+- `task check` / `task status` print `violation:` lines plus `why:`
+  (BUILD is blocked) and `next:` (exact `regulus task check <chart>` retry).
+- `gate run <chart>/<id>` resolves `charts/<chart>.md` first: with
+  violations it refuses before layer 1, prints the violations, and points
+  back to `task check`. No chart file → legacy run proceeds.
+- Gate failure prints `stopped at gate`, `verdict`, `manifest`, plus `why:`
+  (close stays blocked) and `next:` (fix gate, `evidence show`, re-run).
+- `task close` refusal prints `why:` (self-report closes nothing) and
+  `next:` (`task check` → `gate run` → retry close).
+
+See `internal/journey/sextant_test.go:TestSextantGuidedFlow` for the
+machine-checked journey.
+
+## 7. Scope enforcement (chart-level, inherited per task)
+
+- `## Contract` may declare machine scope under `- Scope:` with `Allow: <glob>` / `Deny: <glob>` continuation lines (prefix/path globs, case-insensitive; `..`, absolute and drive-letter declarations are rejected).
+- Tasks inherit the chart scope; `task close` lists the worktree (`git diff --name-only HEAD` plus untracked files) and refuses with `fuera de scope: <path>` when anything lies outside it. No `Allow:`/`Deny:` lines means no enforcement (legacy charts keep working).
+- Widening scope means editing `Scope:` plus a `REPLAN: <what changed> — <why>` log line; only the human who approves the chart authorizes it — a worker never widens its own scope.

@@ -62,3 +62,16 @@ Every proposal is untrusted until `TrustCheck` proves otherwise:
 isolated, provenance, validations, regressions, policies, reversible —
 verified structurally inside `Adopt`, plus a named human approver. No
 checklist, no approval, no adoption. Ever.
+
+## 6. CLI cycle (baseline → evaluate → adopt/reject → rollback)
+
+Baseline pins stable metrics; evaluate runs candidate trials through Summarize+Adoptable, advisory trace cost and pinned adversarial probes, then records EVALUATED; adopt needs EVALUATED, full trust, an existing snapshot and a human approver (auto/bot refused on sensitive gates/permissions/limits); reject records its reason and keeps the baseline; rollback supersedes the version and copies the snapshot back without touching evidence. Every command prints verdict + next step; a failed gate exits non-zero.
+
+```sh
+regulus evolve baseline --set --name v1 --file metrics.json
+regulus evolve baseline --show --name v1
+regulus evolve evaluate --exp exp_abc --baseline trials.json
+regulus evolve adopt --exp exp_abc --approved-by "ana: verified"
+regulus evolve reject --exp exp_abc --reason "regresses lint"
+regulus evolve rollback --exp exp_abc --reason "post-adopt drift"
+```

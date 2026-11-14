@@ -9,7 +9,7 @@ import (
 )
 
 // TestGofmtClean is the executable form of the `gofmt` gauntlet gate
-// (regulus.json layer 12): every .go file under internal/ and cmd/ must
+// (regulus.json layer 14): every .go file under internal/ and cmd/ must
 // be gofmt-clean. A bare `gofmt -l` gate always exits 0 (it only lists),
 // so the gate runs this test instead — `go test -run TestGofmtClean`
 // fails red naming the files. Windows note: gofmt wants LF; a CRLF save

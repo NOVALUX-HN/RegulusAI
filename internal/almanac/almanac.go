@@ -218,6 +218,12 @@ func validate(o *Observation) error {
 // full-scanning — the per-write cost stays bounded by the reindex the
 // CLI runs after, not by an extra full parse.
 func Save(root string, o *Observation, now time.Time) (Observation, error) {
+	// NOV-22: scrub secrets before anything else touches the
+	// observation — Save is the choke point for note/save/reflect/
+	// autonote/mine, so no caller needs its own redaction.
+	if o != nil {
+		*o = RedactObservation(*o)
+	}
 	if err := validate(o); err != nil {
 		return Observation{}, err
 	}
@@ -234,6 +240,77 @@ func Save(root string, o *Observation, now time.Time) (Observation, error) {
 		// check runs INSIDE the lock (no two writers can mint the same
 		// id between check and append). Bounded advance, mirroring the
 		// receipts collision advance.
+		if idTaken(root, saved.ID) {
+			for i := 0; i < 1000 && idTaken(root, saved.ID); i++ {
+				saved.SavedAt = saved.SavedAt.Add(time.Nanosecond)
+				saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		line, err := json.Marshal(saved)
+		if err != nil {
+			f.Close()
+			return err
+		}
+		if _, err := f.Write(append(line, '\n')); err != nil {
+			f.Close()
+			return err
+		}
+		return f.Close()
+	}); err != nil {
+		return Observation{}, err
+	}
+	return saved, nil
+}
+
+// SaveChecked is the NOV-29 atomic save path (S13): validate, then
+// check-then-append inside a single withStoreLock. The content hash
+// (sha256 type|title|content|topic) is checked first: repeating an
+// identical save is a no-op returning the existing observation (no new
+// line, no new id), even with different timestamps. Otherwise the
+// vector dedup runs on the same in-lock snapshot via
+// checkDuplicateWithAll (no TOCTOU between a pre-lock CheckDuplicate
+// and the append: N concurrent identical writers land exactly one
+// line). Save itself is untouched (existing callers and the CLI
+// pre-check keep their behavior); new concurrent writers should prefer
+// SaveChecked, and the CLI should migrate its CheckDuplicate+Save pair
+// to it to close the All→Save race.
+func SaveChecked(root string, o *Observation, now time.Time) (Observation, error) {
+	if o != nil {
+		*o = RedactObservation(*o)
+	}
+	if err := validate(o); err != nil {
+		return Observation{}, err
+	}
+	saved := *o
+	if saved.SavedAt.IsZero() {
+		saved.SavedAt = now.UTC()
+	}
+	if strings.TrimSpace(saved.Source) == "" {
+		saved.Source = SourceAgent
+	}
+	saved.ID = "obs_" + strconv.FormatInt(saved.SavedAt.UnixNano(), 16)
+	if err := withStoreLock(root, func() error {
+		all, err := All(root)
+		if err != nil {
+			return err
+		}
+		want := contentHash(saved)
+		for _, e := range all {
+			if contentHash(e) == want {
+				saved = e
+				return nil
+			}
+		}
+		if err := checkDuplicateWithAll(root, all, &saved); err != nil {
+			return err
+		}
 		if idTaken(root, saved.ID) {
 			for i := 0; i < 1000 && idTaken(root, saved.ID); i++ {
 				saved.SavedAt = saved.SavedAt.Add(time.Nanosecond)

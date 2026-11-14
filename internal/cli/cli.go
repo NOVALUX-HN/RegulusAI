@@ -73,6 +73,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"trace":    func(c CLI, args []string) int { return c.traceCmd(args) },
 	"task":     func(c CLI, args []string) int { return c.taskCmd(args) },
 	"decide":   func(c CLI, args []string) int { return c.decideCmd(args) },
+	"manifest": func(c CLI, args []string) int { return c.manifestCmd(args) },
 	"bench":    func(c CLI, args []string) int { return c.benchCmd(args) },
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
@@ -270,7 +271,7 @@ Commands:
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file> | verify [--task <t>] | prune --task <t> [--keep N] [--yes] [--force]   audit gauntlet receipts
-  evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>]   assemble the evidence pack a proposer needs; periodic proposer (every N traced sessions); lesson economics + snapshots; deterministic verdicts
+  evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>] | evolve baseline --set|--show | evolve evaluate --exp <id> | evolve adopt|reject|rollback --exp <id>   evidence pack; periodic proposer; lesson economics; deterministic verdicts; governed cycle (baseline->evaluate->adopt/reject->rollback)
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning

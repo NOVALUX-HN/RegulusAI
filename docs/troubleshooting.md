@@ -205,6 +205,46 @@ completo. El test de yolo (`bun test` que compila+ejecuta un
 máquinas — si lo ves fallar con `unknown error`, es el bloqueo,
 no el producto (el propio test ahora lo diagnostica).
 
+## Almanac backup/restore runbook (export → import → reindex → doctor)
+
+Backup:
+
+```bash
+regulus memory export --out <tracked-dir>   # committable bundle (track it in git)
+regulus memory export                        # generated artifact in .regulus-export/
+```
+
+The bundle carries `almanac.jsonl` + `pins.jsonl` + `relations.jsonl` +
+`status.jsonl` (the restorable stores, verbatim) + `INDEX.md` (rendered
+digest) + `MANIFEST.json` (sha256+size per data file, format version).
+Exports hold the store lock, so a bundle is one atomic snapshot even
+under concurrent saves.
+
+Restore on a clean tree (copy the bundle dir over first):
+
+```bash
+regulus memory import <dir>   # verifies MANIFEST before writing anything
+regulus memory reindex        # rebuild the derived vector index
+regulus memory doctor         # must report index: fresh
+```
+
+Integrity: a bundle with an altered file refuses with
+`MANIFEST mismatch: <file>`, a bundle from a newer binary with
+`unsupported bundle vN` — both before any write, so the target tree
+stays intact. Bundles written before NOV-30 carry no `MANIFEST.json`
+and still import (backward compatible).
+
+What is regenerable vs not: `INDEX.md` re-renders on every export and
+`retrieval.bin` rebuilds with `memory reindex` — both disposable. The
+observations log and the pins/relations/status stores are NOT
+regenerable: that is exactly what the bundle carries, so keep it.
+
+Outside the bundle (back them up separately): `.regulus/library/`
+(admitted lessons and candidates), `.regulus/budget.json` (token
+budgets), `regulus.json` (gate config), and `.regulus/traces/` +
+`.regulus/evidence/` (audit trail, pruned per scope — see the retention
+section above). The bundle restores memory, not harness state.
+
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:
@@ -224,16 +264,18 @@ and install V2 with the command above.
 
 ## `regulus status` says "gremlins NOT found"
 
-The mutation gate (layer 6) needs [gremlins](https://github.com/go-gremlins/gremlins):
+The mutation gates (layers 7-8) need [gremlins](https://github.com/go-gremlins/gremlins):
 
 ```bash
 go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 ```
 
+The mutation gate is split per module: `mutation-receipts` (`./internal/receipts`, 300s) and `mutation-gates` (`./internal/gates`, 600s), both threshold-efficacy 70, `required: false`, `profiles: [full]` — `--quick` skips them, `gate run --profile full` (what CI runs) always includes them.
+
 ## `regulus status` says "no regulus.json — not configured"
 
 Create a `regulus.json` in your project root. See the README quickstart for
-a full example with all twelve gate layers.
+a full example with all fourteen gate layers.
 
 ## The gauntlet's mutation gate fails with timeouts
 
@@ -515,10 +557,9 @@ warning, check that `git archive HEAD` works in your checkout.
   by path cover the workflow, CI builds from source) and
   `README.md:19-23` (quickstart is build-from-repo: `regulus-ai` is
   not published). Revisit only if the project ever goes public.
-- **Plugin-19 vs MCP-14 gap (gap-5) is intentional.** The OpenCode
-  agent surface is 19 tools; MCP deliberately exposes 14. The 5-gap
-  (`evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`,
-  `evolve_tick`) is a Devin-side policy decision, not drift:
+- **Plugin-19 vs MCP-17 gap (gap-2) is intentional.** The OpenCode
+  agent surface is 19 tools; MCP deliberately exposes 17. The 2-gap
+  (`probe_contrast`, `probe_compose`) is a Devin-side policy decision, not drift:
   `internal/cli/mcp_test.go:180-205`
   (`TestMCPIntentionalGapPinsPluginDelta`) pins the exact gap, and
   `docs/devin.md` lists what is deliberately NOT ported and

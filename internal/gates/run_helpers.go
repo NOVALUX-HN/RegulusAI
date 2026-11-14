@@ -62,9 +62,67 @@ func whenNote(g Gate, changed []string, changedOK bool) string {
 	return ""
 }
 
+// executionCtxKey carries the correlated execution id (NOV-34) from
+// the invocation to the trace hook so the hook's trace records land on
+// the same id as the gate run's receipts. It travels in the context
+// (not the config) for the same reason consent does: the run mints the
+// runID in one place while the hook records traces in another, and the
+// config must not change per invocation.
+type executionCtxKey struct{}
+
+// ContextWithExecutionID returns ctx carrying the execution id the
+// trace hook attributes its records to. Empty means no correlation
+// (probe path, legacy hook): records stay unattributed, exactly as
+// before.
+func ContextWithExecutionID(ctx context.Context, executionID string) context.Context {
+	return context.WithValue(ctx, executionCtxKey{}, executionID)
+}
+
+// ExecutionIDFromContext reports the execution id carried by ctx, or
+// "" when none was set.
+func ExecutionIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(executionCtxKey{}).(string)
+	return id
+}
+
+// ResolveExecutionID resolves the execution id to attribute a gate's
+// trace record: the explicit context value wins (hook-supplied, e.g. a
+// resumed execution), else the run's runID, else "" (probe path runs
+// without a manifest, so there is nothing to correlate — legacy calls
+// without an id keep working unchanged). The hook passes the resolved
+// id as the trace record's execution_id (record-batch NDJSON carries it
+// with no flag change; single-record passes --execution-id only when
+// its context carries one), and the observability projections join
+// execution_id==RunID.
+func ResolveExecutionID(ctx context.Context, runID string) string {
+	if id := ExecutionIDFromContext(ctx); id != "" {
+		return id
+	}
+	return runID
+}
+
+// consentCtxKey carries per-invocation operator consent (`gate run --yes`)
+// from the CLI to the executor so executed receipts record it. Consent
+// travels in the context (not the config) because adjudicateAndWrite
+// signs receipts without seeing the invocation flags.
+type consentCtxKey struct{}
+
+// ContextWithConsent returns ctx carrying operator consent for receipts.
+func ContextWithConsent(ctx context.Context, consent bool) context.Context {
+	return context.WithValue(ctx, consentCtxKey{}, consent)
+}
+
+// consentFromContext reports whether ctx carries operator consent.
+func consentFromContext(ctx context.Context) bool {
+	consent, _ := ctx.Value(consentCtxKey{}).(bool)
+	return consent
+}
+
 // refusePolicy enforces the execution policy before any runner runs:
-// destructive commands refuse without opt-in, and an allowlist refuses
-// anything it does not name. Returns the classification for the receipt.
+// destructive commands refuse without opt-in, a non-empty allowlist
+// refuses anything it does not name, and (S6) a `gate run` with no
+// allowlist configured denies by default unless --yes consented for
+// this invocation. Returns the classification for the receipt.
 func refusePolicy(g Gate, cfg Config) (refused bool, note, classification string) {
 	classification = Classify(g.Command)
 	if classification == ClassificationDestructive && !(cfg.Execution != nil && cfg.Execution.AllowDestructive) {
@@ -74,6 +132,17 @@ func refusePolicy(g Gate, cfg Config) (refused bool, note, classification string
 		if allowlistRefused(g.Command, cfg.Execution.Allowlist) {
 			return true, "policy: command not in allowlist", classification
 		}
+		return false, "", classification
+	}
+	// S6 deny-by-default: a `gate run` (EnforceDenyByDefault) with no
+	// allowlist refuses every gate unless --yes consented for this
+	// invocation (ExplicitYes). Programmatic use (flag unset) keeps the
+	// historical allowlist-only behavior. CI note: CI runners have no
+	// interactive fallback, so without --yes the refusal below is
+	// unconditional there too — scripts must pass --yes or declare an
+	// allowlist.
+	if cfg.Execution != nil && cfg.Execution.EnforceDenyByDefault && len(cfg.Execution.Allowlist) == 0 && !cfg.Execution.ExplicitYes {
+		return true, "policy: no allowlist configured (deny by default; re-run with --yes or add execution.allowlist)", classification
 	}
 	return false, "", classification
 }
@@ -116,6 +185,12 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 			facts: verdict.Facts{Refused: true},
 		}
 	}
+	// S6: explicit --yes consent rides the context so the receipt records
+	// it; refused gates never run, so they carry no consent note.
+	consentNote := ""
+	if consentFromContext(ctx) {
+		consentNote = "consent:true (operator passed --yes)"
+	}
 	if sh, ok := asShRunner(r); ok {
 		if isMutationGate(g) {
 			return execMutationSh(ctx, g, sh, timeout, dockerImage, execEnvUnset)
@@ -139,6 +214,9 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 		} else {
 			out.facts = verdict.Facts{Executed: true, ExitCode: 0}
 		}
+		if consentNote != "" {
+			out.stderr = appendGateNote(out.stderr, consentNote)
+		}
 		return out
 	}
 	gctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
@@ -157,6 +235,9 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 		out.facts = verdict.Facts{Executed: true, ExitCode: c}
 	} else {
 		out.facts = verdict.Facts{Executed: true, ExitCode: 0}
+	}
+	if consentNote != "" {
+		out.stderr = appendGateNote(out.stderr, consentNote)
 	}
 	return out
 }

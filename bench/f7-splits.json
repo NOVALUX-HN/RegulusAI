@@ -1,0 +1,10 @@
+{
+  "protocol": "f7-protocol-v1",
+  "name": "f7-split-v1",
+  "version": 1,
+  "suite": "macizo-bench-v3",
+  "seed": 20261114,
+  "exploration": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10"],
+  "holdout": ["B11", "B12", "B13", "B14"],
+  "policy": "exploration-only during search; holdout reserved for NOV-61 final validation; proposals carry IDs only, never checks or holdout content"
+}

@@ -73,7 +73,7 @@ func TestF1VerticalSpine(t *testing.T) {
 	}
 
 	// Gauntlet: gates run in layer order and leave append-only receipts.
-	code, out = run("gate", "run", "tiny/T1")
+	code, out = run("gate", "run", "--yes", "tiny/T1")
 	if code != 0 || !strings.Contains(out, "gauntlet: 2/2 gates passed") {
 		t.Fatalf("gate run: exit=%d out=%q", code, out)
 	}

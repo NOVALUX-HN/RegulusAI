@@ -99,47 +99,143 @@ func parseObservationData(data []byte, have map[string]bool, label string) (fres
 // appendImported appends fresh observations to the log and records the
 // proposing event for the marked ids: foreign knowledge enters
 // PROPOSED, never laundered into higher states. M2: the append runs
-// under the store lock (one WAL writer at a time). The duplicate
-// partition is computed pre-lock from a validated snapshot; two
-// byte-identical imports racing each other could double-append the same
-// id (pre-existing, vanishingly rare) — the lock's job is serializing
-// against torn interleaves with prune/reindex, and re-importing stays
-// idempotent.
+// under the store lock (one WAL writer at a time).
+//
+// NOV-29: the duplicate partition is re-checked INSIDE the lock from
+// the live log (two byte-identical imports racing each other serialize:
+// the loser sees every id already taken and appends nothing, so the
+// second concurrent import reports 0 imported).
 func appendImported(root string, fresh []Observation, skipped int, mark []string) (imported, skippedOut int, err error) {
+	// NOV-22: scrub secrets at the import choke point — every bundle
+	// line (single file or directory form) funnels through here.
+	for i := range fresh {
+		fresh[i] = RedactObservation(fresh[i])
+	}
 	if len(fresh) == 0 {
 		return 0, skipped, nil
 	}
+	skippedOut = skipped
+	markSet := map[string]bool{}
+	for _, id := range mark {
+		markSet[id] = true
+	}
 	err = withStoreLock(root, func() error {
-		if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
-			return err
-		}
-		f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		taken, err := logIDs(root)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		var toWrite []Observation
+		var toMark []string
 		for _, o := range fresh {
-			line, err := json.Marshal(o)
-			if err != nil {
-				return err
+			if taken[o.ID] {
+				skippedOut++
+				continue
 			}
-			if _, err := f.Write(append(line, '\n')); err != nil {
-				return err
+			taken[o.ID] = true
+			toWrite = append(toWrite, o)
+			if markSet[o.ID] {
+				toMark = append(toMark, o.ID)
 			}
-			imported++
 		}
-		return MarkImported(root, mark, time.Now().UTC())
+		n, err := writeObservationsLocked(root, toWrite, toMark)
+		if err != nil {
+			return err
+		}
+		imported = n
+		return nil
 	})
 	if err != nil {
 		return 0, 0, err
 	}
-	return imported, skipped, nil
+	return imported, skippedOut, nil
+}
+
+// writeObservationsLocked appends toWrite to the log and records the
+// PROPOSED event for toMark. The caller holds the store lock (no
+// nested acquire — safe to call from appendImported and from the
+// single bundle commit). No-op when toWrite is empty, so a fully
+// skipped re-import touches nothing.
+func writeObservationsLocked(root string, toWrite []Observation, toMark []string) (int, error) {
+	if len(toWrite) == 0 {
+		return 0, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
+		return 0, err
+	}
+	f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, o := range toWrite {
+		line, err := json.Marshal(o)
+		if err != nil {
+			f.Close()
+			return 0, err
+		}
+		if _, err := f.Write(append(line, '\n')); err != nil {
+			f.Close()
+			return 0, err
+		}
+		n++
+	}
+	if err := f.Close(); err != nil {
+		return 0, err
+	}
+	if err := MarkImported(root, toMark, time.Now().UTC()); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// appendStoreLinesFilteredLocked appends only the planned lines not
+// already present verbatim in the store. The caller holds the store
+// lock, so the read-present-then-append is atomic against concurrent
+// bundle imports (the loser filters everything and writes nothing,
+// leaving the stores byte-identical). No-op for an empty plan or a
+// fully-present plan — a skipped re-import creates nothing.
+func appendStoreLinesFilteredLocked(storePath string, planned []string) error {
+	if len(planned) == 0 {
+		return nil
+	}
+	present := map[string]bool{}
+	if raw, err := os.ReadFile(storePath); err == nil {
+		for _, l := range strings.Split(string(raw), "\n") {
+			if strings.TrimSpace(l) != "" {
+				present[l] = true
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	var todo []string
+	for _, l := range planned {
+		if !present[l] {
+			todo = append(todo, l)
+			present[l] = true
+		}
+	}
+	return appendStoreLines(storePath, todo)
 }
 
 // importBundle restores a full export bundle directory: the observations
 // in almanac.jsonl plus the pins.jsonl, relations.jsonl and status.jsonl
 // siblings. Every present file is validated before anything is written.
+//
+// NOV-29: the commit (observations + pins/relations/status) runs under a
+// single store lock. planStoreLines validates outside the lock; the
+// in-lock phase re-checks live ids (observations) and verbatim presence
+// (event stores), so two concurrent identical bundle imports serialize:
+// the loser appends nothing and reports 0 imported with byte-identical
+// stores. Helpers never acquire the lock themselves, so the single
+// commit cannot deadlock.
 func importBundle(root, dir string) (imported, skipped int, err error) {
+	// NOV-30: integrity first — a tampered bundle (or a newer format)
+	// refuses before any planning or writing, so the target tree stays
+	// intact. Bundles without MANIFEST predate NOV-30 and import as before.
+	if err := VerifyBundle(dir); err != nil {
+		return 0, 0, err
+	}
 	obsData, err := os.ReadFile(filepath.Join(dir, "almanac.jsonl"))
 	if err != nil {
 		return 0, 0, err
@@ -191,29 +287,57 @@ func importBundle(root, dir string) (imported, skipped int, err error) {
 	// Observations first, as today — but ids the bundle status already
 	// governs keep their restored trail instead of stacking a duplicate
 	// PROPOSED on top of it.
-	var mark []string
-	for _, o := range fresh {
-		if !covered[o.ID] {
-			mark = append(mark, o.ID)
-		}
+	// NOV-22 redaction runs on the same choke point as the single-file
+	// form (writeObservationsLocked does not redact — redact once here
+	// before the commit).
+	for i := range fresh {
+		fresh[i] = RedactObservation(fresh[i])
 	}
-	imported, skipped, err = appendImported(root, fresh, skipped, mark)
+	// Single atomic commit under one lock: observations + all three
+	// event stores. Re-checks inside serialize concurrent imports.
+	skippedOut := skipped
+	var importedOut int
+	err = withStoreLock(root, func() error {
+		taken, err := logIDs(root)
+		if err != nil {
+			return err
+		}
+		var toWrite []Observation
+		var toMark []string
+		for _, o := range fresh {
+			if taken[o.ID] {
+				skippedOut++
+				continue
+			}
+			taken[o.ID] = true
+			toWrite = append(toWrite, o)
+			if !covered[o.ID] {
+				toMark = append(toMark, o.ID)
+			}
+		}
+		n, err := writeObservationsLocked(root, toWrite, toMark)
+		if err != nil {
+			return err
+		}
+		importedOut = n
+		for _, s := range []struct {
+			path  string
+			lines []string
+		}{
+			{pinsFile(root), pins},
+			{relationsFile(root), rels},
+			{StatusFile(root), status},
+		} {
+			if err := appendStoreLinesFilteredLocked(s.path, s.lines); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, 0, err
 	}
-	for _, s := range []struct {
-		path  string
-		lines []string
-	}{
-		{pinsFile(root), pins},
-		{relationsFile(root), rels},
-		{StatusFile(root), status},
-	} {
-		if err := appendStoreLines(s.path, s.lines); err != nil {
-			return 0, 0, err
-		}
-	}
-	return imported, skipped, nil
+	return importedOut, skippedOut, nil
 }
 
 // validateBundlePin checks one pins.jsonl line: well-formed with an id,
