@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"regulus-ai/internal/bench"
 )
@@ -61,6 +62,8 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 	sum := bench.SummarizeAgent(*variant, outcomes)
 	notRun := 0
 	for _, o := range outcomes {
+		fmt.Fprintf(c.Stdout, "  - %s [%s] rep=%d seed=%d: %s in=%d out=%d %s (%s)\n",
+			o.TaskID, o.Split, o.Rep, o.Seed, o.Status, o.TokensIn, o.TokensOut, o.TokenSource, shortOutcomeDetail(o.Detail))
 		if o.Status == bench.AgentNotRun {
 			notRun++
 		}
@@ -76,4 +79,15 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func shortOutcomeDetail(s string) string {
+	s = strings.TrimSpace(strings.SplitN(s, "\n", 2)[0])
+	if len(s) > 160 {
+		return s[:160] + "…"
+	}
+	if s == "" {
+		return "-"
+	}
+	return s
 }
