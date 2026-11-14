@@ -17,15 +17,15 @@ import (
 // completion, all read from the chart.
 func (c CLI) taskCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
+		fmt.Fprintln(c.Stdout, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close [--issue NOV-xx] <chart> <id> | regulus task classify [flags]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
+		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close [--issue NOV-xx] <chart> <id> | regulus task classify [flags]")
 		return 2
 	}
 	if len(args) > 1 && (args[0] == "check" || args[0] == "status" || args[0] == "close") && strings.HasPrefix(args[1], "-") {
-		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
+		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close [--issue NOV-xx] <chart> <id> | regulus task classify [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -38,7 +38,7 @@ func (c CLI) taskCmd(args []string) int {
 	case "classify":
 		return c.taskClassifyCmd(args[1:])
 	default:
-		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close <chart> <id> | regulus task classify [flags]")
+		fmt.Fprintln(c.Stderr, "usage: regulus task check <chart> | regulus task status <chart> | regulus task close [--issue NOV-xx] <chart> <id> | regulus task classify [flags]")
 		return 2
 	}
 }
@@ -158,16 +158,26 @@ func (c CLI) taskStatusCmd(args []string) int {
 }
 
 func (c CLI) taskCloseCmd(args []string) int {
-	if len(args) != 2 {
-		fmt.Fprintln(c.Stderr, "usage: regulus task close <chart> <id>")
+	fs := flag.NewFlagSet("task close", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	issue := fs.String("issue", "", "Linear issue closed (e.g. NOV-64): require linked commit(s), scope-clean diffs and, for P0, an independent review")
+	justified := fs.String("justified", "", "reason covering multi-issue commits (or put a Justified: trailer in the commit)")
+	implementer := fs.String("implementer", "", "who did the work (compared against the reviewer for P0 independence)")
+	independent := fs.Bool("independent-review", false, "P0: require a recorded review verdict by someone other than --implementer")
+	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	path, doc, err := readChart(args[0])
+	rest := fs.Args()
+	if len(rest) != 2 {
+		fmt.Fprintln(c.Stderr, "usage: regulus task close [--issue NOV-xx] [--justified reason] [--implementer id] [--independent-review] <chart> <id>")
+		return 2
+	}
+	path, doc, err := readChart(rest[0])
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "%v\n", err)
 		return 1
 	}
-	id := args[1]
+	id := rest[1]
 	chartBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	res := sextant.CheckClose(doc, c.dir(), chartBase, id)
 	// S11/NOV-32: tasks inherit the chart scope. The worktree check
@@ -177,13 +187,29 @@ func (c CLI) taskCloseCmd(args []string) int {
 		res.Unmet = append(res.Unmet, unmet...)
 		res.Closed = false
 	}
+	// NOV-64: with --issue, the close additionally needs auditable
+	// linkage: commit(s) citing the issue, scope-clean diffs and, for
+	// P0, an independent review verdict.
+	if *issue != "" {
+		sc, serr := sextant.ParseScope(doc)
+		if serr != nil {
+			res.Unmet = append(res.Unmet, fmt.Sprintf("scope: %v", serr))
+			res.Closed = false
+		} else if unmet := sextant.CheckTraceability(c.dir(), sextant.TraceOptions{
+			Issue: *issue, Justified: *justified, Implementer: *implementer,
+			IndependentReview: *independent, ChartBase: chartBase, TaskID: id, Scope: sc,
+		}); len(unmet) != 0 {
+			res.Unmet = append(res.Unmet, unmet...)
+			res.Closed = false
+		}
+	}
 	if !res.Closed {
 		fmt.Fprintf(c.Stdout, "task %s cannot close:\n", id)
 		for _, u := range res.Unmet {
 			fmt.Fprintf(c.Stdout, "  - %s\n", u)
 		}
 		fmt.Fprintln(c.Stdout, "why: self-report closes nothing — close needs contract, receipts PASS, and shut dependencies")
-		fmt.Fprintf(c.Stdout, "next: run regulus task check %s, then regulus gate run %s/%s, then retry close\n", args[0], chartBase, id)
+		fmt.Fprintf(c.Stdout, "next: run regulus task check %s, then regulus gate run %s/%s, then retry close\n", rest[0], chartBase, id)
 		return 1
 	}
 	updated := sextant.ApplyClose(doc, id, res)
