@@ -208,3 +208,54 @@ func Usage(root, task, session string, figs *Figures) (BudgetUsage, error) {
 
 	return u, nil
 }
+
+// ContextClass names the task class for context-budget presets
+// (NOV-39, S14): how much Almanac resume a task may inject before it
+// pays the full-store price. Limits mirror the almanac defaults
+// (standard 20/20 = DefaultContextLimit/DefaultContextBudget); the
+// preset only chooses the ceiling, measurement stays in Usage.
+type ContextClass string
+
+// Task classes, cheapest first.
+const (
+	ClassTrivial  ContextClass = "trivial"
+	ClassStandard ContextClass = "standard"
+	ClassComplex  ContextClass = "complex"
+	ClassCritical ContextClass = "critical"
+)
+
+// ContextPreset is one class ceiling: the note limit and per-list
+// budget to assemble with, plus the escalation path when the block
+// cuts signal. Full means the explicit-full escape hatch (limit 0,
+// budget 0 keeps the whole deduped store); it always requires a
+// written justification, never a silent default.
+type ContextPreset struct {
+	Class                 ContextClass `json:"class"`
+	Limit                 int          `json:"limit"`
+	Budget                int          `json:"budget"`
+	Full                  bool         `json:"full"`
+	RequiresJustification bool         `json:"requires_justification"`
+	Escalation            string       `json:"escalation"`
+}
+
+// contextPresets pins the class ceilings.
+var contextPresets = map[ContextClass]ContextPreset{
+	ClassTrivial: {Class: ClassTrivial, Limit: 10, Budget: 10,
+		Escalation: "start here for one-fact lookups; escalate to standard when the block names a cap or hides pinned/latest work"},
+	ClassStandard: {Class: ClassStandard, Limit: 20, Budget: 20,
+		Escalation: "the default for ordinary tasks; escalate to complex when both lists cap and the missing tail matters"},
+	ClassComplex: {Class: ClassComplex, Limit: 40, Budget: 40,
+		Escalation: "for multi-domain resumes that cap at standard; escalate to critical (full + justification) only when 40/40 still cuts admitted lessons"},
+	ClassCritical: {Class: ClassCritical, Full: true, RequiresJustification: true,
+		Escalation: "full-store resume, never the default: write why 40/40 was insufficient and narrow with --task/--path/--system first"},
+}
+
+// ContextPresetFor returns the ceiling for one task class. An unknown
+// class is an error (fail-closed: no silent full-store resume).
+func ContextPresetFor(c ContextClass) (ContextPreset, error) {
+	p, ok := contextPresets[c]
+	if !ok {
+		return ContextPreset{}, fmt.Errorf("unknown context class %q (want trivial|standard|complex|critical)", string(c))
+	}
+	return p, nil
+}

@@ -40,6 +40,13 @@ const (
 // lines written before these fields existed decode as all-zero and
 // must read as unattributed/unknown, never as measured zero.
 // Fingerprint ignores every cost field so contrast diffs stay stable.
+//
+// Attribution dimensions (NOV-39): Phase, Agent and Hook tag which
+// pipeline phase, agent and hook served the call (all optional,
+// omitempty, JSON-compatible). Lines written before these fields
+// existed decode as empty and fold into the "(unattributed)" bucket
+// of their dimension (see cost.go); Fingerprint ignores them so
+// contrast diffs stay stable.
 type Entry struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`
@@ -50,6 +57,9 @@ type Entry struct {
 	Files   []string  `json:"files,omitempty"`
 
 	Task         string `json:"task,omitempty"`
+	Phase        string `json:"phase,omitempty"`
+	Agent        string `json:"agent,omitempty"`
+	Hook         string `json:"hook,omitempty"`
 	DurationMS   int64  `json:"duration_ms,omitempty"`
 	OutputBytes  int64  `json:"output_bytes,omitempty"`
 	InputTokens  int64  `json:"input_tokens,omitempty"`
@@ -102,6 +112,11 @@ func validate(e Entry) error {
 	}
 	if strings.ContainsAny(e.Task, "\n\r") {
 		return fmt.Errorf("task must be a single line, got %q", e.Task)
+	}
+	for _, dim := range [][2]string{{"phase", e.Phase}, {"agent", e.Agent}, {"hook", e.Hook}} {
+		if strings.ContainsAny(dim[1], "\n\r") {
+			return fmt.Errorf("%s must be a single line, got %q", dim[0], dim[1])
+		}
 	}
 	for field, v := range map[string]int64{
 		"duration_ms": e.DurationMS, "output_bytes": e.OutputBytes,
