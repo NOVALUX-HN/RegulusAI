@@ -112,7 +112,7 @@ func TestGateRunPreflightFailsFast(t *testing.T) {
 	t.Chdir(dir)
 	c, out, errb := newCLI(nil)
 	c.Runner = gates.ShRunner{}
-	if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 1 {
+	if code := c.Run([]string{"gate", "run", "--yes", "demo/T1"}); code != 1 {
 		t.Fatalf("missing tool: exit = %d, want 1", code)
 	}
 	if !strings.Contains(errb.String(), "missing required tools:") {
@@ -143,7 +143,7 @@ func TestGateRunPreflightListsSelectedOnly(t *testing.T) {
 		t.Chdir(dir)
 		c, _, errb := newCLI(nil)
 		c.Runner = gates.ShRunner{}
-		if code := c.Run([]string{"gate", "run", "--profile", "quick", "demo/T1"}); code != 0 {
+		if code := c.Run([]string{"gate", "run", "--yes", "--profile", "quick", "demo/T1"}); code != 0 {
 			t.Fatalf("quick selects required only: exit = %d, want 0, stderr:\n%s", code, errb.String())
 		}
 	})
@@ -152,7 +152,7 @@ func TestGateRunPreflightListsSelectedOnly(t *testing.T) {
 		t.Chdir(dir)
 		c, _, errb := newCLI(nil)
 		c.Runner = gates.ShRunner{}
-		if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 1 {
+		if code := c.Run([]string{"gate", "run", "--yes", "demo/T1"}); code != 1 {
 			t.Fatalf("default selects the missing gate: exit = %d, want 1", code)
 		}
 		if !strings.Contains(errb.String(), "nonexistent-tool-xyz") {
@@ -172,7 +172,7 @@ func TestGateRunPreflightSmokeGoPresent(t *testing.T) {
 	t.Chdir(dir)
 	c, out, errb := newCLI(nil)
 	c.Runner = gates.ShRunner{}
-	if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 0 {
+	if code := c.Run([]string{"gate", "run", "--yes", "demo/T1"}); code != 0 {
 		t.Fatalf("go present: exit = %d, want 0, stderr:\n%s", code, errb.String())
 	}
 	if !strings.Contains(out.String(), "gauntlet: 1/1 gates passed") {
@@ -207,5 +207,170 @@ func TestGateRunFakeRunnerSkipsPreflight(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "gauntlet: 1/1 gates passed") {
 		t.Fatalf("fake run must pass, got:\n%s", out.String())
+	}
+}
+
+// writeTrustedMarker marks dir as a trusted repo (S6): gates may run
+// there once policy consent (--yes or an allowlist) is satisfied.
+func writeTrustedMarker(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, ".regulus"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".regulus", "trusted"), []byte("operator consent marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S6: an untrusted repo (no .regulus/trusted) without --yes prints the
+// plan (command|dir|timeout|isolation) and refuses: exit 1, nothing
+// executed, nothing written. In CI the refusal is unconditional without
+// --yes (no interactive fallback).
+func TestGateRunUntrustedRefusesWithoutYes(t *testing.T) {
+	for _, ci := range []string{"", "true"} {
+		name := "local"
+		if ci != "" {
+			name = "ci"
+		}
+		t.Run(name, func(t *testing.T) {
+			if ci != "" {
+				t.Setenv("CI", ci)
+			}
+			dir := writeGatesProject(t, `{"gates":[{"name":"hi","layer":1,"command":"echo hi"}]}`)
+			t.Chdir(dir)
+			c, out, errb := newCLI(nil)
+			c.Runner = gates.ShRunner{}
+			if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 1 {
+				t.Fatalf("untrusted without --yes: exit = %d, want 1", code)
+			}
+			s := out.String()
+			for _, want := range []string{`"echo hi"`, "dir=", "timeout=", "isolation=", "allowlist=deny"} {
+				if !strings.Contains(s, want) {
+					t.Fatalf("refusal must print the plan with %q, got:\n%s", want, s)
+				}
+			}
+			stderr := errb.String()
+			if !strings.Contains(stderr, "untrusted") || !strings.Contains(stderr, "--yes") {
+				t.Fatalf("stderr must demand --yes for the untrusted repo, got %q", stderr)
+			}
+			if strings.Contains(s, "gauntlet:") {
+				t.Fatalf("no gate may run before consent, stdout:\n%s", s)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".regulus")); !os.IsNotExist(err) {
+				entries, _ := os.ReadDir(filepath.Join(dir, ".regulus"))
+				t.Fatalf("untrusted refusal must write NOTHING, .regulus contains %v", entries)
+			}
+		})
+	}
+}
+
+// S6: --yes on an untrusted repo proceeds and the executed receipt
+// records consent:true. --yes is the explicit consent in every
+// environment, CI included.
+func TestGateRunUntrustedYesProceedsWithConsent(t *testing.T) {
+	for _, ci := range []string{"", "true"} {
+		name := "local"
+		if ci != "" {
+			name = "ci"
+		}
+		t.Run(name, func(t *testing.T) {
+			if ci != "" {
+				t.Setenv("CI", ci)
+			}
+			dir := writeGatesProject(t, `{"gates":[{"name":"hi","layer":1,"command":"echo hi"}]}`)
+			t.Chdir(dir)
+			c, out, errb := newCLI(nil)
+			c.Runner = gates.ShRunner{}
+			if code := c.Run([]string{"gate", "run", "--yes", "demo/T1"}); code != 0 {
+				t.Fatalf("untrusted with --yes: exit = %d, want 0, stderr:\n%s", code, errb.String())
+			}
+			if !strings.Contains(out.String(), "gauntlet: 1/1 gates passed") {
+				t.Fatalf("consented run must pass, got:\n%s", out.String())
+			}
+			found, _ := filepath.Glob(filepath.Join(dir, ".regulus", "evidence", "demo__T1", "*.json"))
+			found = withoutManifests(found)
+			if len(found) != 1 {
+				t.Fatalf("want 1 receipt, got %v", found)
+			}
+			data, err := os.ReadFile(found[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), "consent:true") {
+				t.Fatalf("consented receipt must record consent:true, got:\n%s", data)
+			}
+		})
+	}
+}
+
+// S6: deny-by-default on a TRUSTED repo without --yes refuses WITH a
+// Refused receipt (BLOCKED/policy_violation, no exit code): the gate
+// never reaches a runner.
+func TestGateRunTrustedEmptyAllowlistDeniesWithReceipt(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"hi","layer":1,"command":"echo hi"}]}`)
+	writeTrustedMarker(t, dir)
+	t.Chdir(dir)
+	c, _, errb := newCLI(nil)
+	c.Runner = gates.ShRunner{}
+	if code := c.Run([]string{"gate", "run", "demo/T1"}); code != 1 {
+		t.Fatalf("trusted without allowlist/--yes: exit = %d, want 1, stderr:\n%s", code, errb.String())
+	}
+	if strings.Contains(errb.String(), "untrusted") {
+		t.Fatalf("trusted repo must hit the allowlist denial, not the trust gate, stderr:\n%s", errb.String())
+	}
+	found, _ := filepath.Glob(filepath.Join(dir, ".regulus", "evidence", "demo__T1", "*.json"))
+	found = withoutManifests(found)
+	if len(found) != 1 {
+		t.Fatalf("denial must write one Refused receipt, got %v", found)
+	}
+	data, err := os.ReadFile(found[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"status": "BLOCKED"`, `"reason": "policy_violation"`, `"exit_code": -1`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("Refused receipt must contain %s, got:\n%s", want, data)
+		}
+	}
+}
+
+// S6: --dry-run on an untrusted repo only inspects: exit 0, plan on
+// stdout, nothing executed, nothing written.
+func TestGateRunDryRunUntrustedWritesNothing(t *testing.T) {
+	dir := writeGatesProject(t, `{"gates":[{"name":"hi","layer":1,"command":"echo hi"}]}`)
+	t.Chdir(dir)
+	c, out, _ := newCLI(nil)
+	c.Runner = gates.ShRunner{}
+	if code := c.Run([]string{"gate", "run", "--dry-run", "demo/T1"}); code != 0 {
+		t.Fatalf("dry-run on untrusted repo: exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), `"echo hi"`) {
+		t.Fatalf("dry-run must print the plan, got:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".regulus")); !os.IsNotExist(err) {
+		entries, _ := os.ReadDir(filepath.Join(dir, ".regulus"))
+		t.Fatalf("dry-run must write NOTHING, .regulus contains %v", entries)
+	}
+}
+
+// S6: dry-run lines carry the allowlist verdict plus the destructive mark.
+func TestDryRunLineAllowlistVerdict(t *testing.T) {
+	allow := dryRunGateLine(gates.Gate{Name: "a", Layer: 1, Command: "echo hi"}, 3600, "", true, "echo")
+	if !strings.Contains(allow, "allowlist=allow") {
+		t.Fatalf("allowlisted command must read allow, got %q", allow)
+	}
+	if !strings.Contains(allow, "destructive=false") {
+		t.Fatalf("standard command must mark destructive=false, got %q", allow)
+	}
+	deny := dryRunGateLine(gates.Gate{Name: "a", Layer: 1, Command: "echo hi"}, 3600, "", true)
+	if !strings.Contains(deny, "allowlist=deny") {
+		t.Fatalf("empty allowlist must deny by default, got %q", deny)
+	}
+	bad := dryRunGateLine(gates.Gate{Name: "x", Layer: 1, Command: "rm -rf /"}, 3600, "", true)
+	if !strings.Contains(bad, "destructive=true") {
+		t.Fatalf("destructive command must mark destructive=true, got %q", bad)
+	}
+	if !strings.Contains(bad, "classification=destructive") {
+		t.Fatalf("destructive command must keep its classification, got %q", bad)
 	}
 }

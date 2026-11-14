@@ -12,6 +12,19 @@ type ExecutionConfig struct {
 	Allowlist        []string `json:"allowlist,omitempty"`
 	EnvUnset         []string `json:"env_unset,omitempty"`
 	DockerImage      string   `json:"docker_image,omitempty"`
+
+	// EnforceDenyByDefault opts this run into deny-by-default (S6): with
+	// no allowlist configured every gate refuses unless ExplicitYes
+	// carries per-invocation operator consent. `gate run` sets it for
+	// real shell executions (the secure default); programmatic callers
+	// (probe, tests) leave it unset and keep the historical
+	// allowlist-only behavior. Never serialized: consent is
+	// per-invocation, never stored in regulus.json.
+	EnforceDenyByDefault bool `json:"-"`
+	// ExplicitYes is per-invocation operator consent (`gate run --yes`).
+	// It bypasses ONLY the empty-allowlist denial — never a named
+	// allowlist mismatch nor the destructive policy.
+	ExplicitYes bool `json:"-"`
 }
 
 // DefaultMaxTimeoutSec caps a gate when no execution block configures one.
@@ -244,6 +257,13 @@ func isPrivilegedSegment(seg string) bool {
 		return true
 	}
 	return false
+}
+
+// AllowedByAllowlist reports whether command passes the allowlist (S6
+// dry-run verdict): every executable segment's first token must be
+// listed. An empty allowlist denies everything (deny by default).
+func AllowedByAllowlist(command string, allowlist []string) bool {
+	return !allowlistRefused(command, allowlist)
 }
 
 // allowlistRefused reports whether any executable segment of command falls

@@ -62,9 +62,28 @@ func whenNote(g Gate, changed []string, changedOK bool) string {
 	return ""
 }
 
+// consentCtxKey carries per-invocation operator consent (`gate run --yes`)
+// from the CLI to the executor so executed receipts record it. Consent
+// travels in the context (not the config) because adjudicateAndWrite
+// signs receipts without seeing the invocation flags.
+type consentCtxKey struct{}
+
+// ContextWithConsent returns ctx carrying operator consent for receipts.
+func ContextWithConsent(ctx context.Context, consent bool) context.Context {
+	return context.WithValue(ctx, consentCtxKey{}, consent)
+}
+
+// consentFromContext reports whether ctx carries operator consent.
+func consentFromContext(ctx context.Context) bool {
+	consent, _ := ctx.Value(consentCtxKey{}).(bool)
+	return consent
+}
+
 // refusePolicy enforces the execution policy before any runner runs:
-// destructive commands refuse without opt-in, and an allowlist refuses
-// anything it does not name. Returns the classification for the receipt.
+// destructive commands refuse without opt-in, a non-empty allowlist
+// refuses anything it does not name, and (S6) a `gate run` with no
+// allowlist configured denies by default unless --yes consented for
+// this invocation. Returns the classification for the receipt.
 func refusePolicy(g Gate, cfg Config) (refused bool, note, classification string) {
 	classification = Classify(g.Command)
 	if classification == ClassificationDestructive && !(cfg.Execution != nil && cfg.Execution.AllowDestructive) {
@@ -74,6 +93,17 @@ func refusePolicy(g Gate, cfg Config) (refused bool, note, classification string
 		if allowlistRefused(g.Command, cfg.Execution.Allowlist) {
 			return true, "policy: command not in allowlist", classification
 		}
+		return false, "", classification
+	}
+	// S6 deny-by-default: a `gate run` (EnforceDenyByDefault) with no
+	// allowlist refuses every gate unless --yes consented for this
+	// invocation (ExplicitYes). Programmatic use (flag unset) keeps the
+	// historical allowlist-only behavior. CI note: CI runners have no
+	// interactive fallback, so without --yes the refusal below is
+	// unconditional there too — scripts must pass --yes or declare an
+	// allowlist.
+	if cfg.Execution != nil && cfg.Execution.EnforceDenyByDefault && len(cfg.Execution.Allowlist) == 0 && !cfg.Execution.ExplicitYes {
+		return true, "policy: no allowlist configured (deny by default; re-run with --yes or add execution.allowlist)", classification
 	}
 	return false, "", classification
 }
@@ -116,6 +146,12 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 			facts: verdict.Facts{Refused: true},
 		}
 	}
+	// S6: explicit --yes consent rides the context so the receipt records
+	// it; refused gates never run, so they carry no consent note.
+	consentNote := ""
+	if consentFromContext(ctx) {
+		consentNote = "consent:true (operator passed --yes)"
+	}
 	if sh, ok := asShRunner(r); ok {
 		if isMutationGate(g) {
 			return execMutationSh(ctx, g, sh, timeout, dockerImage, execEnvUnset)
@@ -139,6 +175,9 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 		} else {
 			out.facts = verdict.Facts{Executed: true, ExitCode: 0}
 		}
+		if consentNote != "" {
+			out.stderr = appendGateNote(out.stderr, consentNote)
+		}
 		return out
 	}
 	gctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
@@ -157,6 +196,9 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 		out.facts = verdict.Facts{Executed: true, ExitCode: c}
 	} else {
 		out.facts = verdict.Facts{Executed: true, ExitCode: 0}
+	}
+	if consentNote != "" {
+		out.stderr = appendGateNote(out.stderr, consentNote)
 	}
 	return out
 }

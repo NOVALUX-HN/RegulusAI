@@ -61,6 +61,15 @@ opt-in: without a daemon the gate runs host-contained and says so in the
 receipt. Host permissions remain the real boundary — this policy is the
 auditable backstop.
 
+A repo is trusted only when `.regulus/trusted` exists (created by
+explicit operator action, never by a gate). `gate run` on an untrusted
+repo prints the plan (`command|dir|timeout|isolation`, each line with
+its `allowlist=allow|deny` verdict) and refuses without `--yes`;
+`--dry-run` always prints the plan and runs nothing. With no
+`execution.allowlist` configured, every gate refuses with a `Refused`
+receipt unless `--yes` consents (recorded as `consent:true`); CI has no
+interactive fallback, so scripts must pass `--yes` or declare an allowlist.
+
 ## 5. Reproducibility, honestly
 
 The manifest records what's needed to re-run (commands, config, versions,
