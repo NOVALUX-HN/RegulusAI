@@ -4,6 +4,26 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.14.0] - 2026-11-14
+
+Batch delivered since 0.13.0 (Linear P-NOV-2 Regulus-AI 41/41 Done):
+
+### Added
+- F4 observabilidad y consolidación 6/6 (NOV-33 dashboard S18 exacto con
+envelope generated_at, NOV-26/21/23 decisiones sin sobreingeniería,
+NOV-36 instalación y versión alineada).
+- F5 Windows 5/5 (NOV-43 diagnóstico App Control con eventos 3077/3118,
+NOV-45 StructuredRunner nativo sin shell, NOV-46 CI Windows + audit,
+NOV-44 Authenticode opcional, NOV-47 guía sin degradar seguridad).
+- F6 multiagente 8/8 (NOV-48 contrato neutral v1, NOV-49 Codex nativo,
+NOV-50 Claude nativo, NOV-51 Devin consolidado, NOV-52 instalador +
+Skill Registry, NOV-53 ODD/RDD, NOV-54 CodeGraph opcional, NOV-55
+conformidad E2E).
+- F7 experimentación recursiva 6/6 (NOV-56 protocolo reproducible,
+NOV-57 manifest de evidencia, NOV-58 motor K paralelo/secuencial,
+NOV-59 evaluador robusto, NOV-60 promoción canary/rollback, NOV-61
+validación E2E + adversarial).
+
 ## [0.13.0] - 2026-11-08
 
 Same branch (`develop`); tags cut on main at merge.
