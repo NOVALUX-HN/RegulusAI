@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"regulus-ai/internal/gates"
 	"regulus-ai/internal/sextant"
 	"regulus-ai/internal/spec"
 )
@@ -169,6 +170,13 @@ func (c CLI) taskCloseCmd(args []string) int {
 	id := args[1]
 	chartBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	res := sextant.CheckClose(doc, c.dir(), chartBase, id)
+	// S11/NOV-32: tasks inherit the chart scope. The worktree check
+	// needs git I/O, so it runs here (not in pure CheckClose): any file
+	// outside the declared Scope blocks the close by name.
+	if unmet := c.scopeUnmet(doc, path); len(unmet) != 0 {
+		res.Unmet = append(res.Unmet, unmet...)
+		res.Closed = false
+	}
 	if !res.Closed {
 		fmt.Fprintf(c.Stdout, "task %s cannot close:\n", id)
 		for _, u := range res.Unmet {
@@ -227,4 +235,116 @@ func (c CLI) taskClassifyCmd(args []string) int {
 	fmt.Fprintf(c.Stdout, "documentation: %s\n", req.Documentation)
 	fmt.Fprintf(c.Stdout, "completion: %s\n", req.Completion)
 	return 0
+}
+
+// scopeUnmet enforces the chart scope at close (S11/NOV-32): tasks
+// inherit the chart's Scope, so any worktree file outside the declared
+// Allow/Deny boundary blocks the close by name. No declared scope means
+// no enforcement (legacy charts keep working); an unevaluable worktree
+// (git unavailable) fails open like the gate when-conditions, never
+// blocking the close on missing tooling.
+func (c CLI) scopeUnmet(doc, chartPath string) []string {
+	sc, err := sextant.ParseScope(doc)
+	if err != nil {
+		return []string{fmt.Sprintf("%v — ajusta el Scope del chart (REPLAN con motivo) o mueve el cambio dentro del scope", err)}
+	}
+	if !sc.Declared {
+		return nil
+	}
+	files, ok := c.scopeWorktreeFiles(chartPath)
+	if !ok {
+		return nil
+	}
+	if err := sc.CheckScopeFilesIn(c.dir(), files); err != nil {
+		return []string{fmt.Sprintf("%v — ajusta el Scope del chart (REPLAN con motivo) o mueve el cambio dentro del scope", err)}
+	}
+	return nil
+}
+
+// scopeWorktreeFiles lists the real worktree: tracked changes against
+// HEAD plus untracked files (honoring git's own excludes). The chart
+// itself is dropped: it is the authorization artifact close rewrites,
+// not worker output, so its own path never counts against the scope.
+func (c CLI) scopeWorktreeFiles(chartPath string) ([]string, bool) {
+	ctx, cancel := gitTimeout()
+	defer cancel()
+	r := c.scopeRunner()
+	var files []string
+	ok := false
+	if out, _, code, err := r.Run(ctx, "git diff --name-only HEAD"); err == nil && code == 0 {
+		ok = true
+		files = append(files, splitScopeLines(out)...)
+	}
+	if out, _, code, err := r.Run(ctx, "git ls-files --others --exclude-standard"); err == nil && code == 0 {
+		ok = true
+		files = append(files, splitScopeLines(out)...)
+	}
+	if !ok {
+		return nil, false
+	}
+	return dropScopeChartFile(files, scopeChartRel(c.dir(), chartPath)), true
+}
+
+// scopeRunner pins the real shell runner to the project root (git lists
+// root-relative paths); injected doubles run untouched.
+func (c CLI) scopeRunner() gates.CmdRunner {
+	root := c.dir()
+	if sh, ok := c.Runner.(gates.ShRunner); ok {
+		sh.Dir = root
+		return sh
+	}
+	if shp, ok := c.Runner.(*gates.ShRunner); ok && shp != nil {
+		cp := *shp
+		cp.Dir = root
+		return cp
+	}
+	if c.Runner != nil {
+		return c.Runner
+	}
+	return gates.ShRunner{Dir: root}
+}
+
+func splitScopeLines(out string) []string {
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			files = append(files, t)
+		}
+	}
+	return files
+}
+
+// scopeChartRel names the chart repo-relative so the close can exempt
+// its own authorization file; "" exempts nothing.
+func scopeChartRel(root, chartPath string) string {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	absChart, err := filepath.Abs(chartPath)
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(absRoot, absChart)
+	if err != nil || rel == "" || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(rel) {
+		return ""
+	}
+	return rel
+}
+
+func dropScopeChartFile(files []string, chartRel string) []string {
+	if chartRel == "" {
+		return files
+	}
+	want := strings.ToLower(filepath.ToSlash(chartRel))
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		if strings.ToLower(strings.TrimSpace(f)) == want {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }

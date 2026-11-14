@@ -87,3 +87,9 @@ chart + `task check` clean (CHART), gauntlet receipts (BUILD/PROVE),
 
 See `internal/journey/sextant_test.go:TestSextantGuidedFlow` for the
 machine-checked journey.
+
+## 7. Scope enforcement (chart-level, inherited per task)
+
+- `## Contract` may declare machine scope under `- Scope:` with `Allow: <glob>` / `Deny: <glob>` continuation lines (prefix/path globs, case-insensitive; `..`, absolute and drive-letter declarations are rejected).
+- Tasks inherit the chart scope; `task close` lists the worktree (`git diff --name-only HEAD` plus untracked files) and refuses with `fuera de scope: <path>` when anything lies outside it. No `Allow:`/`Deny:` lines means no enforcement (legacy charts keep working).
+- Widening scope means editing `Scope:` plus a `REPLAN: <what changed> — <why>` log line; only the human who approves the chart authorizes it — a worker never widens its own scope.
