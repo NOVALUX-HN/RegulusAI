@@ -24,13 +24,13 @@ Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D
 ## 3. El Sextant → `docs/assets/sextant.png` (1200×500, sección The Sextant)
 
 ```text
-Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D9A441) accents with white (#E7EAF0) text, clean geometric sans-serif, minimal, high contrast, no photo, no watermark. Horizontal 5-step pipeline, left to right, connected by gold arrows: 1 AUTHORIZE (magnifier icon, "read-only first"), 2 CHART (document icon, "acceptance scenarios"), 3 BUILD (hammer icon, "necessity ladder"), 4 PROVE (shield-check icon, "14 gates green"), 5 LEARN (open book icon, "almanac notes"). Each step a rounded dark card with gold number.
+Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D9A441) accents with white (#E7EAF0) text, clean geometric sans-serif, minimal, high contrast, no photo, no watermark. Horizontal 5-step pipeline, left to right, connected by gold arrows: 1 AUTHORIZE (magnifier icon, "read-only first"), 2 CHART (document icon, "acceptance scenarios"), 3 BUILD (hammer icon, "necessity ladder"), 4 PROVE (shield-check icon, "15 gates green"), 5 LEARN (open book icon, "almanac notes"). Each step a rounded dark card with gold number.
 ```
 
 ## 4. El Gauntlet → `docs/assets/gauntlet.png` (1200×700, sección Commands)
 
 ```text
-Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D9A441) accents with white (#E7EAF0) text, clean geometric sans-serif, minimal, high contrast, no photo, no watermark. Vertical 14-layer pipeline diagram, top to bottom, each layer a dark rounded bar with gold left border and a small receipt icon: "1 manifest-check, 2 typecheck, 3 lint, 4 build, 5 unit-tests, 6 coverage-floor, 7 mutation-receipts, 8 mutation-gates, 9 crap, 10 vulncheck, 11 spec, 12 ts-typecheck, 13 ts-unit-tests, 14 gofmt". Bottom banner: "stop at first failure — one receipt per layer". Monospace-style labels.
+Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D9A441) accents with white (#E7EAF0) text, clean geometric sans-serif, minimal, high contrast, no photo, no watermark. Vertical 15-layer pipeline diagram, top to bottom, each layer a dark rounded bar with gold left border and a small receipt icon: "1 manifest-check, 2 typecheck, 3 lint, 4 build, 5 unit-tests, 6 coverage-floor, 7 mutation-receipts, 8 mutation-gates, 9 crap, 10 vulncheck, 11 spec, 12 ts-typecheck, 13 ts-unit-tests, 14 gofmt, 15 race-almanac". Bottom banner: "stop at first failure — one receipt per layer". Monospace-style labels.
 ```
 
 ## 5. Crew y Guardianes → `docs/assets/crew.png` (1200×600, párrafo línea 47)
