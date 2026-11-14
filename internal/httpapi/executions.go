@@ -18,12 +18,17 @@ import (
 	"regulus-ai/internal/manifest"
 	"regulus-ai/internal/observability"
 	"regulus-ai/internal/receipts"
+	"regulus-ai/internal/trace"
 )
 
 // executionItem is one numbered gauntlet cycle: its sequential number
 // by date, the task it ran, whether every gate passed, how many gates
 // passed out of the total, the summed duration, the latest receipt
-// date, and the checkout branch pinned in the run manifest.
+// date, and the checkout branch pinned in the run manifest, plus the
+// correlated tool calls (NOV-34): how many trace entries carry this
+// cycle's run id as execution_id, and how many of them errored.
+// Legacy cycles (no run id) report zero counts: unattributed trace
+// lines belong to no execution (see trace.ExecutionKey).
 type executionItem struct {
 	N          int    `json:"n"`
 	Task       string `json:"task"`
@@ -33,6 +38,8 @@ type executionItem struct {
 	DurationMS int64  `json:"duration_ms"`
 	Date       string `json:"date"`
 	Branch     string `json:"branch"`
+	Errors     int    `json:"errors"`
+	ToolCalls  int    `json:"tool_calls"`
 }
 
 // execGroup is one cycle under construction: the receipts sharing a
@@ -104,8 +111,10 @@ func manifestBranches(root string) map[string]string {
 
 // buildExecutionItem folds one cycle: pass needs every receipt green,
 // duration sums duration_ms, date is the latest started_at, branch is
-// the run manifest branch (Unknown without a manifest, legacy included).
-func buildExecutionItem(g *execGroup, n int, branches map[string]string) executionItem {
+// the run manifest branch (Unknown without a manifest, legacy included),
+// and errors/tool_calls count the trace entries correlated by
+// execution_id==run id (zero for legacy cycles without a run id).
+func buildExecutionItem(g *execGroup, n int, branches map[string]string, counts map[string]trace.ExecutionCounts) executionItem {
 	pass := 0
 	var totalDur int64
 	var last time.Time
@@ -128,6 +137,12 @@ func buildExecutionItem(g *execGroup, n int, branches map[string]string) executi
 			branch = b
 		}
 	}
+	errors, toolCalls := 0, 0
+	if g.runID != "" {
+		if c, ok := counts[g.runID]; ok {
+			errors, toolCalls = c.Errors, c.Calls
+		}
+	}
 	date := ""
 	if !last.IsZero() {
 		date = last.UTC().Format(time.RFC3339)
@@ -137,6 +152,7 @@ func buildExecutionItem(g *execGroup, n int, branches map[string]string) executi
 		GatesPass: pass, GatesTotal: len(g.recs),
 		DurationMS: totalDur, Date: date,
 		Branch: observability.RedactText(branch),
+		Errors: errors, ToolCalls: toolCalls,
 	}
 }
 
@@ -161,11 +177,18 @@ func (s Server) handleExecutions(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusBadRequest, InvalidParams("executions: "+observability.RedactText(err.Error())))
 		return
 	}
+	// Correlated tool calls (NOV-34): a corrupt trace store fails the
+	// page instead of silently undercounting an execution.
+	counts, err := trace.CountByExecution(root)
+	if err != nil {
+		writeEnvelope(w, http.StatusBadRequest, InvalidParams("executions: "+observability.RedactText(err.Error())))
+		return
+	}
 	groups := groupExecutions(entries)
 	branches := manifestBranches(root)
 	items := make([]executionItem, 0, len(groups))
 	for i, g := range groups {
-		items = append(items, buildExecutionItem(g, i+1, branches))
+		items = append(items, buildExecutionItem(g, i+1, branches, counts))
 	}
 	lo, hi := paginate(len(items), limit, offset)
 	writePage(w, len(items), limit, offset, items[lo:hi])

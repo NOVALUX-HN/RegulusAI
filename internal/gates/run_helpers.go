@@ -62,6 +62,45 @@ func whenNote(g Gate, changed []string, changedOK bool) string {
 	return ""
 }
 
+// executionCtxKey carries the correlated execution id (NOV-34) from
+// the invocation to the trace hook so the hook's trace records land on
+// the same id as the gate run's receipts. It travels in the context
+// (not the config) for the same reason consent does: the run mints the
+// runID in one place while the hook records traces in another, and the
+// config must not change per invocation.
+type executionCtxKey struct{}
+
+// ContextWithExecutionID returns ctx carrying the execution id the
+// trace hook attributes its records to. Empty means no correlation
+// (probe path, legacy hook): records stay unattributed, exactly as
+// before.
+func ContextWithExecutionID(ctx context.Context, executionID string) context.Context {
+	return context.WithValue(ctx, executionCtxKey{}, executionID)
+}
+
+// ExecutionIDFromContext reports the execution id carried by ctx, or
+// "" when none was set.
+func ExecutionIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(executionCtxKey{}).(string)
+	return id
+}
+
+// ResolveExecutionID resolves the execution id to attribute a gate's
+// trace record: the explicit context value wins (hook-supplied, e.g. a
+// resumed execution), else the run's runID, else "" (probe path runs
+// without a manifest, so there is nothing to correlate — legacy calls
+// without an id keep working unchanged). The hook passes the resolved
+// id as the trace record's execution_id (record-batch NDJSON carries it
+// with no flag change; single-record passes --execution-id only when
+// its context carries one), and the observability projections join
+// execution_id==RunID.
+func ResolveExecutionID(ctx context.Context, runID string) string {
+	if id := ExecutionIDFromContext(ctx); id != "" {
+		return id
+	}
+	return runID
+}
+
 // consentCtxKey carries per-invocation operator consent (`gate run --yes`)
 // from the CLI to the executor so executed receipts record it. Consent
 // travels in the context (not the config) because adjudicateAndWrite

@@ -47,6 +47,17 @@ const (
 // existed decode as empty and fold into the "(unattributed)" bucket
 // of their dimension (see cost.go); Fingerprint ignores them so
 // contrast diffs stay stable.
+//
+// Correlated execution (NOV-34, S17): ExecutionID carries the gate
+// run's runID (the same id receipts and manifests store as RunID) so
+// one execution correlates across receipts, traces, spans and the
+// executions endpoint; CorrelationID carries the caller's correlation
+// id when the hook context brings one. Both are optional (omitempty,
+// single-line like every other free-text field): lines written before
+// these fields existed decode as empty and fold into the
+// UnattributedExecution bucket, so legacy hook calls record and read
+// unchanged. Fingerprint ignores them like Task/Phase/cost so
+// contrast diffs stay stable.
 type Entry struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`
@@ -56,14 +67,16 @@ type Entry struct {
 	Status  string    `json:"status"` // completed | error
 	Files   []string  `json:"files,omitempty"`
 
-	Task         string `json:"task,omitempty"`
-	Phase        string `json:"phase,omitempty"`
-	Agent        string `json:"agent,omitempty"`
-	Hook         string `json:"hook,omitempty"`
-	DurationMS   int64  `json:"duration_ms,omitempty"`
-	OutputBytes  int64  `json:"output_bytes,omitempty"`
-	InputTokens  int64  `json:"input_tokens,omitempty"`
-	OutputTokens int64  `json:"output_tokens,omitempty"`
+	Task          string `json:"task,omitempty"`
+	Phase         string `json:"phase,omitempty"`
+	Agent         string `json:"agent,omitempty"`
+	Hook          string `json:"hook,omitempty"`
+	ExecutionID   string `json:"execution_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	DurationMS    int64  `json:"duration_ms,omitempty"`
+	OutputBytes   int64  `json:"output_bytes,omitempty"`
+	InputTokens   int64  `json:"input_tokens,omitempty"`
+	OutputTokens  int64  `json:"output_tokens,omitempty"`
 }
 
 // maxFiles caps the touched-path hints per entry: relevance needs a
@@ -113,7 +126,7 @@ func validate(e Entry) error {
 	if strings.ContainsAny(e.Task, "\n\r") {
 		return fmt.Errorf("task must be a single line, got %q", e.Task)
 	}
-	for _, dim := range [][2]string{{"phase", e.Phase}, {"agent", e.Agent}, {"hook", e.Hook}} {
+	for _, dim := range [][2]string{{"phase", e.Phase}, {"agent", e.Agent}, {"hook", e.Hook}, {"execution_id", e.ExecutionID}, {"correlation_id", e.CorrelationID}} {
 		if strings.ContainsAny(dim[1], "\n\r") {
 			return fmt.Errorf("%s must be a single line, got %q", dim[0], dim[1])
 		}
@@ -293,9 +306,70 @@ func Prune(root, session string, keep int) (int, error) {
 	return len(entries), nil
 }
 
+// UnattributedExecution buckets trace entries recorded without an
+// execution id (every line written before the NOV-34 execution fields
+// existed): unknown stays distinguishable from a measured execution.
+const UnattributedExecution = "(unattributed)"
+
+// ExecutionKey maps an entry to its execution bucket: its execution
+// id, or the unattributed bucket for legacy lines recorded without
+// one (empty decodes from every legacy line).
+func ExecutionKey(e Entry) string {
+	if e.ExecutionID == "" {
+		return UnattributedExecution
+	}
+	return e.ExecutionID
+}
+
+// ExecutionCounts is the folded call count of one execution id:
+// total tool calls plus the error subset (StatusError). It is a plain
+// join count, not proxy cost: cost semantics (see cost.go) are
+// untouched — unattributed legacy entries are skipped, never forced
+// into any execution.
+type ExecutionCounts struct {
+	Calls  int
+	Errors int
+}
+
+// CountByExecution folds every session trace under root into per-
+// execution call counts keyed by execution id. Entries without an
+// execution id (legacy) fold into nothing: they belong to the
+// UnattributedExecution bucket (see ExecutionKey), not to any
+// execution. A root with no traces yields no counts and no error; a
+// malformed line fails like List does — a corrupt store is an error,
+// never a silent partial count.
+func CountByExecution(root string) (map[string]ExecutionCounts, error) {
+	sessions, err := Sessions(root)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]ExecutionCounts{}
+	for _, s := range sessions {
+		entries, err := List(root, s)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if e.ExecutionID == "" {
+				continue
+			}
+			c := out[e.ExecutionID]
+			c.Calls++
+			if e.Status == StatusError {
+				c.Errors++
+			}
+			out[e.ExecutionID] = c
+		}
+	}
+	return out, nil
+}
+
 // Fingerprint reduces a session trace to its diffable shape: sequence
 // number, tool name, status. Message and call ids are session-unique,
 // so they would make every cross-run diff noise; order is the signal.
+// Execution and correlation ids are attribution, not process shape:
+// Fingerprint ignores them like Task/Phase/cost so contrast diffs
+// stay stable across correlated and legacy lines.
 func Fingerprint(entries []Entry) []string {
 	out := make([]string, 0, len(entries))
 	for i, e := range entries {
