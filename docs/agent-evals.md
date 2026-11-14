@@ -16,8 +16,9 @@ fallo de guardrail rechaza.
 
 Estado 2026-11-14: sin créditos de modelo en este host (`opencode run`
 → 402 quota), la baseline real queda pendiente de una corrida con
-créditos (`--reps 3`, exploración y holdout). Fixtures y checks
-verificados manualmente en ambas direcciones (fix pasa, roto falla);
-`go vet` + build limpios. Ejecución de `bench.test.exe` bloqueada
-este ciclo por App Control (eventos 3077/3118, ver `docs/windows-diagnosis.md`);
-reintentar en ventana limpia antes de cerrar NOV-68.
+créditos (`--reps 3`, exploración y holdout). Tests GREEN en WSL
+(Go 1.27.3 + node 22): 8/8 agent-tasks (corpus, splits, buckets,
+controles, anti-leakage) + CLI NOT RUN/INCONCLUSIVE + suites trace/
+bench completas sin regresiones. Ventana Windows con App Control
+intermitente: si un binario nuevo se bloquea (3077/3118), reintentar
+o correr en WSL.
