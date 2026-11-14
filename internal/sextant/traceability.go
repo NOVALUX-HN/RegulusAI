@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"regulus-ai/internal/executil"
 	"regulus-ai/internal/guardians"
 )
 
@@ -97,6 +98,7 @@ func shortSHA(sha string) string {
 // git runs git -C root and returns trimmed stdout.
 func git(root string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	executil.HideWindow(cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb

@@ -14,6 +14,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"regulus-ai/internal/executil"
 	"runtime"
 	"strings"
 	"time"
@@ -109,6 +111,7 @@ func hostJourneySteps(selfBin, workdir string) []bench.JourneyStep {
 		return func(ctx context.Context, _ string) (string, error) {
 			cmd := exec.CommandContext(ctx, selfBin, args...)
 			cmd.Dir = workdir
+			executil.HideWindow(cmd)
 			var out, errb strings.Builder
 			cmd.Stdout = &out
 			cmd.Stderr = &errb

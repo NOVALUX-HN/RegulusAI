@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"regulus-ai/internal/executil"
 	"regulus-ai/internal/trace"
 )
 
@@ -44,6 +45,7 @@ func (r OpenCodeRunner) Run(ctx context.Context, workdir, prompt, model string) 
 	args = append(args, prompt)
 	cmd := exec.CommandContext(ctx, r.Bin, args...)
 	cmd.Dir = workdir
+	executil.HideWindow(cmd)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf

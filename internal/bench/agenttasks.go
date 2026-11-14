@@ -189,6 +189,7 @@ type AgentOutcome struct {
 	Variant     string `json:"variant"`
 	Status      string `json:"status"`
 	Detail      string `json:"detail"`
+	Evidence    string `json:"evidence"`
 	TokensIn    int64  `json:"tokens_in"`
 	TokensOut   int64  `json:"tokens_out"`
 	TokenSource string `json:"token_source"`
@@ -295,8 +296,16 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(budget)*time.Second)
 	defer cancel()
 	start := time.Now()
-	_, usage, err := agent.Run(tctx, fix, t.Prompt, opts.Model)
+	// Anchor the agent: some hosts resolve relative paths against
+	// their own startup directory instead of the child cwd.
+	anchored := fmt.Sprintf("Working directory: %s. Read and edit only files inside it.\n\n%s", fix, t.Prompt)
+	raw, usage, err := agent.Run(tctx, fix, anchored, opts.Model)
 	oc.LatencyMS = time.Since(start).Milliseconds()
+	if truncated := strings.TrimSpace(raw); len(truncated) > 4000 {
+		oc.Evidence = truncated[:4000]
+	} else {
+		oc.Evidence = truncated
+	}
 	if err != nil {
 		if ctxErr := tctx.Err(); ctxErr == context.DeadlineExceeded {
 			oc.Status = AgentTimeout

@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"regulus-ai/internal/executil"
 	"sort"
 	"strings"
 	"time"
@@ -83,7 +85,9 @@ func DefaultHostProbes() []HostProbe {
 func toolVersion(ctx context.Context, bin string, args ...string) (string, error) {
 	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(tctx, bin, args...).CombinedOutput()
+	cmd := exec.CommandContext(tctx, bin, args...)
+	executil.HideWindow(cmd)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%s probe failed: %v", bin, err)
 	}

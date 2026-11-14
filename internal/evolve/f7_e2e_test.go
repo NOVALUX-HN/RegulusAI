@@ -276,10 +276,10 @@ func TestF7E2EAdversarial(t *testing.T) {
 	m := ExperimentManifest{
 		Schema: ExpManifestSchema, Protocol: F7ProtocolVersion, ExperimentID: "adv-1",
 		Candidate: ManifestCandidateRef{ManifestPath: candPath, RunID: "x", SHA256: sum},
-		Baseline: "macizo-bench-v3", Suite: "macizo", SuiteVersion: "macizo-bench-v3",
-		Split:     ManifestSplitRef{File: splitPath, Name: "f7-split-v1", Version: 1, SHA256: splitSum},
-		Seed:      1, Evaluator: RobustEvaluatorName, EvaluatorVer: RobustEvaluatorVersion,
-		Results:   []ManifestResult{{TaskID: "B1", Status: ManifestPass}},
+		Baseline:  "macizo-bench-v3", Suite: "macizo", SuiteVersion: "macizo-bench-v3",
+		Split: ManifestSplitRef{File: splitPath, Name: "f7-split-v1", Version: 1, SHA256: splitSum},
+		Seed:  1, Evaluator: RobustEvaluatorName, EvaluatorVer: RobustEvaluatorVersion,
+		Results: []ManifestResult{{TaskID: "B1", Status: ManifestPass}},
 	}
 	if _, err := WriteExperimentManifest(dir, m); err != nil {
 		t.Fatalf("honest manifest must write: %v", err)
@@ -363,7 +363,7 @@ func TestF7E2ERuntimeAndRecursion(t *testing.T) {
 	}
 	degraded, err := ProposeExperiment(dir, ExperimentSpec{
 		Hypothesis: Hypothesis{Problem: "p", RootCause: "r", Change: "c", Benefit: "b", PotentialRegressions: "rg", EvaluationCriteria: "ev"},
-		Baseline: "macizo-bench-v3", Candidate: "wording", Dataset: "d",
+		Baseline:   "macizo-bench-v3", Candidate: "wording", Dataset: "d",
 		Model: "n/a", Runtime: "degraded: harness unavailable, proxy only",
 		Domain: DomainINV, Budget: Budget{MaxRuns: 1},
 	})
