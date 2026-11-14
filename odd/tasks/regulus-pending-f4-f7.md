@@ -12,7 +12,7 @@ F4 16.6% + F5/F6/F7 0%. Cerrar 24 issues Backlog en develop, solo main+develop, 
 - S8: F7 NOV-56 protocolo P0; NOV-58 motor exploracion P0; NOV-61 validacion E2E P0; NOV-57 evidencia P1; NOV-59 evaluador P1; NOV-60 promocion rollback P1
 
 ## Tasks
-- T18 NOV-33 Paso 18 dashboard KPIs | S5 | route: inline | commit: _
+- T18 NOV-33 Paso 18 dashboard KPIs | S5 | route: inline | commit: c69fb74 Done
 - T19 NOV-26 Paso 19 runtime | S5 | route: inline | commit: _
 - T20 NOV-21 Paso 20 MCP externa | S5 | route: inline | commit: _
 - T21 NOV-23 Paso 21 firma receipts decision | S5 | route: inline | commit: _
