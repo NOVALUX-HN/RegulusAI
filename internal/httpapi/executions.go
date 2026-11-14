@@ -194,31 +194,6 @@ func (s Server) handleExecutions(w http.ResponseWriter, r *http.Request) {
 	writePage(w, len(items), limit, offset, items[lo:hi])
 }
 
-// gitData is the checkout identity of the served root: the current
-// branch plus the short HEAD, Unknown ("—") for either when git cannot
-// resolve it.
-type gitData struct {
-	Branch string `json:"branch"`
-	Head   string `json:"head"`
-}
-
-// handleGit serves GET /v1/git: the branch and short HEAD of the
-// served project root, resolved with pure Go (no shell) under a short
-// timeout, Unknown outside git. Same resolution the manifest writer
-// uses for the run branch.
-func (s Server) handleGit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
-		return
-	}
-	root, ok := s.projectRoot(w, r)
-	if !ok {
-		return
-	}
-	data := gitData{
-		Branch: observability.RedactText(manifest.BranchOf(root)),
-		Head:   manifest.HeadOf(root),
-	}
-	status, env := MapResult(data, "", 0)
-	writeEnvelope(w, status, env)
-}
+// NOTE (NOV-33 S18): GET /v1/git moved to handleGitMeta in dashboard.go
+// (same branch/HEAD resolution, plus the S18 generated_at envelope).
+// This file keeps no git handler.

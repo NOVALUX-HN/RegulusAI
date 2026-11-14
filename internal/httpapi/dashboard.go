@@ -16,6 +16,7 @@ import (
 	"regulus-ai/internal/budget"
 	"regulus-ai/internal/evolve"
 	"regulus-ai/internal/library"
+	"regulus-ai/internal/manifest"
 	"regulus-ai/internal/observability"
 	"regulus-ai/internal/reflect"
 )
@@ -43,6 +44,10 @@ type almanacFoldEntry struct {
 	byType map[string]int
 	oldest time.Time
 	newest time.Time
+	// generatedAt stamps the scan time (S18): memoized with the fold
+	// so repeat polls replay byte-identical bodies while the store is
+	// unchanged, under the same Cache-Control window as the headers.
+	generatedAt string
 }
 
 var almanacFoldMemo = struct {
@@ -54,7 +59,9 @@ var almanacFoldMemo = struct {
 // entry when the store file is unchanged (same mtime+size) and
 // rescanning otherwise. Errors are never memoized: the next poll
 // retries the store. A missing log folds to zeros, like almanac.All.
-func cachedAlmanacFold(root string) (int, map[string]int, time.Time, time.Time, error) {
+// The generated_at stamp rides the memo with the fold (S18) so an
+// unchanged store replays the identical body, headers and JSON alike.
+func cachedAlmanacFold(root string) (int, map[string]int, time.Time, time.Time, string, error) {
 	path := almanac.File(root)
 	key := path
 	if abs, err := filepath.Abs(path); err == nil {
@@ -63,9 +70,9 @@ func cachedAlmanacFold(root string) (int, map[string]int, time.Time, time.Time, 
 	fi, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, map[string]int{}, time.Time{}, time.Time{}, nil
+			return 0, map[string]int{}, time.Time{}, time.Time{}, time.Now().UTC().Format(time.RFC3339), nil
 		}
-		return 0, nil, time.Time{}, time.Time{}, err
+		return 0, nil, time.Time{}, time.Time{}, "", err
 	}
 	almanacFoldMemo.Lock()
 	if e, ok := almanacFoldMemo.byFile[key]; ok && e.mtime.Equal(fi.ModTime()) && e.size == fi.Size() {
@@ -73,14 +80,14 @@ func cachedAlmanacFold(root string) (int, map[string]int, time.Time, time.Time, 
 		for k, v := range e.byType {
 			byType[k] = v
 		}
-		total, oldest, newest := e.total, e.oldest, e.newest
+		total, oldest, newest, generatedAt := e.total, e.oldest, e.newest, e.generatedAt
 		almanacFoldMemo.Unlock()
-		return total, byType, oldest, newest, nil
+		return total, byType, oldest, newest, generatedAt, nil
 	}
 	almanacFoldMemo.Unlock()
 	all, err := almanac.All(root)
 	if err != nil {
-		return 0, nil, time.Time{}, time.Time{}, err
+		return 0, nil, time.Time{}, time.Time{}, "", err
 	}
 	byType := map[string]int{}
 	var oldest, newest time.Time
@@ -97,18 +104,52 @@ func cachedAlmanacFold(root string) (int, map[string]int, time.Time, time.Time, 
 	for k, v := range byType {
 		stored[k] = v
 	}
+	generatedAt := time.Now().UTC().Format(time.RFC3339)
 	almanacFoldMemo.Lock()
 	almanacFoldMemo.byFile[key] = almanacFoldEntry{
 		mtime: fi.ModTime(), size: fi.Size(),
 		total: len(all), byType: stored,
 		oldest: oldest, newest: newest,
+		generatedAt: generatedAt,
 	}
 	almanacFoldMemo.Unlock()
-	return len(all), byType, oldest, newest, nil
+	return len(all), byType, oldest, newest, generatedAt, nil
+}
+
+// dashboardPartial marks a truncated aggregate window (S18): cap is
+// the window the aggregate scanned, total the full store count. It is
+// omitted when the aggregate scanned the whole store (no truncation:
+// every S18 aggregate today is a full fold, so partial stays absent
+// until a capped aggregate exists).
+type dashboardPartial struct {
+	Cap   int `json:"cap"`
+	Total int `json:"total"`
+}
+
+// dashboardMeta is the S18 envelope carried by every dashboard
+// aggregate: when the payload was generated (RFC3339 serve time),
+// which allowlisted project it covers (ProjectName, redacted like
+// /v1/status) and the resolved root it was read from. partial rides
+// along only where an aggregate truncates (omitted otherwise).
+type dashboardMeta struct {
+	GeneratedAt string            `json:"generated_at"`
+	Project     string            `json:"project"`
+	Root        string            `json:"root"`
+	Partial     *dashboardPartial `json:"partial,omitempty"`
+}
+
+// dashboardNow stamps one aggregate payload for root.
+func dashboardNow(root string) dashboardMeta {
+	return dashboardMeta{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Project:     observability.RedactText(almanac.ProjectName(root)),
+		Root:        root,
+	}
 }
 
 // metricsData is Summarize plus today's evolution against the cap.
 type metricsData struct {
+	dashboardMeta
 	Metrics       observability.Metrics `json:"metrics"`
 	EvolutionUsed int                   `json:"evolution_used"`
 	EvolutionCap  int                   `json:"evolution_cap"`
@@ -116,6 +157,7 @@ type metricsData struct {
 
 // almanacSummaryData counts what the Almanac holds, by type.
 type almanacSummaryData struct {
+	dashboardMeta
 	Total       int            `json:"total"`
 	ByType      map[string]int `json:"by_type"`
 	Lessons     int            `json:"lessons_admitted"`
@@ -129,6 +171,7 @@ type almanacSummaryData struct {
 // lessons, proxy tokens, rot count, pending candidates, tick
 // position. Counts only, never collections (D3 aggregates policy).
 type evolutionData struct {
+	dashboardMeta
 	Admitted    int   `json:"admitted"`
 	ProxyTokens int64 `json:"proxy_tokens"`
 	Rot         int   `json:"rot"`
@@ -156,8 +199,10 @@ func (s Server) handleEvolution(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sessions, atTick := evolve.TickPosition(root)
+	meta := dashboardNow(root)
 	status, env := MapResult(evolutionData{
-		Admitted: rep.Admitted, ProxyTokens: rep.TotalProxy, Rot: rep.Rot,
+		dashboardMeta: meta,
+		Admitted:      rep.Admitted, ProxyTokens: rep.TotalProxy, Rot: rep.Rot,
 		Pending: pending, Sessions: sessions, TickAt: atTick,
 	}, "", 0)
 	setAggregateCache(w)
@@ -183,7 +228,7 @@ func (s Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, http.StatusInternalServerError, Internal("metrics budget: "+observability.RedactText(err.Error())))
 		return
 	}
-	status, env := MapResult(metricsData{Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(root)}, "", 0)
+	status, env := MapResult(metricsData{dashboardMeta: dashboardNow(root), Metrics: m, EvolutionUsed: used, EvolutionCap: reflect.EvolutionCap(root)}, "", 0)
 	setAggregateCache(w)
 	writeEnvelope(w, status, env)
 }
@@ -197,7 +242,7 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	total, byType, oldest, newest, err := cachedAlmanacFold(root)
+	total, byType, oldest, newest, generatedAt, err := cachedAlmanacFold(root)
 	if err != nil {
 		writeEnvelope(w, http.StatusInternalServerError, Internal("almanac: "+observability.RedactText(err.Error())))
 		return
@@ -221,8 +266,11 @@ func (s Server) handleAlmanacSummary(w http.ResponseWriter, r *http.Request) {
 	if !newest.IsZero() {
 		newestS = newest.UTC().Format(time.RFC3339)
 	}
+	meta := dashboardNow(root)
+	meta.GeneratedAt = generatedAt
 	status, env := MapResult(almanacSummaryData{
-		Total: total, ByType: byType,
+		dashboardMeta: meta,
+		Total:         total, ByType: byType,
 		Lessons: lessons, Candidates: candidates,
 		Oldest: oldestS, Newest: newestS, IndexStatus: idx,
 	}, "", 0)
@@ -260,4 +308,34 @@ func (s Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(dashboardHTML))
+}
+
+// gitMetaData is the checkout identity of /v1/git plus the S18
+// envelope. The route is served here (not via executions.go) so the
+// meta lives with the other dashboard aggregates; branch/HEAD
+// resolution reuses the same manifest calls, no logic change.
+type gitMetaData struct {
+	dashboardMeta
+	Branch string `json:"branch"`
+	Head   string `json:"head"`
+}
+
+// handleGitMeta serves GET /v1/git with the S18 envelope: branch plus
+// short HEAD (Unknown "—" outside git) stamped like every aggregate.
+func (s Server) handleGitMeta(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeEnvelope(w, http.StatusMethodNotAllowed, MethodNotAllowed(r.Method))
+		return
+	}
+	root, ok := s.projectRoot(w, r)
+	if !ok {
+		return
+	}
+	data := gitMetaData{
+		dashboardMeta: dashboardNow(root),
+		Branch:        observability.RedactText(manifest.BranchOf(root)),
+		Head:          manifest.HeadOf(root),
+	}
+	status, env := MapResult(data, "", 0)
+	writeEnvelope(w, status, env)
 }

@@ -512,6 +512,24 @@ function loadGraphs(){
    #secuencial: no existen en stores. */
 var VISION_CAP = 1000;
 var VISION_PAGE = 200;
+/* S18: cada KPI muestra su estado en vez de solo "…/cargando": cero (0
+   medido), desconocido (sin generated_at del agregado), no disponible
+   (fetch fallido) o stale (>max-age 10s del Cache-Control) y error.
+   El title de cada KPI cita fuente + fórmula + generated_at. */
+var VISION_MAX_AGE_MS = 1000 * 10;
+function visionFreshness(generatedAt){
+  var t = visionParseTime(generatedAt);
+  if(t === null){return 'desconocido';}
+  return (Date.now() - t > VISION_MAX_AGE_MS) ? 'stale' : 'fresco';
+}
+function visionKpiTitle(id, source, formula, generatedAt){
+  var el = document.getElementById(id);
+  if(!el){return;}
+  el.title = 'Fuente: ' + source + '; fórmula: ' + formula + '; generado: ' + (generatedAt || 'desconocido') + ' (' + visionFreshness(generatedAt) + ')';
+}
+function visionKpiUnavailable(){
+  ['kpi-evidencias-val', 'kpi-ejecuciones-val', 'kpi-pass-val', 'kpi-lecciones-val', 'kpi-ramas-val'].forEach(function(id){setText(id, 'no disponible');});
+}
 /* V4: trae los NUEVOS (cola): las ventanas de 7 días, los deltas y el
    último ciclo viven en lo más reciente. Si el total supera el cap, los
    más antiguos quedan fuera y se avisa "parcial". */
@@ -941,6 +959,13 @@ function loadVision(){
       ramasDelta.textContent = branchNames.slice(0, 5).join(', ') + (branchNames.length > 5 ? '…' : '');
     }
     ramasDelta.className = 'delta';
+    /* S18: title por KPI con fuente + fórmula + generated_at; sin
+       generated_at el estado es desconocido, con >max-age es stale. */
+    visionKpiTitle('kpi-evidencias-val', 'GET /v1/metrics receipts_total', 'total global; delta % 7 días desde started_at', me.generated_at);
+    visionKpiTitle('kpi-ejecuciones-val', 'GET /v1/executions total', 'ciclos #N (1 = más antiguo); delta % 7 días desde date', undefined);
+    visionKpiTitle('kpi-pass-val', 'GET /v1/metrics verification_pass_rate', 'pass/total global; delta en pp 7 días', me.generated_at);
+    visionKpiTitle('kpi-lecciones-val', 'GET /v1/almanac/summary lessons_admitted', 'admitidas global; delta 7 días desde CreatedAt', sum.generated_at);
+    visionKpiTitle('kpi-ramas-val', 'GET /v1/executions branch + GET /v1/git', 'distintas en ciclos + actual', git.generated_at);
     var pill = document.getElementById('last-cycle');
     if(latestExec === null){
       pill.className = 'pill';
@@ -1027,6 +1052,7 @@ function loadVision(){
     }
     setError('err-lastgates', null);
   }).catch(function(e){
+    visionKpiUnavailable();
     setError('err-vision', e);
     setError('err-bars', e);
     setError('err-pass', e);
