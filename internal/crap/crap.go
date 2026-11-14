@@ -10,6 +10,8 @@
 package crap
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -39,6 +41,7 @@ type Scored struct {
 	Complexity int
 	Coverage   float64 // 0..1
 	CRAP       float64
+	Measured   bool // false when no profile block maps onto the function: coverage unknown, never 0
 }
 
 // Report is the analysis of one coverage profile.
@@ -160,6 +163,7 @@ func Analyze(root, profilePath string) (Report, error) {
 				}
 			}
 			if total > 0 {
+				fn.Measured = true
 				fn.Coverage = float64(covered) / float64(total)
 			}
 			fn.CRAP = CRAP(fn.Complexity, fn.Coverage)
@@ -249,4 +253,110 @@ func exprName(e ast.Expr) string {
 		return exprName(t.X)
 	}
 	return ""
+}
+
+// criticalPrefixes are the core routes: a CRAP hotspot here blocks the
+// release train, so they fail at max-critical while the rest of the repo
+// rides at max-standard. The global --max stays as the ceiling.
+var criticalPrefixes = []string{
+	"cmd/",
+	"internal/decisions/",
+	"internal/gates/",
+	"internal/receipts/",
+	"internal/evidence/",
+}
+
+// IsCriticalFile reports whether a repo-relative file rides a core
+// route (see criticalPrefixes).
+func IsCriticalFile(file string) bool {
+	p := strings.ReplaceAll(file, "\\", "/")
+	for _, pre := range criticalPrefixes {
+		if strings.HasPrefix(p, pre) {
+			return true
+		}
+	}
+	return false
+}
+
+// WaiverKey is the waiver identity: file:func, as written in
+// docs/quality-exceptions.md.
+func WaiverKey(file, name string) string {
+	return file + ":" + name
+}
+
+// ParseWaivers reads waiver lines (file:func + free-text motivo expira
+// aprueba, # comments and blanks ignored) into a waived set.
+func ParseWaivers(data []byte) map[string]bool {
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key := strings.Fields(line)[0]
+		if !strings.Contains(key, ":") {
+			continue
+		}
+		out[key] = true
+	}
+	return out
+}
+
+// LoadWaivers reads a waiver file, returning the empty set when the
+// path is blank or the file is missing: a repo without
+// docs/quality-exceptions.md simply has no waivers.
+func LoadWaivers(path string) map[string]bool {
+	if strings.TrimSpace(path) == "" {
+		return map[string]bool{}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]bool{}
+	}
+	return ParseWaivers(data)
+}
+
+// EffectiveMax is the Max with waivers discounted: the worst CRAP over
+// non-waived functions (0 when everything is waived).
+func (r Report) EffectiveMax(waived map[string]bool) float64 {
+	max := 0.0
+	for _, f := range r.Functions {
+		if waived[WaiverKey(f.File, f.Name)] {
+			continue
+		}
+		if f.CRAP > max {
+			max = f.CRAP
+		}
+	}
+	return max
+}
+
+// TierMaxima splits the Max by criticidad (waivers discounted): the
+// worst CRAP on core routes and the worst off them.
+func (r Report) TierMaxima(waived map[string]bool) (crit, std float64) {
+	for _, f := range r.Functions {
+		if waived[WaiverKey(f.File, f.Name)] {
+			continue
+		}
+		if IsCriticalFile(f.File) {
+			if f.CRAP > crit {
+				crit = f.CRAP
+			}
+		} else if f.CRAP > std {
+			std = f.CRAP
+		}
+	}
+	return crit, std
+}
+
+// HashProfile returns the hex sha256 of a cover profile and its short
+// (first 8) form for stdout.
+func HashProfile(path string) (full, short string, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	sum := sha256.Sum256(data)
+	full = hex.EncodeToString(sum[:])
+	return full, full[:8], nil
 }
