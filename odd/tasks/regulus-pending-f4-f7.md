@@ -22,14 +22,14 @@ F4 16.6% + F5/F6/F7 0%. Cerrar 24 issues Backlog en develop, solo main+develop, 
 - T25 NOV-46 Paso 26 CI Windows | S6 | route: inline | commit: 2fe01cf Done
 - T26 NOV-44 Paso 25 Authenticode opcional | S6 | route: inline | commit: 2fe01cf Done
 - T27 NOV-47 Paso 27 docs Windows | S6 | route: inline | commit: 2fe01cf Done
-- T28 NOV-48 Paso 28 contrato neutral | S7 | route: inline | commit: _
-- T29 NOV-55 Paso 35 E2E conformidad | S7 | route: inline | commit: _
-- T30 NOV-49 Paso 29 Codex | S7 | route: inline | commit: _
-- T31 NOV-50 Paso 30 Claude | S7 | route: inline | commit: _
-- T32 NOV-51 Paso 31 Devin | S7 | route: inline | commit: _
-- T33 NOV-52 Paso 32 instalador registry | S7 | route: inline | commit: _
-- T34 NOV-53 Paso 33 ODD RDD | S7 | route: inline | commit: _
-- T35 NOV-54 Paso 34 CodeGraph | S7 | route: inline | commit: _
+- T28 NOV-48 Paso 28 contrato neutral | S7 | route: inline | commit: 001c7ac Done
+- T29 NOV-55 Paso 35 E2E conformidad | S7 | route: inline | commit: 001c7ac Done
+- T30 NOV-49 Paso 29 Codex | S7 | route: inline | commit: 001c7ac Done
+- T31 NOV-50 Paso 30 Claude | S7 | route: inline | commit: 001c7ac Done
+- T32 NOV-51 Paso 31 Devin | S7 | route: inline | commit: 001c7ac Done
+- T33 NOV-52 Paso 32 instalador registry | S7 | route: inline | commit: 001c7ac Done
+- T34 NOV-53 Paso 33 ODD RDD | S7 | route: inline | commit: 001c7ac Done
+- T35 NOV-54 Paso 34 CodeGraph | S7 | route: inline | commit: 001c7ac Done
 - T36 NOV-56 Paso 36 protocolo experimental | S8 | route: inline | commit: _
 - T37 NOV-58 Paso 38 motor exploracion | S8 | route: inline | commit: _
 - T38 NOV-61 Paso 41 validacion E2E ciclo | S8 | route: inline | commit: _
