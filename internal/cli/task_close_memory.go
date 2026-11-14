@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -15,9 +14,9 @@ import (
 // observation with the summary (id, spec, receipts) — the Engram-style
 // habit, without ceremony. Best-effort and idempotent, and never part of
 // the close verdict: a repeat close finds the topic chain non-empty and
-// skips, CheckDuplicate (DedupThreshold) refuses saves duplicating pinned
-// or lesson-equivalent knowledge, and any other failure warns on stderr
-// while the CLOSED verdict stands.
+// skips, SaveChecked atomically refuses near-duplicates of pinned
+// or lesson-equivalent knowledge (identical repeats are no-ops), and any
+// other failure warns on stderr while the CLOSED verdict stands.
 
 // closeNoteTopic groups every auto-saved close note of one unit, so the
 // second close of the same unit is a dedup hit, not a second note.
@@ -81,16 +80,8 @@ func (c CLI) autoSaveCloseNote(chart, id, doc string, res sextant.CloseResult) {
 		return
 	}
 	obs := buildCloseNote(chart, id, doc, res, gitHeadBounded(c.runner()))
-	if err := almanac.CheckDuplicate(c.dir(), obs); err != nil {
-		var dup *almanac.DuplicateError
-		if errors.As(err, &dup) {
-			fmt.Fprintf(c.Stdout, "  memory: close observation duplicates %s, skipping\n", dup.ID)
-			return
-		}
-		fmt.Fprintf(c.Stderr, "warning: close observation not checked (%v) — the CLOSED verdict stands\n", err)
-		return
-	}
-	saved, err := almanac.Save(c.dir(), obs, time.Now().UTC())
+	// NOV-29 atomic path (no TOCTOU); identical repeats are no-ops.
+	saved, err := almanac.SaveChecked(c.dir(), obs, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "warning: close observation not saved (%v) — the CLOSED verdict stands\n", err)
 		return

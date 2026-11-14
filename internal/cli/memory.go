@@ -307,11 +307,9 @@ func (c CLI) memoryNoteCmd(args []string) int {
 		Type: almanac.TypeSessionNote, Title: title, Content: text,
 		Provenance: &almanac.Provenance{GitHead: head},
 	}
-	if err := almanac.CheckDuplicate(c.dir(), obs); err != nil {
-		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
-		return 1
-	}
-	if _, err := almanac.Save(c.dir(), obs, time.Now().UTC()); err != nil {
+	// NOV-29 atomic path: check-then-append inside one store lock (no TOCTOU);
+	// repeating an identical note is a no-op success (idempotent).
+	if _, err := almanac.SaveChecked(c.dir(), obs, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory note: %v\n", err)
 		return 1
 	}
@@ -408,11 +406,9 @@ func (c CLI) memorySaveCmd(args []string) int {
 		Provenance: &almanac.Provenance{Task: *task, GitHead: head, Paths: provenancePaths, Receipts: provenanceReceipts},
 		Source:     strings.TrimSpace(*source), Origin: almanac.ProjectName(c.dir()), ExpiresAt: expiry,
 	}
-	if err := almanac.CheckDuplicate(c.dir(), obs); err != nil {
-		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
-		return 1
-	}
-	if _, err := almanac.Save(c.dir(), obs, time.Now().UTC()); err != nil {
+	// NOV-29 atomic path: check-then-append inside one store lock (no TOCTOU);
+	// repeating an identical observation is a no-op success (idempotent).
+	if _, err := almanac.SaveChecked(c.dir(), obs, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "memory save: %v\n", err)
 		return 1
 	}
