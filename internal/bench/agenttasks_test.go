@@ -195,6 +195,19 @@ func TestAgentControlsRobustRejectAccept(t *testing.T) {
 	}
 }
 
+func TestAppControlBlockIsInfraNotFail(t *testing.T) {
+	blocked := AgentTask{ID: "ATX", Title: "x", Lang: "shell",
+		Prompt: "x", Files: map[string]string{"f.txt": "x\n"},
+		Check:   []string{"bash", "-c", "echo 'fork/exec x: Una directiva de Control de aplicaciones bloqueó este archivo.' >&2; exit 1"},
+		BudgetS: 60}
+	out := RunAgentSuite(context.Background(), stubAgent{}, []AgentTask{blocked},
+		AgentSplits{Version: "t", Seed: 1, Exploration: []string{"ATX"}},
+		AgentOptions{Reps: 1, Variant: "v", Split: "exploration"})
+	if len(out) != 1 || out[0].Status != AgentInfra {
+		t.Fatalf("blocked check must be infra, got %+v", out)
+	}
+}
+
 func TestAgentSummarySeparatesBuckets(t *testing.T) {
 	out := []AgentOutcome{
 		{TaskID: "AT1", Rep: 0, Status: AgentPass},
