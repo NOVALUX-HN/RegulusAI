@@ -13,10 +13,10 @@ F4 16.6% + F5/F6/F7 0%. Cerrar 24 issues Backlog en develop, solo main+develop, 
 
 ## Tasks
 - T18 NOV-33 Paso 18 dashboard KPIs | S5 | route: inline | commit: c69fb74 Done
-- T19 NOV-26 Paso 19 runtime | S5 | route: inline | commit: _
-- T20 NOV-21 Paso 20 MCP externa | S5 | route: inline | commit: _
-- T21 NOV-23 Paso 21 firma receipts decision | S5 | route: inline | commit: _
-- T22 NOV-36 Paso 22 instalacion versionado | S5 | route: inline | commit: _
+- T19 NOV-26 Paso 19 runtime | S5 | route: inline | commit: 8d20fa4 Done
+- T20 NOV-21 Paso 20 MCP externa | S5 | route: inline | commit: 8d20fa4 Done
+- T21 NOV-23 Paso 21 firma receipts decision | S5 | route: inline | commit: 8d20fa4 Done
+- T22 NOV-36 Paso 22 instalacion versionado | S5 | route: inline | commit: 8d20fa4 Done
 - T23 NOV-43 Paso 23 diagnostico Windows | S6 | route: inline | commit: _
 - T24 NOV-45 Paso 24 runner sin shell | S6 | route: inline | commit: _
 - T25 NOV-46 Paso 26 CI Windows | S6 | route: inline | commit: _

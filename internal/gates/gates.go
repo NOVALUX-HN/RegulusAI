@@ -211,6 +211,64 @@ type ShRunner struct {
 	EnvUnset []string
 }
 
+// StructuredCmd is one native invocation without shell (NOV-45):
+// executable + args travel literally to exec.CommandContext, no
+// sh -c / pwsh -Command / cmd /C, no expansion, no concatenation.
+type StructuredCmd struct {
+	Executable string
+	Args       []string
+	Env        []string
+	Dir        string
+}
+
+// StructuredRunner executes StructuredCmd natively. It never resolves
+// shellName/shellArgs and never spawns sh.exe/bash.exe/pwsh/cmd.
+type StructuredRunner struct {
+	Dir      string
+	EnvUnset []string
+}
+
+// RunStructured runs cmd natively with output caps, HideWindow and
+// ctx timeout. Empty executable is a no-verdict error.
+func (s StructuredRunner) RunStructured(ctx context.Context, cmd StructuredCmd) (string, string, int, error) {
+	if strings.TrimSpace(cmd.Executable) == "" {
+		return "", "", -1, fmt.Errorf("structured runner: empty executable")
+	}
+	dir := cmd.Dir
+	if dir == "" {
+		dir = s.Dir
+	}
+	c := exec.CommandContext(ctx, cmd.Executable, cmd.Args...)
+	if dir != "" {
+		c.Dir = dir
+	}
+	if len(cmd.Env) > 0 {
+		c.Env = append(os.Environ(), cmd.Env...)
+	} else if len(s.EnvUnset) > 0 {
+		unset := map[string]bool{}
+		for _, n := range s.EnvUnset {
+			if n != "" {
+				unset[n] = true
+			}
+		}
+		if len(unset) > 0 {
+			filtered := []string{}
+			for _, kv := range os.Environ() {
+				if i := strings.IndexByte(kv, '='); i > 0 {
+					if unset[kv[:i]] {
+						continue
+					}
+				}
+				filtered = append(filtered, kv)
+			}
+			c.Env = filtered
+		}
+	}
+	executil.HideWindow(c)
+	stdout, stderr, code, _, err := runShellCap(c, ctx, cmd.Executable, MaxOutputBytes)
+	return stdout, stderr, code, err
+}
+
 // dockerProbe reports whether a docker daemon is reachable. Tests stub it;
 // production runs `docker info` with a 5s deadline.
 var dockerProbe = func(ctx context.Context) bool {
