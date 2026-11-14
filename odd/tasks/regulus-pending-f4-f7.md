@@ -32,10 +32,10 @@ F4 16.6% + F5/F6/F7 0%. Cerrar 24 issues Backlog en develop, solo main+develop, 
 - T35 NOV-54 Paso 34 CodeGraph | S7 | route: inline | commit: 001c7ac Done
 - T36 NOV-56 Paso 36 protocolo experimental | S8 | route: inline | commit: _
 - T37 NOV-58 Paso 38 motor exploracion | S8 | route: inline | commit: _
-- T38 NOV-61 Paso 41 validacion E2E ciclo | S8 | route: inline | commit: _
+- T38 NOV-61 Paso 41 validacion E2E ciclo | S8 | route: inline | commit: _ Done
 - T39 NOV-57 Paso 37 evidencia | S8 | route: inline | commit: _
-- T40 NOV-59 Paso 39 evaluador comparativo | S8 | route: inline | commit: _
-- T41 NOV-60 Paso 40 promocion canary rollback | S8 | route: inline | commit: _
+- T40 NOV-59 Paso 39 evaluador comparativo | S8 | route: inline | commit: _ Done
+- T41 NOV-60 Paso 40 promocion canary rollback | S8 | route: inline | commit: _ Done
 
 ## Log
 - L1: "continua con todas las fases pendientes hasta finalizarlas"
