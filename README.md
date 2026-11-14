@@ -17,7 +17,7 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 
 ## Quickstart
 
-**Prerequisites**: [OpenCode V2](https://opencode.ai) (the only supported runtime — the doctor refuses V1), Node.js 18+ and Go (the core build).
+**Prerequisites**: [OpenCode V2](https://opencode.ai) (primary host — the doctor refuses V1), Node.js 18+ and Go (the core build). Codex, Claude Code and Devin work through their native adapters (AGENTS.md, CLAUDE.md, `.devin/`); see [docs/conformity-matrix.md](docs/conformity-matrix.md) for the verified capability matrix per host.
 
 ```bash
 # 1. Build the core from source (no npm distribution yet — `regulus-ai`
@@ -90,7 +90,7 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus reflect --domain --task --cue --lesson <doc>` | propose an evidence-gated lesson candidate (nothing admitted without a guardian) |
 | `regulus library candidates` | pending candidates |
 
-![The 12-gate gauntlet](docs/assets/gauntlet.png)
+![The 15-gate gauntlet](docs/assets/gauntlet.png)
 | `regulus library admit --domain --candidate --guardian` | complete the admission: INDEX + Almanac + ledger |
 | `regulus library list / show` | admitted lessons / the domain INDEX, verbatim |
 | `regulus budget show` | the evolution ledger, oldest first |

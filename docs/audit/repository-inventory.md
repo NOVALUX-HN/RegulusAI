@@ -1,5 +1,7 @@
 # RegulusAI — Repository Inventory (Phase 0 audit)
 
+> **Nota (H10):** frozen audit snapshot (2026-10-30); figures here are historical and excluded from the docs-drift gate.
+
 Date: 2026-10-30 · Auditor: Principal Software Architect (read-only audit, no code changes)
 Repo root: this directory · HEAD branch: `feat/v0.4-evolution` (detached history notes say tags cut on main at merge)
 Package: `regulus-ai@0.9.0` · Module: `regulus-ai` · Go 1.27 · Zero Go dependencies (`go.mod` has no `require`)

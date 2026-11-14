@@ -10,7 +10,7 @@ Cerrar 10 issues Backlog en develop, solo main+develop, comentando en Linear qu√
 
 ## Tasks
 - T42 NOV-62 Paso 42 tokens reales | S3 | route: inline | commit: 2ba77da Done
-- T43 NOV-68 Paso 43 evals agente | S3 | route: inline | commit: 378e53f parcial (tests bloqueados por App Control, reintentar)
+- T43 NOV-68 Paso 43 evals agente | S3 | route: inline | commit: 378e53f+ae7b155 Done
 - T44 NOV-63 Paso 44 deriva docs | S4 | route: inline | commit: _
 - T45 NOV-64 Paso 46 trazabilidad | S4 | route: inline | commit: _
 - T46 NOV-69 Paso 45 conformidad real | S4 | route: inline | commit: _
