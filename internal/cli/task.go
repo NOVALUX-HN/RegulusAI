@@ -99,6 +99,8 @@ func (c CLI) taskCheckCmd(args []string) int {
 		fmt.Fprintf(c.Stdout, "violation: %s\n", v)
 	}
 	fmt.Fprintf(c.Stdout, "task check: %d violation(s)\n", len(violations))
+	fmt.Fprintln(c.Stdout, "why: an incomplete chart cannot prove acceptance — BUILD is blocked until check passes")
+	fmt.Fprintf(c.Stdout, "next: fix the chart contract/tasks above, then run: regulus task check %s\n", args[0])
 	return 1
 }
 
@@ -139,6 +141,8 @@ func (c CLI) taskStatusCmd(args []string) int {
 		fmt.Fprintf(c.Stdout, "violation: %s\n", v)
 	}
 	if len(violations) != 0 {
+		fmt.Fprintln(c.Stdout, "why: an incomplete chart cannot prove acceptance — BUILD is blocked until status is clean")
+		fmt.Fprintf(c.Stdout, "next: fix the violations above, then run: regulus task check %s\n", args[0])
 		return 1
 	}
 	return 0
@@ -162,6 +166,8 @@ func (c CLI) taskCloseCmd(args []string) int {
 		for _, u := range res.Unmet {
 			fmt.Fprintf(c.Stdout, "  - %s\n", u)
 		}
+		fmt.Fprintln(c.Stdout, "why: self-report closes nothing — close needs contract, receipts PASS, and shut dependencies")
+		fmt.Fprintf(c.Stdout, "next: run regulus task check %s, then regulus gate run %s/%s, then retry close\n", args[0], chartBase, id)
 		return 1
 	}
 	updated := sextant.ApplyClose(doc, id, res)
