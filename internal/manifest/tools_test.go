@@ -2,7 +2,7 @@ package manifest
 
 // NOV-25 canonical tool manifest: tools.json is the single source of
 // truth for MCP/plugin dispatch. These tests pin its shape (version 1,
-// 14 MCP tools, no duplicates, 5 intentional gaps with reasons) and its
+// 17 MCP tools, no duplicates, 2 intentional gaps with reasons) and its
 // agreement with the descriptor registry in internal/mcp.
 
 import (
@@ -41,15 +41,15 @@ func loadToolsFile(t *testing.T) toolsFile {
 	return f
 }
 
-// TestManifestToolsJSONValid pins the canonical shape: version 1, 14 MCP
-// tools with unique names, 5 intentional gaps with non-empty reasons.
+// TestManifestToolsJSONValid pins the canonical shape: version 1, 17 MCP
+// tools with unique names, 2 intentional gaps with non-empty reasons.
 func TestManifestToolsJSONValid(t *testing.T) {
 	f := loadToolsFile(t)
 	if f.Version != 1 {
 		t.Fatalf("tools.json version = %d, want 1", f.Version)
 	}
-	if len(f.MCP) != 14 {
-		t.Fatalf("tools.json mcp = %d tools, want 14", len(f.MCP))
+	if len(f.MCP) != 17 {
+		t.Fatalf("tools.json mcp = %d tools, want 17", len(f.MCP))
 	}
 	seen := map[string]int{}
 	for _, e := range f.MCP {
@@ -63,13 +63,12 @@ func TestManifestToolsJSONValid(t *testing.T) {
 			t.Fatalf("duplicate mcp tool %q x%d", name, n)
 		}
 	}
-	if len(f.IntentionalGaps) != 5 {
-		t.Fatalf("tools.json intentional_gaps = %d, want 5", len(f.IntentionalGaps))
+	if len(f.IntentionalGaps) != 2 {
+		t.Fatalf("tools.json intentional_gaps = %d, want 2", len(f.IntentionalGaps))
 	}
 	wantGaps := map[string]bool{
-		"evolve_propose": true, "probe_contrast": true,
-		"probe_compose": true, "skills_list": true,
-		"evolve_tick": true,
+		"probe_contrast": true,
+		"probe_compose":  true,
 	}
 	for _, g := range f.IntentionalGaps {
 		if !wantGaps[g.Name] {

@@ -22,7 +22,7 @@ func TestManifestCheckPasses(t *testing.T) {
 	if code := c.Run([]string{"manifest", "check"}); code != 0 {
 		t.Fatalf("manifest check: exit = %d, want 0; stderr %q", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "manifest OK: 14 tools + 5 intentional gaps") {
+	if !strings.Contains(out.String(), "manifest OK: 17 tools + 2 intentional gaps") {
 		t.Fatalf("manifest check output = %q, want the OK line", out.String())
 	}
 }

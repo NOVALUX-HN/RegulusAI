@@ -6,7 +6,7 @@ package cli
 // compares it against the two code registries that must never drift:
 // mcpTools() in this package (the server dispatch table) and
 // mcp.ToolNames() (the capability descriptors in internal/mcp).
-// Required-param lists are compared too, and the 5 intentional
+// Required-param lists are compared too, and the 2 intentional
 // plugin-vs-MCP gaps must match the known Devin-policy set with a
 // reason each. Any divergence fails with exit 1 naming every problem;
 // a clean tree prints one OK line and exits 0.
@@ -24,16 +24,12 @@ import (
 )
 
 // knownIntentionalGaps is the pinned Devin-policy delta: the OpenCode
-// plugin exposes 19 tools, MCP deliberately exposes 14. These 5 never
-// transfer (harness self-modification, evolution probes, local skill
-// registry); audit and evolve_report already ported because they are
-// read-only like trace_show.
+// plugin exposes 19 tools, MCP deliberately exposes 17. These 2 never
+// transfer (behavioral evolution probes, not stable MCP capabilities);
+// skills_list, evolve_tick and evolve_propose already ported.
 var knownIntentionalGaps = []string{
-	"evolve_propose",
 	"probe_contrast",
 	"probe_compose",
-	"skills_list",
-	"evolve_tick",
 }
 
 // manifestToolsFile mirrors internal/manifest/tools.json (the canonical

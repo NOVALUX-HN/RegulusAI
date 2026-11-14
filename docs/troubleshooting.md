@@ -224,16 +224,18 @@ and install V2 with the command above.
 
 ## `regulus status` says "gremlins NOT found"
 
-The mutation gate (layer 6) needs [gremlins](https://github.com/go-gremlins/gremlins):
+The mutation gates (layers 7-8) need [gremlins](https://github.com/go-gremlins/gremlins):
 
 ```bash
 go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 ```
 
+The mutation gate is split per module: `mutation-receipts` (`./internal/receipts`, 300s) and `mutation-gates` (`./internal/gates`, 600s), both threshold-efficacy 70, `required: false`, `profiles: [full]` — `--quick` skips them, `gate run --profile full` (what CI runs) always includes them.
+
 ## `regulus status` says "no regulus.json — not configured"
 
 Create a `regulus.json` in your project root. See the README quickstart for
-a full example with all twelve gate layers.
+a full example with all fourteen gate layers.
 
 ## The gauntlet's mutation gate fails with timeouts
 
@@ -515,10 +517,9 @@ warning, check that `git archive HEAD` works in your checkout.
   by path cover the workflow, CI builds from source) and
   `README.md:19-23` (quickstart is build-from-repo: `regulus-ai` is
   not published). Revisit only if the project ever goes public.
-- **Plugin-19 vs MCP-14 gap (gap-5) is intentional.** The OpenCode
-  agent surface is 19 tools; MCP deliberately exposes 14. The 5-gap
-  (`evolve_propose`, `probe_contrast`, `probe_compose`, `skills_list`,
-  `evolve_tick`) is a Devin-side policy decision, not drift:
+- **Plugin-19 vs MCP-17 gap (gap-2) is intentional.** The OpenCode
+  agent surface is 19 tools; MCP deliberately exposes 17. The 2-gap
+  (`probe_contrast`, `probe_compose`) is a Devin-side policy decision, not drift:
   `internal/cli/mcp_test.go:180-205`
   (`TestMCPIntentionalGapPinsPluginDelta`) pins the exact gap, and
   `docs/devin.md` lists what is deliberately NOT ported and

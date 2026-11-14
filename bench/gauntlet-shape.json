@@ -1,39 +1,53 @@
 {
-  "generation": "DO NOT EDIT — generated file. sources: regulus.json (.gates: name/layer/required/profiles, 12 gates) + internal/gates/quick_lean.go QuickLeanNames (T5 --quick preset, 6 names). regenerate from repo root: jq --argjson lean '[\"typecheck\",\"lint\",\"build\",\"unit-tests\",\"spec\",\"gofmt\"]' '{gates: [.gates[] | {name, layer, required, profiles: (.profiles // [])}], quick_lean: $lean}' regulus.json > /tmp/gauntlet-data.json, then re-insert this generation key as the first object field (key order: generation, gates, quick_lean).",
+  "generation": "DO NOT EDIT — generated file. sources: regulus.json (.gates: name/layer/required/profiles, 14 gates) + internal/gates/quick_lean.go QuickLeanNames (T5 --quick preset, 6 names). regenerate from repo root: jq --argjson lean '[\"typecheck\",\"lint\",\"build\",\"unit-tests\",\"spec\",\"gofmt\"]' '{gates: [.gates[] | {name, layer, required, profiles: (.profiles // [])}], quick_lean: $lean}' regulus.json > /tmp/gauntlet-data.json, then re-insert this generation key as the first object field (key order: generation, gates, quick_lean).",
   "gates": [
     {
-      "name": "typecheck",
+      "name": "manifest-check",
       "layer": 1,
       "required": true,
       "profiles": []
     },
     {
-      "name": "lint",
+      "name": "typecheck",
       "layer": 2,
       "required": true,
       "profiles": []
     },
     {
-      "name": "build",
+      "name": "lint",
       "layer": 3,
       "required": true,
       "profiles": []
     },
     {
-      "name": "unit-tests",
+      "name": "build",
       "layer": 4,
       "required": true,
       "profiles": []
     },
     {
-      "name": "coverage-floor",
+      "name": "unit-tests",
       "layer": 5,
       "required": true,
       "profiles": []
     },
     {
-      "name": "mutation",
+      "name": "coverage-floor",
       "layer": 6,
+      "required": true,
+      "profiles": []
+    },
+    {
+      "name": "mutation-receipts",
+      "layer": 7,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "mutation-gates",
+      "layer": 8,
       "required": false,
       "profiles": [
         "full"
@@ -41,13 +55,13 @@
     },
     {
       "name": "crap",
-      "layer": 7,
+      "layer": 9,
       "required": true,
       "profiles": []
     },
     {
       "name": "vulncheck",
-      "layer": 8,
+      "layer": 10,
       "required": false,
       "profiles": [
         "full",
@@ -56,25 +70,25 @@
     },
     {
       "name": "spec",
-      "layer": 9,
-      "required": true,
-      "profiles": []
-    },
-    {
-      "name": "ts-typecheck",
-      "layer": 10,
-      "required": true,
-      "profiles": []
-    },
-    {
-      "name": "ts-unit-tests",
       "layer": 11,
       "required": true,
       "profiles": []
     },
     {
-      "name": "gofmt",
+      "name": "ts-typecheck",
       "layer": 12,
+      "required": true,
+      "profiles": []
+    },
+    {
+      "name": "ts-unit-tests",
+      "layer": 13,
+      "required": true,
+      "profiles": []
+    },
+    {
+      "name": "gofmt",
+      "layer": 14,
       "required": true,
       "profiles": []
     }

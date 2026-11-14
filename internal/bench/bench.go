@@ -113,7 +113,7 @@ type Comparison struct {
 // prose spec, veracity round-trip, gate selection, security jail,
 // honest-zero cost) with hidden machine checks, plus the P1 golden
 // additions: real retrieval over a golden corpus (B8), the real
-// twelve-gate profile contract (B9), and golden T1 token-proxy values
+// fourteen-gate profile contract (B9), and golden T1 token-proxy values
 // (B10). B1–B7 keep their IDs, titles, kinds and prompts so the v1
 // baseline rows stay comparable.
 func Suite() []Task {
@@ -131,7 +131,7 @@ func Suite() []Task {
 			Prompt: "Write one evidence receipt and read it back unchanged.",
 			Check:  checkReceiptRoundTrip},
 		{ID: "B5", Title: "gate-selection", Kind: "gates",
-			Prompt: "Select the lean quick set and the full and quick profiles over the real twelve-gate gauntlet.",
+			Prompt: "Select the lean quick set and the full and quick profiles over the real fourteen-gate gauntlet.",
 			Check:  checkGateSelection},
 		{ID: "B6", Title: "security-evidence-jail", Kind: "security",
 			Prompt: "Refuse a task id that escapes the evidence directory.",
@@ -143,7 +143,7 @@ func Suite() []Task {
 			Prompt: "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
 			Check:  checkRetrievalGolden},
 		{ID: "B9", Title: "gates-real-profile", Kind: "gates",
-			Prompt: "Select the full and quick gate profiles over a realistic twelve-gate gauntlet and refuse unknown profiles.",
+			Prompt: "Select the full and quick gate profiles over a realistic fourteen-gate gauntlet and refuse unknown profiles.",
 			Check:  checkRealGateProfile},
 		{ID: "B10", Title: "token-proxy-golden", Kind: "tokens",
 			Prompt: "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
@@ -389,15 +389,15 @@ func checkReceiptRoundTrip() (string, error) {
 // boolPtr marks one gate optional: the quick profile must skip it.
 func boolPtr(b bool) *bool { return &b }
 
-// checkGateSelection pins gate selection over the real twelve-gate
-// mirror: full resolves all twelve, the T5 lean preset resolves exactly
+// checkGateSelection pins gate selection over the real fourteen-gate
+// mirror: full resolves all fourteen, the T5 lean preset resolves exactly
 // the six quick names, and an unknown profile refuses. The six names
 // are pinned literally, so selection drift — a renamed gate, or
 // mutation leaking into --quick — fails.
 func checkGateSelection() (string, error) {
 	cfg := realGateConfig()
 	full, err := gates.SelectGates(cfg, "")
-	if err != nil || len(full) != 12 {
+	if err != nil || len(full) != 14 {
 		return "", fmt.Errorf("full profile: got %d gates (%v)", len(full), err)
 	}
 	if err := assertLeanSelection(cfg); err != nil {
@@ -406,7 +406,7 @@ func checkGateSelection() (string, error) {
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=12, lean=6 (typecheck lint build unit-tests spec gofmt), unknown refused", nil
+	return "full=14, lean=6 (typecheck lint build unit-tests spec gofmt), unknown refused", nil
 }
 
 // checkEvidenceJail accepts a scoped task and refuses a traversal.
@@ -518,7 +518,7 @@ type gauntletShapeGate struct {
 }
 
 // gauntletShape is the checked-in bench/gauntlet-shape.json: the real
-// twelve-gate gauntlet plus the six T5 --quick names, generated from
+// fourteen-gate gauntlet plus the six T5 --quick names, generated from
 // regulus.json (the file's generation key holds the exact command).
 type gauntletShape struct {
 	Gates     []gauntletShapeGate `json:"gates"`
@@ -626,7 +626,7 @@ func assertLeanSelection(cfg gates.Config) error {
 	return nil
 }
 
-// realGateConfig mirrors the shipped twelve-gate gauntlet in declaration
+// realGateConfig mirrors the shipped fourteen-gate gauntlet in declaration
 // order. The suite tests validate the mirror against the checked-in
 // bench/gauntlet-shape.json (generated from regulus.json), so a renamed
 // gate or a flipped required flag fails `go test` instead of staying
@@ -635,11 +635,11 @@ func assertLeanSelection(cfg gates.Config) error {
 // quick select every required gate in order, unknown profiles refuse.
 // Commands are shape-only; selection is what the check pins.
 func realGateConfig() gates.Config {
-	names := []string{"typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt"}
+	names := []string{"manifest-check", "typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation-receipts", "mutation-gates", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt"}
 	cmds := []string{
-		"go build ./...", "go vet ./...", "go build -o bin/regulus ./cmd/regulus",
+		"regulus manifest check", "go build ./...", "go vet ./...", "go build -o bin/regulus ./cmd/regulus",
 		"go test ./...", "go tool cover -func .regulus/coverage.out",
-		"gremlins unleash ./internal/receipts", "regulus crap --max 30",
+		"gremlins unleash ./internal/receipts", "gremlins unleash ./internal/gates", "regulus crap --max 30",
 		"govulncheck ./...", "regulus spec check charts/",
 		"bunx tsc --noEmit", "bun test ./.opencode/lib/", "gofmt -l .",
 	}
@@ -648,7 +648,7 @@ func realGateConfig() gates.Config {
 		g := gates.Gate{
 			Name: name, Layer: i + 1, Command: cmds[i],
 		}
-		if name == "mutation" || name == "vulncheck" {
+		if name == "mutation-receipts" || name == "mutation-gates" || name == "vulncheck" {
 			g.Required = boolPtr(false)
 			g.Profiles = []string{"full"}
 		}
@@ -661,17 +661,17 @@ func realGateConfig() gates.Config {
 }
 
 // checkRealGateProfile pins the real gauntlet shape through profile
-// selection: full keeps all twelve gates in declaration order with halt
-// policy, quick keeps the 10 required gates (mutation + vulncheck are
-// full-only), and an unknown profile refuses.
+// selection: full keeps all fourteen gates in declaration order with halt
+// policy, quick keeps the 11 required gates (mutation-receipts +
+// mutation-gates + vulncheck are full-only), and an unknown profile refuses.
 func checkRealGateProfile() (string, error) {
 	cfg := realGateConfig()
 	full, err := gates.SelectGates(cfg, "")
 	if err != nil {
 		return "", err
 	}
-	if len(full) != 12 {
-		return "", fmt.Errorf("full profile: got %d gates, want 12", len(full))
+	if len(full) != 14 {
+		return "", fmt.Errorf("full profile: got %d gates, want 14", len(full))
 	}
 	for i, g := range full {
 		if g.Name != cfg.Gates[i].Name {
@@ -685,13 +685,13 @@ func checkRealGateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(quick) != 10 {
-		return "", fmt.Errorf("quick profile: got %d gates, want 10 required", len(quick))
+	if len(quick) != 11 {
+		return "", fmt.Errorf("quick profile: got %d gates, want 11 required", len(quick))
 	}
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=12, quick=10 required in order, unknown refused", nil
+	return "full=14, quick=11 required in order, unknown refused", nil
 }
 
 // Budget gates (speed-tokens/T10): the suite pins token/context budgets
@@ -899,21 +899,21 @@ func chooseGateProfile(changed []string, forceFull bool) string {
 
 // checkGateProfileDecision pins the tradeoff through real selection:
 // docs-only chooses quick (10 required, no full-only gates), gate code
-// or forced full chooses the 12-gate gauntlet.
+// or forced full chooses the 14-gate gauntlet.
 func checkGateProfileDecision() (string, error) {
 	cfg := realGateConfig()
 	quick, err := gates.SelectGates(cfg, chooseGateProfile([]string{"charts/flow.md", "README.md"}, false))
-	if err != nil || len(quick) != 10 {
-		return "", fmt.Errorf("docs-only: got %d gates (%v), want 10 quick", len(quick), err)
+	if err != nil || len(quick) != 11 {
+		return "", fmt.Errorf("docs-only: got %d gates (%v), want 11 quick", len(quick), err)
 	}
 	for _, g := range quick {
-		if g.Name == "mutation" || g.Name == "vulncheck" {
+		if g.Name == "mutation-receipts" || g.Name == "mutation-gates" || g.Name == "vulncheck" {
 			return "", fmt.Errorf("docs-only quick kept full-only gate %q", g.Name)
 		}
 	}
 	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
-	if err != nil || len(full) != 12 {
-		return "", fmt.Errorf("gate code: got %d gates (%v), want 12 full", len(full), err)
+	if err != nil || len(full) != 14 {
+		return "", fmt.Errorf("gate code: got %d gates (%v), want 14 full", len(full), err)
 	}
 	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
 		return "", fmt.Errorf("forced full: chose %q, want full", got)
@@ -921,7 +921,7 @@ func checkGateProfileDecision() (string, error) {
 	if got := chooseGateProfile([]string{"charts/flow.md", "internal/x.go"}, false); got != "" {
 		return "", fmt.Errorf("mixed scope: chose %q, want full", got)
 	}
-	return "docs-only edits ride quick=10, gate code rides full=12, forced full honored", nil
+	return "docs-only edits ride quick=11, gate code rides full=14, forced full honored", nil
 }
 
 // missDoc is one eval corpus entry for the miss-rate golden (B14).

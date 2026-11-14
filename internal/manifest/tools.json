@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Canonical tool manifest (NOV-25): single source of truth for MCP/plugin dispatch. MCP exposes 14 tools; the OpenCode plugin exposes 19. The 5-gap is intentional Devin policy, not drift.",
+  "note": "Canonical tool manifest (NOV-25): single source of truth for MCP/plugin dispatch. MCP exposes 17 tools; the OpenCode plugin exposes 19. The 2-gap is intentional Devin policy, not drift.",
   "mcp": [
     {"name": "memory_note", "required": ["text"]},
     {"name": "memory_show", "required": []},
@@ -15,13 +15,13 @@
     {"name": "trace_sessions", "required": []},
     {"name": "trace_files", "required": ["session"]},
     {"name": "audit", "required": []},
-    {"name": "evolve_report", "required": []}
+    {"name": "evolve_report", "required": []},
+    {"name": "skills_list", "required": []},
+    {"name": "evolve_tick", "required": []},
+    {"name": "evolve_propose", "required": ["task", "domain"]}
   ],
   "intentional_gaps": [
-    {"name": "evolve_propose", "reason": "harness self-modification proposal: plugin-only, never exposed over MCP transport"},
     {"name": "probe_contrast", "reason": "behavioral contrast probe: plugin-only evolution probe, not a stable MCP capability"},
-    {"name": "probe_compose", "reason": "behavioral compose probe: plugin-only evolution probe, not a stable MCP capability"},
-    {"name": "skills_list", "reason": "skill inventory: plugin-local discovery, no MCP transport contract"},
-    {"name": "evolve_tick", "reason": "evolution tick writes candidates like evolve_propose: harness self-modification doesn't transfer"}
+    {"name": "probe_compose", "reason": "behavioral compose probe: plugin-only evolution probe, not a stable MCP capability"}
   ]
 }
