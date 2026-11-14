@@ -203,3 +203,34 @@ func (w wrapper[T]) Get() int {
 		t.Fatalf("wrapper[T].Get = %+v", get)
 	}
 }
+
+func TestIsCriticalDistinguishes(t *testing.T) {
+	for file, want := range map[string]bool{
+		"cmd/server/main.go":           true,
+		"internal/decisions/decide.go": true,
+		"internal/gates/run.go":        true,
+		"internal/receipts/store.go":   true,
+		"internal/evidence/verify.go":  true,
+		"pkg/util/x.go":                false,
+		"internal/cli/audit.go":        false,
+		"internal/memory/store.go":     false,
+	} {
+		if got := IsCriticalFile(file); got != want {
+			t.Errorf("IsCriticalFile(%q) = %v, want %v", file, got, want)
+		}
+	}
+}
+
+func TestWaiverDiscountsMax(t *testing.T) {
+	rep := Report{Functions: []Scored{
+		{File: "cmd/server/main.go", Name: "Bad", Complexity: 8, Coverage: 0, Measured: true, CRAP: 72},
+		{File: "pkg/util/x.go", Name: "Ok", Complexity: 1, Coverage: 1, Measured: true, CRAP: 1},
+	}, Max: 72}
+	waived := ParseWaivers([]byte("cmd/server/main.go:Bad legacy hotspot expira:2027-01-01 aprueba:tech-lead\n"))
+	if got := rep.EffectiveMax(waived); got != 1 {
+		t.Fatalf("EffectiveMax with waiver = %.2f, want 1", got)
+	}
+	if got := rep.EffectiveMax(nil); got != 72 {
+		t.Fatalf("EffectiveMax without waiver = %.2f, want 72", got)
+	}
+}

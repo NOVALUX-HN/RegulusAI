@@ -247,6 +247,22 @@ func preflightMissingTools(selected []gates.Gate, lookPath func(string) (string,
 // or gate failure; exit 0 when the gauntlet passes (advisory-only
 // failures also exit 0, exactly as before).
 func (c CLI) execAndReport(plan gateRunArgs) int {
+	if base, _, ok := strings.Cut(plan.task, "/"); ok && base != "" {
+		for _, cand := range []string{filepath.Join("charts", base+".md"), filepath.Join(c.dir(), "charts", base+".md")} {
+			if data, rerr := os.ReadFile(cand); rerr == nil {
+				if violations := collectViolations(string(data)); len(violations) != 0 {
+					fmt.Fprintf(c.Stdout, "gate run blocked: chart %s has %d violation(s) — BUILD refused before layer 1\n", cand, len(violations))
+					for _, v := range violations {
+						fmt.Fprintf(c.Stdout, "violation: %s\n", v)
+					}
+					fmt.Fprintln(c.Stdout, "why: running gates on an unverifiable chart wastes evidence and hides the real defect")
+					fmt.Fprintf(c.Stdout, "next: fix the chart, then run: regulus task check %s\n", cand)
+					return 1
+				}
+				break
+			}
+		}
+	}
 	cfgBytes, err := os.ReadFile(filepath.Join(c.dir(), "regulus.json"))
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
@@ -319,6 +335,8 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 	fmt.Fprintf(c.Stdout, "verdict: %s (%s)\n", res.Status, res.Reason)
 	fmt.Fprintf(c.Stdout, "manifest: %s\n", mpath)
 	if res.Failed {
+		fmt.Fprintf(c.Stdout, "why: gate %q failed — task close stays blocked until the gauntlet passes\n", res.FailedGate)
+		fmt.Fprintf(c.Stdout, "next: fix gate %q, inspect evidence with regulus evidence show %s, then re-run: regulus gate run %s\n", res.FailedGate, mpath, plan.task)
 		return 1
 	}
 	return 0

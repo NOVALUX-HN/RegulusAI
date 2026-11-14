@@ -55,35 +55,41 @@ type Task struct {
 // cost (wall time plus the measured-local token proxy; host token
 // counts stay unknown).
 type TaskResult struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	Kind       string `json:"kind"`
-	Pass       bool   `json:"pass"`
-	DurationMS int64  `json:"duration_ms"`
-	Detail     string `json:"detail"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Kind        string `json:"kind"`
+	Pass        bool   `json:"pass"`
+	DurationMS  int64  `json:"duration_ms"`
+	Detail      string `json:"detail"`
+	ProxyTokens int64  `json:"proxy_tokens"`
+	ProxyKnown  bool   `json:"proxy_known"`
 }
 
 // Report is one suite run against one surface (baseline tree or
 // candidate): comparable task by task.
 type Report struct {
-	Suite       string       `json:"suite"`
-	Surface     string       `json:"surface"`
-	GitHead     string       `json:"git_head"`
-	StartedAt   time.Time    `json:"started_at"`
-	Tasks       []TaskResult `json:"tasks"`
-	Passed      int          `json:"passed"`
-	Failed      int          `json:"failed"`
-	TotalMS     int64        `json:"total_duration_ms"`
-	OutputBytes int64        `json:"output_bytes"`
+	Suite            string       `json:"suite"`
+	Surface          string       `json:"surface"`
+	GitHead          string       `json:"git_head"`
+	StartedAt        time.Time    `json:"started_at"`
+	Tasks            []TaskResult `json:"tasks"`
+	Passed           int          `json:"passed"`
+	Failed           int          `json:"failed"`
+	TotalMS          int64        `json:"total_duration_ms"`
+	OutputBytes      int64        `json:"output_bytes"`
+	TotalProxyTokens int64        `json:"total_proxy_tokens"`
+	ProxyKnown       bool         `json:"proxy_known"`
+	QualityPerKProxy float64      `json:"quality_per_kproxy"`
 }
 
 // Row is one contrast line: the same task on both surfaces.
 type Row struct {
-	ID      string
-	Title   string
-	Base    bool
-	Cand    bool
-	DeltaMS int64
+	ID         string
+	Title      string
+	Base       bool
+	Cand       bool
+	DeltaMS    int64
+	DeltaProxy int64
 }
 
 // Comparison is the machine verdict over two reports: ADOPT only when
@@ -96,6 +102,9 @@ type Comparison struct {
 	Improvements int
 	Verdict      string
 	Reason       string
+	BaseProxy    int64
+	CandProxy    int64
+	DeltaProxy   int64
 }
 
 // Suite returns the fixed v3 task list (14 tasks: 8 behavior tasks
@@ -176,14 +185,21 @@ func Run(surface, gitHead string) Report {
 		if err != nil {
 			res.Detail = err.Error()
 		}
+		res.ProxyTokens = int64(len(t.Prompt)+len(res.Detail)+3) / 4
+		res.ProxyKnown = true
 		rep.Tasks = append(rep.Tasks, res)
 		rep.TotalMS += ms
 		rep.OutputBytes += int64(len(res.Detail))
+		rep.TotalProxyTokens += res.ProxyTokens
 		if res.Pass {
 			rep.Passed++
 		} else {
 			rep.Failed++
 		}
+	}
+	rep.ProxyKnown = true
+	if rep.TotalProxyTokens > 0 {
+		rep.QualityPerKProxy = float64(rep.Passed) / (float64(rep.TotalProxyTokens) / 1000.0)
 	}
 	return rep
 }
@@ -239,12 +255,13 @@ func Compare(base, cand Report) Comparison {
 	for _, t := range cand.Tasks {
 		byID[t.ID] = t
 	}
-	c := Comparison{Base: base, Candidate: cand}
+	c := Comparison{Base: base, Candidate: cand, BaseProxy: base.TotalProxyTokens, CandProxy: cand.TotalProxyTokens, DeltaProxy: cand.TotalProxyTokens - base.TotalProxyTokens}
 	for _, b := range base.Tasks {
 		r := Row{ID: b.ID, Title: b.Title, Base: b.Pass}
 		if cr, ok := byID[b.ID]; ok {
 			r.Cand = cr.Pass
 			r.DeltaMS = cr.DurationMS - b.DurationMS
+			r.DeltaProxy = cr.ProxyTokens - b.ProxyTokens
 		}
 		c.Rows = append(c.Rows, r)
 		switch {

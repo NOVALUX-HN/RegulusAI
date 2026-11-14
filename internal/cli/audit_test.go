@@ -8,10 +8,14 @@ package cli
 // golden: MustFix (cx8, uncovered) first, Workhorse (cx5, uncovered)
 // second, NiceHelper (cx2, covered) last.
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"regulus-ai/internal/crap"
 )
 
 const auditFixtureMod = "module fixture.example/audit\n\ngo 1.24\n"
@@ -161,5 +165,60 @@ func TestAuditNoEntryPoints(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "(none found)") {
 		t.Fatalf("audit without cmd/ must say so, got:\n%s", out.String())
+	}
+}
+
+func TestAuditCriticalThresholdDistinguishes(t *testing.T) {
+	crit := crap.Scored{File: "internal/gates/run.go", Name: "Run", Complexity: 6, Coverage: 0, Measured: true, CRAP: 40}
+	std := crap.Scored{File: "pkg/util/x.go", Name: "Help", Complexity: 6, Coverage: 0, Measured: true, CRAP: 40}
+	if got := auditTierFor(crit, 30, 50, 100); got != "must-fix" {
+		t.Fatalf("critical CRAP 40 with max-critical 30 = %q, want must-fix", got)
+	}
+	if got := auditTierFor(std, 30, 50, 100); got == "must-fix" {
+		t.Fatalf("standard CRAP 40 with max-standard 50 = %q, want non-must-fix", got)
+	}
+}
+
+func TestAuditHotspotReportHasSourceAndDate(t *testing.T) {
+	dir := t.TempDir()
+	writeAuditFixture(t, dir)
+	t.Chdir(dir)
+	hot := filepath.Join(dir, "hot.json")
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"audit", "--profile", "profile.out", "--hotspot-report", hot}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	raw, err := os.ReadFile(hot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep struct {
+		GeneratedAt   string `json:"generated_at"`
+		Profile       string `json:"profile"`
+		ProfileSHA256 string `json:"profile_sha256"`
+		Top           int    `json:"top"`
+		Functions     []struct {
+			File     string   `json:"file"`
+			Func     string   `json:"func"`
+			CX       int      `json:"cx"`
+			Coverage *float64 `json:"coverage"`
+			CRAP     float64  `json:"crap"`
+			Tier     string   `json:"tier"`
+		} `json:"functions"`
+	}
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.GeneratedAt == "" || rep.Profile == "" || len(rep.ProfileSHA256) != 64 {
+		t.Fatalf("hotspot must carry fuente+fecha, got %+v", rep)
+	}
+	if _, err := time.Parse(time.RFC3339, rep.GeneratedAt); err != nil {
+		t.Fatalf("generated_at must be RFC3339, got %q", rep.GeneratedAt)
+	}
+	if len(rep.Functions) == 0 || rep.Functions[0].Tier == "" {
+		t.Fatalf("hotspot must rank functions with tier, got %+v", rep.Functions)
+	}
+	if got := out.String(); !strings.Contains(got, "profile.out") || !strings.Contains(got, "sha256:") {
+		t.Fatalf("stdout must print profile fuente (path+sha), got:\n%s", got)
 	}
 }
