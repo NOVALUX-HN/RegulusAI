@@ -230,6 +230,12 @@ func appendStoreLinesFilteredLocked(storePath string, planned []string) error {
 // stores. Helpers never acquire the lock themselves, so the single
 // commit cannot deadlock.
 func importBundle(root, dir string) (imported, skipped int, err error) {
+	// NOV-30: integrity first — a tampered bundle (or a newer format)
+	// refuses before any planning or writing, so the target tree stays
+	// intact. Bundles without MANIFEST predate NOV-30 and import as before.
+	if err := VerifyBundle(dir); err != nil {
+		return 0, 0, err
+	}
 	obsData, err := os.ReadFile(filepath.Join(dir, "almanac.jsonl"))
 	if err != nil {
 		return 0, 0, err

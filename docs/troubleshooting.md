@@ -205,6 +205,46 @@ completo. El test de yolo (`bun test` que compila+ejecuta un
 máquinas — si lo ves fallar con `unknown error`, es el bloqueo,
 no el producto (el propio test ahora lo diagnostica).
 
+## Almanac backup/restore runbook (export → import → reindex → doctor)
+
+Backup:
+
+```bash
+regulus memory export --out <tracked-dir>   # committable bundle (track it in git)
+regulus memory export                        # generated artifact in .regulus-export/
+```
+
+The bundle carries `almanac.jsonl` + `pins.jsonl` + `relations.jsonl` +
+`status.jsonl` (the restorable stores, verbatim) + `INDEX.md` (rendered
+digest) + `MANIFEST.json` (sha256+size per data file, format version).
+Exports hold the store lock, so a bundle is one atomic snapshot even
+under concurrent saves.
+
+Restore on a clean tree (copy the bundle dir over first):
+
+```bash
+regulus memory import <dir>   # verifies MANIFEST before writing anything
+regulus memory reindex        # rebuild the derived vector index
+regulus memory doctor         # must report index: fresh
+```
+
+Integrity: a bundle with an altered file refuses with
+`MANIFEST mismatch: <file>`, a bundle from a newer binary with
+`unsupported bundle vN` — both before any write, so the target tree
+stays intact. Bundles written before NOV-30 carry no `MANIFEST.json`
+and still import (backward compatible).
+
+What is regenerable vs not: `INDEX.md` re-renders on every export and
+`retrieval.bin` rebuilds with `memory reindex` — both disposable. The
+observations log and the pins/relations/status stores are NOT
+regenerable: that is exactly what the bundle carries, so keep it.
+
+Outside the bundle (back them up separately): `.regulus/library/`
+(admitted lessons and candidates), `.regulus/budget.json` (token
+budgets), `regulus.json` (gate config), and `.regulus/traces/` +
+`.regulus/evidence/` (audit trail, pruned per scope — see the retention
+section above). The bundle restores memory, not harness state.
+
 ## `regulus doctor` says "opencode binary not found on PATH"
 
 The regulus binary can't find `opencode`. Install OpenCode V2:

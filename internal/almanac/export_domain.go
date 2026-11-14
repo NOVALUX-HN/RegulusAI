@@ -29,14 +29,30 @@ import (
 // as empty bundle files — the bundle shape is stable, and `memory import`
 // of a bundle without the extra files still restores the observations.
 func ExportDomain(root, domain, outDir string) ([]string, error) {
-	scoped, keep, pins, rels, err := domainScope(root, domain)
+	// NOV-30: the snapshot (scope reads + bundle writes + MANIFEST.json)
+	// runs under the store lock, so concurrent saves cannot leave a mixed
+	// bundle. The manifest is written alongside but not counted in the
+	// returned paths.
+	var paths []string
+	err := withStoreLock(root, func() error {
+		scoped, keep, pins, rels, err := domainScope(root, domain)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(outDir, 0o755); err != nil {
+			return err
+		}
+		paths, err = writeDomainBundle(root, outDir, domain, scoped, keep, pins, rels)
+		if err != nil {
+			return err
+		}
+		_, err = WriteManifest(outDir, ProjectName(root))
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, err
-	}
-	return writeDomainBundle(root, outDir, domain, scoped, keep, pins, rels)
+	return paths, nil
 }
 
 // domainScope reads the log and returns the observations of one domain

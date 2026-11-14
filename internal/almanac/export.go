@@ -50,8 +50,31 @@ func ProjectName(root string) string {
 // digest grouped by type, with pinned and relations sections). A store
 // with no file yet exports as an empty file — the bundle shape is
 // stable, and `memory import` of an old bundle without the extra files
-// still restores the observations.
+// still restores the observations. The whole snapshot runs under the
+// store lock (the same lock appends serialize on), so concurrent saves
+// cannot slip between the reads and leave a mixed bundle; MANIFEST.json
+// (NOV-30 integrity) is pinned under the same lock. The manifest is
+// written alongside the bundle but not counted in the returned paths —
+// the five bundle files are the stable shape older tooling expects.
 func Export(root string) (paths []string, err error) {
+	err = withStoreLock(root, func() error {
+		var inner error
+		paths, inner = exportLocked(root)
+		if inner != nil {
+			return inner
+		}
+		_, inner = WriteManifest(filepath.Join(root, ".regulus-export"), ProjectName(root))
+		return inner
+	})
+	if err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+// exportLocked writes the five bundle files. The caller holds the store
+// lock, so the reads below are one atomic snapshot.
+func exportLocked(root string) (paths []string, err error) {
 	all, err := All(root)
 	if err != nil {
 		return nil, err
