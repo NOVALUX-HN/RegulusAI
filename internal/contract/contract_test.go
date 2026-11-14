@@ -29,6 +29,20 @@ func TestVersionIsPinned(t *testing.T) {
 	}
 }
 
+// TestSupportsAcceptsPinnedRefusesUnknown pins the NOV-37 policy:
+// Supported holds the pinned version, Supports accepts it and refuses
+// anything else (explicit refuse, never silent drift).
+func TestSupportsAcceptsPinnedRefusesUnknown(t *testing.T) {
+	if !Supports(Version) {
+		t.Fatalf("Supports(%q) = false, want true", Version)
+	}
+	for _, v := range []string{"", "regulus.contract/v2", "regulus.mcp/v1", "2024-11-05"} {
+		if Supports(v) {
+			t.Fatalf("Supports(%q) = true, want false (unknown contracts refuse)", v)
+		}
+	}
+}
+
 // tsContractRe extracts the TypeScript mirror of the contract version from
 // .opencode/lib/domain.ts (REGULUS_CONTRACT = "...").
 var tsContractRe = regexp.MustCompile(`REGULUS_CONTRACT\s*=\s*"([^"]+)"`)
