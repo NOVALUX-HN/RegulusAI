@@ -1,6 +1,6 @@
 # Evals con agente real (NOV-68 / T43)
 
-Suite `agent-tasks-v1` (`bench/agent-splits-v1.json`): 4 exploración
+Suite `agent-tasks-v2` (`bench/agent-splits-v2.json`): 24 exploracion
 (AT1 Go, AT2 Go, AT3 node, AT4 shell) + 1 holdout (AT5 Go, 20%).
 Cada tarea = fixture autocontenido + prompt + check oculto
 (runner-only, el agente nunca lo ve). `regulus bench agent-tasks`
@@ -14,11 +14,36 @@ holdout (anti-leakage). Resultados mapean a `CompareRobust` (NOV-59):
 control negativo (todo fail) no adopta, positivo (mejora) adopta,
 fallo de guardrail rechaza.
 
-Estado 2026-11-14: sin créditos de modelo en este host (`opencode run`
-→ 402 quota), la baseline real queda pendiente de una corrida con
-créditos (`--reps 3`, exploración y holdout). Tests GREEN en WSL
-(Go 1.27.3 + node 22): 8/8 agent-tasks (corpus, splits, buckets,
-controles, anti-leakage) + CLI NOT RUN/INCONCLUSIVE + suites trace/
-bench completas sin regresiones. Ventana Windows con App Control
-intermitente: si un binario nuevo se bloquea (3077/3118), reintentar
-o correr en WSL.
+Estado 2026-11-15 (corpus v2, NOV-77): fixtures verificados (30/30 fallan pre-fix), trampas verificadas (hardcode falla, fix real pasa). Corridas completas con reps y multi-modelo pendientes de ejecucion con creditos (ver bench/evidence/ + agent-report).
+
+## Reproducir una corrida (v2)
+
+Requiere: Go toolchain, node, bash y `python3` en el PATH, más un host
+headless usable (`opencode` en el PATH; sin host → NOT RUN, nunca un
+pase falso).
+
+```bash
+# Exploración con 3 reps y evidencia versionada (lo que pide NOV-77):
+bin/regulus bench agent-tasks --reps 3 --split exploration \
+  --model opencode-go/beam-free --host opencode \
+  --evidence-dir bench/evidence/v2-baseline-beam-free
+# Holdout (misma config, split holdout):
+bin/regulus bench agent-tasks --reps 3 --split holdout \
+  --model opencode-go/beam-free --host opencode \
+  --evidence-dir bench/evidence/v2-holdout-beam-free
+# Reporte generado desde la evidencia (verifica sha256, no edita):
+bin/regulus bench agent-report --evidence-dir bench/evidence/v2-baseline-beam-free
+```
+
+Costo de referencia (medido, free tier, runner local): cada tarea
+consume su `BudgetS` como techo (60–120 s); una corrida completa de
+30 tareas × 3 reps ronda los 90 intentos. Timeouts del tier gratuito:
+un intento que excede su presupuesto queda en `timeout` y los que
+nunca corren en `infra`/`not-run` — ambos buckets no evaluables, nunca
+pasan. Si el host responde 402/quota, la corrida entera es NOT RUN
+(exit 3): hay que reintentar en otra ventana, no relajar umbrales.
+
+Anti-gaming y holdout: las trampas (AT28, AT29) llevan checks ocultos
+que el agente nunca ve; un hardcode pasa lo visible y falla lo
+oculto. El holdout (6/30, 4 lenguajes) se evalúa aparte para que un
+timeout aislado no lo deje sin evaluables.
