@@ -68,7 +68,10 @@ jobs:
       - name: Run the gauntlet (16 layers, receipts)
         run: |
           go build -o bin/regulus ./cmd/regulus
-          bin/regulus gate run ci/push
+          # Non-interactive CI cannot create .regulus/trusted (explicit operator
+          # action only, never a gate); consent is explicit here instead.
+          # See docs/trust.md: scripts must pass --yes (no interactive fallback).
+          bin/regulus gate run --yes ci/push
 
       # S8 retired (open source): the receipts trail is no longer committed
       # into docs/EVIDENCE.md. Gate receipts stay available as CI artifacts
