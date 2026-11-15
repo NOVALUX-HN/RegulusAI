@@ -72,12 +72,15 @@ func (r OpenCodeRunner) Run(ctx context.Context, workdir, prompt, model string) 
 
 // scanOpenCodeUsage defensively extracts token counts from opencode
 // --format json lines. Unknown shapes yield zero usage (unknown), and
-// nothing is executed: JSON only. Reasoning folds into output (OpenAI
-// accounting: completions include reasoning); cache read/write map to
-// the matching HostUsage fields.
-func scanOpenCodeUsage(raw string) trace.HostUsage {
-	var u trace.HostUsage
+// nothing is executed: JSON only. Reasoning folds into output
+// (OpenAI accounting: completions include reasoning); cache read/write
+// map to the matching HostUsage fields. Two shapes: legacy top-level
+// usage (last wins, pinned) and step-finish part.tokens (per step,
+// summed — that is the run total).
+func scanOpenCodeUsage(raw string) (u trace.HostUsage) {
 	u.Source = trace.SourceUnknown
+	var stepIn, stepOut, stepCacheR, stepCacheW int64
+	sawStep := false
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || !strings.HasPrefix(line, "{") {
@@ -106,9 +109,28 @@ func scanOpenCodeUsage(raw string) trace.HostUsage {
 		if v := numAt(doc, "tokens", "cache", "write"); v > 0 {
 			u.CacheWrite = v
 		}
+		if v := numAt(doc, "part", "tokens", "input"); v > 0 {
+			stepIn += v
+			sawStep = true
+		}
+		if out, rs := numAt(doc, "part", "tokens", "output"), numAt(doc, "part", "tokens", "reasoning"); out+rs > 0 {
+			stepOut += out + rs
+			sawStep = true
+		}
+		if v := numAt(doc, "part", "tokens", "cache", "read"); v > 0 {
+			stepCacheR += v
+			sawStep = true
+		}
+		if v := numAt(doc, "part", "tokens", "cache", "write"); v > 0 {
+			stepCacheW += v
+			sawStep = true
+		}
 		if m, ok := doc["model"].(string); ok && m != "" {
 			u.Model = m
 		}
+	}
+	if sawStep {
+		u.InputTokens, u.OutputTokens, u.CacheRead, u.CacheWrite = stepIn, stepOut, stepCacheR, stepCacheW
 	}
 	if u.InputTokens > 0 || u.OutputTokens > 0 {
 		u.Source = trace.SourceMeasuredHost

@@ -86,3 +86,18 @@ func TestOpenCodeRunnerMissingBinaryIsInfra(t *testing.T) {
 		t.Fatalf("missing binary must fail cleanly, got %v", err)
 	}
 }
+
+func TestScanOpenCodeUsageSumsSteps(t *testing.T) {
+	raw := "{\"type\":\"step_finish\",\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":100,\"output\":10,\"reasoning\":5,\"cache\":{\"read\":50,\"write\":1}}}}\n" +
+		"{\"type\":\"step_finish\",\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":200,\"output\":20,\"reasoning\":0,\"cache\":{\"read\":70,\"write\":2}}}}\n"
+	u := scanOpenCodeUsage(raw)
+	if u.InputTokens != 300 || u.OutputTokens != 35 {
+		t.Fatalf("step sums = %+v, want 300 in / 35 out", u)
+	}
+	if u.CacheRead != 120 || u.CacheWrite != 3 {
+		t.Fatalf("step cache = %+v, want 120/3", u)
+	}
+	if u.Source != trace.SourceMeasuredHost {
+		t.Fatalf("source = %q", u.Source)
+	}
+}
