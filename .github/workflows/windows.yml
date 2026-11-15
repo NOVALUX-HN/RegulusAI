@@ -25,18 +25,23 @@ jobs:
           go build -o bin/regulus.exe ./cmd/regulus
       - name: Vet
         run: go vet ./internal/gates ./internal/httpapi ./internal/doctor ./internal/contract ./internal/mcp
-      - name: Native tests (no shell assumption)
+      - name: Full suite via workspace runner (NOV-66)
+        shell: powershell
         run: |
-          go test ./internal/httpapi -count=1
-          go test ./internal/doctor ./internal/contract ./internal/mcp -count=1
-      - name: Structured runner tests (no sh.exe/bash.exe)
-        run: |
-          go test -c -o $env:TEMP/gates.test.exe ./internal/gates
-          & $env:TEMP/gates.test.exe -test.run 'TestStructuredRunner' -test.count=1 -test.v
+          powershell -NoProfile -File scripts/test-windows.ps1
       - name: Validate artifacts + hashes
+        shell: powershell
         run: |
-          Get-FileHash bin/regulus.exe -Algorithm SHA256
-          Get-AuthenticodeSignature bin/regulus.exe | Format-List Status
+          $h = Get-FileHash bin/regulus.exe -Algorithm SHA256
+          $h.Hash | Out-File -FilePath bin.regulus.sha256 -NoNewline
+          Get-Content bin.regulus.sha256
+          if ($h.Hash.Length -ne 64) { throw "hash inesperado" }
+      - name: Authenticode stays NotSigned while optional (NOV-44)
+        shell: powershell
+        run: |
+          $sig = Get-AuthenticodeSignature bin/regulus.exe
+          $sig | Format-List Status, SignerCertificate
+          if ($sig.Status -ne 'NotSigned') { throw "se esperaba NotSigned mientras la firma es opcional, got $($sig.Status)" }
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,5 +58,14 @@ jobs:
       - uses: actions/checkout@v5
       - name: Audit policy state (not enforcement)
         run: |
-          Get-WinEvent -LogName 'Microsoft-Windows-CodeIntegrity/Operational' -MaxEvents 5 | Format-Table TimeCreated, Id -AutoSize || echo "no CodeIntegrity log access"
+          Get-WinEvent -LogName 'Microsoft-Windows-CodeIntegrity/Operational' -MaxEvents 20 | Format-Table TimeCreated, Id -AutoSize | Out-File -FilePath audit-codeintegrity.txt
+          Get-Content audit-codeintegrity.txt
           echo "Standard GitHub runner is NOT Smart App Control enforced. Protected validation requires lab VM (see docs/windows-diagnosis.md). Audit only, never confuses audit with enforcement."
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-audit-evidence
+          path: audit-codeintegrity.txt
+          retention-days: 90
+          if-no-files-found: warn
