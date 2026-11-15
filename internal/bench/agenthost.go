@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os/exec"
 	"strings"
 	"time"
@@ -118,7 +119,9 @@ func numAt(doc map[string]any, keys ...string) int64 {
 	}
 	switch v := cur.(type) {
 	case float64:
-		if v > 0 && v < 1e12 {
+		// Like mcpInt: fractional counts are refused, never truncated
+		// into a quieter number.
+		if v == math.Trunc(v) && v > 0 && v < 1e12 {
 			return int64(v)
 		}
 	}
