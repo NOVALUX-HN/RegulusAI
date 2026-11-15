@@ -68,15 +68,15 @@ func TestS8GateEfficacy(t *testing.T) {
 		t.Fatal("regulus.json must declare the mutation gate")
 	}
 
-	// gauntlet.yml: no step may pass via an echo-skipped fallback either.
-	yml, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "gauntlet.yml"))
+	// ci.yml: no step may pass via an echo-skipped fallback either.
+	yml, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "ci.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(string(yml), "\n") {
 		lower := strings.ToLower(line)
 		if strings.Contains(line, "||") && strings.Contains(lower, "echo") && strings.Contains(lower, "skipp") {
-			t.Fatalf("gauntlet.yml masks failure with an echo-skipped fallback: %q", strings.TrimSpace(line))
+			t.Fatalf("ci.yml masks failure with an echo-skipped fallback: %q", strings.TrimSpace(line))
 		}
 	}
 }
