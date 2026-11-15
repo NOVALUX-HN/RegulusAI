@@ -20,11 +20,11 @@ import (
 //	compare --base A --candidate B [--json]  contrast table + ADOPT/REJECT
 func (c CLI) benchCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V] [--save P] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V] [--save P] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
 		return 2
 	}
 	switch args[0] {
@@ -40,11 +40,13 @@ func (c CLI) benchCmd(args []string) int {
 		return c.benchAgentTasksCmd(args[1:])
 	case "agent-compare":
 		return c.benchAgentCompareCmd(args[1:])
+	case "agent-report":
+		return c.benchAgentReportCmd(args[1:])
 	case "host-journeys":
 		return c.benchHostJourneysCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "bench: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V] [--save P] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
 		return 2
 	}
 }

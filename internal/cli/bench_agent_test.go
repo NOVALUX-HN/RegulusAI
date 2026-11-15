@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"regulus-ai/internal/bench"
+	"regulus-ai/internal/trace"
 )
 
 func writeAgentSplits(t *testing.T) string {
@@ -77,4 +80,52 @@ func writeFakeOpenCode(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestBenchAgentReportReadsEvidenceDir(t *testing.T) {
+	dir := t.TempDir()
+	outcomes := []bench.AgentOutcome{
+		{TaskID: "AT1", Split: "exploration", Rep: 0, Status: bench.AgentPass, TokensIn: 10, TokenSource: trace.SourceMeasuredHost},
+		{TaskID: "AT1", Split: "exploration", Rep: 1, Status: bench.AgentFail},
+		{TaskID: "AT5", Split: "holdout", Rep: 0, Status: bench.AgentInfra},
+	}
+	if _, err := bench.WriteAgentEvidence(dir, outcomes, bench.AgentRunManifest{
+		SuiteVersion: bench.AgentSuiteVersion, Model: "m", Host: "opencode",
+		Variant: "candidate", Reps: 2, Split: "all", GitHead: "abc",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"bench", "agent-report", "--evidence-dir", dir}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	for _, want := range []string{"agent-tasks", "abc", "INCONCLUSIVE", "pass-rate 0.50", "RepMin", "measured-host"} {
+		if !strings.Contains(out.String(), want) && !strings.Contains(strings.ToLower(out.String()), strings.ToLower(want)) {
+			t.Fatalf("report missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestBenchAgentReportRejectsTamperedEvidence(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := bench.WriteAgentEvidence(dir, []bench.AgentOutcome{{TaskID: "AT1"}}, bench.AgentRunManifest{}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, bench.EvidenceOutcomesFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, bench.EvidenceOutcomesFile), append(raw, ' '), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"bench", "agent-report", "--evidence-dir", dir}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "sha256") {
+		t.Fatalf("tamper must name the sha256 mismatch, got %q", errb.String())
+	}
+	if code := c.Run([]string{"bench", "agent-report"}); code != 2 {
+		t.Fatalf("missing dir exit = %d, want 2", code)
+	}
 }

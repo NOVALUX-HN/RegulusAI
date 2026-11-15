@@ -72,7 +72,9 @@ func (r OpenCodeRunner) Run(ctx context.Context, workdir, prompt, model string) 
 
 // scanOpenCodeUsage defensively extracts token counts from opencode
 // --format json lines. Unknown shapes yield zero usage (unknown), and
-// nothing is executed: JSON only.
+// nothing is executed: JSON only. Reasoning folds into output (OpenAI
+// accounting: completions include reasoning); cache read/write map to
+// the matching HostUsage fields.
 func scanOpenCodeUsage(raw string) trace.HostUsage {
 	var u trace.HostUsage
 	u.Source = trace.SourceUnknown
@@ -95,8 +97,14 @@ func scanOpenCodeUsage(raw string) trace.HostUsage {
 		if v := numAt(doc, "tokens", "input"); v > 0 {
 			u.InputTokens = v
 		}
-		if v := numAt(doc, "tokens", "output"); v > 0 {
-			u.OutputTokens = v
+		if out, rs := numAt(doc, "tokens", "output"), numAt(doc, "tokens", "reasoning"); out+rs > 0 {
+			u.OutputTokens = out + rs
+		}
+		if v := numAt(doc, "tokens", "cache", "read"); v > 0 {
+			u.CacheRead = v
+		}
+		if v := numAt(doc, "tokens", "cache", "write"); v > 0 {
+			u.CacheWrite = v
 		}
 		if m, ok := doc["model"].(string); ok && m != "" {
 			u.Model = m

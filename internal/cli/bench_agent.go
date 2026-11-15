@@ -10,13 +10,17 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
+	"time"
 
 	"regulus-ai/internal/bench"
 	"regulus-ai/internal/evolve"
+	"regulus-ai/internal/executil"
 )
 
 func (c CLI) benchAgentTasksCmd(args []string) int {
+	started := time.Now().UTC()
 	fs := flag.NewFlagSet("bench agent-tasks", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	reps := fs.Int("reps", 1, "repetitions per task (protocol wants >=3 for real evals)")
@@ -26,11 +30,13 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 	budget := fs.Int("budget-s", 0, "per-task timeout in seconds (0 = task default)")
 	variant := fs.String("variant", "baseline", "variant label recorded on outcomes")
 	save := fs.String("save", "", "write outcomes as JSON to this path (evidence pack)")
+	evidenceDir := fs.String("evidence-dir", "", "write versioned evidence (outcomes.json + manifest.json with config, git head and sha256) to this directory")
+	hostVersionFlag := fs.String("host-version", "", "host version recorded on outcomes (auto-detected for opencode when empty)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 || *reps < 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--budget-s N] [--variant V]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D]")
 		return 2
 	}
 	corpus := bench.AgentCorpus()
@@ -50,9 +56,13 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
 		return 1
 	}
+	hostVersion := *hostVersionFlag
+	if hostVersion == "" && *host == "opencode" {
+		hostVersion = probeOpenCodeVersion()
+	}
 	ctx := context.Background()
 	outcomes := bench.RunAgentSuite(ctx, agent, corpus, splits, bench.AgentOptions{
-		Reps: *reps, Variant: *variant, Model: *model, Host: *host, Split: *split, BudgetS: *budget,
+		Reps: *reps, Variant: *variant, Model: *model, Host: *host, HostVersion: hostVersion, Split: *split, BudgetS: *budget,
 	})
 	if *save != "" {
 		raw, err := json.MarshalIndent(outcomes, "", "  ")
@@ -65,6 +75,25 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 			return 1
 		}
 		fmt.Fprintf(c.Stdout, "evidence: %d outcome(s) saved to %s\n", len(outcomes), *save)
+	}
+	if *evidenceDir != "" {
+		head := gitHeadBounded(c.runner())
+		if head == "" {
+			head = "unknown"
+		}
+		seeds := make([]int64, 0, *reps)
+		for rep := 0; rep < *reps; rep++ {
+			seeds = append(seeds, splits.Seed+int64(rep))
+		}
+		if _, err := bench.WriteAgentEvidence(*evidenceDir, outcomes, bench.AgentRunManifest{
+			SuiteVersion: bench.AgentSuiteVersion, Model: *model, Host: *host, HostVersion: hostVersion,
+			Variant: *variant, Reps: *reps, Split: *split, Seeds: seeds, GitHead: head,
+			StartedAt: started.Format(time.RFC3339),
+		}); err != nil {
+			fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(c.Stdout, "evidence: versioned run recorded in %s\n", *evidenceDir)
 	}
 	sum := bench.SummarizeAgent(*variant, outcomes)
 	notRun := 0
@@ -86,6 +115,24 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// probeOpenCodeVersion best-efforts `opencode --version` ("opencode
+// X.Y.Z" -> "X.Y.Z"); anything else means unknown, never an error.
+func probeOpenCodeVersion() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "opencode", "--version")
+	executil.HideWindow(cmd)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) == 2 && fields[0] == "opencode" {
+		return fields[1]
+	}
+	return ""
 }
 
 // resolveAgentRunner materializa el host headless pedido. Si no hay host
@@ -166,4 +213,27 @@ func (c CLI) benchAgentCompareCmd(args []string) int {
 		return 0
 	}
 	return 1
+}
+
+// benchAgentReportCmd implements `regulus bench agent-report --evidence-dir DIR`:
+// it reads one versioned evidence dir (manifest + outcomes, hash-verified)
+// and prints the report from those files — never hand-written.
+func (c CLI) benchAgentReportCmd(args []string) int {
+	fs := flag.NewFlagSet("bench agent-report", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	dir := fs.String("evidence-dir", "", "evidence directory with manifest.json + outcomes.json (required)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *dir == "" || fs.NArg() != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus bench agent-report --evidence-dir <dir>")
+		return 2
+	}
+	m, outcomes, err := bench.ReadAgentEvidence(*dir)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "bench agent-report: %v\n", err)
+		return 1
+	}
+	fmt.Fprint(c.Stdout, bench.RenderAgentReport(m, outcomes))
+	return 0
 }

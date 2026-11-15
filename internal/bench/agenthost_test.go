@@ -34,6 +34,21 @@ func TestScanOpenCodeUsageRealShapes(t *testing.T) {
 	}
 }
 
+func TestScanOpenCodeUsageReasoningAndCache(t *testing.T) {
+	raw := `{"tokens":{"input":3865,"output":4,"reasoning":22,"cache":{"read":1600,"write":0}}}
+`
+	u := scanOpenCodeUsage(raw)
+	if u.InputTokens != 3865 || u.OutputTokens != 26 {
+		t.Fatalf("counts = %+v, want 3865/26 (reasoning folded)", u)
+	}
+	if u.CacheRead != 1600 || u.CacheWrite != 0 {
+		t.Fatalf("cache = %+v, want 1600/0", u)
+	}
+	if u.Source != trace.SourceMeasuredHost {
+		t.Fatalf("source = %q", u.Source)
+	}
+}
+
 func TestScanOpenCodeUsageUnknownStaysUnknown(t *testing.T) {
 	for _, raw := range []string{"", "\n\n", "plain text", "[1,2]", "{\"usage\":{\"inputTokens\":-3}}", strings.Repeat("x", 300*1024)} {
 		u := scanOpenCodeUsage(raw)
