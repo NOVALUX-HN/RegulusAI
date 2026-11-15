@@ -92,11 +92,30 @@ func parseWaivers(data []byte) []waiver {
 	return out
 }
 
-// Check walks root/internal and reports every budget breach. Test
-// files (*_test.go) are out of scope: tests may be verbose, production
-// code must not. Waivers come from exceptionsPath
-// (docs/quality-exceptions.md); a waived item passes but stays listed.
+// checker accumulates violations while walking one tree.
 func Check(root, exceptionsPath string) []Violation {
+	waivers, problems := loadWaivers(root, exceptionsPath)
+	coupling := map[string]map[string]bool{}
+	_ = filepath.Walk(filepath.Join(root, "internal"), func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		problems = append(problems, checkOneFile(root, p, waivers, coupling)...)
+		return nil
+	})
+	problems = append(problems, checkCoupling(coupling)...)
+	sort.Slice(problems, func(i, j int) bool {
+		if problems[i].Where != problems[j].Where {
+			return problems[i].Where < problems[j].Where
+		}
+		return problems[i].Kind < problems[j].Kind
+	})
+	return problems
+}
+
+// loadWaivers reads the exceptions file; expired or malformed entries
+// are reported instead of silently applied.
+func loadWaivers(root, exceptionsPath string) (map[string]waiver, []Violation) {
 	var problems []Violation
 	waivers := map[string]waiver{}
 	if data, err := os.ReadFile(filepath.Join(root, exceptionsPath)); err == nil {
@@ -113,60 +132,81 @@ func Check(root, exceptionsPath string) []Violation {
 			problems = append(problems, Violation{Where: key, Kind: "waiver-expired", Detail: "remove the line or renew with a new expira date"})
 		}
 	}
-	var coupling = map[string]map[string]bool{}
-	_ = filepath.Walk(filepath.Join(root, "internal"), func(p string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, p)
-		rel = filepath.ToSlash(rel)
-		pkg := filepath.Base(filepath.Dir(p))
-		lim := limitsFor(pkg)
-		src, err := os.ReadFile(p)
-		if err != nil {
-			return nil
-		}
-		n := 1
-		for _, b := range src {
-			if b == '\n' {
-				n++
-			}
-		}
-		if n > lim.Files && !waived(waivers, rel+":*") {
-			problems = append(problems, Violation{Where: rel, Kind: "file-too-big", Detail: fmt.Sprintf("%d lines, cap %d (split the file or add a file:* waiver with expira)", n, lim.Files)})
-		}
-		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, p, src, 0)
-		if err != nil {
-			return nil
-		}
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			size := fset.Position(fn.End()).Line - fset.Position(fn.Pos()).Line + 1
-			if size > lim.Funcs && !waived(waivers, rel+":"+fn.Name.Name) {
-				problems = append(problems, Violation{Where: rel + ":" + fn.Name.Name, Kind: "func-too-big", Detail: fmt.Sprintf("%d lines, cap %d (split the function or add a waiver with expira)", size, lim.Funcs)})
-			}
-		}
-		for _, imp := range f.Imports {
-			path := strings.Trim(imp.Path.Value, `"`)
-			if rest, ok := strings.CutPrefix(path, "regulus-ai/internal/"); ok {
-				dep := rest
-				if i := strings.Index(dep, "/"); i >= 0 {
-					dep = dep[:i]
-				}
-				if dep != "" && dep != pkg {
-					if coupling[pkg] == nil {
-						coupling[pkg] = map[string]bool{}
-					}
-					coupling[pkg][dep] = true
-				}
-			}
-		}
+	return waivers, problems
+}
+
+// checkOneFile reports file and function budget breaches for one Go
+// file and records its internal imports for the coupling check.
+func checkOneFile(root, p string, waivers map[string]waiver, coupling map[string]map[string]bool) []Violation {
+	var problems []Violation
+	rel, _ := filepath.Rel(root, p)
+	rel = filepath.ToSlash(rel)
+	pkg := filepath.Base(filepath.Dir(p))
+	lim := limitsFor(pkg)
+	src, err := os.ReadFile(p)
+	if err != nil {
 		return nil
-	})
+	}
+	if n := lineCount(src); n > lim.Files && !waived(waivers, rel+":*") {
+		problems = append(problems, Violation{Where: rel, Kind: "file-too-big", Detail: fmt.Sprintf("%d lines, cap %d (split the file or add a file:* waiver with expira)", n, lim.Files)})
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, p, src, 0)
+	if err != nil {
+		return problems
+	}
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		size := fset.Position(fn.End()).Line - fset.Position(fn.Pos()).Line + 1
+		if size > lim.Funcs && !waived(waivers, rel+":"+fn.Name.Name) {
+			problems = append(problems, Violation{Where: rel + ":" + fn.Name.Name, Kind: "func-too-big", Detail: fmt.Sprintf("%d lines, cap %d (split the function or add a waiver with expira)", size, lim.Funcs)})
+		}
+	}
+	recordImports(f, pkg, coupling)
+	return problems
+}
+
+func lineCount(src []byte) int {
+	n := 1
+	for _, b := range src {
+		if b == '\n' {
+			n++
+		}
+	}
+	return n
+}
+
+// recordImports notes this file's internal dependencies for the
+// per-package coupling budget.
+func recordImports(f *ast.File, pkg string, coupling map[string]map[string]bool) {
+	for _, imp := range f.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		rest, ok := strings.CutPrefix(path, "regulus-ai/internal/")
+		if !ok {
+			continue
+		}
+		dep := rest
+		if i := strings.Index(dep, "/"); i >= 0 {
+			dep = dep[:i]
+		}
+		if dep == "" || dep == pkg {
+			continue
+		}
+		if coupling[pkg] == nil {
+			coupling[pkg] = map[string]bool{}
+		}
+		coupling[pkg][dep] = true
+	}
+}
+
+// checkCoupling reports packages whose internal imports exceed the
+// coupling budget, naming the dependency set for the fix.
+
+func checkCoupling(coupling map[string]map[string]bool) []Violation {
+	var problems []Violation
 	var pkgs []string
 	for pkg := range coupling {
 		pkgs = append(pkgs, pkg)
@@ -174,21 +214,16 @@ func Check(root, exceptionsPath string) []Violation {
 	sort.Strings(pkgs)
 	for _, pkg := range pkgs {
 		lim := limitsFor(pkg)
-		if len(coupling[pkg]) > lim.Coupling {
-			var deps []string
-			for d := range coupling[pkg] {
-				deps = append(deps, d)
-			}
-			sort.Strings(deps)
-			problems = append(problems, Violation{Where: "internal/" + pkg, Kind: "too-coupled", Detail: fmt.Sprintf("%d internal deps (%s), cap %d", len(deps), strings.Join(deps, ", "), lim.Coupling)})
+		if len(coupling[pkg]) <= lim.Coupling {
+			continue
 		}
+		var deps []string
+		for d := range coupling[pkg] {
+			deps = append(deps, d)
+		}
+		sort.Strings(deps)
+		problems = append(problems, Violation{Where: "internal/" + pkg, Kind: "too-coupled", Detail: fmt.Sprintf("%d internal deps (%s), cap %d", len(deps), strings.Join(deps, ", "), lim.Coupling)})
 	}
-	sort.Slice(problems, func(i, j int) bool {
-		if problems[i].Where != problems[j].Where {
-			return problems[i].Where < problems[j].Where
-		}
-		return problems[i].Kind < problems[j].Kind
-	})
 	return problems
 }
 
