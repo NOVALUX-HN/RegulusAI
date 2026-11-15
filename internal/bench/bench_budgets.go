@@ -220,13 +220,13 @@ func chooseGateProfile(changed []string, forceFull bool) string {
 }
 
 // checkGateProfileDecision pins the tradeoff through real selection:
-// docs-only chooses quick (11 required, no full-only gates), gate code
-// or forced full chooses the 15-gate gauntlet.
+// docs-only chooses quick (12 required, no full-only gates), gate code
+// or forced full chooses the 16-gate gauntlet.
 func checkGateProfileDecision() (string, error) {
 	cfg := realGateConfig()
 	quick, err := gates.SelectGates(cfg, chooseGateProfile([]string{"charts/flow.md", "README.md"}, false))
-	if err != nil || len(quick) != 11 {
-		return "", fmt.Errorf("docs-only: got %d gates (%v), want 11 quick", len(quick), err)
+	if err != nil || len(quick) != 12 {
+		return "", fmt.Errorf("docs-only: got %d gates (%v), want 12 quick", len(quick), err)
 	}
 	for _, g := range quick {
 		if g.Name == "mutation-receipts" || g.Name == "mutation-gates" || g.Name == "vulncheck" || g.Name == "race-almanac" {
@@ -234,8 +234,8 @@ func checkGateProfileDecision() (string, error) {
 		}
 	}
 	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
-	if err != nil || len(full) != 15 {
-		return "", fmt.Errorf("gate code: got %d gates (%v), want 15 full", len(full), err)
+	if err != nil || len(full) != 16 {
+		return "", fmt.Errorf("gate code: got %d gates (%v), want 16 full", len(full), err)
 	}
 	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
 		return "", fmt.Errorf("forced full: chose %q, want full", got)
@@ -243,7 +243,7 @@ func checkGateProfileDecision() (string, error) {
 	if got := chooseGateProfile([]string{"charts/flow.md", "internal/x.go"}, false); got != "" {
 		return "", fmt.Errorf("mixed scope: chose %q, want full", got)
 	}
-	return "docs-only edits ride quick=11, gate code rides full=15, forced full honored", nil
+	return "docs-only edits ride quick=12, gate code rides full=16, forced full honored", nil
 }
 
 // missDoc is one eval corpus entry for the miss-rate golden (B14).

@@ -100,7 +100,7 @@ type Comparison struct {
 // prose spec, veracity round-trip, gate selection, security jail,
 // honest-zero cost) with hidden machine checks, plus the P1 golden
 // additions: real retrieval over a golden corpus (B8), the real
-// fifteen-gate profile contract (B9), and golden T1 token-proxy values
+// sixteen-gate profile contract (B9), and golden T1 token-proxy values
 // (B10). B1–B7 keep their IDs, titles, kinds and prompts so the v1
 // baseline rows stay comparable.
 func Suite() []Task {
@@ -118,7 +118,7 @@ func Suite() []Task {
 			Prompt: "Write one evidence receipt and read it back unchanged.",
 			Check:  checkReceiptRoundTrip},
 		{ID: "B5", Title: "gate-selection", Kind: "gates",
-			Prompt: "Select the lean quick set and the full and quick profiles over the real fifteen-gate gauntlet.",
+			Prompt: "Select the lean quick set and the full and quick profiles over the real sixteen-gate gauntlet.",
 			Check:  checkGateSelection},
 		{ID: "B6", Title: "security-evidence-jail", Kind: "security",
 			Prompt: "Refuse a task id that escapes the evidence directory.",
@@ -130,7 +130,7 @@ func Suite() []Task {
 			Prompt: "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
 			Check:  checkRetrievalGolden},
 		{ID: "B9", Title: "gates-real-profile", Kind: "gates",
-			Prompt: "Select the full and quick gate profiles over a realistic fifteen-gate gauntlet and refuse unknown profiles.",
+			Prompt: "Select the full and quick gate profiles over a realistic sixteen-gate gauntlet and refuse unknown profiles.",
 			Check:  checkRealGateProfile},
 		{ID: "B10", Title: "token-proxy-golden", Kind: "tokens",
 			Prompt: "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",

@@ -60,6 +60,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"chart":    func(c CLI, args []string) int { return c.chartCmd(args) },
 	"init":     func(c CLI, args []string) int { return c.initCmd(args) },
 	"surface":  func(c CLI, args []string) int { return c.surfaceCmd(args) },
+	"size":     func(c CLI, args []string) int { return c.sizeCmd(args) },
 	"evidence": func(c CLI, args []string) int { return c.evidenceCmd(args) },
 	"gate":     func(c CLI, args []string) int { return c.gateCmd(args) },
 	"mcp":      func(c CLI, args []string) int { return c.mcpCmd(args) },
@@ -280,6 +281,7 @@ Commands:
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
   mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
   serve [--port N] [--bind ADDR]   serve the read-only dashboard (default 127.0.0.1:17817)
+  size check         file/function/package size budgets with critical-kernel tiers (regulus size --help)
   memory note|show|save|search|history|pin|unpin|relate|export|import|context|prune|doctor|reindex|verify|reject|check|status|mine   the Almanac — persistent memory
   probe contrast --task <t> --gate <g> --a <cmdA> --b <cmdB>   run one gate twice and diff the receipts
   probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>   run one gate three times and merge the variants

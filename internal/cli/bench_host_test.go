@@ -40,7 +40,9 @@ func writeFakeRegulus(t *testing.T, failOn string) string {
 		p := filepath.Join(dir, "regulus.cmd")
 		body := "@echo off\r\n"
 		if failOn != "" {
-			body += "%SystemRoot%\\System32\\findstr /C:" + failOn + " \"%*\" >nul && (echo boom>&2 & exit /b 1)\r\n"
+			// Match one exact argument: findstr treats the value as a
+			// filename, so loop over %* instead.
+			body += "for %%a in (%*) do if \"%%a\"==\"" + failOn + "\" (echo boom>&2 & exit /b 1)\r\n"
 		}
 		body += "echo fake-ok\r\nexit /b 0\r\n"
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {

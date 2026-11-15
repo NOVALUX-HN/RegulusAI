@@ -123,7 +123,7 @@ func checkReceiptRoundTrip() (string, error) {
 // boolPtr marks one gate optional: the quick profile must skip it.
 func boolPtr(b bool) *bool { return &b }
 
-// checkGateSelection pins gate selection over the real fifteen-gate
+// checkGateSelection pins gate selection over the real sixteen-gate
 // mirror: full resolves all fifteen, the T5 lean preset resolves exactly
 // the six quick names, and an unknown profile refuses. The six names
 // are pinned literally, so selection drift — a renamed gate, or
@@ -131,7 +131,7 @@ func boolPtr(b bool) *bool { return &b }
 func checkGateSelection() (string, error) {
 	cfg := realGateConfig()
 	full, err := gates.SelectGates(cfg, "")
-	if err != nil || len(full) != 15 {
+	if err != nil || len(full) != 16 {
 		return "", fmt.Errorf("full profile: got %d gates (%v)", len(full), err)
 	}
 	if err := assertLeanSelection(cfg); err != nil {
@@ -140,7 +140,7 @@ func checkGateSelection() (string, error) {
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=15, lean=6 (typecheck lint build unit-tests spec gofmt), unknown refused", nil
+	return "full=16, lean=6 (typecheck lint build unit-tests spec gofmt), unknown refused", nil
 }
 
 // checkEvidenceJail accepts a scoped task and refuses a traversal.

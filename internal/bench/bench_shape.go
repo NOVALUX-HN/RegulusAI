@@ -20,7 +20,7 @@ type gauntletShapeGate struct {
 }
 
 // gauntletShape is the checked-in bench/gauntlet-shape.json: the real
-// fifteen-gate gauntlet plus the six T5 --quick names, generated from
+// sixteen-gate gauntlet plus the six T5 --quick names, generated from
 // regulus.json (the file's generation key holds the exact command).
 type gauntletShape struct {
 	Gates     []gauntletShapeGate `json:"gates"`
@@ -128,7 +128,7 @@ func assertLeanSelection(cfg gates.Config) error {
 	return nil
 }
 
-// realGateConfig mirrors the shipped fifteen-gate gauntlet in declaration
+// realGateConfig mirrors the shipped sixteen-gate gauntlet in declaration
 // order. The suite tests validate the mirror against the checked-in
 // bench/gauntlet-shape.json (generated from regulus.json), so a renamed
 // gate or a flipped required flag fails `go test` instead of staying
@@ -137,14 +137,14 @@ func assertLeanSelection(cfg gates.Config) error {
 // quick select every required gate in order, unknown profiles refuse.
 // Commands are shape-only; selection is what the check pins.
 func realGateConfig() gates.Config {
-	names := []string{"manifest-check", "typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation-receipts", "mutation-gates", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt", "race-almanac"}
+	names := []string{"manifest-check", "typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation-receipts", "mutation-gates", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt", "race-almanac", "size"}
 	cmds := []string{
 		"regulus manifest check", "go build ./...", "go vet ./...", "go build -o bin/regulus ./cmd/regulus",
 		"go test ./...", "go tool cover -func .regulus/coverage.out",
 		"gremlins unleash ./internal/receipts", "gremlins unleash ./internal/gates", "regulus crap --max 30",
 		"govulncheck ./...", "regulus spec check charts/",
 		"bunx tsc --noEmit", "bun test ./.opencode/lib/", "gofmt -l .",
-		"go test -race -count=1 ./internal/almanac/",
+		"go test -race -count=1 ./internal/almanac", "regulus size check",
 	}
 	cfg := gates.Config{}
 	for i, name := range names {
@@ -164,8 +164,8 @@ func realGateConfig() gates.Config {
 }
 
 // checkRealGateProfile pins the real gauntlet shape through profile
-// selection: full keeps all fifteen gates in declaration order with halt
-// policy, quick keeps the 11 required gates (mutation-receipts +
+// selection: full keeps all sixteen gates in declaration order with halt
+// policy, quick keeps the 12 required gates (mutation-receipts +
 // mutation-gates + vulncheck + race-almanac are full-only), and an unknown profile refuses.
 func checkRealGateProfile() (string, error) {
 	cfg := realGateConfig()
@@ -173,8 +173,8 @@ func checkRealGateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(full) != 15 {
-		return "", fmt.Errorf("full profile: got %d gates, want 15", len(full))
+	if len(full) != 16 {
+		return "", fmt.Errorf("full profile: got %d gates, want 16", len(full))
 	}
 	for i, g := range full {
 		if g.Name != cfg.Gates[i].Name {
@@ -188,11 +188,11 @@ func checkRealGateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(quick) != 11 {
-		return "", fmt.Errorf("quick profile: got %d gates, want 11 required", len(quick))
+	if len(quick) != 12 {
+		return "", fmt.Errorf("quick profile: got %d gates, want 12 required", len(quick))
 	}
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=15, quick=11 required in order, unknown refused", nil
+	return "full=16, quick=12 required in order, unknown refused", nil
 }

@@ -18,6 +18,7 @@
     { "name": "ts-typecheck", "layer": 12, "command": "bunx tsc --noEmit -p .opencode/tsconfig.json", "category": "build", "required": true },
     { "name": "ts-unit-tests", "layer": 13, "command": "bun test ./.opencode/lib/", "category": "test", "required": true },
     { "name": "gofmt", "layer": 14, "command": "go test ./internal/gates/ -run TestGofmtClean -count=1", "category": "analysis", "required": true },
-    { "name": "race-almanac", "layer": 15, "command": "go test -race -count=1 ./internal/almanac/", "category": "test", "required": false, "profiles": ["full"] }
+    { "name": "race-almanac", "layer": 15, "command": "go test -race -count=1 ./internal/almanac/", "category": "test", "required": false, "profiles": ["full"] },
+    { "name": "size", "layer": 16, "command": "go run ./cmd/regulus size check", "category": "analysis", "required": true }
   ]
 }

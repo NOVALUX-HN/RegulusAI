@@ -37,7 +37,7 @@ conditions and reproducibility — and executes nothing.
 
 ### Gate roster (pinned)
 
-The fifteen gates below are the contract: `bench/gauntlet-shape.json`
+The sixteen gates below are the contract: `bench/gauntlet-shape.json`
 mirrors this table (generated from `regulus.json` plus the T5 `--quick`
 preset in `internal/gates/quick_lean.go`), and the bench suite fails
 when any of the three drifts. `required` is the `regulus.json` value
@@ -61,6 +61,7 @@ lists the declared memberships (`—` means none).
 | ts-unit-tests | 13 | true | — |
 | gofmt | 14 | true | — |
 | race-almanac | 15 | false | full |
+| size | 16 | true | — |
 
 ## 3. Semantic verification: guardians
 

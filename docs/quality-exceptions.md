@@ -7,3 +7,7 @@ Discount rule: a waived function is listed (tier `waived`) but discounts
 every Max — effective, critical and standard maxima skip it, so it never
 fails the gate. Past `expira` means remove the line; waivers never hide
 unmeasured code (it stays `unknown`, never 0).
+
+Size gate (`regulus size check`, NOV-67) reads the same file: `file:func`
+waives one oversized function, `file:*` waives one oversized file.
+Expired or malformed waivers fail the gate instead of staying silent.

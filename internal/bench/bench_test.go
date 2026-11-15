@@ -48,7 +48,7 @@ func TestSuitePromptsHideAnswers(t *testing.T) {
 func TestSuiteGoldenPromptsPinned(t *testing.T) {
 	golden := map[string]string{
 		"B8":  "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
-		"B9":  "Select the full and quick gate profiles over a realistic fifteen-gate gauntlet and refuse unknown profiles.",
+		"B9":  "Select the full and quick gate profiles over a realistic sixteen-gate gauntlet and refuse unknown profiles.",
 		"B10": "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
 	}
 	for _, task := range Suite() {
@@ -148,7 +148,7 @@ func TestB13GateProfileDecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("B13 check failed: %v", err)
 	}
-	for _, want := range []string{"quick=11", "full=15", "docs-only"} {
+	for _, want := range []string{"quick=12", "full=16", "docs-only"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B13 detail must contain %q, got %q", want, detail)
 		}
@@ -303,13 +303,13 @@ func TestB8RetrievalGolden(t *testing.T) {
 	}
 }
 
-// P1: B9 pins the real fifteen-gate profile contract (quick=11, full-only mutation-receipts/mutation-gates/vulncheck/race-almanac).
+// P1: B9 pins the real sixteen-gate profile contract (quick=12, full-only mutation-receipts/mutation-gates/vulncheck/race-almanac).
 func TestB9RealGateProfile(t *testing.T) {
 	detail, err := checkRealGateProfile()
 	if err != nil {
 		t.Fatalf("B9 check failed: %v", err)
 	}
-	for _, want := range []string{"full=15", "quick=11", "unknown refused"} {
+	for _, want := range []string{"full=16", "quick=12", "unknown refused"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B9 detail must contain %q, got %q", want, detail)
 		}
@@ -487,7 +487,7 @@ func TestB5LeanPreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("B5 check failed: %v", err)
 	}
-	for _, want := range []string{"full=15", "lean=6", "unknown refused"} {
+	for _, want := range []string{"full=16", "lean=6", "unknown refused"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B5 detail must contain %q, got %q", want, detail)
 		}

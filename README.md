@@ -92,7 +92,7 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus reflect --domain --task --cue --lesson <doc>` | propose an evidence-gated lesson candidate (nothing admitted without a guardian) |
 | `regulus library candidates` | pending candidates |
 
-![The 15-gate gauntlet](docs/assets/gauntlet.png)
+![The 16-gate gauntlet](docs/assets/gauntlet.png)
 | `regulus library admit --domain --candidate --guardian` | complete the admission: INDEX + Almanac + ledger |
 | `regulus library list / show` | admitted lessons / the domain INDEX, verbatim |
 | `regulus budget show` | the evolution ledger, oldest first |
