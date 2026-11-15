@@ -99,10 +99,22 @@ func TestBenchAgentReportReadsEvidenceDir(t *testing.T) {
 	if code := c.Run([]string{"bench", "agent-report", "--evidence-dir", dir}); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	for _, want := range []string{"agent-tasks", "abc", "INCONCLUSIVE", "pass-rate 0.50", "RepMin", "measured-host"} {
-		if !strings.Contains(out.String(), want) && !strings.Contains(strings.ToLower(out.String()), strings.ToLower(want)) {
+	for _, want := range []string{"agent-tasks", "abc", "pass-rate 0.50", "rep-spread 0.50-0.50", "measured-host", "max 0.50 over 2 evaluable"} {
+		if !strings.Contains(out.String(), want) {
 			t.Fatalf("report missing %q:\n%s", want, out.String())
 		}
+	}
+	// Nothing evaluable still reports honestly instead of passing.
+	dir2 := t.TempDir()
+	if _, err := bench.WriteAgentEvidence(dir2, []bench.AgentOutcome{{TaskID: "AT1", Split: "exploration", Status: bench.AgentInfra}}, bench.AgentRunManifest{SuiteVersion: bench.AgentSuiteVersion}); err != nil {
+		t.Fatal(err)
+	}
+	c2, out2, _ := newCLI(nil)
+	if code := c2.Run([]string{"bench", "agent-report", "--evidence-dir", dir2}); code != 0 {
+		t.Fatalf("exit = %d, want 0 (inconclusive is not a failure)", code)
+	}
+	if !strings.Contains(out2.String(), "INCONCLUSIVE") {
+		t.Fatalf("empty evidence must say INCONCLUSIVE:\n%s", out2.String())
 	}
 }
 
