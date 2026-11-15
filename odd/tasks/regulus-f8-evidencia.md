@@ -17,7 +17,7 @@ Cerrar 10 issues Backlog en develop, solo main+develop, comentando en Linear qu�
 - T47 NOV-71 Paso 50 ciclo real | S4 | route: inline | commit: 0804e72 Done (TIE+aprobacion humana: adopta recortados; rechazo real documentado)
 - T48 NOV-65 Paso 47 fuzz/bench | S5 | route: inline | commit: b993bbf Done (2 fail-closed reales en allowlist; perf P95 queda fuera: entorno)
 - T49 NOV-66 Paso 48 Windows full | S5 | route: inline | commit: f02e89b Done
-- T50 NOV-67 Paso 49 modularización | S5 | route: inline | commit: 631a3bc+3aa6dad+ad21227+806ee4f+9378050+cfae599+947cb25 Done (dashboard embed byte-identico, memory/bench/gates split, domain.ts 9 modulos + plugin tests, gate size 16; run_split pin, S8 exact-match fix)
+- T50 NOV-67 Paso 49 modularización | S5 | route: inline | commit: 631a3bc+3aa6dad+ad21227+806ee4f+9378050+cfae599+947cb25+c17e8b4+3534adc+b0a6fd2+938d3c4+a1a4298+9644e19 Done (dashboard embed byte-identico, memory/bench/gates split, domain.ts 9 modulos + plugin tests, gate size 16; run_split pin, S8 exact-match fix, fuzz regression corpus, size coupling tests)
 - T51 NOV-70 Paso 51 releases | S5 | route: inline | commit: b22264f+938d3c8 Done (tag push de prueba pendiente: decision de publicacion)
 
 ## Log
