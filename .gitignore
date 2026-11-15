@@ -39,3 +39,5 @@ docs/EVIDENCE.md
 .DS_Store
 Thumbs.db
 .gocache/
+.regulus-test/
+.regulus-test-cache/
