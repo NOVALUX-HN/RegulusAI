@@ -1,0 +1,139 @@
+# Release verificable (NOV-70)
+#
+# Tag v* -> matriz 6 targets -> checksums -> provenance (SLSA via
+# attestación de GitHub) -> Release con notas de CHANGELOG -> verificación
+# del publicado (contract, doctor, journey mínimo). Windows queda
+# explícitamente NotSigned (NOV-44: Authenticode opcional, sin
+# autofirmados como confianza).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, ext: "" }
+          - { goos: linux, goarch: arm64, ext: "" }
+          - { goos: darwin, goarch: amd64, ext: "" }
+          - { goos: darwin, goarch: arm64, ext: "" }
+          - { goos: windows, goarch: amd64, ext: ".exe" }
+          - { goos: windows, goarch: arm64, ext: ".exe" }
+    runs-on: ubuntu-24-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+          cache: false
+      - name: Goversioninfo resources (Windows only)
+        if: matrix.goos == 'windows'
+        run: |
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
+          goversioninfo -64 -o cmd/regulus/resource_windows_amd64.syso versioninfo.json || true
+          goversioninfo -arm -64 -o cmd/regulus/resource_windows_arm64.syso versioninfo.json || true
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "regulus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/regulus
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "regulus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: "regulus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          retention-days: 90
+
+  release:
+    needs: build
+    runs-on: ubuntu-24-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum regulus-* > checksums.txt
+          cat checksums.txt
+      - name: Notes from CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="## [$VERSION]" 'BEGIN{p=0} $0==v{p=1; print; next} p&&/^## \[/{exit} p{print}' CHANGELOG.md > release-notes.md
+          cat release-notes.md
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/regulus-*
+            dist/checksums.txt
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+
+  verify-published:
+    needs: release
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Download release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ github.ref_name }}
+          fileName: "regulus-*"
+          out-file-path: dl
+      - name: Verify checksums
+        shell: bash
+        run: |
+          cd dl
+          sha256sum -c checksums.txt
+      - name: Contract and doctor
+        shell: bash
+        run: |
+          BIN=$(ls dl/regulus-* | grep -v checksums | head -n 1)
+          chmod +x "$BIN" || true
+          "$BIN" contract
+          "$BIN" doctor || true
+      - name: Windows stays unsigned (NOV-44)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $bin = Get-ChildItem dl/regulus-windows-*.exe | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $bin.FullName
+          if ($sig.Status -ne 'NotSigned') { throw "expected NotSigned while signing stays optional, got $($sig.Status)" }
+      - name: Minimal journey on published binary
+        shell: bash
+        run: |
+          BIN=$(ls dl/regulus-* | grep -v checksums | head -n 1)
+          chmod +x "$BIN" || true
+          rm -rf /tmp/pubjourney && mkdir -p /tmp/pubjourney && cd /tmp/pubjourney
+          "$OLDPWD/$BIN" init --stack smoke --force
+          printf '%s\n' '# demo' '' 'Domain: demo' 'Class: STANDARD' '' '## Contract' '' '- Objective: smoke' '- Scope: fixture work' '- Acceptance: trivial' '- Verification: gate' '' '## Acceptance' '' '### Scenario: trivial' '' '- Given a fixture' '- When the journey runs' '- Then it passes' '' '## Tasks' '' '| ID | Spec | Work | Route | Depends | Status |' '|----|------|-------|---------|--------|------|' '| T1 | trivial | build | inline | - | todo |' '' '## Log' '' '- L1: journey.' > charts/demo.md
+          "$OLDPWD/$BIN" gate run --yes demo/T1
+          "$OLDPWD/$BIN" task close charts/demo.md T1

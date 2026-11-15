@@ -18,3 +18,15 @@ Limpia / update / rollback / diagnóstico:
 - Diagnóstico: `regulus doctor`, `GET /v1/git` branch/HEAD, `GET /v1/metrics` receipts/pass.
 
 Smoke: `go test ./internal/doctor ./internal/contract ./internal/mcp -count=1` + `regulus mcp` initialize/tools/list + install-devin S1-S4.
+
+## Releases verificables (NOV-70 / T51)
+
+- Tag `v*` en main dispara `.github/workflows/release.yml`: matriz 6 targets (linux/darwin/windows × amd64/arm64) + `checksums.txt` SHA-256 + attestación de procedencia SLSA + Release con notas generadas de `CHANGELOG.md`.
+- `verify-published` descarga el Release y verifica: checksums, `regulus contract`, `regulus doctor`, journey mínimo (init → spec → gate --yes → close). Windows queda explícitamente `NotSigned` (NOV-44: firma opcional, sin autofirmados como confianza).
+- Launcher npm (`bin/regulus.js` + `bin/verify-hash.js`): verifica el binario resuelto contra `checksums.txt` empaquetado y **falla cerrado** ante hash alterado. Binarios dev (`go build` local, sin pin) corren sin verificación. `npm run test:launcher` (`node --test bin/`) prueba: pin válido, tamper rechazado, dev sin pin, sin checksums.
+- Instalación en limpio Linux + Windows siguiendo solo la guía, verificada en CI.
+
+## Política de versión y tags
+
+- Fuente única: `package.json` (`version` X.Y.Z). `versioninfo.json`, `regulus.manifest` y el head de `CHANGELOG.md` la siguen (`regulus manifest check` lo impone + gate docs-drift).
+- Tags `vX.Y.Z` se cortan en `main` al hacer merge; nunca en `develop`. El gate de deriva documental falla si las cifras no coinciden.

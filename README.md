@@ -20,8 +20,10 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 **Prerequisites**: [OpenCode V2](https://opencode.ai) (primary host — the doctor refuses V1), Node.js 18+ and Go (the core build). Codex, Claude Code and Devin work through their native adapters (AGENTS.md, CLAUDE.md, `.devin/`); see [docs/conformity-matrix.md](docs/conformity-matrix.md) for the verified capability matrix per host.
 
 ```bash
-# 1. Build the core from source (no npm distribution yet — `regulus-ai`
-#    is not published; the quickstart is build-from-repo)
+# 1. Build the core from source (or grab a verified release tarball
+#    from GitHub Releases when available — checksums.txt pinned, see
+#    docs/installation.md; `regulus-ai` is not on the npm registry,
+#    the quickstart is build-from-repo)
 git clone https://github.com/NOVALUX-HN/RegulusAI && cd RegulusAI
 npm run build          # = bash scripts/build.bash → binaries/regulus-<os>-<arch> + stamped local bin/regulus
 # then put the binary for your platform on your PATH as `regulus`
