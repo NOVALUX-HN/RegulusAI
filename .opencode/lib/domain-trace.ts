@@ -16,6 +16,11 @@ const TRACE_RECORD_STR_FLAGS: ReadonlyMap<string, string> = new Map([
   ["--tool", "tool"],
   ["--status", "status"],
   ["--task", "task"],
+  ["--execution-id", "execution_id"],
+  ["--model", "model"],
+  ["--host", "host"],
+  ["--host-version", "host_version"],
+  ["--usage-source", "usage_source"],
 ]);
 
 const TRACE_RECORD_NUM_FLAGS: ReadonlyMap<string, string> = new Map([
@@ -23,7 +28,55 @@ const TRACE_RECORD_NUM_FLAGS: ReadonlyMap<string, string> = new Map([
   ["--output-bytes", "output_bytes"],
   ["--input-tokens", "input_tokens"],
   ["--output-tokens", "output_tokens"],
+  ["--cache-read-tokens", "cache_read"],
+  ["--cache-write-tokens", "cache_write"],
 ]);
+
+// usageFlags builds the host-usage `trace record` flags from an
+// execute.after event usage payload. The current OpenCode plugin API
+// does not expose per-call usage on the event (Nov-73 verified against
+// the installed SDK: tool/session/agent/message/id/input/status only),
+// so a missing or malformed payload yields no flags and the hook keeps
+// recording cost without usage — never estimated, never zero-filled.
+// When a future host (or SDK) exposes usage, the same flags flow into
+// the batcher (maps above) instead of falling back to single spawns.
+export function usageFlags(usage: unknown): string[] {
+  if (typeof usage !== "object" || usage === null || Array.isArray(usage)) return [];
+  const u = usage as Record<string, unknown>;
+  const out: string[] = [];
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 && Math.floor(v) === v ? v : null;
+  const str = (v: unknown): string | null =>
+    typeof v === "string" && v.trim() !== "" && !/[\r\n]/.test(v) && v.length <= 512 ? v : null;
+  const tokens: Array<[string, unknown]> = [
+    ["--input-tokens", u.input_tokens ?? u.inputTokens],
+    ["--output-tokens", u.output_tokens ?? u.outputTokens],
+    ["--cache-read-tokens", u.cache_read_tokens ?? u.cacheRead],
+    ["--cache-write-tokens", u.cache_write_tokens ?? u.cacheWrite],
+  ];
+  let anyUsage = false;
+  for (const [flag, v] of tokens) {
+    const n = num(v);
+    if (n !== null && n > 0) {
+      out.push(flag, String(n));
+      anyUsage = true;
+    }
+  }
+  const texts: Array<[string, unknown]> = [
+    ["--model", u.model],
+    ["--host", u.host],
+    ["--host-version", u.host_version ?? u.hostVersion],
+  ];
+  for (const [flag, v] of texts) {
+    const s = str(v);
+    if (s !== null) {
+      out.push(flag, s);
+      anyUsage = true;
+    }
+  }
+  if (anyUsage) out.push("--usage-source", "measured-host");
+  return out;
+}
 
 // traceRecordArgvToEntry converts one `trace record` argv into its
 // record-batch NDJSON object. Returns null when the argv is not a
