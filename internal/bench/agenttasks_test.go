@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -225,5 +226,25 @@ func TestAgentSummarySeparatesBuckets(t *testing.T) {
 	}
 	if sum.RepMin != 0.5 || sum.RepMax != 0.5 {
 		t.Fatalf("rep spread wrong: %+v", sum)
+	}
+}
+
+func TestToExplorationOutcomesMapsStatuses(t *testing.T) {
+	out := ToExplorationOutcomes("v", []AgentOutcome{
+		{TaskID: "A", Rep: 0, Status: AgentPass},
+		{TaskID: "B", Rep: 0, Status: AgentFail},
+		{TaskID: "C", Rep: 0, Status: AgentTimeout},
+		{TaskID: "D", Rep: 0, Status: AgentInfra},
+		{TaskID: "E", Rep: 0, Status: AgentNotRun},
+	})
+	want := map[string]string{"A": "pass", "B": "fail", "C": "timeout", "D": "infra", "E": "non-evaluable"}
+	if len(out) != len(want) {
+		t.Fatalf("got %d outcomes, want %d", len(out), len(want))
+	}
+	for _, o := range out {
+		id := strings.TrimPrefix(o.ID, "v/")
+		if want[id] == "" || string(o.Status) != want[id] {
+			t.Fatalf("task %s mapped to %q, want %q", id, o.Status, want[id])
+		}
 	}
 }
