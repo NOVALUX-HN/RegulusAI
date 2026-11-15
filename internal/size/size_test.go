@@ -31,7 +31,8 @@ func TestCheckCleanTreePasses(t *testing.T) {
 
 func TestCheckFailsOversizedFileAndFunc(t *testing.T) {
 	dir := t.TempDir()
-	body := "package big\n\nfunc Huge() int {\n" + strings.Repeat("\t_ = 1\n", 300) + "\treturn 1\n}\n"
+	pad := strings.Repeat("// padding line to exceed the file cap\n", 600)
+	body := "package big\n\n" + pad + "func Huge() int {\n" + strings.Repeat("\t_ = 1\n", 300) + "\treturn 1\n}\n"
 	writeGo(t, dir, "internal/big/big.go", body)
 	got := Check(dir, "docs/quality-exceptions.md")
 	var file, fn bool
