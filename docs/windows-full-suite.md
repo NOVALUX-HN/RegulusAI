@@ -29,7 +29,24 @@ env estricto:
   (mismos umbrales que `regulus.json`); `gremlins`/`govulncheck` solo
   si están instalados con los pins del workflow.
 
-CI (`windows.yml`, job `windows-native`): build multiplataforma, vet,
+## Pre-commit local (replicar CI antes de cada commit)
+
+El mismo flujo, en el mismo orden, sin sorpresas en el push:
+
+```powershell
+# 1. Gauntlet completo (16 capas, mismos comandos y umbrales que CI)
+go build -o bin/regulus.exe ./cmd/regulus
+./bin/regulus.exe gate run --yes ci/push
+# 2. Suite Windows (mismo runner que CI)
+powershell -NoProfile -File scripts/test-windows.ps1
+```
+
+`gate run` ejecuta las 16 capas con receipts; si una capa cae, el
+artifact `.regulus/evidence/ci__push/` trae el receipt exacto (el
+mismo que subiría CI). Para iterar rápido en una sola capa, usá los
+comandos de `regulus.json` sueltos (ej. el `crap` de arriba).
+
+CI (`ci.yml`, job `windows-native`): build multiplataforma, vet,
 suite completa vía el script, hashes SHA-256 publicados como
 artefacto, y aserción de que el EXE sigue `NotSigned` mientras la
 firma es opcional (NOV-44). El job `windows-protected-audit` vuelca

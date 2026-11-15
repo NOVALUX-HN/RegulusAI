@@ -105,7 +105,7 @@ reproduces the same decisions; `when` conditions that cannot be evaluated
 ## 6. Toolchain and profiles
 
 Heavy gates need three binaries outside the Go module. The pin source
-is CI (`.github/workflows/gauntlet.yml:31-35`); local installs must
+is CI (`.github/workflows/ci.yml`, job `gauntlet`: install steps); local installs must
 match it:
 
 ```bash
