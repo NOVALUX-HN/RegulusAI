@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -1179,9 +1180,7 @@ func TestMemoryPinRelateExport(t *testing.T) {
 }
 
 func TestSearchShowsCommitsBehind(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
+	testenv.Require(t, "git")
 	dir := t.TempDir()
 	t.Chdir(dir)
 	git := func(args ...string) {

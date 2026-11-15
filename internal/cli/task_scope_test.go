@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 )
@@ -22,9 +23,7 @@ func scopeChartDoc(lines ...string) string {
 
 func scopeGit(t *testing.T) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git unavailable")
-	}
+	testenv.Require(t, "git")
 	return "git"
 }
 

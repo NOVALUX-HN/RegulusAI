@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 
@@ -28,9 +29,7 @@ func traceGit(t *testing.T, root string, args ...string) string {
 
 func initTraceRepo(t *testing.T) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git unavailable")
-	}
+	testenv.Require(t, "git")
 	root := t.TempDir()
 	traceGit(t, root, "init", "-q", "-b", "main")
 	traceGit(t, root, "config", "user.email", "dev@example.com")

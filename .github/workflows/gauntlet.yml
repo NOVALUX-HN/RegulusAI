@@ -12,6 +12,10 @@ jobs:
     # gate (~4min) con margen; runner pineado en vez de `latest` flotante.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # NOV-65: ningún test puede omitirse por herramienta ausente;
+    # con STRICT=1 el skip se convierte en fallo.
+    env:
+      REGULUS_STRICT_ENV: "1"
     # the receipts-trail commit (S8) writes docs/EVIDENCE.md back to main
     permissions:
       contents: write

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -228,9 +229,7 @@ func TestGitOutsideRepo(t *testing.T) {
 // V3: inside the checkout /v1/git reports the real branch and short
 // HEAD the manifest writer would pin.
 func TestGitInRepo(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testenv.Require(t, "git")
 	srv := newTestServer()
 	code, body := get(t, srv, "/v1/git")
 	if code != 200 {

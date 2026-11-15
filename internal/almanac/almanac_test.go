@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -407,9 +408,7 @@ func TestNormalizeProjectName(t *testing.T) {
 }
 
 func TestProjectNameRealGit(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
+	testenv.Require(t, "git")
 	dir := t.TempDir()
 	git := func(args ...string) {
 		t.Helper()

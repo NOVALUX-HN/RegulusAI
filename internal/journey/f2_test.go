@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestF2SevenLayers(t *testing.T) {
 	}
 	gremlinsBin := findGremlins(t)
 	if gremlinsBin == "" {
-		t.Skip("gremlins is not installed — the F2 mutation-layer journey skips; the mutation gate was verified live in the session dogfood (feature doc L17)")
+		testenv.Require(t, "gremlins")
 	}
 
 	dir := t.TempDir()

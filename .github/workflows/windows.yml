@@ -10,6 +10,9 @@ jobs:
   windows-native:
     runs-on: windows-2022
     timeout-minutes: 30
+    # NOV-65: ningún test puede omitirse por herramienta ausente.
+    env:
+      REGULUS_STRICT_ENV: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
