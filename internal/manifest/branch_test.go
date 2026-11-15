@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 )
@@ -64,9 +65,7 @@ func TestManifestBranchRoundTrip(t *testing.T) {
 // and returns its root. It skips when git is unavailable.
 func gitFixture(t *testing.T, name string) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testenv.Require(t, "git")
 	root := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()

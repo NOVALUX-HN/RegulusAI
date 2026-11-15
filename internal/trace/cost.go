@@ -36,6 +36,10 @@ const (
 )
 
 // TaskCost is the folded cost of one task's trace entries.
+// TokenSource names the measurement behind the host token totals:
+// measured-host when any entry carried host-exposed counts, unknown
+// otherwise. Sources are never mixed: a bucket with no host counts
+// reports unknown, and unknown is never summed as zero.
 type TaskCost struct {
 	Task              string   `json:"task"`
 	Calls             int      `json:"calls"`
@@ -44,6 +48,9 @@ type TaskCost struct {
 	TotalOutputBytes  int64    `json:"total_output_bytes"`
 	TotalInputTokens  int64    `json:"total_input_tokens"`
 	TotalOutputTokens int64    `json:"total_output_tokens"`
+	TotalCacheRead    int64    `json:"total_cache_read_tokens"`
+	TotalCacheWrite   int64    `json:"total_cache_write_tokens"`
+	TokenSource       string   `json:"token_source"`
 	DurationKnown     bool     `json:"duration_known"`
 	BytesKnown        bool     `json:"bytes_known"`
 	TokensKnown       bool     `json:"tokens_known"`
@@ -126,6 +133,8 @@ func (c *TaskCost) fold(session string, e Entry) {
 	c.TotalOutputBytes += e.OutputBytes
 	c.TotalInputTokens += e.InputTokens
 	c.TotalOutputTokens += e.OutputTokens
+	c.TotalCacheRead += e.CacheRead
+	c.TotalCacheWrite += e.CacheWrite
 	c.TotalLocalTokens += EstimateLocalTokens(e)
 	c.LocalTokensKnown = true
 	if e.DurationMS > 0 {
@@ -134,8 +143,14 @@ func (c *TaskCost) fold(session string, e Entry) {
 	if e.OutputBytes > 0 {
 		c.BytesKnown = true
 	}
-	if e.InputTokens > 0 || e.OutputTokens > 0 {
+	if e.InputTokens > 0 || e.OutputTokens > 0 || e.CacheRead > 0 || e.CacheWrite > 0 {
 		c.TokensKnown = true
+		if c.TokenSource == "" {
+			c.TokenSource = SourceMeasuredHost
+		}
+	}
+	if e.UsageSource != "" && c.TokenSource == "" {
+		c.TokenSource = e.UsageSource
 	}
 	for _, s := range c.Sessions {
 		if s == session {

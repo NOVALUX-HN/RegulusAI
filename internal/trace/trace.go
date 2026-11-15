@@ -58,6 +58,14 @@ const (
 // UnattributedExecution bucket, so legacy hook calls record and read
 // unchanged. Fingerprint ignores them like Task/Phase/cost so
 // contrast diffs stay stable.
+//
+// Real host usage (NOV-62): Model, Host and HostVersion name the
+// model and host that served the call; CacheReadTokens and
+// CacheWriteTokens carry host-exposed cache counts; UsageSource names
+// the measurement (measured-host, measured-local, proxy, unknown).
+// All are optional (omitempty): lines written before these fields
+// existed decode as empty/zero and read as unknown, never as measured
+// zero. Fingerprint ignores them like every other cost field.
 type Entry struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`
@@ -77,6 +85,12 @@ type Entry struct {
 	OutputBytes   int64  `json:"output_bytes,omitempty"`
 	InputTokens   int64  `json:"input_tokens,omitempty"`
 	OutputTokens  int64  `json:"output_tokens,omitempty"`
+	Model         string `json:"model,omitempty"`
+	Host          string `json:"host,omitempty"`
+	HostVersion   string `json:"host_version,omitempty"`
+	CacheRead     int64  `json:"cache_read_tokens,omitempty"`
+	CacheWrite    int64  `json:"cache_write_tokens,omitempty"`
+	UsageSource   string `json:"usage_source,omitempty"`
 }
 
 // maxFiles caps the touched-path hints per entry: relevance needs a
@@ -134,9 +148,22 @@ func validate(e Entry) error {
 	for field, v := range map[string]int64{
 		"duration_ms": e.DurationMS, "output_bytes": e.OutputBytes,
 		"input_tokens": e.InputTokens, "output_tokens": e.OutputTokens,
+		"cache_read_tokens": e.CacheRead, "cache_write_tokens": e.CacheWrite,
 	} {
 		if v < 0 {
 			return fmt.Errorf("%s must not be negative, got %d", field, v)
+		}
+	}
+	for _, dim := range [][2]string{{"model", e.Model}, {"host", e.Host}, {"host_version", e.HostVersion}} {
+		if strings.ContainsAny(dim[1], "\n\r") {
+			return fmt.Errorf("%s must be a single line, got %q", dim[0], dim[1])
+		}
+	}
+	if e.UsageSource != "" {
+		switch e.UsageSource {
+		case SourceMeasuredHost, SourceMeasuredLocal, SourceProxy, SourceUnknown:
+		default:
+			return fmt.Errorf("usage_source must be measured-host, measured-local, proxy or unknown, got %q", e.UsageSource)
 		}
 	}
 	return nil

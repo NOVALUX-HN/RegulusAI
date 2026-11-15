@@ -8,6 +8,8 @@ node_modules/
 # Build output (binaries stay ignored; the launcher source is tracked)
 bin/*
 !bin/regulus.js
+!bin/verify-hash.js
+!bin/verify-hash.test.mjs
 dist/
 
 # Generated Windows version resources (goversioninfo .syso; rebuilt by
@@ -36,3 +38,6 @@ docs/EVIDENCE.md
 # OS noise (open source contributors)
 .DS_Store
 Thumbs.db
+.gocache/
+.regulus-test/
+.regulus-test-cache/

@@ -24,7 +24,7 @@ Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D
 ## 3. El Sextant → `docs/assets/sextant.png` (1200×500, sección The Sextant)
 
 ```text
-Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D9A441) accents with white (#E7EAF0) text, clean geometric sans-serif, minimal, high contrast, no photo, no watermark. Horizontal 5-step pipeline, left to right, connected by gold arrows: 1 AUTHORIZE (magnifier icon, "read-only first"), 2 CHART (document icon, "acceptance scenarios"), 3 BUILD (hammer icon, "necessity ladder"), 4 PROVE (shield-check icon, "15 gates green"), 5 LEARN (open book icon, "almanac notes"). Each step a rounded dark card with gold number.
+Flat vector infographic, obsidian near-black background (#0C1018), lion-gold (#D9A441) accents with white (#E7EAF0) text, clean geometric sans-serif, minimal, high contrast, no photo, no watermark. Horizontal 5-step pipeline, left to right, connected by gold arrows: 1 AUTHORIZE (magnifier icon, "read-only first"), 2 CHART (document icon, "acceptance scenarios"), 3 BUILD (hammer icon, "necessity ladder"), 4 PROVE (shield-check icon, "16 gates green"), 5 LEARN (open book icon, "almanac notes"). Each step a rounded dark card with gold number.
 ```
 
 ## 4. El Gauntlet → `docs/assets/gauntlet.png` (1200×700, sección Commands)

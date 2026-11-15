@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"runtime"
 	"strings"
 	"sync"
@@ -330,9 +331,10 @@ func hermeticProbeEnv(binDir string) []string {
 // The probe PATH is hermetic (only grep/head/sed symlinks), so runner
 // images that leak node into the minimal PATH cannot trip the guard.
 func TestShippedFallbackFunctional(t *testing.T) {
+	testenv.Require(t, "bash")
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
-		t.Skip("bash not on PATH — syntax (bash -n) and Go-mirror checks above still hold")
+		t.Fatal("bash vanished after Require")
 	}
 	root := repoRoot(t)
 	binDir := hermeticBinDir(t, bashPath)
@@ -382,9 +384,7 @@ func TestShippedFallbackFunctional(t *testing.T) {
 // G5: both bash scripts stay parseable (POSIX hosts run the same check
 // as `bash -n`; here it also guards the suite on Windows with WSL bash).
 func TestBashSyntax(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not on PATH")
-	}
+	testenv.Require(t, "bash")
 	root := repoRoot(t)
 	for _, name := range []string{"build.bash", "install-devin.bash"} {
 		cmd := exec.Command("bash", "-n", bashPosixPath(filepath.Join(root, "scripts", name)))
@@ -411,9 +411,10 @@ func TestBashPosixPathDialects(t *testing.T) {
 }
 
 func TestBashDialectNamesItself(t *testing.T) {
+	testenv.Require(t, "bash")
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
-		t.Skip("bash not on PATH")
+		t.Fatal("bash vanished after Require")
 	}
 	out, err := exec.Command(bashPath, "--version").Output()
 	if err != nil {

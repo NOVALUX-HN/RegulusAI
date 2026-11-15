@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"os/exec"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 	"time"
@@ -168,9 +169,7 @@ func mustGit(t *testing.T, dir string, args ...string) {
 
 func TestMemoryCheckTouchedPaths(t *testing.T) {
 	dir := govRoot(t)
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git unavailable")
-	}
+	testenv.Require(t, "git")
 	mustGit(t, dir, "init", "-b", "main")
 	mustGit(t, dir, "config", "user.email", "t@t.t")
 	mustGit(t, dir, "config", "user.name", "t")

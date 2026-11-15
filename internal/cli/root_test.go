@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 
@@ -38,9 +39,7 @@ func noGit(t *testing.T, root string) {
 // (todo queda dentro de t.TempDir(); sin commits: rev-parse funciona).
 func gitInit(t *testing.T, root string) {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
+	testenv.Require(t, "git")
 	cmd := exec.Command("git", "init")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {

@@ -12,6 +12,7 @@
   },
   "files": [
     "bin/regulus.js",
+    "bin/verify-hash.js",
     "binaries/",
     "README.md",
     "LICENSE"
@@ -22,6 +23,7 @@
   "scripts": {
     "build": "bash scripts/build.bash || powershell -NoProfile -File scripts/build.ps1",
     "build:bash": "bash scripts/build.bash",
-    "build:ps1": "powershell -NoProfile -File scripts/build.ps1"
+    "build:ps1": "powershell -NoProfile -File scripts/build.ps1",
+    "test:launcher": "node --test bin/"
   }
 }

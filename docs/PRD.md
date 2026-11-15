@@ -1,5 +1,7 @@
 # Regulus AI — Product Requirements Document
 
+> **Nota (H10):** frozen founding record (phases F0–F5 as planned); phase counts and scope statements here are historical and excluded from the docs-drift gate. Current state lives in the code, its tests and `docs/conformity-matrix.md`.
+
 Status: founding definition (F0) · Audience: the builder (personal product first) · Scope: complete v1 built in phases (F1–F5)
 
 ## 1. Problem

@@ -25,11 +25,11 @@ import (
 // folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 	switch args[0] {
@@ -51,7 +51,7 @@ func (c CLI) traceCmd(args []string) int {
 		return c.traceUsageCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
 		return 2
 	}
 }
@@ -77,18 +77,30 @@ func (c CLI) traceRecordCmd(args []string) int {
 	outputBytes := fs.Int64("output-bytes", 0, "output size in bytes (proxy cost)")
 	inputTokens := fs.Int64("input-tokens", 0, "host-exposed input tokens only (0 = unknown, never estimated)")
 	outputTokens := fs.Int64("output-tokens", 0, "host-exposed output tokens only (0 = unknown, never estimated)")
+	model := fs.String("model", "", "model that served the call (host-exposed only)")
+	host := fs.String("host", "", "host that served the call: opencode, claude, codex, devin (host-exposed only)")
+	hostVersion := fs.String("host-version", "", "host version (host-exposed only)")
+	cacheRead := fs.Int64("cache-read-tokens", 0, "host-exposed cache-read tokens only (0 = unknown)")
+	cacheWrite := fs.Int64("cache-write-tokens", 0, "host-exposed cache-write tokens only (0 = unknown)")
+	usageSource := fs.String("usage-source", "", "measurement source: measured-host, measured-local, proxy, unknown (default: auto)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *session == "" || *message == "" || *call == "" || *tool == "" || *status == "" || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S]")
 		return 2
+	}
+	src := *usageSource
+	if src == "" && (*inputTokens > 0 || *outputTokens > 0 || *cacheRead > 0 || *cacheWrite > 0 || *host != "" || *model != "") {
+		src = trace.SourceMeasuredHost
 	}
 	if _, err := trace.Record(c.dir(), trace.Entry{
 		Session: *session, Message: *message, Call: *call, Tool: *tool, Status: *status,
 		Files: splitList(*files), Task: *task,
 		DurationMS: *durationMS, OutputBytes: *outputBytes,
 		InputTokens: *inputTokens, OutputTokens: *outputTokens,
+		Model: *model, Host: *host, HostVersion: *hostVersion,
+		CacheRead: *cacheRead, CacheWrite: *cacheWrite, UsageSource: src,
 	}, time.Now().UTC()); err != nil {
 		fmt.Fprintf(c.Stderr, "trace record: %v\n", err)
 		return 1
@@ -108,7 +120,8 @@ var traceStdin io.Reader = os.Stdin
 // record` including duration/output-bytes). Each entry is one NDJSON
 // object per line with the trace.Entry field names (session, message,
 // call, tool, status, files[], task, duration_ms, output_bytes,
-// input_tokens, output_tokens); blank lines are skipped.
+// input_tokens, output_tokens, model, host, host_version,
+// cache_read_tokens, cache_write_tokens, usage_source); blank lines are skipped.
 //
 // Entries arrive on stdin; when stdin carries no lines and positional
 // args are present, each arg is one NDJSON line instead — the OpenCode
@@ -378,13 +391,23 @@ func costKnown(total int64, unit string, known bool) string {
 	return fmt.Sprintf("%d%s", total, unit)
 }
 
-// tokensKnown renders the host token totals, or unknown when no entry
-// carried host-exposed counts.
+// tokensKnown renders the host token totals with their measurement
+// source, or unknown when no entry carried host-exposed counts.
+// Sources are never mixed: measured-host counts and the
+// measured-local proxy print on separate labeled fields.
 func tokensKnown(tc trace.TaskCost) string {
 	if !tc.TokensKnown {
 		return "unknown (host exposes none)"
 	}
-	return fmt.Sprintf("%d in + %d out", tc.TotalInputTokens, tc.TotalOutputTokens)
+	src := tc.TokenSource
+	if src == "" {
+		src = trace.SourceMeasuredHost
+	}
+	s := fmt.Sprintf("%d in + %d out (%s)", tc.TotalInputTokens, tc.TotalOutputTokens, src)
+	if tc.TotalCacheRead > 0 || tc.TotalCacheWrite > 0 {
+		s += fmt.Sprintf(", cache %d read + %d write (%s)", tc.TotalCacheRead, tc.TotalCacheWrite, src)
+	}
+	return s
 }
 
 // localTokensKnown renders the measured-local token proxy (chars/4),

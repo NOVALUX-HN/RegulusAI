@@ -300,8 +300,12 @@ func allowlistRefused(command string, allowlist []string) bool {
 		}
 	}
 	if len(flat) == 0 {
+		// Nothing executable survived stripping: refuse closed. Config
+		// validation already rejects empty commands, so this branch
+		// only fires for unparseable input (lone quotes, quote-only
+		// spans) that must never read as allowed (NOV-65 fuzz).
 		if strings.TrimSpace(command) == "" {
-			return false
+			return true
 		}
 		// Fully-quoted or substitution-only input: fall back to the outer
 		// first token so `"hello"` still refuses when `hello` is not listed.
@@ -312,7 +316,7 @@ func allowlistRefused(command string, allowlist []string) bool {
 			ft = firstToken(masked)
 		}
 		if ft == "" {
-			return false
+			return true
 		}
 		if strings.HasPrefix(ft, "$") {
 			return true
@@ -323,7 +327,11 @@ func allowlistRefused(command string, allowlist []string) bool {
 	for _, s := range flat {
 		ft := firstToken(s)
 		if ft == "" {
-			continue
+			// A segment with no identifiable executable (lone
+			// backslash, bare slash, quote residue) cannot satisfy
+			// "every segment's first token must be listed": refuse
+			// closed instead of skipping it into an allow (NOV-65 fuzz).
+			return true
 		}
 		if strings.HasPrefix(ft, "$") {
 			return true

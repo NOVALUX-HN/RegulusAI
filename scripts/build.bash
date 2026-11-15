@@ -71,6 +71,11 @@ done
 
 echo "done: $(ls binaries | wc -l) binaries in binaries/ (version ${version})"
 
+# NOV-70: pin every release binary. checksums.txt ships inside
+# binaries/ (npm files[]) so the launcher fails closed on tamper.
+(cd binaries && sha256sum regulus-* > checksums.txt)
+echo "pinned: binaries/checksums.txt ($(wc -l < binaries/checksums.txt) entries)"
+
 # H3 (S4): the documented flow also refreshes the local binary, stamped
 # with the same version. A raw `go build` stays unstamped by design
 # (doctor warns); `npm run build` never is.

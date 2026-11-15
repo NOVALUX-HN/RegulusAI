@@ -108,6 +108,20 @@ if (!bin) {
   process.exit(1)
 }
 
+// NOV-70: verify release binaries against bundled checksums.txt and
+// refuse closed on tamper. Dev builds (no pin entry) run untouched.
+try {
+  const { verifyFile } = require("./verify-hash.js");
+  const here = path.dirname(bin);
+  const r = verifyFile(bin, [here, path.join(here, "..", "binaries")]);
+  if (!r.ok) {
+    console.error(`regulus: refusing to run: ${r.reason}`);
+    process.exit(1);
+  }
+} catch (e) {
+  if (e && e.code !== "MODULE_NOT_FOUND") throw e;
+}
+
 const result = spawnSync(bin, process.argv.slice(2), {
   stdio: "inherit",
   env: process.env,

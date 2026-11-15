@@ -12,6 +12,10 @@ jobs:
     # gate (~4min) con margen; runner pineado en vez de `latest` flotante.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # NOV-65: ningún test puede omitirse por herramienta ausente;
+    # con STRICT=1 el skip se convierte en fallo.
+    env:
+      REGULUS_STRICT_ENV: "1"
     # the receipts-trail commit (S8) writes docs/EVIDENCE.md back to main
     permissions:
       contents: write
@@ -61,10 +65,13 @@ jobs:
           "$OLDPWD/bin/regulus" trace files --session nobody | grep -q "no trace" || (echo "trace files smoke failed"; exit 1)
           "$OLDPWD/bin/regulus" probe contrast --task demo/T1 --gate missing 2>&1 | grep -q . || (echo "probe usage smoke failed"; exit 1)
 
-      - name: Run the gauntlet (12 layers, receipts)
+      - name: Run the gauntlet (16 layers, receipts)
         run: |
           go build -o bin/regulus ./cmd/regulus
-          bin/regulus gate run ci/push
+          # Non-interactive CI cannot create .regulus/trusted (explicit operator
+          # action only, never a gate); consent is explicit here instead.
+          # See docs/trust.md: scripts must pass --yes (no interactive fallback).
+          bin/regulus gate run --yes ci/push
 
       # S8 retired (open source): the receipts trail is no longer committed
       # into docs/EVIDENCE.md. Gate receipts stay available as CI artifacts

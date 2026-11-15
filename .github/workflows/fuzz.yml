@@ -1,0 +1,38 @@
+# Fuzzing acotado (NOV-65)
+#
+# Seis superficies con fuzz nativo de Go y corpus semilla versionado.
+# `go test` ejecuta solo el corpus (rápido, determinista); este workflow
+# corre cada target 60 segundos semanales. Cada crasher se convierte en
+# un test de regresión permanente antes de cerrar el issue.
+
+name: Fuzzing acotado
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+          cache: false
+      - name: Fuzz gates allowlist + segmentation
+        run: go test ./internal/gates/ -run XXX -fuzz 'FuzzAllowedByAllowlist|FuzzClassifySegments' -fuzztime 60s .
+      - name: Fuzz spec GWT parser
+        run: go test ./internal/spec/ -run XXX -fuzz FuzzCheck -fuzztime 60s .
+      - name: Fuzz almanac import
+        run: go test ./internal/almanac/ -run XXX -fuzz FuzzImport -fuzztime 60s .
+      - name: Fuzz MCP framing
+        run: go test ./internal/cli/ -run XXX -fuzz 'FuzzHandleMCPLine|FuzzMcpIntRejectsFractions' -fuzztime 60s .
+      - name: Fuzz receipts + manifest decode
+        run: go test ./internal/receipts/ ./internal/manifest/ -run XXX -fuzz FuzzReadFile -fuzztime 60s .

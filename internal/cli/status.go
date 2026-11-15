@@ -37,6 +37,13 @@ func (c CLI) doctor() int {
 // statusCmd implements `regulus status` — one look at the project: the
 // runtime gate, the gauntlet configuration, today's evolution against
 // the cap, pending candidates, admitted lessons and receipts on disk.
+// NOV-65: declared verification coverage, pinned by
+// TestStatusCountsMatchSuite against the repo's own test files.
+const (
+	statusFuzzTargets = 8
+	statusBenchmarks  = 7
+)
+
 func (c CLI) statusCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
 		fmt.Fprintln(c.Stdout, "usage: regulus status")
@@ -92,6 +99,11 @@ func (c CLI) statusCmd(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.Stdout, "receipts:   %d on disk\n", len(found))
+	// NOV-65: declared verification coverage. The counts are pinned by
+	// TestStatusCountsMatchSuite, which recounts Fuzz/Benchmark funcs
+	// across the repo; skips fail instead of passing under
+	// REGULUS_STRICT_ENV=1 (see internal/testenv).
+	fmt.Fprintf(c.Stdout, "harness:    %d fuzz target(s), %d benchmark(s); skips fail with REGULUS_STRICT_ENV=1\n", statusFuzzTargets, statusBenchmarks)
 	// H3 (S5): the semantic index goes stale on any save after the last
 	// reindex — status says so with the repairing command instead of
 	// letting search surprise with a lexical-only warning.

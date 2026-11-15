@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regulus-ai/internal/testenv"
 	"strings"
 	"testing"
 
@@ -37,9 +38,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 // it. Skips when git is absent.
 func initProbeRepo(t *testing.T, committed map[string]string) string {
 	t.Helper()
-	if !gitAvailable() {
-		t.Skip("git absent")
-	}
+	testenv.Require(t, "git")
 	dir := t.TempDir()
 	runGit(t, dir, "init")
 	runGit(t, dir, "config", "user.email", "probe@test.local")
@@ -168,9 +167,7 @@ func TestMutationReceiptInSituWarning(t *testing.T) {
 // when gremlins or git is absent: then only the export+fallback units above
 // run.
 func TestMutationE2EGremlinsInExport(t *testing.T) {
-	if _, err := exec.LookPath("gremlins"); err != nil {
-		t.Skip("gremlins absent")
-	}
+	testenv.Require(t, "gremlins")
 	repo := initProbeRepo(t, map[string]string{"tracked.txt": "hi\n"})
 	cfg := Config{Gates: []Gate{{Name: "mutation", Layer: 1, Command: "gremlins --help"}}}
 	res, err := Run(context.Background(), cfg, t.TempDir(), "probe/T1", "abc", ShRunner{Dir: repo})

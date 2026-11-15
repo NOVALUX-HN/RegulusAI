@@ -71,11 +71,20 @@ func (c CLI) manifestCheck() int {
 		return 1
 	}
 	problems := checkToolManifest(data, mcpTools(), mcp.ToolNames())
+	var usageBuf strings.Builder
+	c.usage(&usageBuf)
+	surface := surfaceFromUsage(usageBuf.String())
+	problems = append(problems, checkDocDrift(c.dir(), surface)...)
 	if len(problems) != 0 {
 		for _, p := range problems {
 			fmt.Fprintf(c.Stderr, "manifest check: %s\n", p)
 		}
 		return 1
+	}
+	if _, notes := checkDocCommands(c.dir(), surface); len(notes) != 0 {
+		for _, n := range notes {
+			fmt.Fprintf(c.Stdout, "%s\n", n)
+		}
 	}
 	var file manifestToolsFile
 	_ = json.Unmarshal(data, &file)

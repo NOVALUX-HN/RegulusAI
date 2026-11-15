@@ -83,7 +83,11 @@ func (c CLI) autoSaveCloseNote(chart, id, doc string, res sextant.CloseResult) {
 	// NOV-29 atomic path (no TOCTOU); identical repeats are no-ops.
 	saved, err := almanac.SaveChecked(c.dir(), obs, time.Now().UTC())
 	if err != nil {
-		fmt.Fprintf(c.Stderr, "warning: close observation not saved (%v) — the CLOSED verdict stands\n", err)
+		if dup, ok := err.(*almanac.DuplicateError); ok {
+			fmt.Fprintf(c.Stdout, "  memory: close observation skipped (duplicates %s) — the CLOSED verdict stands\n", dup.ID)
+		} else {
+			fmt.Fprintf(c.Stderr, "warning: close observation not saved (%v) — the CLOSED verdict stands\n", err)
+		}
 		return
 	}
 	c.refreshIndexBestEffort("task-close")

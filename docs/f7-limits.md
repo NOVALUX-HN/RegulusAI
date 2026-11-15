@@ -96,3 +96,21 @@ NOV-59/60/61. Complementa `docs/f7-protocol.md` sin redefinirlo.
   humano; sin mutación de evaluador/umbrales por el candidato.
 - Evidencia por referencia (manifest + SHA-256): el drift falla en
   `Verify`, no se compara contra contenido movido.
+
+## 6. Lo que mostró el primer ciclo real (NOV-71, 2026-11-14)
+
+Ver `docs/f7-cycle-real.md` (baseline 5/5, candidato trimmed 5/5 TIE,
+control saboteado rechazado). Los tests sintéticos no cubrían:
+
+- Timeouts del tier gratuito en corridas largas (el agente real a
+  veces supera el budget): el protocolo ya los bucketiza como
+  no-evaluables, pero el reporte debe decir cuántos hubo por corrida.
+- Bloqueo de App Control sobre binarios de check compilados en Temp:
+  el runner los clasifica como infra (NOV-68); en este ciclo no hubo
+  ninguno en la corrida final, pero sí en corridas previas.
+- El agente real escribe fuera del fixture si el prompt no ancla el
+  directorio de trabajo: `runOne` antepone el workdir al prompt.
+- Tokens de host `unknown` en modo headless JSON de opencode: el
+  ciclo decide sin ellos (costo = latencia + proxy), etiquetados.
+- n=5 no da margen medible con baseline al 100%: el próximo ciclo
+  necesita tareas más duras o n mayor para que TIE no sea el techo.

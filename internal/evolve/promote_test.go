@@ -34,7 +34,7 @@ func TestPromoteStatesPreserved(t *testing.T) {
 	dir := t.TempDir()
 	exp, err := ProposeExperiment(dir, ExperimentSpec{
 		Hypothesis: Hypothesis{Problem: "p", RootCause: "r", Change: "c", Benefit: "b", PotentialRegressions: "rg", EvaluationCriteria: "ev"},
-		Baseline: "b", Candidate: "c", Dataset: "d", Domain: DomainINV, Budget: Budget{MaxRuns: 1},
+		Baseline:   "b", Candidate: "c", Dataset: "d", Domain: DomainINV, Budget: Budget{MaxRuns: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
