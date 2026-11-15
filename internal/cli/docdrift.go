@@ -335,8 +335,10 @@ func surfaceFromUsage(text string) map[string]bool {
 	out := map[string]bool{}
 	cmdRe := regexp.MustCompile(`^  ([a-z][a-z-]*)\b`)
 	for _, ln := range strings.Split(text, "\n") {
-		if m := cmdRe.FindStringSubmatch(ln); m != nil {
-			out[m[1]] = true
+		if m := cmdRe.FindStringSubmatch(ln); m != nil && m[1] != "regulus" {
+		// Example invocations ("  regulus doctor ...") are not
+		// commands; the command list uses bare names.
+		out[m[1]] = true
 		}
 	}
 	return out

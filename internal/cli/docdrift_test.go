@@ -107,6 +107,16 @@ func testSurface() map[string]bool {
 	return map[string]bool{"status": true, "gate": true, "contract": true, "serve": true}
 }
 
+func TestSurfaceFromUsageSkipsExamples(t *testing.T) {
+	got := surfaceFromUsage("usage: x\n  gate run ...\n  serve [--port N]\n  regulus doctor\n  --version\n")
+	if !got["gate"] || !got["serve"] {
+		t.Fatalf("must capture bare commands, got %v", got)
+	}
+	if got["regulus"] {
+		t.Fatalf("example invocations are not commands: %v", got)
+	}
+}
+
 func containsDrift(got []string, want string) bool {
 	for _, g := range got {
 		if strings.Contains(g, want) {
