@@ -23,14 +23,7 @@ import (
 // gauntlet would prove nothing. The repo-root regulus.json and the
 // gauntlet workflow must contain no such fallback (S8).
 func TestS8GateEfficacy(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(wd, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	repoRoot := journeyRepoRoot(t)
 
 	// regulus.json: every gate command must do real work — no
 	// `|| echo ... skipped` mask that turns a missing tool into a pass.
@@ -271,14 +264,7 @@ func TestS8ProbeComposeTaskCapJourney(t *testing.T) {
 // with a receipt, and the plugin spawns with windowsHide so the
 // opencode server stays windowless on Windows.
 func TestS8WindowsHideJourney(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(wd, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	repoRoot := journeyRepoRoot(t)
 	t.Chdir(t.TempDir())
 
 	cmd := exec.Command("go", "version")

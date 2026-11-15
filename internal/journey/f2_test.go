@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regulus-ai/internal/testenv"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -41,15 +42,24 @@ func findGremlins(t *testing.T) string {
 // a freshly built regulus binary. Skips with a reason when gremlins is not
 // installed (the mutation gate is verified live in the session dogfood,
 // feature doc L17).
+// journeyRepoRoot anchors the repo root to this test file, never to the
+// process cwd: the workspace runner executes compiled test binaries from
+// the repo root while `go test` runs them from internal/journey.
+func journeyRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	root, err := filepath.Abs(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestF2SevenLayers(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(wd, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	repoRoot := journeyRepoRoot(t)
 	gremlinsBin := findGremlins(t)
 	if gremlinsBin == "" {
 		testenv.Require(t, "gremlins")
