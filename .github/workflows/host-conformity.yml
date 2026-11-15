@@ -12,15 +12,36 @@ jobs:
     # secrets run only when the corresponding *_CREDENTIALS secret exists.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # Secret opcional: sin HOST_API_KEY el journey completo se omite y
+    # el job reporta no-ejecutado (nunca pass).
+    env:
+      HOST_API_KEY: ${{ secrets.HOST_API_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
           cache: false
+      # NOV-72: al menos un host instalado con versión fijada (el probe
+      # sin binario siempre sería no-ejecutado). npm viene preinstalado
+      # en ubuntu-24.04; si faltara, el paso falla en voz alta.
+      - name: Install pinned host (opencode, no model cost to probe)
+        run: |
+          npm --version
+          npm install -g opencode-ai@1.19.5
+          opencode --version
       - name: Probe all hosts (no model cost)
         run: |
           go run ./cmd/regulus bench host-journeys --out host-evidence
+      # NOV-72: journey completa solo con credenciales explícitas. Sin
+      # el secreto el job reporta no-ejecutado y sigue verde (nunca
+      # pass): la evidencia queda igual en artefactos. (Hoy la pata de
+      # agente se registra, no se ejecuta contra el host; la llave queda
+      # cableada para cuando el modo headless real la consuma.)
+      - name: Full journey with credentials (optional)
+        if: env.HOST_API_KEY != ''
+        run: |
+          go run ./cmd/regulus bench host-journeys --run --out host-evidence
       - name: Upload host evidence
         if: always()
         uses: actions/upload-artifact@v4

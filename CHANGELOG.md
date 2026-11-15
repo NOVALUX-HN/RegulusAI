@@ -4,6 +4,21 @@ All notable changes, newest first. Format follows Keep a Changelog;
 versioning is `vMAJOR.MINOR` tags on main (release tags are cut at
 chart close — see G3.9).
 
+## [0.15.0] - 2026-11-15
+
+Batch delivered since 0.13.0 (Linear P-NOV-2 Regulus-AI F8 10/10 Done):
+
+### Added
+- F8 evidencia real y madurez 10/10 (NOV-62 medicion de tokens reales
+con hostusage neutral + flags de trace, NOV-63 gate de deriva documental,
+NOV-64 trazabilidad issue-commit + revision independiente, NOV-65 fuzzing
+de 6 superficies + benchmarks + STRICT_ENV, NOV-66 suite Windows con
+workspace runner + audit, NOV-67 modularizacion + limites de tamano,
+NOV-68 evals con agente + holdout representativo, NOV-69 conformidad
+multiagente con niveles y bench host-journeys, NOV-70 release verificable
+con matriz + checksums + provenance, NOV-71 primer ciclo real con
+veredicto TIE y adopcion humana documentada).
+
 ## [0.13.0] - 2026-11-08
 
 Same branch (`develop`); tags cut on main at merge.
