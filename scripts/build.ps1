@@ -72,6 +72,13 @@ foreach ($target in $targets) {
 $count = (Get-ChildItem (Join-Path $root "binaries")).Count
 Write-Host "done: ${count} binaries in binaries/ (version ${Version})"
 
+# NOV-70: pin every release binary. Mirrors build.bash: checksums.txt
+# ships inside binaries/ and the launcher fails closed on tamper.
+Get-ChildItem (Join-Path $root "binaries") -File -Exclude checksums.txt |
+  ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+  Set-Content (Join-Path $root "binaries/checksums.txt") -Encoding ascii
+Write-Host "pinned: binaries/checksums.txt"
+
 # H3 (S4): the documented flow also refreshes the local binary, stamped
 # with the same version. A raw `go build` stays unstamped by design
 # (doctor warns); `npm run build` never is. Clear the cross-compile
