@@ -56,7 +56,11 @@ func TestS8GateEfficacy(t *testing.T) {
 		if g.Name == "vulncheck" {
 			foundVuln = true
 		}
-		if g.Name == "mutation" {
+		// The mutation surface is split per package
+		// (mutation-receipts, mutation-gates); either one satisfies
+		// the gate's existence, and the S8 efficacy run below pins
+		// that they actually execute instead of echo-skipping.
+		if g.Name == "mutation" || strings.HasPrefix(g.Name, "mutation-") {
 			foundMutation = true
 		}
 		lower := strings.ToLower(g.Command)
