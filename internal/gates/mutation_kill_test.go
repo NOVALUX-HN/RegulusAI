@@ -9,6 +9,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -199,11 +201,23 @@ func TestMutationKillReceiptsAlwaysWritten(t *testing.T) {
 // duplicate layer 1 (typecheck + manifest-check, committed at HEAD by the
 // NOV-25 manifest change) that Load rejects independent of this task;
 // that breakage is reported, not papered over here (see risks).
-func TestMutationGatesConfigDeclaresPerModuleThresholds(t *testing.T) {
-	raw, err := os.ReadFile("../../regulus.json")
+// gatesRepoFile reads a repo-relative fixture anchored to this test file,
+// never to the process cwd (see benchRepoFile).
+func gatesRepoFile(t *testing.T, rel string) []byte {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "..", "..", rel))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return raw
+}
+
+func TestMutationGatesConfigDeclaresPerModuleThresholds(t *testing.T) {
+	raw := gatesRepoFile(t, "regulus.json")
 	var cfg Config
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatalf("regulus.json must parse: %v", err)

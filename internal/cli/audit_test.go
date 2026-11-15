@@ -222,3 +222,41 @@ func TestAuditHotspotReportHasSourceAndDate(t *testing.T) {
 		t.Fatalf("stdout must print profile fuente (path+sha), got:\n%s", got)
 	}
 }
+
+func TestAuditTopOneStopsEarly(t *testing.T) {
+	dir := t.TempDir()
+	writeAuditFixture(t, dir)
+	t.Chdir(dir)
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"audit", "--profile", "profile.out", "--top", "1"}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	got := out.String()
+	if !strings.Contains(got, "MustFix") {
+		t.Fatalf("top-1 must rank the worst first, got:\n%s", got)
+	}
+	if strings.Contains(got, "Workhorse") {
+		t.Fatalf("top-1 must stop after the first finding, got:\n%s", got)
+	}
+}
+
+func TestAuditWaiverDiscountsRanking(t *testing.T) {
+	dir := t.TempDir()
+	writeAuditFixture(t, dir)
+	exc := filepath.Join(dir, "exceptions.md")
+	if err := os.WriteFile(exc, []byte("risky.go:MustFix legacy hotspot expira:2027-01-01 aprueba:tech-lead\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	c, out, _ := newCLI(nil)
+	if code := c.Run([]string{"audit", "--profile", "profile.out", "--exceptions", exc}); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	got := out.String()
+	if !strings.Contains(got, "waived") {
+		t.Fatalf("waived function must be marked, got:\n%s", got)
+	}
+	if !strings.Contains(got, "fix Workhorse first") {
+		t.Fatalf("verdict must skip the waived top, got:\n%s", got)
+	}
+}

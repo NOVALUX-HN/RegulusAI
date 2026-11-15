@@ -276,93 +276,71 @@ func consentCtx(plan gateRunArgs) context.Context {
 	return ctx
 }
 
-// execAndReport runs the gauntlet for one task and prints the per-layer
-// lines plus the gauntlet/verdict/manifest footers. Before any layer it
-// preflights the selected gates' binaries (LookPath, fail-fast with
-// install hints, real-shell runs only). Exit 1 on load, preflight, run
-// or gate failure; exit 0 when the gauntlet passes (advisory-only
-// failures also exit 0, exactly as before).
-func (c CLI) execAndReport(plan gateRunArgs) int {
-	if base, _, ok := strings.Cut(plan.task, "/"); ok && base != "" {
-		for _, cand := range []string{filepath.Join("charts", base+".md"), filepath.Join(c.dir(), "charts", base+".md")} {
-			if data, rerr := os.ReadFile(cand); rerr == nil {
-				if violations := collectViolations(string(data)); len(violations) != 0 {
-					fmt.Fprintf(c.Stdout, "gate run blocked: chart %s has %d violation(s) — BUILD refused before layer 1\n", cand, len(violations))
-					for _, v := range violations {
-						fmt.Fprintf(c.Stdout, "violation: %s\n", v)
-					}
-					fmt.Fprintln(c.Stdout, "why: running gates on an unverifiable chart wastes evidence and hides the real defect")
-					fmt.Fprintf(c.Stdout, "next: fix the chart, then run: regulus task check %s\n", cand)
-					return 1
-				}
-				break
-			}
+// chartGateViolations refuses the run when the task chart is unverifiable:
+// it returns the first readable chart with its violations (both empty when
+// no chart gates this task).
+func chartGateViolations(dir, task string) (string, []string) {
+	base, _, ok := strings.Cut(task, "/")
+	if !ok || base == "" {
+		return "", nil
+	}
+	for _, cand := range []string{filepath.Join("charts", base+".md"), filepath.Join(dir, "charts", base+".md")} {
+		if data, rerr := os.ReadFile(cand); rerr == nil {
+			return cand, collectViolations(string(data))
 		}
 	}
-	cfgBytes, err := os.ReadFile(filepath.Join(c.dir(), "regulus.json"))
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
-		return 1
+	return "", nil
+}
+
+// enforceGateConsent arms deny-by-default and refuses untrusted repos
+// without explicit --yes. It reports (code, true) when the run must stop
+// before anything executes or is written (S6). Real-shell runs only:
+// test doubles provide their own commands, so policy consent does not
+// apply to them.
+func enforceGateConsent(c CLI, plan *gateRunArgs) (int, bool) {
+	if plan.runner != nil && !dryRunIsSh(plan.runner) {
+		return 0, false
 	}
-	// S6 consent gates (real-shell runs only, mirroring preflight: test
-	// doubles provide their own commands, so policy consent does not
-	// apply to them). Deny-by-default is armed here and an untrusted
-	// repo (missing .regulus/trusted) must show the plan and carry
-	// explicit --yes before anything executes or is written.
-	if plan.runner == nil || dryRunIsSh(plan.runner) {
-		if plan.cfg.Execution == nil {
-			plan.cfg.Execution = &gates.ExecutionConfig{}
-		}
-		plan.cfg.Execution.EnforceDenyByDefault = true
-		plan.cfg.Execution.ExplicitYes = plan.yes
-		if !plan.yes && !isTrustedRepo(c.dir()) {
-			if code := c.renderDryRunPlan(plan); code != 0 {
-				return code
-			}
-			fmt.Fprintf(c.Stderr, "gate run: untrusted repo (missing .regulus/trusted) — inspect the plan above and re-run with --yes to consent (or --dry-run to inspect only)\n")
-			return 1
-		}
+	if plan.cfg.Execution == nil {
+		plan.cfg.Execution = &gates.ExecutionConfig{}
 	}
-	// Preflight (S2): before any layer runs and before any receipt is
-	// written, resolve the binary of every SELECTED gate (profile-aware)
-	// via LookPath and fail fast listing the missing ones with install
-	// hints. Real-shell runs only: test doubles (non-Sh runners) provide
-	// their own commands, so there is nothing on PATH to check. --dry-run
-	// never reaches here: the plan only prints commands and writes
-	// nothing, so preflight is exec-only by design.
-	if plan.runner == nil || dryRunIsSh(plan.runner) {
-		ordered, serr := selectPlanGates(plan.cfg, plan)
-		if serr != nil {
-			fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
-			return 1
-		}
-		if missing := preflightMissingTools(ordered, exec.LookPath); len(missing) > 0 {
-			fmt.Fprintf(c.Stderr, "gate run: missing required tools: %s\n", strings.Join(missing, ", "))
-			return 1
-		}
+	plan.cfg.Execution.EnforceDenyByDefault = true
+	plan.cfg.Execution.ExplicitYes = plan.yes
+	if plan.yes || isTrustedRepo(c.dir()) {
+		return 0, false
 	}
-	// --quick runs the lean preset through the same RunTask path by
-	// narrowing the config: full-of-the-narrowed-config is exactly the
-	// lean set, so selection, receipts and the manifest stay consistent.
-	runCfg, runBytes, runProfile := plan.cfg, cfgBytes, plan.profile
-	if plan.quick {
-		lean, serr := gates.SelectQuickLean(plan.cfg)
-		if serr != nil {
-			fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
-			return 1
-		}
-		runCfg = plan.cfg
-		runCfg.Gates = lean
-		runProfile = ""
-		if marshaled, merr := json.Marshal(runCfg); merr == nil {
-			runBytes = marshaled
-		}
+	if code := c.renderDryRunPlan(*plan); code != 0 {
+		return code, true
 	}
-	res, mpath, err := gates.RunTask(consentCtx(plan), runCfg, runBytes, c.dir(), plan.task, c.Version, contract.Version, runProfile, plan.runner)
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
-		return 1
+	fmt.Fprintf(c.Stderr, "gate run: untrusted repo (missing .regulus/trusted) — inspect the plan above and re-run with --yes to consent (or --dry-run to inspect only)\n")
+	return 1, true
+}
+
+// preflightGateTools fail-fast resolves the binary of every selected gate
+// (profile-aware) via LookPath and lists the missing ones with install
+// hints. It reports (code, true) when the run must stop (S2). Real-shell
+// runs only: test doubles (non-Sh runners) provide their own commands,
+// so there is nothing on PATH to check. --dry-run never reaches here.
+func preflightGateTools(c CLI, plan gateRunArgs) (int, bool) {
+	if plan.runner != nil && !dryRunIsSh(plan.runner) {
+		return 0, false
 	}
+	ordered, serr := selectPlanGates(plan.cfg, plan)
+	if serr != nil {
+		fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
+		return 1, true
+	}
+	if missing := preflightMissingTools(ordered, exec.LookPath); len(missing) > 0 {
+		fmt.Fprintf(c.Stderr, "gate run: missing required tools: %s\n", strings.Join(missing, ", "))
+		return 1, true
+	}
+	return 0, false
+}
+
+// printGateReport prints the per-layer lines plus the gauntlet, verdict
+// and manifest footers, mapping the outcome to an exit code: 1 on gate
+// failure, 0 when the gauntlet passes (advisory-only failures exit 0).
+func printGateReport(c CLI, res gates.Result, mpath, task string) int {
 	for _, o := range res.Outcomes {
 		if o.Skipped {
 			fmt.Fprintf(c.Stdout, "layer %d %-16s skipped (%s)\n", o.Layer, o.Name, o.SkipReason)
@@ -391,8 +369,60 @@ func (c CLI) execAndReport(plan gateRunArgs) int {
 	fmt.Fprintf(c.Stdout, "manifest: %s\n", mpath)
 	if res.Failed {
 		fmt.Fprintf(c.Stdout, "why: gate %q failed — task close stays blocked until the gauntlet passes\n", res.FailedGate)
-		fmt.Fprintf(c.Stdout, "next: fix gate %q, inspect evidence with regulus evidence show %s, then re-run: regulus gate run %s\n", res.FailedGate, mpath, plan.task)
+		fmt.Fprintf(c.Stdout, "next: fix gate %q, inspect evidence with regulus evidence show %s, then re-run: regulus gate run %s\n", res.FailedGate, mpath, task)
 		return 1
 	}
 	return 0
+}
+
+// execAndReport runs the gauntlet for one task and prints the per-layer
+// lines plus the gauntlet/verdict/manifest footers. Before any layer it
+// preflights the selected gates' binaries (LookPath, fail-fast with
+// install hints, real-shell runs only). Exit 1 on load, preflight, run
+// or gate failure; exit 0 when the gauntlet passes (advisory-only
+// failures also exit 0, exactly as before).
+func (c CLI) execAndReport(plan gateRunArgs) int {
+	if chart, violations := chartGateViolations(c.dir(), plan.task); len(violations) != 0 {
+		fmt.Fprintf(c.Stdout, "gate run blocked: chart %s has %d violation(s) — BUILD refused before layer 1\n", chart, len(violations))
+		for _, v := range violations {
+			fmt.Fprintf(c.Stdout, "violation: %s\n", v)
+		}
+		fmt.Fprintln(c.Stdout, "why: running gates on an unverifiable chart wastes evidence and hides the real defect")
+		fmt.Fprintf(c.Stdout, "next: fix the chart, then run: regulus task check %s\n", chart)
+		return 1
+	}
+	cfgBytes, err := os.ReadFile(filepath.Join(c.dir(), "regulus.json"))
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
+		return 1
+	}
+	if code, stop := enforceGateConsent(c, &plan); stop {
+		return code
+	}
+	if code, stop := preflightGateTools(c, plan); stop {
+		return code
+	}
+	// --quick runs the lean preset through the same RunTask path by
+	// narrowing the config: full-of-the-narrowed-config is exactly the
+	// lean set, so selection, receipts and the manifest stay consistent.
+	runCfg, runBytes, runProfile := plan.cfg, cfgBytes, plan.profile
+	if plan.quick {
+		lean, serr := gates.SelectQuickLean(plan.cfg)
+		if serr != nil {
+			fmt.Fprintf(c.Stderr, "gate run: %v\n", serr)
+			return 1
+		}
+		runCfg = plan.cfg
+		runCfg.Gates = lean
+		runProfile = ""
+		if marshaled, merr := json.Marshal(runCfg); merr == nil {
+			runBytes = marshaled
+		}
+	}
+	res, mpath, err := gates.RunTask(consentCtx(plan), runCfg, runBytes, c.dir(), plan.task, c.Version, contract.Version, runProfile, plan.runner)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "gate run: %v\n", err)
+		return 1
+	}
+	return printGateReport(c, res, mpath, plan.task)
 }

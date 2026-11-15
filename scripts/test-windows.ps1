@@ -7,6 +7,13 @@
 # resulta bloqueado igual, el script imprime el diagnóstico accionable
 # en vez de un "permission denied" mudo y sigue con el resto.
 #
+# GOTMPDIR apunta al SIDECAR fuera del repo (nunca %TEMP%, nunca el
+# checkout): los .exe de test y los helpers que los tests ejecutan
+# corren desde ahí sin bloqueos, y los t.TempDir() quedan fuera de
+# cualquier checkout — si cayeran dentro, ResolveRoot devolvería la
+# raíz del repo en vez del fixture y los tests leerían el store real
+# (aislamiento roto).
+#
 # Uso: powershell -NoProfile -File scripts/test-windows.ps1 [-Packages "a b"] [-KeepBinaries]
 param(
   [string]$Packages = "./internal/...",
@@ -15,9 +22,17 @@ param(
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# Paridad CI: el job windows-native fija REGULUS_STRICT_ENV=1 a nivel
+# de job (los skips por herramienta ausente fallan). El script lo
+# impone por defecto para que la corrida local evalúe lo mismo que
+# CI; para permitir skips locales, exportá 0 antes de llamar.
+if (-not $env:REGULUS_STRICT_ENV) {
+  $env:REGULUS_STRICT_ENV = "1"
+  Write-Host "REGULUS_STRICT_ENV=1 (paridad CI; override: `$env:REGULUS_STRICT_ENV='0')"
+}
 $outDir = Join-Path $root ".regulus-test"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-$env:GOTMPDIR = Join-Path $root ".regulus-test-cache"
+$env:GOTMPDIR = Join-Path (Split-Path -Parent $root) ".regulus-test-cache"
 New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null
 
 function Test-IsAppControlBlock($text) {

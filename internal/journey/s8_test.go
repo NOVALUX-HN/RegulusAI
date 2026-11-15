@@ -23,14 +23,7 @@ import (
 // gauntlet would prove nothing. The repo-root regulus.json and the
 // gauntlet workflow must contain no such fallback (S8).
 func TestS8GateEfficacy(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(wd, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	repoRoot := journeyRepoRoot(t)
 
 	// regulus.json: every gate command must do real work — no
 	// `|| echo ... skipped` mask that turns a missing tool into a pass.
@@ -75,15 +68,15 @@ func TestS8GateEfficacy(t *testing.T) {
 		t.Fatal("regulus.json must declare the mutation gate")
 	}
 
-	// gauntlet.yml: no step may pass via an echo-skipped fallback either.
-	yml, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "gauntlet.yml"))
+	// ci.yml: no step may pass via an echo-skipped fallback either.
+	yml, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "ci.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(string(yml), "\n") {
 		lower := strings.ToLower(line)
 		if strings.Contains(line, "||") && strings.Contains(lower, "echo") && strings.Contains(lower, "skipp") {
-			t.Fatalf("gauntlet.yml masks failure with an echo-skipped fallback: %q", strings.TrimSpace(line))
+			t.Fatalf("ci.yml masks failure with an echo-skipped fallback: %q", strings.TrimSpace(line))
 		}
 	}
 }
@@ -271,14 +264,7 @@ func TestS8ProbeComposeTaskCapJourney(t *testing.T) {
 // with a receipt, and the plugin spawns with windowsHide so the
 // opencode server stays windowless on Windows.
 func TestS8WindowsHideJourney(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(wd, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	repoRoot := journeyRepoRoot(t)
 	t.Chdir(t.TempDir())
 
 	cmd := exec.Command("go", "version")

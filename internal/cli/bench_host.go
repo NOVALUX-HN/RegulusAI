@@ -38,47 +38,74 @@ func (c CLI) benchHostJourneysCmd(args []string) int {
 		return 2
 	}
 	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+	results := probeHostJourneys(ctx, c, *run, *model, *only, now)
+	fmt.Fprint(c.Stdout, bench.RenderMatrix(orderedHostIDs(*only), results))
+	if *out != "" {
+		if err := saveHostJourneyResults(*out, results); err != nil {
+			fmt.Fprintf(c.Stderr, "host-journeys: %v\n", err)
+			return 1
+		}
+	}
+	failed, ran := tallyHostJourneys(results)
+	return reportHostJourneys(c, failed, ran)
+}
+
+// probeHostJourneys probes every selected surface: version check first,
+// then the conformity journey only with --run. One host's failure never
+// degrades the others.
+func probeHostJourneys(ctx context.Context, c CLI, run bool, model, only, now string) map[string]bench.HostJourneyOutcome {
 	results := map[string]bench.HostJourneyOutcome{}
 	for _, p := range bench.DefaultHostProbes() {
-		if *only != "all" && p.ID != *only {
+		if only != "all" && p.ID != only {
 			continue
 		}
-		ver, err := p.Version(ctx)
-		now := time.Now().UTC().Format(time.RFC3339)
-		r := bench.HostJourneyOutcome{Host: p.ID, Version: ver, RecordedAt: now, Windows: isWindows()}
-		if err != nil {
-			r.Level, r.Status, r.Reason = bench.LevelNotRun, bench.AgentNotRun, err.Error()
-			results[p.ID] = r
-			continue
-		}
-		if !*run {
-			r.Level, r.Status, r.Reason = bench.LevelContract, bench.AgentNotRun, "probe only: binary present, version "+ver+" (journey not executed, no model cost)"
-			results[p.ID] = r
-			continue
-		}
-		results[p.ID] = c.executeHostJourney(ctx, p.ID, ver, *model, now)
+		results[p.ID] = probeOneHostJourney(ctx, c, p, run, model, now)
 	}
+	return results
+}
+
+// probeOneHostJourney resolves one surface: not-run with its reason
+// when the binary is missing, contract-probed in probe-only mode, the
+// full journey with --run.
+func probeOneHostJourney(ctx context.Context, c CLI, p bench.HostProbe, run bool, model, now string) bench.HostJourneyOutcome {
+	ver, err := p.Version(ctx)
+	r := bench.HostJourneyOutcome{Host: p.ID, Version: ver, RecordedAt: now, Windows: isWindows()}
+	if err != nil {
+		r.Level, r.Status, r.Reason = bench.LevelNotRun, bench.AgentNotRun, err.Error()
+		return r
+	}
+	if !run {
+		r.Level, r.Status, r.Reason = bench.LevelContract, bench.AgentNotRun, "probe only: binary present, version "+ver+" (journey not executed, no model cost)"
+		return r
+	}
+	return c.executeHostJourney(ctx, p.ID, ver, model, now)
+}
+
+// orderedHostIDs lists the matrix rows in stable order, honoring --host.
+func orderedHostIDs(only string) []string {
 	ordered := []string{}
 	for _, h := range []string{"opencode", "claude", "codex", "devin"} {
-		if *only != "all" && h != *only {
+		if only != "all" && h != only {
 			continue
 		}
 		ordered = append(ordered, h)
 	}
-	fmt.Fprint(c.Stdout, bench.RenderMatrix(ordered, results))
-	if *out != "" {
-		if err := os.MkdirAll(*out, 0o755); err != nil {
-			fmt.Fprintf(c.Stderr, "host-journeys: %v\n", err)
-			return 1
-		}
-		raw, _ := json.MarshalIndent(results, "", "  ")
-		name := fmt.Sprintf("host-journeys-%s.json", time.Now().UTC().Format("20060102T150405Z"))
-		if err := os.WriteFile(filepath.Join(*out, name), raw, 0o644); err != nil {
-			fmt.Fprintf(c.Stderr, "host-journeys: %v\n", err)
-			return 1
-		}
+	return ordered
+}
+
+// saveHostJourneyResults writes the per-host JSON evidence pack.
+func saveHostJourneyResults(out string, results map[string]bench.HostJourneyOutcome) error {
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
 	}
-	failed, ran := 0, 0
+	raw, _ := json.MarshalIndent(results, "", "  ")
+	name := fmt.Sprintf("host-journeys-%s.json", time.Now().UTC().Format("20060102T150405Z"))
+	return os.WriteFile(filepath.Join(out, name), raw, 0o644)
+}
+
+// tallyHostJourneys counts failed and passed journeys.
+func tallyHostJourneys(results map[string]bench.HostJourneyOutcome) (failed, ran int) {
 	for _, r := range results {
 		if r.Status == bench.AgentFail {
 			failed++
@@ -87,6 +114,12 @@ func (c CLI) benchHostJourneysCmd(args []string) int {
 			ran++
 		}
 	}
+	return failed, ran
+}
+
+// reportHostJourneys prints the final verdict: exit 1 only when a
+// journey that actually ran failed, else 0.
+func reportHostJourneys(c CLI, failed, ran int) int {
 	if failed > 0 {
 		fmt.Fprintf(c.Stdout, "host-journeys FAIL: %d host journey(s) failed\n", failed)
 		return 1

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,11 +13,24 @@ import (
 
 // TestManifestCheckPasses runs the real gate on the clean tree: the
 // canonical tools.json must agree with both code registries.
-func TestManifestCheckPasses(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
+// manifestTestRoot anchors the repo root to this test file, never to the
+// process cwd: the workspace runner executes compiled test binaries from
+// the repo root while `go test` runs them from the package dir.
+func manifestTestRoot(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	root, err := filepath.Abs(filepath.Join(filepath.Dir(thisFile), "..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return root
+}
+
+func TestManifestCheckPasses(t *testing.T) {
+	root := manifestTestRoot(t)
 	c, out, errb := newCLI(nil)
 	c.Dir = root
 	if code := c.Run([]string{"manifest", "check"}); code != 0 {
@@ -50,10 +64,7 @@ func TestManifestCheckUsage(t *testing.T) {
 // tools.json version 1 maps to the supported contract/mcp/protocol.
 // Any other version fails with a message naming the supported set.
 func TestManifestCheckRejectsUnsupportedVersion(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := manifestTestRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "internal", "manifest", "tools.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -83,10 +94,7 @@ func TestManifestCheckRejectsUnsupportedVersion(t *testing.T) {
 // proves the pure comparator names it (RED-capable without touching the
 // tree: the failure lists the tool and the mismatch kind).
 func TestManifestCheckDetectsRequiredMismatch(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := manifestTestRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "internal", "manifest", "tools.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -119,10 +127,7 @@ func TestManifestCheckDetectsRequiredMismatch(t *testing.T) {
 // TestManifestCheckDetectsMissingTool drops one entry and proves the
 // comparator reports it as missing (exit-1 path without tree writes).
 func TestManifestCheckDetectsMissingTool(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := manifestTestRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "internal", "manifest", "tools.json"))
 	if err != nil {
 		t.Fatal(err)

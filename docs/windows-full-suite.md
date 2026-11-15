@@ -6,9 +6,47 @@ workspace (nunca `%TEMP%`) y lo ejecuta. Si App Control bloquea un
 binario igual (eventos 3033/3077/3089/3118), el paquete se marca
 BLOCKED con el diagnóstico accionable (no un "permission denied"
 mudo) y el exit solo falla por rojos reales. `GOTMPDIR` apunta al
-workspace para no ensuciar Temp.
+SIDECAR fuera del repo (nunca `%TEMP%`, nunca el checkout): los .exe
+de test y los helpers que los tests ejecutan corren desde ahí sin
+bloqueos, y los `t.TempDir()` quedan fuera de cualquier checkout —
+si cayeran dentro, `ResolveRoot` devolvería la raíz del repo en vez
+del fixture y los tests leerían el store real (aislamiento roto).
 
-CI (`windows.yml`, job `windows-native`): build multiplataforma, vet,
+## Paridad local ↔ CI (sin reprocesos)
+
+Lo que evalúa CI se evalúa local con los mismos comandos y el mismo
+env estricto:
+
+- Windows job ≈ `powershell -NoProfile -File scripts/test-windows.ps1`
+  (el script impone `REGULUS_STRICT_ENV=1` como el job; `GOTMPDIR` al
+  sidecar fuera del repo). Si un test falla solo local, sospechá
+  entorno (App Control por hash, `node`/`bash` fuera del PATH de
+  PowerShell) antes que código: reintentá una vez y compará contra
+  la lista de fallos del run de CI.
+- Gauntlet (Linux) en local ≈ `go build ./...` +
+  `go test ./... -coverprofile .regulus/coverage.out` +
+  `go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --max-critical 30 --max-standard 50 --top 5`
+  (mismos umbrales que `regulus.json`); `gremlins`/`govulncheck` solo
+  si están instalados con los pins del workflow.
+
+## Pre-commit local (replicar CI antes de cada commit)
+
+El mismo flujo, en el mismo orden, sin sorpresas en el push:
+
+```powershell
+# 1. Gauntlet completo (16 capas, mismos comandos y umbrales que CI)
+go build -o bin/regulus.exe ./cmd/regulus
+./bin/regulus.exe gate run --yes ci/push
+# 2. Suite Windows (mismo runner que CI)
+powershell -NoProfile -File scripts/test-windows.ps1
+```
+
+`gate run` ejecuta las 16 capas con receipts; si una capa cae, el
+artifact `.regulus/evidence/ci__push/` trae el receipt exacto (el
+mismo que subiría CI). Para iterar rápido en una sola capa, usá los
+comandos de `regulus.json` sueltos (ej. el `crap` de arriba).
+
+CI (`ci.yml`, job `windows-native`): build multiplataforma, vet,
 suite completa vía el script, hashes SHA-256 publicados como
 artefacto, y aserción de que el EXE sigue `NotSigned` mientras la
 firma es opcional (NOV-44). El job `windows-protected-audit` vuelca

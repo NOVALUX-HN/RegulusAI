@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -199,9 +200,12 @@ func TestF7E2EHoldoutConfirmationOnly(t *testing.T) {
 		t.Fatal("holdout leak must be detected")
 	}
 	cands := []ExplorationCandidate{{ID: "good-h1", Domain: DomainINV}, {ID: "good-h2", Domain: DomainINV}}
+	var mu sync.Mutex
 	seen := map[string]bool{}
 	spy := func(ctx context.Context, c ExplorationCandidate, a int) (ExplorationOutcome, error) {
+		mu.Lock()
 		seen[c.ID] = true
+		mu.Unlock()
 		return e2eProbe(1)(ctx, c, a)
 	}
 	if _, err := RunExploration(context.Background(), RunOptions{K: 2, Mode: RunModeParallel, Seed: 1}, cands, spy); err != nil {

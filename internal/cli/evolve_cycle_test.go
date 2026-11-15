@@ -240,6 +240,33 @@ func TestEvolveRollbackRestores(t *testing.T) {
 	}
 }
 
+func TestEvolveRollbackUnknownExp(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"evolve", "rollback", "--exp", "nope", "--reason", "drift"}); code != 1 {
+		t.Fatalf("rollback of unknown exp exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "no active version") {
+		t.Fatalf("rollback must name the missing version, got %q", errb.String())
+	}
+}
+
+func TestEvolveEvaluateMissingBaseline(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	exp := mkCycleExp(t, dir, "never-pinned", "candidate text")
+	trialsFile := filepath.Join(dir, "trials.json")
+	writeCycleJSON(t, trialsFile, cycleTrials())
+	c, _, errb := newCLI(nil)
+	if code := c.Run([]string{"evolve", "evaluate", "--exp", exp.ID, "--baseline", trialsFile}); code != 1 {
+		t.Fatalf("evaluate without pinned baseline exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "baseline") {
+		t.Fatalf("evaluate must name the missing baseline, got %q", errb.String())
+	}
+}
+
 func TestEvolveRejectListsReason(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

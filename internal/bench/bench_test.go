@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -527,10 +528,7 @@ func TestGauntletShapeRejectsMutationInQuick(t *testing.T) {
 // fails here until all three agree again.
 func TestGauntletShapeMatchesDocTable(t *testing.T) {
 	shape := readGauntletShape(t)
-	raw, err := os.ReadFile("../../docs/gauntlet.md")
-	if err != nil {
-		t.Fatalf("read docs/gauntlet.md: %v", err)
-	}
+	raw := benchRepoFile(t, "docs/gauntlet.md")
 	rows, err := parseDocGateTable(string(raw))
 	if err != nil {
 		t.Fatalf("parseDocGateTable: %v", err)
@@ -546,15 +544,28 @@ func TestGauntletShapeMatchesDocTable(t *testing.T) {
 	}
 }
 
+// benchRepoFile reads a repo-relative fixture anchored to this test file,
+// never to the process cwd: the workspace runner executes compiled test
+// binaries from the repo root while `go test` runs them from internal/bench.
+func benchRepoFile(t *testing.T, rel string) []byte {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "..", "..", rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
 // readGauntletShape loads the checked-in bench/gauntlet-shape.json.
 // Tests run with cwd=internal/bench, so this is a fixed relative path
 // (never a repo-root lookup by the bench checks themselves).
 func readGauntletShape(t *testing.T) gauntletShape {
 	t.Helper()
-	raw, err := os.ReadFile("../../bench/gauntlet-shape.json")
-	if err != nil {
-		t.Fatalf("read bench/gauntlet-shape.json: %v", err)
-	}
+	raw := benchRepoFile(t, "bench/gauntlet-shape.json")
 	shape, err := parseGauntletShape(raw)
 	if err != nil {
 		t.Fatalf("parseGauntletShape: %v", err)

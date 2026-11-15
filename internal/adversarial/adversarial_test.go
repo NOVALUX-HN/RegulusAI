@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,7 +36,11 @@ type catalog struct {
 
 func loadCatalog(t *testing.T) catalog {
 	t.Helper()
-	data, err := os.ReadFile("catalog.json")
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "catalog.json"))
 	if err != nil {
 		t.Fatalf("read catalog.json: %v", err)
 	}
@@ -58,7 +63,7 @@ func loadCatalog(t *testing.T) catalog {
 			t.Fatalf("duplicate catalog id %q", e.ID)
 		}
 		seen[e.ID] = true
-		info, err := os.Stat(filepath.Join("corpus", e.Seed))
+		info, err := os.Stat(corpusPath(t, e.Seed))
 		if err != nil || info.Size() == 0 {
 			t.Fatalf("catalog entry %q needs a non-empty corpus seed %q", e.ID, e.Seed)
 		}
@@ -66,10 +71,22 @@ func loadCatalog(t *testing.T) catalog {
 	return c
 }
 
+// corpusPath anchors a corpus seed to this test file, never to the process
+// cwd (the workspace runner executes compiled test binaries from the repo
+// root while `go test` runs them from the package dir).
+func corpusPath(t *testing.T, seed string) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "corpus", seed)
+}
+
 // seedText returns the raw corpus seed for one entry.
 func seedText(t *testing.T, e catalogEntry) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("corpus", e.Seed))
+	data, err := os.ReadFile(corpusPath(t, e.Seed))
 	if err != nil {
 		t.Fatalf("read seed %q: %v", e.Seed, err)
 	}

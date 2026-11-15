@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regulus-ai/internal/testenv"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -41,15 +42,24 @@ func findGremlins(t *testing.T) string {
 // a freshly built regulus binary. Skips with a reason when gremlins is not
 // installed (the mutation gate is verified live in the session dogfood,
 // feature doc L17).
+// journeyRepoRoot anchors the repo root to this test file, never to the
+// process cwd: the workspace runner executes compiled test binaries from
+// the repo root while `go test` runs them from internal/journey.
+func journeyRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	root, err := filepath.Abs(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestF2SevenLayers(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repoRoot, err := filepath.Abs(filepath.Join(wd, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	repoRoot := journeyRepoRoot(t)
 	gremlinsBin := findGremlins(t)
 	if gremlinsBin == "" {
 		testenv.Require(t, "gremlins")
@@ -151,7 +161,7 @@ func main() {
 		{Name: "build", Layer: 3, Command: "go build -o bin/fixture.exe ./cmd/fixture"},
 		{Name: "unit-tests", Layer: 4, Command: "go test ./... -coverprofile .regulus/coverage.out"},
 		{Name: "coverage-floor", Layer: 5, Command: "go tool cover -func .regulus/coverage.out", Metric: &gates.Metric{Extract: gates.ExtractLastLinePercent, Threshold: 80, Operator: gates.OpAtLeast}},
-		{Name: "mutation", Layer: 6, Command: "gremlins unleash ./pkg/calc --threshold-efficacy 70", TimeoutSec: 600},
+		{Name: "mutation", Layer: 6, Command: "gremlins unleash ./pkg/calc --threshold-efficacy 70 --workers 4 --timeout-coefficient 10", TimeoutSec: 600},
 		{Name: "crap", Layer: 7, Command: "./regulus.exe crap --profile .regulus/coverage.out --max 30 --top 5"},
 	}}
 	cfgData, err := json.Marshal(cfg)

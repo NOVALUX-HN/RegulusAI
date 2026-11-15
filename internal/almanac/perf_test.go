@@ -135,6 +135,12 @@ func TestPerfReindexBudget10k(t *testing.T) {
 // 110ms, p95 ≈ 124ms, FAIL vs 50ms) — the same shape as the CI failure
 // (layer 4, ~15s, shared ubuntu-latest vCPUs). Only a catastrophic
 // collapse (e.g. an accidental quadratic in the fusion path) trips it.
+//
+// Under -race the detector's ~10x instrumentation slowdown plus shared CI
+// vCPUs make any wall-clock ceiling flaky on healthy code (CI 2026-11-15:
+// p95 419ms with zero data races), so the searches still run for race
+// coverage but the hard verdict stands down; layer 5 (unit-tests,
+// without -race) owns the perf ceiling.
 func TestPerfHybridP95Budget10k(t *testing.T) {
 	root := perfSeedCorpus(t, 10000)
 	if _, _, err := Reindex(root); err != nil {
@@ -167,6 +173,10 @@ func TestPerfHybridP95Budget10k(t *testing.T) {
 	p95 := durs[int(float64(len(durs))*0.95)-1]
 	max := durs[len(durs)-1]
 	t.Logf("hybrid 10k: n=%d p50=%v p95=%v max=%v design-budget=50ms (§5) verdict-ceiling=%v", len(durs), p50, p95, max, hybridVerdictCeiling)
+	if raceDetectorOn {
+		t.Log("race detector on: searches ran for race coverage, wall-clock verdict stands down (layer 5 owns the perf ceiling)")
+		return
+	}
 	if p95 >= hybridVerdictCeiling {
 		t.Fatalf("hybrid p95 = %v over %d searches, verdict ceiling is < %v (5x the §5 50ms design budget; catastrophic collapse only)", p95, len(durs), hybridVerdictCeiling)
 	}
