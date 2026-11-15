@@ -435,6 +435,157 @@ func RunExploration(ctx context.Context, opts RunOptions, cands []ExplorationCan
 	return RunExplorationResume(ctx, opts, cands, nil, probe)
 }
 
+// explorationRunner carries the shared exploration state (ctx, budgets,
+// token ledger) so the resume phases stay small without changing behavior.
+type explorationRunner struct {
+	ctx    context.Context
+	opts   RunOptions
+	probe  ExploreProbe
+	mu     sync.Mutex
+	tokens int64
+}
+
+// newExplorationRunner seeds the token ledger from already-done outcomes.
+func newExplorationRunner(ctx context.Context, opts RunOptions, probe ExploreProbe, done map[string]ExplorationOutcome) *explorationRunner {
+	r := &explorationRunner{ctx: ctx, opts: opts, probe: probe}
+	for _, d := range done {
+		r.tokens += d.Tokens
+	}
+	return r
+}
+
+// claim folds one outcome's tokens into the budget ledger.
+func (r *explorationRunner) claim(t int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.opts.Budget.MaxTokens > 0 && r.tokens+t > r.opts.Budget.MaxTokens {
+		return ErrExplorationBudget
+	}
+	r.tokens += t
+	return nil
+}
+
+// attemptOne fires a single probe attempt and folds budget/detail rules.
+func (r *explorationRunner) attemptOne(cand ExplorationCandidate, attempt int) (ExplorationOutcome, bool, error) {
+	if err := r.ctx.Err(); err != nil {
+		return ExplorationOutcome{}, false, err
+	}
+	got, err := r.probe(r.ctx, cand, attempt)
+	if err != nil {
+		got = ExplorationOutcome{ID: cand.ID, Domain: cand.Domain, ParentID: cand.ParentID, Status: ExploreFail, Detail: "probe error: " + err.Error()}
+	}
+	if strings.TrimSpace(got.ID) == "" {
+		got.ID = cand.ID
+	}
+	got.Domain = cand.Domain
+	got.ParentID = cand.ParentID
+	if !validExploreStatus(got.Status) {
+		got.Status = ExploreFail
+	}
+	got.Detail = truncateDiff(got.Detail, r.opts.Budget.MaxDiffBytes)
+	if got.Attempts == 0 {
+		got.Attempts = attempt
+	}
+	if err := r.claim(got.Tokens); err != nil {
+		return got, false, err
+	}
+	return got, true, nil
+}
+
+// runCandidate runs every attempt for one selected candidate, checkpointing
+// progress. Done ids are never re-fired.
+func (r *explorationRunner) runCandidate(sel []ExplorationCandidate, done map[string]ExplorationOutcome, out []ExplorationOutcome, i int) error {
+	cand := sel[i]
+	if _, ok := done[cand.ID]; ok {
+		return nil
+	}
+	if err := r.ctx.Err(); err != nil {
+		return err
+	}
+	maxAttempts := 1 + r.opts.Budget.MaxRetries
+	var last ExplorationOutcome
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		got, ok, err := r.attemptOne(cand, attempt)
+		if err != nil {
+			if errors.Is(err, ErrExplorationBudget) {
+				last = got
+				last.Attempts = attempt
+				r.mu.Lock()
+				out[i] = last
+				r.mu.Unlock()
+				return ErrExplorationBudget
+			}
+			return err
+		}
+		if !ok {
+			return r.ctx.Err()
+		}
+		got.Attempts = attempt
+		last = got
+		if !retryable(got.Status) {
+			break
+		}
+		if got.Status == ExplorePass {
+			break
+		}
+	}
+	r.mu.Lock()
+	out[i] = last
+	completed := append([]ExplorationOutcome(nil), out...)
+	r.mu.Unlock()
+	saveCheckpoint(r.opts.Workspace, completed)
+	return nil
+}
+
+// validateExplorationCandidates rejects blank ids and unknown domains
+// before any probe fires.
+func validateExplorationCandidates(cands []ExplorationCandidate) error {
+	for _, c := range cands {
+		if strings.TrimSpace(c.ID) == "" {
+			return errors.New("evolve: exploration candidate needs an id")
+		}
+		if c.Domain != DomainINV && c.Domain != DomainDOM {
+			return fmt.Errorf("evolve: exploration domain %q must be INV or DOM", c.Domain)
+		}
+	}
+	return nil
+}
+
+// seedDoneFromCheckpoint merges the workspace checkpoint into done so
+// completed ids are reused without re-firing the probe.
+func seedDoneFromCheckpoint(workspace string, done map[string]ExplorationOutcome) (map[string]ExplorationOutcome, error) {
+	if workspace == "" {
+		return done, nil
+	}
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return nil, err
+	}
+	for id, o := range loadCheckpoint(workspace) {
+		if done == nil {
+			done = map[string]ExplorationOutcome{}
+		}
+		if _, ok := done[id]; !ok {
+			done[id] = o
+		}
+	}
+	return done, nil
+}
+
+// initExplorationOutcomes maps the selection onto outcomes, reusing done
+// ids and marking the rest missing.
+func initExplorationOutcomes(sel []ExplorationCandidate, done map[string]ExplorationOutcome) (out []ExplorationOutcome, doneCount int) {
+	out = make([]ExplorationOutcome, len(sel))
+	for i, c := range sel {
+		if d, ok := done[c.ID]; ok {
+			out[i] = d
+			doneCount++
+			continue
+		}
+		out[i] = ExplorationOutcome{ID: c.ID, Domain: c.Domain, ParentID: c.ParentID, Status: ExploreMissing}
+	}
+	return out, doneCount
+}
+
 // RunExplorationResume resumes idempotently: ids present in done (or in
 // the workspace checkpoint when Workspace is set) are reused without
 // re-firing the probe. Repeating the same call with the outcomes of the
@@ -446,26 +597,13 @@ func RunExplorationResume(ctx context.Context, opts RunOptions, cands []Explorat
 	if probe == nil {
 		return nil, errors.New("evolve: exploration needs a probe function")
 	}
-	for _, c := range cands {
-		if strings.TrimSpace(c.ID) == "" {
-			return nil, errors.New("evolve: exploration candidate needs an id")
-		}
-		if c.Domain != DomainINV && c.Domain != DomainDOM {
-			return nil, fmt.Errorf("evolve: exploration domain %q must be INV or DOM", c.Domain)
-		}
+	if err := validateExplorationCandidates(cands); err != nil {
+		return nil, err
 	}
-	if opts.Workspace != "" {
-		if err := os.MkdirAll(opts.Workspace, 0o755); err != nil {
-			return nil, err
-		}
-		for id, o := range loadCheckpoint(opts.Workspace) {
-			if done == nil {
-				done = map[string]ExplorationOutcome{}
-			}
-			if _, ok := done[id]; !ok {
-				done[id] = o
-			}
-		}
+	var err error
+	done, err = seedDoneFromCheckpoint(opts.Workspace, done)
+	if err != nil {
+		return nil, err
 	}
 	if opts.Budget.MaxWallTime > 0 {
 		var cancel context.CancelFunc
@@ -473,108 +611,18 @@ func RunExplorationResume(ctx context.Context, opts RunOptions, cands []Explorat
 		defer cancel()
 	}
 	sel := effectiveSelection(opts, cands)
-	out := make([]ExplorationOutcome, len(sel))
-	doneCount := 0
-	for i, c := range sel {
-		if d, ok := done[c.ID]; ok {
-			out[i] = d
-			doneCount++
-			continue
-		}
-		out[i] = ExplorationOutcome{ID: c.ID, Domain: c.Domain, ParentID: c.ParentID, Status: ExploreMissing}
-	}
+	out, doneCount := initExplorationOutcomes(sel, done)
 	if doneCount == len(sel) {
 		return out, nil
 	}
-	var mu sync.Mutex
-	var totalTokens int64
-	for _, d := range done {
-		totalTokens += d.Tokens
-	}
-	claimTokens := func(t int64) error {
-		mu.Lock()
-		defer mu.Unlock()
-		if opts.Budget.MaxTokens > 0 && totalTokens+t > opts.Budget.MaxTokens {
-			return ErrExplorationBudget
-		}
-		totalTokens += t
-		return nil
-	}
-	// attemptOne fires a single probe attempt and folds budget/detail rules.
-	attemptOne := func(cand ExplorationCandidate, attempt int) (ExplorationOutcome, bool, error) {
-		if err := ctx.Err(); err != nil {
-			return ExplorationOutcome{}, false, err
-		}
-		got, err := probe(ctx, cand, attempt)
-		if err != nil {
-			got = ExplorationOutcome{ID: cand.ID, Domain: cand.Domain, ParentID: cand.ParentID, Status: ExploreFail, Detail: "probe error: " + err.Error()}
-		}
-		if strings.TrimSpace(got.ID) == "" {
-			got.ID = cand.ID
-		}
-		got.Domain = cand.Domain
-		got.ParentID = cand.ParentID
-		if !validExploreStatus(got.Status) {
-			got.Status = ExploreFail
-		}
-		got.Detail = truncateDiff(got.Detail, opts.Budget.MaxDiffBytes)
-		if got.Attempts == 0 {
-			got.Attempts = attempt
-		}
-		if err := claimTokens(got.Tokens); err != nil {
-			return got, false, err
-		}
-		return got, true, nil
-	}
-	runCandidate := func(i int) error {
-		cand := sel[i]
-		if _, ok := done[cand.ID]; ok {
-			return nil
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		maxAttempts := 1 + opts.Budget.MaxRetries
-		var last ExplorationOutcome
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			got, ok, err := attemptOne(cand, attempt)
-			if err != nil {
-				if errors.Is(err, ErrExplorationBudget) {
-					last = got
-					last.Attempts = attempt
-					mu.Lock()
-					out[i] = last
-					mu.Unlock()
-					return ErrExplorationBudget
-				}
-				return err
-			}
-			if !ok {
-				return ctx.Err()
-			}
-			got.Attempts = attempt
-			last = got
-			if !retryable(got.Status) {
-				break
-			}
-			if got.Status == ExplorePass {
-				break
-			}
-		}
-		mu.Lock()
-		out[i] = last
-		completed := append([]ExplorationOutcome(nil), out...)
-		mu.Unlock()
-		saveCheckpoint(opts.Workspace, completed)
-		return nil
-	}
+	r := newExplorationRunner(ctx, opts, probe, done)
 	switch opts.Mode {
 	case RunModeSequential:
 		for i := range sel {
 			if _, ok := done[sel[i].ID]; ok {
 				continue
 			}
-			if err := runCandidate(i); err != nil {
+			if err := r.runCandidate(sel, done, out, i); err != nil {
 				return out, err
 			}
 		}
@@ -603,7 +651,7 @@ func RunExplorationResume(ctx context.Context, opts RunOptions, cands []Explorat
 			go func(i int) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				errs[i] = runCandidate(i)
+				errs[i] = r.runCandidate(sel, done, out, i)
 			}(i)
 		}
 		wg.Wait()

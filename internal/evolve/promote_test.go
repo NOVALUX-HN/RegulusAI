@@ -189,3 +189,20 @@ func TestPromoteGovernedRollbackAtomic(t *testing.T) {
 		t.Fatalf("version must be superseded: %+v", versions)
 	}
 }
+
+func TestPromoteGovernedRollbackGuards(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := GovernedRollback(dir, "x", 1, "ana", "r", "m", "", []string{"rec"}); err == nil {
+		t.Fatal("rollback without diff must be refused")
+	}
+	if _, err := GovernedRollback(dir, "nope", 1, "ana", "r", "m", "d", []string{"rec"}); err == nil {
+		t.Fatal("rollback of an unknown experiment must be refused")
+	}
+	if err := SetBaseline(dir, "v0.9.0", goodMetrics()); err != nil {
+		t.Fatal(err)
+	}
+	exp := promoteEvaluated(t, dir, "improve prose renderer")
+	if _, err := GovernedRollback(dir, exp.ID, 1, "ana", "r", "m", "d", []string{"rec"}); err == nil {
+		t.Fatal("rollback outside CANARY/ADOPTED must be refused")
+	}
+}

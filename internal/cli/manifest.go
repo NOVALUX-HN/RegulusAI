@@ -103,32 +103,70 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 		return []string{fmt.Sprintf("malformed tools.json: %v", err)}
 	}
 	var problems []string
+	problems = append(problems, checkManifestVersion(file)...)
 
-	// NOV-37: tools.json version 1 maps to the supported contract, MCP
-	// contract and wire protocol. Any other version — or an unsupported
-	// pinned version — fails with the supported set named.
-	if file.Version != 1 {
-		problems = append(problems, fmt.Sprintf("unsupported manifest version %d: version 1 maps to contract %q, mcp contract %q, protocol %q", file.Version, contract.Version, mcp.ContractVersion, mcp.ProtocolVersion))
-	} else {
-		if !contract.Supports(contract.Version) {
-			problems = append(problems, fmt.Sprintf("unsupported contract %q (supported %v)", contract.Version, contract.Supported))
-		}
-		if !mcp.SupportsContract(mcp.ContractVersion) {
-			problems = append(problems, fmt.Sprintf("unsupported mcp contract %q (supported %v)", mcp.ContractVersion, mcp.SupportedContracts))
-		}
-		if !mcp.SupportsProtocol(mcp.ProtocolVersion) {
-			problems = append(problems, fmt.Sprintf("unsupported protocol %q (supported %v)", mcp.ProtocolVersion, mcp.SupportedProtocols))
+	jsonRequired, cliRequired, mcpSet := manifestIndexes(file, cliTools, mcpNames)
+	problems = append(problems, checkManifestDuplicates(file, cliTools, mcpNames)...)
+
+	problems = append(problems, checkManifestCrossRefs(jsonRequired, cliRequired, mcpSet, mcpNames)...)
+
+	problems = append(problems, checkManifestRequired(jsonRequired, cliRequired)...)
+
+	problems = append(problems, checkManifestGaps(file)...)
+
+	sort.Strings(problems)
+	return problems
+}
+
+// manifestIndexes builds the name indexes shared by the manifest checks:
+// required lists per tool and the descriptor set.
+func manifestIndexes(file manifestToolsFile, cliTools []mcpTool, mcpNames []string) (jsonRequired, cliRequired map[string][]string, mcpSet map[string]bool) {
+	jsonRequired = map[string][]string{}
+	for _, e := range file.MCP {
+		if _, ok := jsonRequired[e.Name]; !ok {
+			jsonRequired[e.Name] = append([]string(nil), e.Required...)
 		}
 	}
+	cliRequired = map[string][]string{}
+	for _, t := range cliTools {
+		if _, ok := cliRequired[t.name]; !ok {
+			cliRequired[t.name] = append([]string(nil), t.required...)
+		}
+	}
+	mcpSet = map[string]bool{}
+	for _, n := range mcpNames {
+		mcpSet[n] = true
+	}
+	return jsonRequired, cliRequired, mcpSet
+}
 
-	jsonRequired := map[string][]string{}
+// checkManifestVersion pins the manifest contract triple: tools.json
+// version 1 maps to the supported contract, MCP contract and wire
+// protocol (NOV-37). Any other version fails with the supported set named.
+func checkManifestVersion(file manifestToolsFile) []string {
+	if file.Version != 1 {
+		return []string{fmt.Sprintf("unsupported manifest version %d: version 1 maps to contract %q, mcp contract %q, protocol %q", file.Version, contract.Version, mcp.ContractVersion, mcp.ProtocolVersion)}
+	}
+	var problems []string
+	if !contract.Supports(contract.Version) {
+		problems = append(problems, fmt.Sprintf("unsupported contract %q (supported %v)", contract.Version, contract.Supported))
+	}
+	if !mcp.SupportsContract(mcp.ContractVersion) {
+		problems = append(problems, fmt.Sprintf("unsupported mcp contract %q (supported %v)", mcp.ContractVersion, mcp.SupportedContracts))
+	}
+	if !mcp.SupportsProtocol(mcp.ProtocolVersion) {
+		problems = append(problems, fmt.Sprintf("unsupported protocol %q (supported %v)", mcp.ProtocolVersion, mcp.SupportedProtocols))
+	}
+	return problems
+}
+
+// checkManifestDuplicates rejects duplicate or blank tool names in each
+// registry (manifest, dispatch, descriptors).
+func checkManifestDuplicates(file manifestToolsFile, cliTools []mcpTool, mcpNames []string) []string {
+	var problems []string
 	jsonSeen := map[string]int{}
 	for _, e := range file.MCP {
 		jsonSeen[e.Name]++
-		if _, ok := jsonRequired[e.Name]; !ok {
-			req := append([]string(nil), e.Required...)
-			jsonRequired[e.Name] = req
-		}
 	}
 	for name, n := range jsonSeen {
 		if n > 1 {
@@ -138,21 +176,15 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 			problems = append(problems, "empty tool name in manifest")
 		}
 	}
-
-	cliRequired := map[string][]string{}
 	cliSeen := map[string]int{}
 	for _, t := range cliTools {
 		cliSeen[t.name]++
-		if _, ok := cliRequired[t.name]; !ok {
-			cliRequired[t.name] = append([]string(nil), t.required...)
-		}
 	}
 	for name, n := range cliSeen {
 		if n > 1 {
 			problems = append(problems, fmt.Sprintf("duplicate tool in dispatch: %q x%d", name, n))
 		}
 	}
-
 	mcpSeen := map[string]int{}
 	for _, n := range mcpNames {
 		mcpSeen[n]++
@@ -162,8 +194,14 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 			problems = append(problems, fmt.Sprintf("duplicate tool in descriptors: %q x%d", name, n))
 		}
 	}
+	return problems
+}
 
-	// JSON vs dispatch (same package).
+// checkManifestCrossRefs verifies the three registries name the same
+// tools: manifest vs dispatch (same package) and manifest vs the
+// capability descriptors (internal/mcp).
+func checkManifestCrossRefs(jsonRequired, cliRequired map[string][]string, mcpSet map[string]bool, mcpNames []string) []string {
+	var problems []string
 	for name := range cliRequired {
 		if _, ok := jsonRequired[name]; !ok {
 			problems = append(problems, fmt.Sprintf("missing in manifest: %q (dispatches but not in tools.json)", name))
@@ -173,11 +211,6 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 		if _, ok := cliRequired[name]; !ok {
 			problems = append(problems, fmt.Sprintf("extra in manifest: %q (in tools.json but no dispatch)", name))
 		}
-	}
-	// JSON vs descriptors (internal/mcp).
-	mcpSet := map[string]bool{}
-	for _, n := range mcpNames {
-		mcpSet[n] = true
 	}
 	for name := range jsonRequired {
 		if !mcpSet[name] {
@@ -189,8 +222,13 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 			problems = append(problems, fmt.Sprintf("missing in manifest: %q (in mcp.ToolNames() but not in tools.json)", name))
 		}
 	}
+	return problems
+}
 
-	// Required lists: manifest vs dispatch, order-insensitive.
+// checkManifestRequired compares required lists manifest vs dispatch,
+// order-insensitive.
+func checkManifestRequired(jsonRequired, cliRequired map[string][]string) []string {
+	var problems []string
 	for name, want := range cliRequired {
 		got, ok := jsonRequired[name]
 		if !ok {
@@ -200,8 +238,13 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 			problems = append(problems, fmt.Sprintf("required mismatch for %q: manifest %s vs dispatch %s", name, formatStringList(got), formatStringList(want)))
 		}
 	}
+	return problems
+}
 
-	// Intentional gaps: exact known set, each with a reason.
+// checkManifestGaps verifies the intentional gaps are exactly the known
+// set, each with a reason.
+func checkManifestGaps(file manifestToolsFile) []string {
+	var problems []string
 	gapReason := map[string]string{}
 	gapSeen := map[string]int{}
 	for _, g := range file.IntentionalGaps {
@@ -234,8 +277,6 @@ func checkToolManifest(data []byte, cliTools []mcpTool, mcpNames []string) []str
 			problems = append(problems, fmt.Sprintf("intentional gap %q needs a reason", name))
 		}
 	}
-
-	sort.Strings(problems)
 	return problems
 }
 

@@ -234,3 +234,26 @@ func TestWaiverDiscountsMax(t *testing.T) {
 		t.Fatalf("EffectiveMax without waiver = %.2f, want 72", got)
 	}
 }
+
+func TestTierMaximaSplitsCoreRoutes(t *testing.T) {
+	rep := Report{Functions: []Scored{
+		{File: "internal/gates/run.go", Name: "run", CRAP: 58},
+		{File: "internal/evolve/strategy.go", Name: "RunExplorationResume", CRAP: 48},
+		{File: "cmd/regulus/main.go", Name: "serve", CRAP: 12},
+	}}
+	crit, std := rep.TierMaxima(nil)
+	if crit != 58 || std != 48 {
+		t.Fatalf("TierMaxima = (%.2f, %.2f), want (58, 48)", crit, std)
+	}
+	waived := map[string]bool{WaiverKey("internal/gates/run.go", "run"): true}
+	crit, std = rep.TierMaxima(waived)
+	if crit != 12 || std != 48 {
+		t.Fatalf("TierMaxima waived core = (%.2f, %.2f), want (12, 48)", crit, std)
+	}
+	for _, f := range rep.Functions {
+		waived[WaiverKey(f.File, f.Name)] = true
+	}
+	if crit, std := rep.TierMaxima(waived); crit != 0 || std != 0 {
+		t.Fatalf("TierMaxima all waived = (%.2f, %.2f), want (0, 0)", crit, std)
+	}
+}
