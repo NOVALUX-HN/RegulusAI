@@ -17,7 +17,7 @@ Cerrar 10 issues Backlog en develop, solo main+develop, comentando en Linear qu�
 - T47 NOV-71 Paso 50 ciclo real | S4 | route: inline | commit: 0804e72 Done (TIE+aprobacion humana: adopta recortados; rechazo real documentado)
 - T48 NOV-65 Paso 47 fuzz/bench | S5 | route: inline | commit: b993bbf Done (2 fail-closed reales en allowlist; perf P95 queda fuera: entorno)
 - T49 NOV-66 Paso 48 Windows full | S5 | route: inline | commit: f02e89b Done
-- T50 NOV-67 Paso 49 modularización | S5 | route: inline | commit: _
+- T50 NOV-67 Paso 49 modularización | S5 | route: inline | commit: 631a3bc+3aa6dad+ad21227+806ee4f+9378050 Done (dashboard embed byte-identico, memory/bench/gates split, domain.ts 9 modulos + plugin tests, gate size 16)
 - T51 NOV-70 Paso 51 releases | S5 | route: inline | commit: b22264f+938d3c8 Done (tag push de prueba pendiente: decision de publicacion)
 
 ## Log
