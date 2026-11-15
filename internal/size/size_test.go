@@ -2,6 +2,7 @@
 package size
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,5 +99,24 @@ func TestCheckCriticalTierIsStricter(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("150-line func must fail the critical tier (cap 100), got %v", got)
+	}
+}
+
+func TestCheckFlagsTooCoupledPackage(t *testing.T) {
+	var imps strings.Builder
+	for i := 0; i < 35; i++ {
+		fmt.Fprintf(&imps, "\t_ \"regulus-ai/internal/dep%02d\"\n", i)
+	}
+	body := "package p\n\nimport (\n" + imps.String() + ")\n\nfunc F() {}\n"
+	root := writeTree(t, map[string]string{"internal/hub/hub.go": body}, "")
+	got := Check(root, "docs/quality-exceptions.md")
+	found := false
+	for _, v := range got {
+		if v.Kind == "too-coupled" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("35 deps must trip the coupling cap, got %v", got)
 	}
 }
