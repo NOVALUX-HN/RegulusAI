@@ -96,9 +96,11 @@ jobs:
       # S4: un gate rojo deja evidencia — sube los receipts siempre,
       # incluso en fallo, para diagnóstico sin adivinar.
       # S2 (docs-ci-hygiene/C2): upload-artifact se queda en v4 a propósito:
-      # v5 también declara `using: node20` (verificado 2026-11-01) — hoy no
-      # existe un major con node24 al que subir, y cambiar de major sin
-      # beneficio solo añade churn.
+      # v5 también declara `using: node20` (verificado 2026-11-01 y de nuevo
+      # 2026-11-15: ambos action.yml idénticos) — subir de major no saca el
+      # aviso de deprecación, solo añade churn. El warning "forced to run
+      # on Node.js 24" lo emite el runner y desaparece solo cuando GitHub
+      # migre la action a node24.
       # warn (no error) si no hay ficheros: capas tempranas pueden no
       # dejar receipts del task si falla typecheck.
       - name: Upload gate receipts
