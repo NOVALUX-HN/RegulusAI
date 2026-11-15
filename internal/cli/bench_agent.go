@@ -34,18 +34,10 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 		return 2
 	}
 	corpus := bench.AgentCorpus()
-	var agent bench.HeadlessAgent
-	switch *host {
-	case "opencode":
-		r, err := bench.DefaultOpenCodeRunner()
-		if err != nil {
-			fmt.Fprintf(c.Stdout, "agent-tasks NOT RUN: %v (suite skipped, nothing passed or failed)\n", err)
-			return 3
-		}
-		agent = r
-	default:
-		fmt.Fprintf(c.Stdout, "agent-tasks NOT RUN: unknown host %q (suite skipped, nothing passed or failed)\n", *host)
-		return 3
+	agent, notRunMsg, notRunCode, ok := resolveAgentRunner(*host)
+	if !ok {
+		fmt.Fprintln(c.Stdout, notRunMsg)
+		return notRunCode
 	}
 	splitsPath := bench.AgentSplitsPath
 	if env := os.Getenv("REGULUS_AGENT_SPLITS"); env != "" {
@@ -94,6 +86,23 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// resolveAgentRunner materializa el host headless pedido. Si no hay host
+// utilizable devuelve el mensaje NOT RUN, su código de salida y ok=false:
+// la suite nunca pasa en falso ni reprueba tareas que el agente jamás
+// intentó.
+func resolveAgentRunner(host string) (bench.HeadlessAgent, string, int, bool) {
+	switch host {
+	case "opencode":
+		r, err := bench.DefaultOpenCodeRunner()
+		if err != nil {
+			return nil, fmt.Sprintf("agent-tasks NOT RUN: %v (suite skipped, nothing passed or failed)", err), 3, false
+		}
+		return r, "", 0, true
+	default:
+		return nil, fmt.Sprintf("agent-tasks NOT RUN: unknown host %q (suite skipped, nothing passed or failed)", host), 3, false
+	}
 }
 
 func shortOutcomeDetail(s string) string {
