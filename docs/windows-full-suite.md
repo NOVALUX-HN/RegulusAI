@@ -12,6 +12,23 @@ bloqueos, y los `t.TempDir()` quedan fuera de cualquier checkout —
 si cayeran dentro, `ResolveRoot` devolvería la raíz del repo en vez
 del fixture y los tests leerían el store real (aislamiento roto).
 
+## Paridad local ↔ CI (sin reprocesos)
+
+Lo que evalúa CI se evalúa local con los mismos comandos y el mismo
+env estricto:
+
+- Windows job ≈ `powershell -NoProfile -File scripts/test-windows.ps1`
+  (el script impone `REGULUS_STRICT_ENV=1` como el job; `GOTMPDIR` al
+  sidecar fuera del repo). Si un test falla solo local, sospechá
+  entorno (App Control por hash, `node`/`bash` fuera del PATH de
+  PowerShell) antes que código: reintentá una vez y compará contra
+  la lista de fallos del run de CI.
+- Gauntlet (Linux) en local ≈ `go build ./...` +
+  `go test ./... -coverprofile .regulus/coverage.out` +
+  `go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --max-critical 30 --max-standard 50 --top 5`
+  (mismos umbrales que `regulus.json`); `gremlins`/`govulncheck` solo
+  si están instalados con los pins del workflow.
+
 CI (`windows.yml`, job `windows-native`): build multiplataforma, vet,
 suite completa vía el script, hashes SHA-256 publicados como
 artefacto, y aserción de que el EXE sigue `NotSigned` mientras la

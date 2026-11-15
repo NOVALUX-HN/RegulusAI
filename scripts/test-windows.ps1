@@ -22,6 +22,14 @@ param(
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# Paridad CI: el job windows-native fija REGULUS_STRICT_ENV=1 a nivel
+# de job (los skips por herramienta ausente fallan). El script lo
+# impone por defecto para que la corrida local evalúe lo mismo que
+# CI; para permitir skips locales, exportá 0 antes de llamar.
+if (-not $env:REGULUS_STRICT_ENV) {
+  $env:REGULUS_STRICT_ENV = "1"
+  Write-Host "REGULUS_STRICT_ENV=1 (paridad CI; override: `$env:REGULUS_STRICT_ENV='0')"
+}
 $outDir = Join-Path $root ".regulus-test"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $env:GOTMPDIR = Join-Path (Split-Path -Parent $root) ".regulus-test-cache"
