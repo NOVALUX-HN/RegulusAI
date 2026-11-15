@@ -1,9 +1,9 @@
 # Fuzzing acotado (NOV-65)
-
-Seis superficies con fuzz nativo de Go y corpus semilla versionado.
-`go test` ejecuta solo el corpus (rápido, determinista); este workflow
-corre cada target 60 segundos semanales. Cada crasher se convierte en
-un test de regresión permanente antes de cerrar el issue.
+#
+# Seis superficies con fuzz nativo de Go y corpus semilla versionado.
+# `go test` ejecuta solo el corpus (rápido, determinista); este workflow
+# corre cada target 60 segundos semanales. Cada crasher se convierte en
+# un test de regresión permanente antes de cerrar el issue.
 
 name: Fuzzing acotado
 
