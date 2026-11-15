@@ -1,0 +1,142 @@
+</style>
+</head><body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<!-- V4 réplica del mockup docs/assets/dashboard-vision.png: sidebar con
+  las 7 entradas (Agentes y Configuración llevan a secciones reales más
+  abajo); ramas e #N salen de /v1/executions+/v1/git (históricos sin
+  manifest = "—"); deltas 7d en cliente con cap 1000 por colección
+  ("parcial" si el total lo supera). Nada hardcodeado del mockup. -->
+<div class="app">
+<nav class="sidebar" aria-label="Secciones del panel">
+<div class="brand"><span class="brand-star" aria-hidden="true">✦</span><div><strong>REGULUS AI</strong><small>THE LION STAR HARNESS</small></div></div>
+<div class="side-nav"><ul>
+<li><a href="#sec-resumen"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7.5 8 2.5l6 5V13.5H9.5V10h-3v3.5H2z"/></svg></span>Resumen</a></li>
+<li><a href="#sec-evidencia"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 14 4.5 8 7.5 2 4.5z"/><path d="M2 8l6 3 6-3"/><path d="M2 11.5l6 3 6-3"/></svg></span>Evidencia</a></li>
+<li><a href="#sec-compuertas"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 13 3.5v4c0 3.5-2.5 5.7-5 7-2.5-1.3-5-3.5-5-7v-4z"/><path d="M5.8 7.8l1.6 1.6 2.8-3"/></svg></span>Compuertas</a></li>
+<li><a href="#sec-agentes"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="5" r="2.3"/><path d="M1.5 13.5c.5-2.3 2-3.5 4-3.5s3.5 1.2 4 3.5"/><circle cx="11.5" cy="6" r="1.8"/><path d="M11 10.2c1.7.2 3 1.3 3.5 3"/></svg></span>Agentes</a></li>
+<li><a href="#sec-metricas"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13.5 6 8.5l2.5 2.5L14 3.5"/><path d="M10.5 3.5H14V7"/></svg></span>Métricas</a></li>
+<li><a href="#sec-memoria"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h7.5c1.8 0 2.5.8 2.5.8v11s-.7-.8-2.5-.8H3z"/><path d="M3 2v11"/><path d="M6 5.5h4"/></svg></span>Almanaque</a></li>
+<li><a href="#sec-config"><span class="icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2M3.4 3.4l1.6 1.6M11 11l1.6 1.6M12.6 3.4 11 5M5 11l-1.6 1.6"/></svg></span>Configuración</a></li>
+</ul></div>
+<div class="side-card" aria-label="Proyecto"><h2>Proyecto</h2>
+<div class="side-row"><span>Proyecto</span><strong id="proj-name">cargando…</strong></div>
+<div class="side-row"><span>Rama</span><strong id="proj-branch">cargando…</strong></div>
+<div class="side-row"><span>Última ejecución</span><strong id="proj-activity">cargando…</strong></div>
+</div>
+</nav>
+<div class="main-col">
+<header class="top"><div class="wrap">
+<div class="topbar-row">
+<div><h1 id="project-name">Regulus — Qué hay guardado en tu proyecto</h1>
+<p>Evidencia, compuertas y aprendizaje de cada ciclo del harness. Esta página solo mira: nunca cambia ni borra nada.</p></div>
+<div class="pill" id="last-cycle" role="status"><span class="dot" aria-hidden="true"></span><span id="last-cycle-text">Último ciclo: cargando…</span></div>
+</div>
+<div class="proj-row" id="project-row" hidden><label for="project">Proyecto</label><select id="project" aria-label="Proyecto"></select></div>
+<p class="err" id="projects-error"></p>
+<div id="status">Estado del proyecto: cargando…</div>
+<div id="health">Salud del sistema: cargando…</div>
+<details><summary>Ver estado completo del proyecto</summary><pre id="status-full">cargando…</pre></details>
+</div></header>
+<main id="main">
+<section id="sec-resumen"><h2>Resumen</h2>
+<p class="plain">Las cinco cifras del proyecto, como en el mockup: cada una dice qué es en palabras sencillas y de dónde sale. Calculadas en tu navegador desde los endpoints de solo lectura (sin inventar nada).</p>
+<div class="kpi-grid">
+<article class="kpi"><h3>Evidencias</h3><div class="num" id="kpi-evidencias-val">…</div><div class="delta" id="kpi-evidencias-delta">cargando…</div><p class="what">Qué significa: comprobantes guardados (uno por cada prueba pasada por el harness).</p><p class="sub">Fuente: GET /v1/metrics campo receipts_total (global); delta % 7 días desde started_at.</p></article>
+<article class="kpi"><h3>Ejecuciones</h3><div class="num" id="kpi-ejecuciones-val">…</div><div class="delta" id="kpi-ejecuciones-delta">cargando…</div><p class="what">Qué significa: ciclos numerados del harness (#1 el más antiguo).</p><p class="sub">Fuente: GET /v1/executions campo total; delta % 7 días desde date.</p></article>
+<article class="kpi"><h3>Compuertas (PASS)</h3><div class="num" id="kpi-pass-val">…</div><div class="sub" id="kpi-pass-sub">cargando…</div><div class="delta" id="kpi-pass-delta">cargando…</div><p class="what">Qué significa: de cada 100 pruebas, cuántas salieron bien.</p><p class="sub">Fuente: GET /v1/metrics campo verification_pass_rate + receipts_pass/receipts_total.</p></article>
+<article class="kpi"><h3>Lecciones</h3><div class="num" id="kpi-lecciones-val">…</div><div class="delta" id="kpi-lecciones-delta">cargando…</div><p class="what">Qué significa: cosas que Regulus ya aprendió y no olvida.</p><p class="sub">Fuente: GET /v1/almanac/summary campo lessons_admitted; delta 7 días desde CreatedAt.</p></article>
+<article class="kpi"><h3>Ramas activas</h3><div class="num" id="kpi-ramas-val">…</div><div class="delta" id="kpi-ramas-delta">cargando…</div><p class="what">Qué significa: ramas vistas en los ciclos más la actual.</p><p class="sub">Fuente: GET /v1/executions campo branch + GET /v1/git (rama actual).</p><p class="sub" id="kpi-ramas-actual">cargando…</p></article>
+</div>
+<p class="plain vision-note" id="vision-partial" hidden></p>
+<p class="err" id="err-vision"></p></section>
+<section id="sec-metricas"><h2>Métricas</h2>
+<p class="plain">Actividad diaria de los últimos 7 días y tasa de éxito diaria, agrupando los comprobantes por su fecha de inicio. Sin barras ni puntos cuando un día no tiene datos.</p>
+<div class="panels">
+<div class="panel"><h3>Ejecuciones del harness (últimos 7 días)</h3><p class="plain">Qué significa: cuántos comprobantes salieron cada día (más barras = más trabajo verificado).</p><p class="src">Fuente: GET /v1/receipts paginado (cap 1000; agrupa started_at por día).</p><svg class="chart" id="chart-bars" role="img" aria-label="Barras de ejecuciones por día"><title id="chart-bars-title">Ejecuciones por día</title></svg><p class="err" id="err-bars"></p></div>
+<div class="panel"><h3>Tasa de éxito de compuertas</h3><p class="plain">Qué significa: qué parte de las pruebas salió bien cada día (arriba = mejor; la banda marca la zona).</p><p class="src">Fuente: GET /v1/receipts paginado (cap 1000; pass/total por día).</p><svg class="chart" id="chart-pass" role="img" aria-label="Línea de tasa de éxito por día"><title id="chart-pass-title">Tasa de éxito por día</title></svg><p class="err" id="err-pass"></p></div>
+</div></section>
+<section id="sec-compuertas"><h2>Compuertas</h2>
+<p class="plain">Cada fila es un ciclo numerado del harness (#1 el más antiguo): su rama, si salió bien, cuántas pruebas pasaron, cuánto tardó y cuándo fue. La segunda tabla abre el último ciclo prueba por prueba.</p>
+<div class="panels">
+<div class="panel"><h3>Últimas ejecuciones</h3><p class="src">Fuente: GET /v1/executions (ciclos #N con rama del manifest; sin manifest = —; las más nuevas primero).</p><div class="tbl-wide"><table id="vt-runs"><thead><tr><th scope="col">#</th><th scope="col">Rama</th><th scope="col">Resultado</th><th scope="col">Compuertas</th><th scope="col">Duración</th><th scope="col">Fecha</th></tr></thead><tbody id="tb-runs"></tbody></table></div><a class="more-link" href="#sec-evidencia">Ver todas →</a><p class="err" id="err-runs"></p></div>
+<div class="panel"><h3>Compuertas del último ciclo <span id="last-task"></span></h3><p class="src">Fuente: GET /v1/receipts agrupados como /v1/executions (mismo run_id; la ruta es la evidencia de cada prueba).</p><div class="tbl-wide"><table id="vt-lastgates"><thead><tr><th scope="col">#</th><th scope="col">Compuerta</th><th scope="col">Estado</th><th scope="col">Tiempo</th><th scope="col">Evidencia</th></tr></thead><tbody id="tb-lastgates"></tbody></table></div><a class="more-link" href="#sec-evidencia">Ver todas →</a><p class="err" id="err-lastgates"></p></div>
+</div></section>
+<section id="cards"><h2>Resumen por áreas</h2>
+<p class="plain">Cada tarjeta cuenta cuántas cosas hay guardadas en una parte del proyecto y qué significa.</p>
+<div class="grid" id="cards-grid"></div>
+<p class="plain" id="cards-empty" hidden></p>
+<p class="err" id="cards-error"></p></section>
+<section id="sec-graphs"><h2>De un vistazo</h2>
+<p class="plain">Mini gráficos con los repartos más útiles: qué tipos de recuerdos hay, lecciones confirmadas frente a pendientes, en qué se usó el presupuesto y cómo salieron las comprobaciones.</p>
+<div id="graphs"></div>
+<p class="plain">Leyenda: PASS = comprobación superada · FAIL = falló · BLOCKED = bloqueada o por confirmar · Confirmada = lección admitida · Por confirmar = candidata · Sin dato = sin veredicto registrado.</p>
+<p class="err" id="graphs-error"></p></section>
+<section id="sec-evidencia"><h2>Evidencia — comprobantes de verificación</h2>
+<p class="plain">Cada fila es una vez que Regulus comprobó que el trabajo estaba bien. Es el ticket de la prueba: qué tarea, qué prueba y si salió bien. Fuente: GET /v1/receipts, 10 por página; el paginador indica la página y el total.</p>
+<div class="tbl-wrap"><table><thead><tr><th>Tarea</th><th>Prueba</th><th>Resultado</th><th>Fecha</th></tr></thead><tbody id="tb-receipts"></tbody></table></div>
+<div class="pager"><button id="prev-receipts">Anterior</button><span id="info-receipts"></span><button id="next-receipts">Siguiente</button></div>
+<p class="err" id="err-receipts"></p></section>
+<section id="sec-memoria"><h2>Memoria — notas y decisiones</h2>
+<p class="plain">Lo que Regulus anotó para no olvidarlo: notas de trabajo, decisiones y descubrimientos. Usa el buscador para encontrar algo concreto. Fuente: GET /v1/observations con filtros de texto y tipo; el paginador muestra el filtro activo.</p>
+<div class="controls"><input id="q-obs" type="search" placeholder="Buscar en memoria…" aria-label="Buscar en memoria"><select id="type-obs" aria-label="Tipo de recuerdo"><option value="">Todos los tipos</option><option value="session-note">Notas</option><option value="decision">Decisiones</option><option value="discovery">Descubrimientos</option><option value="lesson">Lecciones</option><option value="preference">Preferencias</option></select><button id="go-obs" class="primary">Buscar</button></div>
+<div class="tbl-wrap"><table><thead><tr><th>Título</th><th>Tipo</th><th>Fecha</th></tr></thead><tbody id="tb-obs"></tbody></table></div>
+<div class="pager"><button id="prev-obs">Anterior</button><span id="info-obs"></span><button id="next-obs">Siguiente</button></div>
+<p class="err" id="err-obs"></p></section>
+<section id="sec-aprendizaje"><h2>Aprendizaje — lecciones</h2>
+<p class="plain">Lo que Regulus ya aprendió (confirmado) y lo que cree haber aprendido pero aún está por confirmar (candidato). Fuente: GET /v1/lessons con filtro de estado; el paginador muestra el filtro activo.</p>
+<div class="controls"><select id="status-lessons" aria-label="Estado de la lección"><option value="all">Confirmadas + por confirmar</option><option value="admitted">Solo confirmadas</option><option value="candidate">Solo por confirmar</option></select><button id="go-lessons" class="primary">Filtrar</button></div>
+<div class="tbl-wrap"><table><thead><tr><th>Tarea</th><th>Estado</th><th>Lección</th></tr></thead><tbody id="tb-lessons"></tbody></table></div>
+<div class="pager"><button id="prev-lessons">Anterior</button><span id="info-lessons"></span><button id="next-lessons">Siguiente</button></div>
+<p class="err" id="err-lessons"></p></section>
+<section id="sec-sesiones"><h2>Sesiones — el trabajo paso a paso</h2>
+<p class="plain">Cada sesión es una racha de trabajo seguida. Pulsa «Ver pasos» para leer qué hizo Regulus en cada paso, en orden. Fuentes: GET /v1/traces (sesiones) y GET /v1/traces?session= (pasos), 10 por página.</p>
+<div class="tbl-wrap"><table><thead><tr><th>Sesión</th><th class="num">Número de pasos</th><th>Acción</th></tr></thead><tbody id="tb-traces"></tbody></table></div>
+<div class="pager"><button id="prev-traces">Anterior</button><span id="info-traces"></span><button id="next-traces">Siguiente</button></div>
+<h3 id="trace-title">Pasos de la sesión</h3>
+<div class="tbl-wrap"><table><thead><tr><th class="num">Paso</th><th>Herramienta</th><th>Qué hizo</th></tr></thead><tbody id="tb-entries"></tbody></table></div>
+<div class="pager"><button id="prev-entries">Anterior</button><span id="info-entries"></span><button id="next-entries">Siguiente</button></div>
+<p class="err" id="err-traces"></p></section>
+<section id="sec-agentes"><h2>Agentes — quién hace qué</h2>
+<p class="plain">Qué significa: la gente (de mentira) que trabaja en tu proyecto: los guardianes solo miran y avisan, la tripulación sí toca el código. Lista fija del repo (docs/agents.md), no inventada por el panel.</p>
+<div class="panels">
+<div class="panel"><h3>Guardianes (solo miran, no editan)</h3><p class="src">Fuente: docs/agents.md (lista fija del repo).</p><ul class="agent-list">
+<li><span class="who">@regulus-gate-verifier</span><span>Prueba que cada tarea está hecha (gauntlet + evidencias).</span></li>
+<li><span class="who">@regulus-spec-keeper</span><span>Juzga si los criterios de aceptación son observables.</span></li>
+<li><span class="who">@regulus-mutation-auditor</span><span>Rompe el código a propósito para ver si los tests lo notan.</span></li>
+<li><span class="who">@regulus-crap-analyst</span><span>Señala el código enredado y cómo desenredarlo.</span></li>
+<li><span class="who">@regulus-evidence-auditor</span><span>Comprueba que cada «hecho» cite una evidencia que existe.</span></li>
+<li><span class="who">@regulus-reviewer</span><span>Lee el código cambiado y dice qué sobra.</span></li>
+</ul></div>
+<div class="panel"><h3>Tripulación (sí edita, una tarea acotada)</h3><p class="src">Fuente: docs/agents.md (lista fija del repo).</p><ul class="agent-list">
+<li><span class="who">@regulus-scout</span><span>Explora y dibuja el mapa antes de tocar nada.</span></li>
+<li><span class="who">@regulus-worker</span><span>Construye una unidad pequeña y la devuelve probada.</span></li>
+<li><span class="who">@regulus-verifier</span><span>Reproduce el fallo y comprueba que el arreglo lo quita.</span></li>
+<li><span class="who">@regulus-proposer</span><span>Propone mejoras del propio sistema con evidencias.</span></li>
+</ul></div>
+</div></section>
+<section id="sec-config"><h2>Configuración — las 12 puertas del gauntlet</h2>
+<p class="plain">Qué significa: la lista de pruebas que cada ciclo debe pasar para salir PASS. La lista es fija (sale de regulus.json); el estado de cada puerta es vivo y sale del último ciclo (tabla «Compuertas del último ciclo»).</p>
+<div class="panel"><h3>Puertas y estado en el último ciclo</h3><p class="src">Fuente: lista fija de regulus.json (las 12 puertas); estado de GET /v1/receipts del último ciclo (— = esa puerta no corrió en este ciclo).</p><ul class="gate-list" id="gate-list">
+<li><span>typecheck</span><span class="st" id="cfg-typecheck">cargando…</span></li>
+<li><span>lint</span><span class="st" id="cfg-lint">cargando…</span></li>
+<li><span>build</span><span class="st" id="cfg-build">cargando…</span></li>
+<li><span>unit-tests</span><span class="st" id="cfg-unit-tests">cargando…</span></li>
+<li><span>coverage-floor</span><span class="st" id="cfg-coverage-floor">cargando…</span></li>
+<li><span>mutation</span><span class="st" id="cfg-mutation">cargando…</span></li>
+<li><span>crap</span><span class="st" id="cfg-crap">cargando…</span></li>
+<li><span>vulncheck</span><span class="st" id="cfg-vulncheck">cargando…</span></li>
+<li><span>spec</span><span class="st" id="cfg-spec">cargando…</span></li>
+<li><span>ts-typecheck</span><span class="st" id="cfg-ts-typecheck">cargando…</span></li>
+<li><span>ts-unit-tests</span><span class="st" id="cfg-ts-unit-tests">cargando…</span></li>
+<li><span>gofmt</span><span class="st" id="cfg-gofmt">cargando…</span></li>
+</ul></div></section>
+<section id="sec-coste"><h2>Coste — presupuesto de mejora</h2>
+<p class="plain">Cada fila es un movimiento del presupuesto que Regulus usa para mejorar solo: qué día, de qué tipo, en qué tarea y cómo terminó. Fuente: GET /v1/budget, 10 por página.</p>
+<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Tarea</th><th>Resultado</th></tr></thead><tbody id="tb-budget"></tbody></table></div>
+<div class="pager"><button id="prev-budget">Anterior</button><span id="info-budget"></span><button id="next-budget">Siguiente</button></div>
+<p class="err" id="err-budget"></p></section>
+</main>
+</div>
+</div>
+<footer>Se actualiza solo cada 30 segundos. <span id="last-update">Última actualización --:--:--</span> <button id="refresh">Actualizar ahora</button></footer>
+<script>
