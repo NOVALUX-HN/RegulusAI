@@ -69,7 +69,7 @@ func AgentCorpus() []AgentTask {
 	return []AgentTask{
 		{
 			ID: "AT1", Title: "fix off-by-one Sum", Lang: "go",
-			Prompt: "Fix the off-by-one bug in Sum so all tests pass. Do not change the test file.",
+			Prompt: "Fix the off-by-one bug in Sum.",
 			Files: map[string]string{
 				"sum.go":      "package calc\n\n// Sum returns the sum of xs.\nfunc Sum(xs []int) int {\n\ttotal := 0\n\tfor i := 0; i < len(xs)-1; i++ {\n\t\ttotal += xs[i]\n\t}\n\treturn total\n}\n",
 				"sum_test.go": "package calc\n\nimport \"testing\"\n\nfunc TestSum(t *testing.T) {\n\tif got := Sum([]int{1, 2, 3}); got != 6 {\n\t\tt.Fatalf(\"Sum = %d, want 6\", got)\n\t}\n\tif got := Sum(nil); got != 0 {\n\t\tt.Fatalf(\"Sum(nil) = %d, want 0\", got)\n\t}\n}\n",
@@ -79,7 +79,7 @@ func AgentCorpus() []AgentTask {
 		},
 		{
 			ID: "AT2", Title: "fix Reverse dropping rune", Lang: "go",
-			Prompt: "Fix Reverse so it keeps every rune, including the last one. Do not change the test file.",
+			Prompt: "Fix Reverse to keep every rune.",
 			Files: map[string]string{
 				"rev.go":      "package text\n\n// Reverse returns s reversed.\nfunc Reverse(s string) string {\n\tr := []rune(s)\n\tfor i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {\n\t\tr[i], r[j] = r[j], r[i]\n\t}\n\treturn string(r[:len(r)-1])\n}\n",
 				"rev_test.go": "package text\n\nimport \"testing\"\n\nfunc TestReverse(t *testing.T) {\n\tif got := Reverse(\"hola\"); got != \"aloh\" {\n\t\tt.Fatalf(\"Reverse = %q, want aloh\", got)\n\t}\n\tif got := Reverse(\"a\"); got != \"a\" {\n\t\tt.Fatalf(\"Reverse(a) = %q, want a\", got)\n\t}\n}\n",
@@ -89,7 +89,7 @@ func AgentCorpus() []AgentTask {
 		},
 		{
 			ID: "AT3", Title: "fix median of even list", Lang: "node",
-			Prompt: "Fix median() so even-length arrays average the two middle values. Do not change test.mjs.",
+			Prompt: "Fix median() for even-length arrays.",
 			Files: map[string]string{
 				"median.js": "export function median(xs) {\n  const s = [...xs].sort((a, b) => a - b);\n  const m = Math.floor(s.length / 2);\n  return s[m];\n}\n",
 				"test.mjs":  "import assert from 'node:assert';\nimport { median } from './median.js';\nassert.strictEqual(median([1, 2, 3, 4]), 2.5);\nassert.strictEqual(median([5]), 5);\nconsole.log('ok');\n",
@@ -99,7 +99,7 @@ func AgentCorpus() []AgentTask {
 		},
 		{
 			ID: "AT4", Title: "sort script output", Lang: "shell",
-			Prompt: "Fix sortnums.sh so it prints the numbers of nums.txt sorted ascending, one per line.",
+			Prompt: "Make sortnums.sh print nums.txt sorted ascending, one per line.",
 			Files: map[string]string{
 				"nums.txt":    "3\n1\n2\n",
 				"sortnums.sh": "#!/usr/bin/env bash\ncat nums.txt\n",
@@ -112,7 +112,7 @@ func AgentCorpus() []AgentTask {
 		},
 		{
 			ID: "AT5", Title: "fix Clamp upper bound (holdout)", Lang: "go",
-			Prompt: "Fix Clamp so values above hi return hi. Do not change the test file.",
+			Prompt: "Fix Clamp so values above hi return hi.",
 			Files: map[string]string{
 				"clamp.go":      "package math2\n\n// Clamp restricts v to [lo, hi].\nfunc Clamp(v, lo, hi int) int {\n\tif v < lo {\n\t\treturn lo\n\t}\n\tif v > hi {\n\t\treturn hi - 1\n\t}\n\treturn v\n}\n",
 				"clamp_test.go": "package math2\n\nimport \"testing\"\n\nfunc TestClamp(t *testing.T) {\n\tif got := Clamp(9, 0, 5); got != 5 {\n\t\tt.Fatalf(\"Clamp = %d, want 5\", got)\n\t}\n\tif got := Clamp(-1, 0, 5); got != 0 {\n\t\tt.Fatalf(\"Clamp = %d, want 0\", got)\n\t}\n}\n",

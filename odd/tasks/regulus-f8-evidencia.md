@@ -18,7 +18,7 @@ Cerrar 10 issues Backlog en develop, solo main+develop, comentando en Linear qu�
 - T48 NOV-65 Paso 47 fuzz/bench | S5 | route: inline | commit: _
 - T49 NOV-66 Paso 48 Windows full | S5 | route: inline | commit: _
 - T50 NOV-67 Paso 49 modularización | S5 | route: inline | commit: _
-- T51 NOV-70 Paso 51 releases | S5 | route: inline | commit: b22264f Done (tag push pendiente: decision de publicacion)
+- T51 NOV-70 Paso 51 releases | S5 | route: inline | commit: b22264f+938d3c8 Done (tag push de prueba pendiente: decision de publicacion)
 
 ## Log
 - L1: "vuelve a crear la rama develop porque miro que se eliminó y usemola para ejecutar la nueva fase que se agregó en linear para mejorar regulus. revisa por favor" — develop existe local+remoto en 9274004, se usa tal cual; F8 10 issues Backlog (NOV-62..NOV-71)

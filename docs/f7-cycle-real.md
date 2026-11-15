@@ -56,11 +56,20 @@ resto 3 pass. `agent-compare` baseline vs sabotaje:
 
 ## Decisión
 
-**MANTENER baseline** (TIE no adopta con MinDelta 0.0 estricto).
-Costo del experimento: ~15 corridas de agente (~1-3 min c/u en tier
-gratuito), 0 tokens medidos del host (unknown etiquetado), proxy
-local intacto. Aprobación humana registrada abajo; sin ella no hay
-adopción (NOV-60).
+**MANTENER baseline** por veredicto (TIE no adopta con MinDelta 0.0
+estricto). Humano consultado: eligió **ADOPTAR recortados** con motivo
+registrado (igual calidad 5/5 + 4/4 post-adopción, prompts -50% para
+futuras corridas; el guard anti-gaming se reevalúa con n mayor y
+tareas más duras). Aprobación humana registrada: decisión explícita
+del operador, contra veredicto TIE y recomendación de mantener.
+
+Seguimiento post-adopción (`adopted-trimmed`, mismos seeds): 4/4
+evaluable pass (AT5 holdout timeout del tier gratuito, no-evaluable),
+sin regresiones.
+
+Costo total del experimento: ~20 corridas de agente (~1-3 min c/u
+en tier gratuito), 0 tokens medidos del host (unknown etiquetado),
+proxy local intacto.
 
 Lecciones (admitidas como candidatas, no auto-adoptadas):
 - El tier gratuito sirve para el ciclo pero mete timeouts aleatorios
