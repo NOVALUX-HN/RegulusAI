@@ -35,13 +35,14 @@ func TestLoadAgentSplitsValid(t *testing.T) {
 	for _, task := range corpus {
 		ids = append(ids, task.ID)
 	}
-	cut := len(ids) - len(ids)/5
+	hold := (len(ids) + 4) / 5
+	cut := len(ids) - hold
 	doc := `{"version":"v","seed":1,"exploration":["` + strings.Join(ids[:cut], `","`) + `"],"holdout":["` + strings.Join(ids[cut:], `","`) + `"]}`
 	sp, err := LoadAgentSplits(writeSplits(t, doc), corpus)
 	if err != nil {
 		t.Fatalf("valid splits rejected: %v", err)
 	}
-	if len(sp.Holdout) != len(ids)-cut {
+	if len(sp.Holdout) != hold {
 		t.Fatalf("splits wrong: %+v", sp)
 	}
 }
@@ -418,5 +419,34 @@ func TestAgentTrapsHideTheirChecks(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+type tamperAgent struct{ stubAgent }
+
+func (t tamperAgent) Run(ctx context.Context, workdir, prompt, model string) (string, trace.HostUsage, error) {
+	p := filepath.Join(workdir, "sum_test.go")
+	_ = os.WriteFile(p, []byte("package calc\n\nimport \"testing\"\n\nfunc TestSum(t *testing.T) {}\n"), 0o644)
+	return "neutered", trace.HostUsage{}, nil
+}
+
+func TestAgentTamperingWithTestsFails(t *testing.T) {
+	corpus := AgentCorpus()
+	var task AgentTask
+	for _, cand := range corpus {
+		if cand.ID == "AT1" {
+			task = cand
+		}
+	}
+	if task.ID == "" {
+		t.Fatal("AT1 missing")
+	}
+	sp := AgentSplits{Version: "t", Seed: 1, Exploration: []string{"AT1"}, Holdout: []string{}}
+	if _, err := LoadAgentSplits(writeSplits(t, `{"version":"v","seed":1,"exploration":["AT1"],"holdout":[]}`), []AgentTask{task}); err == nil {
+		t.Fatal("holdout below 20% must fail even for single-task splits")
+	}
+	out := RunAgentSuite(context.Background(), tamperAgent{}, []AgentTask{task}, sp, AgentOptions{Reps: 1, Variant: "v", Split: "exploration"})
+	if len(out) != 1 || out[0].Status != AgentFail || !strings.Contains(out[0].Detail, "gaming") {
+		t.Fatalf("tampered tests must fail as gaming, got %+v", out)
 	}
 }

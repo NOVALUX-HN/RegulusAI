@@ -237,8 +237,11 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 	defer cancel()
 	start := time.Now()
 	// Anchor the agent: some hosts resolve relative paths against
-	// their own startup directory instead of the child cwd.
-	anchored := fmt.Sprintf("Working directory: %s. Read and edit only files inside it.\n\n%s", fix, t.Prompt)
+	// their own startup directory instead of the child cwd. Test
+	// files are the spec and must not be modified (gaming voids the
+	// run; the runner verifies their hashes below).
+	anchored := fmt.Sprintf("Working directory: %s. Read and edit only files inside it. Do not modify test files.\n\n%s", fix, t.Prompt)
+	testSnap := snapshotTestFiles(fix, t.Files)
 	raw, usage, err := agent.Run(tctx, fix, anchored, opts.Model)
 	oc.LatencyMS = time.Since(start).Milliseconds()
 	if truncated := strings.TrimSpace(raw); len(truncated) > 4000 {
@@ -253,6 +256,11 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 			oc.Status = AgentInfra
 		}
 		oc.Detail = err.Error()
+		return oc
+	}
+	if tampered := changedTestFiles(fix, t.Files, testSnap); len(tampered) > 0 {
+		oc.Status = AgentFail
+		oc.Detail = fmt.Sprintf("gaming: test files must not be modified: %s", strings.Join(tampered, ", "))
 		return oc
 	}
 	oc.TokensIn, oc.TokensOut = usage.InputTokens, usage.OutputTokens
@@ -278,6 +286,43 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 	}
 	oc.Status = AgentPass
 	return oc
+}
+
+// snapshotTestFiles records the content of shipped test files so the
+// runner can tell a real fix from gaming: modifying a spec file voids
+// the run with AgentFail instead of letting doctored tests pass.
+func snapshotTestFiles(dir string, files map[string]string) map[string]string {
+	snap := map[string]string{}
+	for name := range files {
+		if !isTestFile(name) {
+			continue
+		}
+		if raw, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			snap[name] = string(raw)
+		}
+	}
+	return snap
+}
+
+// changedTestFiles lists shipped test files whose content no longer
+// matches the snapshot (modified or deleted).
+func changedTestFiles(dir string, files map[string]string, snap map[string]string) []string {
+	var out []string
+	for name, want := range snap {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || string(raw) != want {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isTestFile reports whether a fixture path is a test file: the spec
+// the agent must satisfy, never rewrite.
+func isTestFile(name string) bool {
+	base := strings.ToLower(filepath.Base(name))
+	return strings.Contains(base, "test")
 }
 
 // appControlBlocked reports the Windows App Control execution block

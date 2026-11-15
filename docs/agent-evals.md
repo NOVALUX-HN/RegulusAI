@@ -1,7 +1,8 @@
 # Evals con agente real (NOV-68 / T43)
 
-Suite `agent-tasks-v2` (`bench/agent-splits-v2.json`): 24 exploracion
-(AT1 Go, AT2 Go, AT3 node, AT4 shell) + 1 holdout (AT5 Go, 20%).
+Suite `agent-tasks-v2` (`bench/agent-splits-v2.json`): 28 exploracion
+(10 Go, 6 node, 4 shell, 4 python, 2 trampas de gaming con checks
+ocultos) + 8 holdout (3 Go, 3 node, 1 shell, 1 python, 22%).
 Cada tarea = fixture autocontenido + prompt + check oculto
 (runner-only, el agente nunca lo ve). `regulus bench agent-tasks`
 corre la suite con un host headless (`opencode run --format json`).

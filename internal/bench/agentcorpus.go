@@ -321,5 +321,65 @@ func AgentCorpus() []AgentTask {
 			Check:   []string{"go", "test", "./..."},
 			BudgetS: 120,
 		},
+		{
+			ID: "AT31", Title: "race-safe counter", Lang: "go",
+			Prompt: "Make Counter safe for concurrent use without losing counts.",
+			Files: map[string]string{
+				"counter.go":      "package m\n\n// Counter counts events from many goroutines.\ntype Counter struct {\n\tn int64\n}\n\n// Add records one event.\nfunc (c *Counter) Add() {\n\tc.n++\n}\n\n// N returns the total recorded.\nfunc (c *Counter) N() int64 {\n\treturn c.n\n}\n",
+				"counter_test.go": "package m\n\nimport (\n\t\"sync\"\n\t\"testing\"\n)\n\nfunc TestCounterConcurrent(t *testing.T) {\n\tvar c Counter\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 100; i++ {\n\t\twg.Add(1)\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\tfor j := 0; j < 10000; j++ {\n\t\t\t\tc.Add()\n\t\t\t}\n\t\t}()\n\t}\n\twg.Wait()\n\tif got := c.N(); got != 1000000 {\n\t\tt.Fatalf(\"N = %d, want 1000000 (lost updates?)\", got)\n\t}\n}\n",
+			},
+			Check:   []string{"bash", "-c", "GOMAXPROCS=4 go test ./..."},
+			BudgetS: 120,
+		},
+		{
+			ID: "AT32", Title: "toposort with cycle error", Lang: "go",
+			Prompt: "Implement Order: dependencies first in lexicographic order; error on cycles.",
+			Files: map[string]string{
+				"topo.go":      "package m\n\n// Order returns tasks in dependency order or an error on cycles.\nfunc Order(deps map[string][]string) ([]string, error) {\n\treturn nil, nil\n}\n",
+				"topo_test.go": "package m\n\nimport (\n\t\"reflect\"\n\t\"testing\"\n)\n\nfunc TestOrderChain(t *testing.T) {\n\tgot, err := Order(map[string][]string{\"c\": {\"b\"}, \"b\": {\"a\"}, \"a\": {}})\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif !reflect.DeepEqual(got, []string{\"a\", \"b\", \"c\"}) {\n\t\tt.Fatalf(\"order = %v\", got)\n\t}\n}\n\nfunc TestOrderCycle(t *testing.T) {\n\tif _, err := Order(map[string][]string{\"a\": {\"b\"}, \"b\": {\"a\"}}); err == nil {\n\t\tt.Fatal(\"want cycle error\")\n\t}\n}\n",
+			},
+			Check:   []string{"go", "test", "./...", "-run", "TestOrder"},
+			BudgetS: 120,
+		},
+		{
+			ID: "AT33", Title: "deep clone with cycles", Lang: "node",
+			Prompt: "Implement clone handling nested objects, arrays, Dates and circular refs.",
+			Files: map[string]string{
+				"clone.js": "export function clone(v) {\n  return JSON.parse(JSON.stringify(v));\n}\n",
+				"test.mjs": "import assert from 'node:assert';\nimport { clone } from './clone.js';\nconst src = {a: {b: 1}, d: new Date(0)};\nconst c = clone(src);\nassert.deepStrictEqual(c, {a: {b: 1}, d: new Date(0)});\nassert.notStrictEqual(c.a, src.a);\nconst cyc = {x: 1}; cyc.self = cyc;\nconst cc = clone(cyc);\nassert.strictEqual(cc.self, cc);\nassert.strictEqual(cc.x, 1);\nconsole.log('ok');\n",
+			},
+			Check:   []string{"node", "test.mjs"},
+			BudgetS: 60,
+		},
+		{
+			ID: "AT34", Title: "safe expression evaluator", Lang: "python",
+			Prompt: "Implement ev(expr): + - * / with precedence, parens and unary minus; error on div by zero.",
+			Files: map[string]string{
+				"calc.py":      "def ev(expr):\n    import re\n    toks = re.findall(r'\\d+\\.?\\d*|[+\\-*/()]', expr)\n    acc = float(toks[0])\n    i = 1\n    while i < len(toks):\n        op, val = toks[i], float(toks[i + 1])\n        if op == '+': acc += val\n        elif op == '-': acc -= val\n        elif op == '*': acc *= val\n        elif op == '/': acc /= val\n        else: raise ValueError('paren')\n        i += 2\n    return acc\n",
+				"test_calc.py": "from calc import ev\nassert ev('2+3*4') == 14, ev('2+3*4')\nassert ev('(2+3)*4') == 20\nassert ev('-3+8/4') == -1.0\ntry:\n    ev('1/0')\n    raise SystemExit('want ZeroDivisionError')\nexcept ZeroDivisionError:\n    pass\nprint('ok')\n",
+			},
+			Check:   []string{"bash", "-c", "python3 test_calc.py || python test_calc.py"},
+			BudgetS: 120,
+		},
+		{
+			ID: "AT35", Title: "merge k sorted lists (holdout)", Lang: "go",
+			Prompt: "Implement MergeK: merge sorted lists (incl. empty) into one sorted slice.",
+			Files: map[string]string{
+				"merge.go":      "package m\n\n// MergeK merges sorted lists into one sorted slice.\nfunc MergeK(lists [][]int) []int {\n\treturn nil\n}\n",
+				"merge_test.go": "package m\n\nimport (\n\t\"reflect\"\n\t\"testing\"\n)\n\nfunc TestMergeK(t *testing.T) {\n\tgot := MergeK([][]int{{1, 4}, {}, {2, 3, 9}, {0}})\n\twant := []int{0, 1, 2, 3, 4, 9}\n\tif !reflect.DeepEqual(got, want) {\n\t\tt.Fatalf(\"merge = %v, want %v\", got, want)\n\t}\n\tif got := MergeK(nil); len(got) != 0 {\n\t\tt.Fatalf(\"merge(nil) = %v, want empty\", got)\n\t}\n}\n",
+			},
+			Check:   []string{"go", "test", "./..."},
+			BudgetS: 120,
+		},
+		{
+			ID: "AT36", Title: "bracket match with position (holdout)", Lang: "node",
+			Prompt: "Implement check(s): 0 if brackets nest correctly, else 1-based index of the first mismatch.",
+			Files: map[string]string{
+				"brackets.js": "export function check(s) {\n  return 0;\n}\n",
+				"test.mjs":    "import assert from 'node:assert';\nimport { check } from './brackets.js';\nassert.strictEqual(check('([{}])'), 0);\nassert.strictEqual(check('([)]'), 3);\nassert.strictEqual(check('('), 2);\nassert.strictEqual(check(''), 0);\nconsole.log('ok');\n",
+			},
+			Check:   []string{"node", "test.mjs"},
+			BudgetS: 60,
+		},
 	}
 }
