@@ -14,7 +14,7 @@ Cerrar 10 issues Backlog en develop, solo main+develop, comentando en Linear qu√
 - T44 NOV-63 Paso 44 deriva docs | S4 | route: inline | commit: 74a10e4 Done
 - T45 NOV-64 Paso 46 trazabilidad | S4 | route: inline | commit: 46817bf Done
 - T46 NOV-69 Paso 45 conformidad real | S4 | route: inline | commit: 826235a Done (2 hosts reales pendientes de creditos)
-- T47 NOV-71 Paso 50 ciclo real | S4 | route: inline | commit: _ ciclo ejecutado (TIE mantener + rechazo real), pendiente aprobacion humana
+- T47 NOV-71 Paso 50 ciclo real | S4 | route: inline | commit: 0804e72 Done (TIE+aprobacion humana: adopta recortados; rechazo real documentado)
 - T48 NOV-65 Paso 47 fuzz/bench | S5 | route: inline | commit: _
 - T49 NOV-66 Paso 48 Windows full | S5 | route: inline | commit: _
 - T50 NOV-67 Paso 49 modularizaci√≥n | S5 | route: inline | commit: _
