@@ -6,7 +6,11 @@ workspace (nunca `%TEMP%`) y lo ejecuta. Si App Control bloquea un
 binario igual (eventos 3033/3077/3089/3118), el paquete se marca
 BLOCKED con el diagnóstico accionable (no un "permission denied"
 mudo) y el exit solo falla por rojos reales. `GOTMPDIR` apunta al
-workspace para no ensuciar Temp.
+SIDECAR fuera del repo (nunca `%TEMP%`, nunca el checkout): los .exe
+de test y los helpers que los tests ejecutan corren desde ahí sin
+bloqueos, y los `t.TempDir()` quedan fuera de cualquier checkout —
+si cayeran dentro, `ResolveRoot` devolvería la raíz del repo en vez
+del fixture y los tests leerían el store real (aislamiento roto).
 
 CI (`windows.yml`, job `windows-native`): build multiplataforma, vet,
 suite completa vía el script, hashes SHA-256 publicados como

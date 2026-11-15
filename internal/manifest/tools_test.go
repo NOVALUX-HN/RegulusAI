@@ -8,6 +8,8 @@ package manifest
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"regulus-ai/internal/contract"
@@ -30,7 +32,11 @@ type toolsFile struct {
 
 func loadToolsFile(t *testing.T) toolsFile {
 	t.Helper()
-	raw, err := os.ReadFile("tools.json")
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller")
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "tools.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

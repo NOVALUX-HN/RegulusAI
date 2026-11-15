@@ -7,6 +7,13 @@
 # resulta bloqueado igual, el script imprime el diagnóstico accionable
 # en vez de un "permission denied" mudo y sigue con el resto.
 #
+# GOTMPDIR apunta al SIDECAR fuera del repo (nunca %TEMP%, nunca el
+# checkout): los .exe de test y los helpers que los tests ejecutan
+# corren desde ahí sin bloqueos, y los t.TempDir() quedan fuera de
+# cualquier checkout — si cayeran dentro, ResolveRoot devolvería la
+# raíz del repo en vez del fixture y los tests leerían el store real
+# (aislamiento roto).
+#
 # Uso: powershell -NoProfile -File scripts/test-windows.ps1 [-Packages "a b"] [-KeepBinaries]
 param(
   [string]$Packages = "./internal/...",
@@ -17,7 +24,7 @@ $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $outDir = Join-Path $root ".regulus-test"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-$env:GOTMPDIR = Join-Path $root ".regulus-test-cache"
+$env:GOTMPDIR = Join-Path (Split-Path -Parent $root) ".regulus-test-cache"
 New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null
 
 function Test-IsAppControlBlock($text) {

@@ -19,6 +19,11 @@ jobs:
         with:
           go-version: "1.27"
           cache: false
+      # NOV-65: strict env turns a missing-tool skip into a failure, so
+      # the tools the suite needs must be installed (same pins as the
+      # gauntlet job): gremlins for the journey mutation gate tests.
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
       - name: Build all platforms
         run: |
           go build ./...
