@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/fsx"
 )
 
 // Severity is the event severity (S1).
@@ -106,23 +108,12 @@ func Record(root string, e Event, now time.Time) (Event, error) {
 	if saved.Timestamp.IsZero() {
 		saved.Timestamp = now.UTC()
 	}
-	if err := os.MkdirAll(filepath.Dir(File(root, saved.TaskID)), 0o755); err != nil {
-		return Event{}, err
-	}
-	f, err := os.OpenFile(File(root, saved.TaskID), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return Event{}, err
-	}
 	line, err := json.Marshal(saved)
 	if err != nil {
-		f.Close()
 		return Event{}, err
 	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
-		return Event{}, err
-	}
-	if err := f.Close(); err != nil {
+	// NOV-85: private dir + inter-process lock for the append.
+	if err := fsx.AppendLine(File(root, saved.TaskID), append(line, '\n')); err != nil {
 		return Event{}, err
 	}
 	return saved, nil

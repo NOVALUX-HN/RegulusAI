@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"regulus-ai/internal/almanac"
+	"regulus-ai/internal/fsx"
 )
 
 // memoryCmd implements the Almanac surface (docs/memory.md):
@@ -162,6 +163,19 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "index:      no observations yet — nothing to index")
 	default: // stale | missing
 		fmt.Fprintf(c.Stdout, "index:      %s — run `regulus memory reindex`\n", state)
+	}
+	// NOV-85: existing installs get private perms fixed on doctor runs,
+	// with notice. Never fails the report: advisory only.
+	fixed, ferr := fsx.FixPermissions(c.dir())
+	switch {
+	case ferr == fsx.ErrWindowsACL:
+		fmt.Fprintln(c.Stdout, "permissions: Windows ACLs rule here; 0700/0600 unenforceable — use a per-user profile and encrypted disk")
+	case ferr != nil:
+		fmt.Fprintf(c.Stderr, "warning: permissions fix failed: %v\n", ferr)
+	case len(fixed) > 0:
+		fmt.Fprintf(c.Stdout, "permissions: fixed %d path(s) to 0700/0600\n", len(fixed))
+	default:
+		fmt.Fprintln(c.Stdout, "permissions: .regulus already private")
 	}
 	return 0
 }

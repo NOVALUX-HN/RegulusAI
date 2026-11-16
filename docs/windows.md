@@ -14,3 +14,13 @@ Diagnóstico (sin desactivar nada):
 - Recuperación: reinstalar desde `binaries/`, `Unblock-File` solo archivo propio descargado (MOTW), nunca exclusiones amplias ni desactivar Defender/firewall/SAC.
 
 Firma releases: hoy sin firma pública aprobada (ver NOV-44). Guía distingue lo que Regulus controla (runner, helpers, receipts) de restricciones del sistema (Enterprise signing, reputación).
+
+## Permisos privados (NOV-85 Paso 65)
+
+`internal/fsx` crea `.regulus/` con 0700 y archivos con 0600, y los
+appends concurrentes usan lockfile (`O_EXCL`, atómico también en
+Windows). En Windows los bits de modo no se pueden forzar (mandan las
+ACLs): `memory doctor` e `init` lo advierten en vez de afirmar
+privacidad — usá un perfil por usuario y disco cifrado (BitLocker/EFS);
+la CLAIM de privacidad del repo vale para Unix. Los locks entre procesos
+sí aplican en Windows.
