@@ -30,13 +30,14 @@ import (
 
 // AgentSuiteVersion pins the task corpus: reports compare only within
 // one version. Adding a task bumps the version and re-baselines.
-// v2 expands the NOV-68 starter set to 30 tasks (NOV-77).
-const AgentSuiteVersion = "agent-tasks-v2"
+// v3 expands the v2 set (36 tasks) with 8 hard tasks (NOV-77): 34
+// exploration + 10 holdout, same splits validation and evidence pipeline.
+const AgentSuiteVersion = "agent-tasks-v3"
 
 // AgentSplitsPath is the tracked exploration/holdout split (committed,
 // not runtime state): holdout stays >= 20% with no repo/pattern
 // overlap with exploration.
-const AgentSplitsPath = "bench/agent-splits-v2.json"
+const AgentSplitsPath = "bench/agent-splits-v3.json"
 
 // Agent task outcome statuses. Only pass/fail are evaluable; the rest
 // dilute nothing and never promote.
@@ -162,6 +163,9 @@ type AgentOptions struct {
 	HostVersion string
 	Split       string // exploration|holdout|all
 	BudgetS     int
+	// Progress, when non-nil, is called after each attempt completes.
+	// Nil (default) preserves the old silent behavior.
+	Progress func(AgentOutcome)
 }
 
 // RunAgentSuite executes the corpus tasks with the given agent: one
@@ -183,11 +187,22 @@ func RunAgentSuite(ctx context.Context, agent HeadlessAgent, corpus []AgentTask,
 	for _, id := range ids {
 		t := byID[id]
 		for rep := 0; rep < opts.Reps; rep++ {
+			select {
+			case <-ctx.Done():
+				return out
+			default:
+			}
 			seed := splits.Seed + int64(rep)
 			if rep < len(opts.Seeds) {
 				seed = opts.Seeds[rep]
 			}
-			out = append(out, runOne(ctx, agent, t, splitOf(splits, id), rep, seed, opts))
+			oc := runOne(ctx, agent, t, splitOf(splits, id), rep, seed, opts)
+			if opts.Progress != nil {
+				// Observable fast-loop: one callback per completed attempt.
+				// Nil by default, so existing callers are unaffected.
+				opts.Progress(oc)
+			}
+			out = append(out, oc)
 		}
 	}
 	return out

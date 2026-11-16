@@ -1,0 +1,19 @@
+{
+  "suite_version": "agent-tasks-v2",
+  "model": "opencode-go/beam-free",
+  "host": "opencode",
+  "host_version": "v2.2.5",
+  "variant": "baseline",
+  "reps": 3,
+  "split": "exploration",
+  "seeds": [
+    20261114,
+    20261115,
+    20261116
+  ],
+  "git_head": "9f28af57c0aad271d0f28b0da4f5afcbc4c1d4ee",
+  "started_at": "2026-11-16T01:51:38Z",
+  "finished_at": "2026-11-16T02:57:50Z",
+  "outcomes_file": "outcomes.json",
+  "outcomes_sha256": "f5312f4fa08a39a90e685ca407e9801aff7b8eb273ad924a899b1dfc95e4d31e"
+}

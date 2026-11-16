@@ -265,14 +265,14 @@ func TestToExplorationOutcomesMapsStatuses(t *testing.T) {
 	}
 }
 
-// NOV-77 v2 corpus: 30 tasks, 6 holdout (20%). Structural pins so the
+// NOV-77 v3 corpus: 44 tasks, 10 holdout (22.7%). Structural pins so the
 // corpus can grow without silent rot: unique ids/titles, holdout share
 // and language spread, budgets on every task, and the committed splits
 // file must validate against the code corpus.
 func TestAgentCorpusV2Shape(t *testing.T) {
 	corpus := AgentCorpus()
-	if len(corpus) < 30 {
-		t.Fatalf("v2 corpus has %d tasks, want >= 30", len(corpus))
+	if len(corpus) < 44 {
+		t.Fatalf("v3 corpus has %d tasks, want >= 44", len(corpus))
 	}
 	seenID, seenTitle := map[string]bool{}, map[string]bool{}
 	langs := map[string]int{}
@@ -294,9 +294,9 @@ func TestAgentCorpusV2Shape(t *testing.T) {
 		langs[task.Lang]++
 	}
 	_, thisFile, _, _ := runtime.Caller(0)
-	sp, err := LoadAgentSplits(filepath.Join(filepath.Dir(thisFile), "..", "..", "bench", "agent-splits-v2.json"), corpus)
+	sp, err := LoadAgentSplits(filepath.Join(filepath.Dir(thisFile), "..", "..", AgentSplitsPath), corpus)
 	if err != nil {
-		t.Fatalf("committed v2 splits must validate: %v", err)
+		t.Fatalf("committed v3 splits must validate: %v", err)
 	}
 	if got := float64(len(sp.Holdout)) / float64(len(corpus)); got < 0.2 {
 		t.Fatalf("holdout share = %.3f, want >= 0.20", got)
@@ -448,5 +448,28 @@ func TestAgentTamperingWithTestsFails(t *testing.T) {
 	out := RunAgentSuite(context.Background(), tamperAgent{}, []AgentTask{task}, sp, AgentOptions{Reps: 1, Variant: "v", Split: "exploration"})
 	if len(out) != 1 || out[0].Status != AgentFail || !strings.Contains(out[0].Detail, "gaming") {
 		t.Fatalf("tampered tests must fail as gaming, got %+v", out)
+	}
+}
+
+// NOV-77 fast-loop: a canceled context must stop the suite immediately
+// instead of grinding through every task x rep with zero output.
+func TestRunAgentSuiteRespectsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out := RunAgentSuite(ctx, stubAgent{}, AgentCorpus(), testSplits(),
+		AgentOptions{Reps: 1, Variant: "v", Split: "exploration"})
+	if len(out) != 0 {
+		t.Fatalf("canceled suite must return no outcomes, got %d", len(out))
+	}
+}
+
+// NOV-77 fast-loop: Progress must fire once per completed attempt so
+// long runs are observable instead of silent for an hour.
+func TestRunAgentSuiteProgressCallback(t *testing.T) {
+	var got int
+	out := RunAgentSuite(context.Background(), stubAgent{}, AgentCorpus(), testSplits(),
+		AgentOptions{Reps: 1, Variant: "v", Split: "exploration", Progress: func(AgentOutcome) { got++ }})
+	if len(out) == 0 || got != len(out) {
+		t.Fatalf("progress fired %d times for %d outcomes, want 1:1 non-zero", got, len(out))
 	}
 }

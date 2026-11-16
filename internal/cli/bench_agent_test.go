@@ -22,7 +22,16 @@ func writeAgentSplits(t *testing.T) string {
 		t.Fatal(err)
 	}
 	p := filepath.Join(sub, "agent-splits-v1.json")
-	body := `{"version":"agent-splits-v1","seed":7,"exploration":["AT1","AT2","AT3","AT4"],"holdout":["AT5"]}`
+	// Cover the full current corpus so LoadAgentSplits validates:
+	// every task except AT5 explores, AT5 holds out.
+	var exploration []string
+	for _, task := range bench.AgentCorpus() {
+		if task.ID == "AT5" {
+			continue
+		}
+		exploration = append(exploration, task.ID)
+	}
+	body := `{"version":"agent-splits-v1","seed":7,"exploration":["` + strings.Join(exploration, `","`) + `"],"holdout":["AT5"]}`
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

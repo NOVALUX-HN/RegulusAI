@@ -32,19 +32,17 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 	save := fs.String("save", "", "write outcomes as JSON to this path (evidence pack)")
 	evidenceDir := fs.String("evidence-dir", "", "write versioned evidence (outcomes.json + manifest.json with config, git head and sha256) to this directory")
 	hostVersionFlag := fs.String("host-version", "", "host version recorded on outcomes (auto-detected for opencode when empty)")
+	taskFilter := fs.String("task", "", "comma-separated task IDs for cheap smoke runs (e.g. --task AT1,AT2)")
+	dryRun := fs.Bool("dry-run", false, "validate corpus+splits and list selected tasks without model calls")
+	maxWallS := fs.Int("max-wall-time-s", 0, "global deadline in seconds, stops with partial outcomes on expiry (0 = none)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 || *reps < 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] [--task AT1,AT2] [--dry-run] [--max-wall-time-s N]")
 		return 2
 	}
 	corpus := bench.AgentCorpus()
-	agent, notRunMsg, notRunCode, ok := resolveAgentRunner(*host)
-	if !ok {
-		fmt.Fprintln(c.Stdout, notRunMsg)
-		return notRunCode
-	}
 	splitsPath := bench.AgentSplitsPath
 	if env := os.Getenv("REGULUS_AGENT_SPLITS"); env != "" {
 		splitsPath = env
@@ -56,13 +54,79 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 		fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
 		return 1
 	}
+	// NOV-77 fast-loop: --task restricts the run to a comma-separated
+	// subset of task IDs for cheap smoke runs. Filtering happens after
+	// validation, so single-task smokes stay allowed even though the
+	// committed splits require >=20% holdout.
+	if *taskFilter != "" {
+		want := map[string]bool{}
+		for _, id := range splitList(*taskFilter) {
+			want[id] = true
+		}
+		known := map[string]bool{}
+		for _, t := range corpus {
+			known[t.ID] = true
+		}
+		for id := range want {
+			if !known[id] {
+				fmt.Fprintf(c.Stderr, "bench agent-tasks: unknown task %q\n", id)
+				return 2
+			}
+		}
+		var exp, hold []string
+		for _, id := range splits.Exploration {
+			if want[id] {
+				exp = append(exp, id)
+			}
+		}
+		for _, id := range splits.Holdout {
+			if want[id] {
+				hold = append(hold, id)
+			}
+		}
+		if len(exp)+len(hold) == 0 {
+			fmt.Fprintln(c.Stderr, "bench agent-tasks: --task matched no tasks")
+			return 2
+		}
+		splits.Exploration, splits.Holdout = exp, hold
+	}
+	// NOV-77 fast-loop: --dry-run validates corpus+splits and lists the
+	// selected tasks without touching any model. Zero model cost.
+	if *dryRun {
+		total := (len(splits.Exploration) + len(splits.Holdout)) * *reps
+		fmt.Fprintf(c.Stdout, "agent-tasks %s dry-run: %d task(s) x %d rep(s) = %d attempt(s), no model calls\n",
+			bench.AgentSuiteVersion, len(splits.Exploration)+len(splits.Holdout), *reps, total)
+		for _, id := range splits.Exploration {
+			fmt.Fprintf(c.Stdout, "  - %s [exploration]\n", id)
+		}
+		for _, id := range splits.Holdout {
+			fmt.Fprintf(c.Stdout, "  - %s [holdout]\n", id)
+		}
+		return 0
+	}
+	agent, notRunMsg, notRunCode, ok := resolveAgentRunner(*host)
+	if !ok {
+		fmt.Fprintln(c.Stdout, notRunMsg)
+		return notRunCode
+	}
 	hostVersion := *hostVersionFlag
 	if hostVersion == "" && *host == "opencode" {
 		hostVersion = probeOpenCodeVersion()
 	}
 	ctx := context.Background()
+	if *maxWallS > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(*maxWallS)*time.Second)
+		defer cancel()
+	}
+	total := (len(splits.Exploration) + len(splits.Holdout)) * *reps
+	done := 0
 	outcomes := bench.RunAgentSuite(ctx, agent, corpus, splits, bench.AgentOptions{
 		Reps: *reps, Variant: *variant, Model: *model, Host: *host, HostVersion: hostVersion, Split: *split, BudgetS: *budget,
+		Progress: func(o bench.AgentOutcome) {
+			done++
+			fmt.Fprintf(c.Stdout, "  [%d/%d] %s [%s] rep=%d: %s\n", done, total, o.TaskID, o.Split, o.Rep, o.Status)
+		},
 	})
 	if *save != "" {
 		raw, err := json.MarshalIndent(outcomes, "", "  ")
