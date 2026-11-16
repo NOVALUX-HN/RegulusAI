@@ -36,7 +36,7 @@ func init() {
 }
 
 func orchestrateUsage() string {
-	return "usage: regulus orchestrate agents [--json] | regulus orchestrate decide --domain <d> --lang <l> --complexity <low|medium|high> --risk <low|medium|high|critical> [--cap <a,b>] [--constraint <a,b>] [--output <a,b>] [--criteria <a,b>] [--history <file>] [--rates <file>] [--budget-time-ms N] [--budget-tokens N] [--budget-cost N] [--max-delegations N] [--unavailable <a,b>] [--fixed <agent>] [--dry-run] [--out <dir>] [--json] | regulus orchestrate evaluate --dynamic <file> --fixed <file> [--rates <file>] [--json]"
+	return "usage: regulus orchestrate agents [--json] | regulus orchestrate decide --domain <d> --lang <l> --complexity <low|medium|high> --risk <low|medium|high|critical> [--cap <a,b>] [--constraint <a,b>] [--output <a,b>] [--criteria <a,b>] [--history <file>] [--rates <file>] [--budget-time-ms N] [--budget-tokens N] [--budget-cost N] [--max-delegations N] [--unavailable <a,b>] [--fixed <agent>] [--dry-run] [--out <dir>] [--json] | regulus orchestrate evaluate --dynamic <file> --fixed <file> [--rates <file>] [--json] | regulus orchestrate parallel --tasks <file> [--dry-run] [--json] | regulus orchestrate orphans [--prune] [--json]"
 }
 
 func (c CLI) orchestrateCmd(args []string) int {
@@ -55,6 +55,10 @@ func (c CLI) orchestrateCmd(args []string) int {
 		return c.orchestrateDecideCmd(args[1:])
 	case "evaluate":
 		return c.orchestrateEvaluateCmd(args[1:])
+	case "parallel":
+		return c.orchestrateParallelCmd(args[1:])
+	case "orphans":
+		return c.orchestrateOrphansCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "orchestrate: unknown subcommand %q\n", args[0])
 		fmt.Fprintln(c.Stderr, orchestrateUsage())

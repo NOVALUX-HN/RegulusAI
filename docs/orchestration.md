@@ -80,3 +80,112 @@ sin tarifas, el dinero queda desconocido y no limita ni compara.
 `--budget-time-ms`, `--budget-tokens` (proxy), `--budget-cost` (moneda de
 la tarifa) excluyen al agente que los excede (coste solo con dinero
 conocido); `--max-delegations 0..4` acota la cadena (0 la prohíbe).
+
+---
+
+# Ingeniería paralela (F12.2 / NOV-97)
+
+Paralelizar trabajo **independiente** reduciendo el tiempo de pared
+sin conflictos ni pérdida de control — extendiendo `orchestrate`
+(DAG + scheduler + worktrees), nunca un sistema paralelo aparte.
+
+> `parallel` ejecuta comandos reales en worktrees reales. El plan
+> (`--dry-run`) no crea nada ni registra nada; la ejecución registra
+> cada fase en el exec log F11.1 con el mismo `run_id`.
+
+## Comandos
+
+```sh
+# Plan (dry-run: determinista, sin efectos; exit 0)
+regulus orchestrate parallel --tasks tareas.json --dry-run
+
+# Ejecución: worktrees + merge controlado + gate (exit 0 ok; 1 fallo;
+# 2 uso). Los worktrees se eliminan solo si merge y gate pasan.
+regulus orchestrate parallel --tasks tareas.json \
+  [--base <rama>] [--worktree-root <dir>] [--branch-prefix <p>] \
+  [--max-concurrency N] [--per-task-timeout-ms N] [--wall-budget-ms N] \
+  [--max-queued N] [--gate-task <tarea>] [--out <dir>] [--json]
+
+# Huérfanos: listar (por defecto) o podar (--prune)
+regulus orchestrate orphans [--branch-prefix <p>] [--active <b,c>] [--prune] [--json]
+```
+
+`tareas.json` es un array estricto de tareas:
+
+```json
+[
+  {"id": "api", "title": "Migrar API", "files": ["pkg/api/"], "command": "go build ./..."},
+  {"id": "doc", "title": "Actualizar docs", "files": ["docs/"], "depends_on": ["api"]}
+]
+```
+
+Campos: `id` (único, charset de task), `title`, `files`
+(repo-relativos que toca — dominio de colisión), `depends_on`
+(aristas explícitas), `command` (shell en su worktree; vacío =
+solo plan/registro), `agent` (pista de routing F12.1), `scopes`
+(petición restringida F11.8), `estimate_ms`/`estimate_tokens`
+(techos del dry-run).
+
+## Cómo se aísla cada worker
+
+| Dimensión | Mecanismo |
+|---|---|
+| Checkout | `git worktree add <root>/<rama> -b <rama> <base>` real (nativo, sin reimplementar git) |
+| Rama | `parallel/<run>/<tarea>` (única por run; el sweeper solo toca este prefijo) |
+| Directorio | uno por worker bajo `--worktree-root` (defecto `.regulus/orchestrate/worktrees`); sin ficheros compartidos |
+| Workspace | **es** el worktree (F11.8: la contención de paths ancla por worker) |
+| Permisos | `Principal.Delegate` (F11.8): el worker conserva solo la **intersección** con el principal; lo no listado se pierde, nunca se amplía |
+| Traza | `agent_<run>_<tarea>` + `dlg_<run>_<tarea>` propios; `task.start/end`, `delegation.request/result`, `gate` y `artifact` con el mismo `run_id` (F11.1) |
+
+## Scheduler, merge y gates
+
+1. **DAG**: aristas explícitas + colisiones (mismo fichero o
+   contención `pkg/foo` ⊃ `pkg/foo/bar.go`) ⇒ niveles
+   deterministas; las colisiones sin orden explícito se serializan
+   en orden alfabético y el reporte las nombra (`serialized`).
+   Ciclos y planes hostiles fallan cerrados antes de crear nada.
+2. **Scheduler**: un nivel en vuelo, hasta `--max-concurrency`
+   (1..8, techo F11.3) workers concurrentes; `--per-task-timeout-ms`
+   (timeout ⇒ `timed_out`) y `--wall-budget-ms` (deadline del run);
+   `--max-queued` es la **backpressure** (más tareas que el bound ⇒
+   rechazo previo, nunca cola infinita); la cancelación deja lo no
+   iniciado en `cancelled` y lo dependiente en `skipped` con motivo.
+3. **Aislamiento de fallos**: un worker que falla no corrompe a sus
+   hermanos (cada uno es dueño de su worktree); sus dependientes se
+   saltan nombrándolo; sin todos en `passed` no hay merge (worktrees
+   preservados para revisión).
+4. **Merge controlado**: en orden determinista (`L1, L2, …`),
+   `merge --no-ff` sobre árbol limpio. El primer conflicto **para la
+   línea** para revisión del integrador (ficheros sin fusionar
+   nombrados, `reviewer: integrator`, resto bloqueado y nombrado) y
+   el gate no corre.
+5. **Gate post-merge**: con `--gate-task`, el gauntlet existente vía
+   `gates.RunTask` (mismos receipts y veredicto que `gate run`); sin
+   él, la puerta ligera `git diff --check`. Si falla, la integración
+   se conserva con los worktrees para revisión.
+6. **Limpieza**: en éxito se elimina cada worktree + rama y se hace
+   `prune`; en fallo/conflicto/gate-rojo todo se preserva y
+   `orphans --prune` barre después (`--active` protege runs en
+   vuelo).
+
+## Reporte (pared vs agregado)
+
+```
+parallel parallel-v1: run run_abc base HEAD
+plan: 2 task(s) in 1 level(s) L1[a,b]
+- a: passed 412ms branch=parallel/run_abc/a
+- b: passed 388ms branch=parallel/run_abc/b
+merge a: ok (parallel/run_abc/a)
+merge b: ok (parallel/run_abc/b)
+gate: pass (diff-check clean)
+receipt: wall 420ms aggregate 800ms speedup 1.90x
+cleanup: 2 worktree(s) removed
+result: ok
+traza: <hint F11.1>
+```
+
+`wall` es el reloj del run, `aggregate` la suma de workers
+(disciplina F11.3: techos, no predicciones; el dry-run divide el
+agregado estimado por el paralelismo). `--json` vuelca el
+`ParallelReport` (niveles, pares serializados, veredictos, merges,
+gate, `wall_ms`/`aggregate_ms`, huérfanos, `trace_hint`).
