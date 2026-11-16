@@ -23,15 +23,27 @@ func writeAgentSplits(t *testing.T) string {
 	}
 	p := filepath.Join(sub, "agent-splits-v1.json")
 	// Cover the full current corpus so LoadAgentSplits validates:
-	// every task except AT5 explores, AT5 holds out.
-	var exploration []string
-	for _, task := range bench.AgentCorpus() {
+	// every task is covered exactly once and the holdout keeps at
+	// least 20% of the corpus (the floor LoadAgentSplits enforces).
+	// AT5 always holds out (legacy convention); top up with head tasks.
+	corpus := bench.AgentCorpus()
+	holdN := (len(corpus) + 4) / 5 // ceil(20%)
+	if holdN < 1 {
+		holdN = 1
+	}
+	var exploration, holdout []string
+	for _, task := range corpus {
 		if task.ID == "AT5" {
 			continue
 		}
-		exploration = append(exploration, task.ID)
+		if len(holdout) < holdN-1 {
+			holdout = append(holdout, task.ID)
+		} else {
+			exploration = append(exploration, task.ID)
+		}
 	}
-	body := `{"version":"agent-splits-v1","seed":7,"exploration":["` + strings.Join(exploration, `","`) + `"],"holdout":["AT5"]}`
+	holdout = append(holdout, "AT5")
+	body := `{"version":"agent-splits-v1","seed":7,"exploration":["` + strings.Join(exploration, `","`) + `"],"holdout":["` + strings.Join(holdout, `","`) + `"]}`
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

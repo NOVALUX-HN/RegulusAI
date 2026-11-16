@@ -68,6 +68,10 @@ func defaultAllowlist() []string {
 		"PATH", "PATHEXT",
 		// home / temp
 		"HOME", "USERPROFILE", "TEMP", "TMP", "TMPDIR",
+		// Windows known folders (Go derives GOCACHE from %LocalAppData%;
+		// without it the toolchain dies before main: "GOCACHE is not
+		// defined and %LocalAppData% is not defined")
+		"LOCALAPPDATA", "APPDATA",
 		// Windows process startup (nothing spawns without these)
 		"SYSTEMROOT", "WINDIR", "COMSPEC",
 		// Go toolchain caches and behavior
