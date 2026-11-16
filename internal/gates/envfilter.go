@@ -12,6 +12,16 @@ import (
 	"strings"
 )
 
+// foldName normalizes a variable name for comparison: Windows treats
+// environment names case-insensitively (Path vs PATH), other platforms
+// are exact. Values are never folded, only names for matching.
+func foldName(n string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(n)
+	}
+	return n
+}
+
 // filterEnv rebuilds env without the unset names (exact match, trimmed).
 // Values of removed entries are NOT kept: callers capture secrets first
 // via SecretValues when they need redaction.
@@ -22,7 +32,7 @@ func filterEnv(env []string, unset []string) []string {
 	drop := map[string]bool{}
 	for _, n := range unset {
 		if n = strings.TrimSpace(n); n != "" {
-			drop[n] = true
+			drop[foldName(n)] = true
 		}
 	}
 	if len(drop) == 0 {
@@ -30,7 +40,7 @@ func filterEnv(env []string, unset []string) []string {
 	}
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
-		if i := strings.IndexByte(kv, '='); i > 0 && drop[kv[:i]] {
+		if i := strings.IndexByte(kv, '='); i > 0 && drop[foldName(kv[:i])] {
 			continue
 		}
 		out = append(out, kv)
@@ -80,16 +90,16 @@ func defaultAllowlist() []string {
 }
 
 func allowedName(name string, extra map[string]bool) bool {
-	if extra[name] {
+	if extra[foldName(name)] {
 		return true
 	}
 	for _, p := range allowPrefixes {
-		if strings.HasPrefix(name, p) {
+		if strings.HasPrefix(foldName(name), foldName(p)) {
 			return true
 		}
 	}
 	for _, n := range defaultAllowlist() {
-		if n == name {
+		if n == foldName(name) {
 			return true
 		}
 	}
@@ -118,24 +128,24 @@ func buildEnv(extra, unset, allow []string, fullEnv bool) []string {
 	extraSet := map[string]bool{}
 	for _, kv := range extra {
 		if n, ok := names(kv); ok {
-			extraSet[n] = true
+			extraSet[foldName(n)] = true
 		}
 	}
 	for _, n := range allow {
 		if n = strings.TrimSpace(n); n != "" {
-			extraSet[n] = true
+			extraSet[foldName(n)] = true
 		}
 	}
 	drop := map[string]bool{}
 	for _, n := range unset {
 		if n = strings.TrimSpace(n); n != "" {
-			drop[n] = true
+			drop[foldName(n)] = true
 		}
 	}
 	out := make([]string, 0, len(os.Environ())+len(extra))
 	for _, kv := range os.Environ() {
 		n, ok := names(kv)
-		if !ok || drop[n] || !allowedName(n, extraSet) {
+		if !ok || drop[foldName(n)] || !allowedName(n, extraSet) {
 			continue
 		}
 		out = append(out, kv)
@@ -161,7 +171,7 @@ func SecretValues(env []string, unset []string) []string {
 	want := map[string]bool{}
 	for _, n := range unset {
 		if n = strings.TrimSpace(n); n != "" {
-			want[n] = true
+			want[foldName(n)] = true
 		}
 	}
 	var out []string
@@ -175,7 +185,7 @@ func SecretValues(env []string, unset []string) []string {
 		if v == "" || seen[v] {
 			continue
 		}
-		if want[n] || secretName(n) {
+		if want[foldName(n)] || secretName(n) {
 			seen[v] = true
 			out = append(out, v)
 		}
