@@ -13,7 +13,7 @@ import (
 	"regulus-ai/internal/trace"
 )
 
-// traceCmd implements `regulus trace record|show|files|sessions|prune|cost|usage`:
+// traceCmd implements `regulus trace record|show|files|sessions|prune|cost|usage|emit|timeline|prune-exec`:
 // minimal agent-process capture (G2.6). `record` appends one tool
 // execution to the session trace; `show` prints the diffable
 // fingerprint (sequence, tool, status) for probe-with-contrast
@@ -25,11 +25,11 @@ import (
 // folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json] | regulus trace emit --run <r> --type <t> [--status <s>] [...] | regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--rebuild] [--json] | regulus trace prune-exec [--keep N]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json] | regulus trace emit --run <r> --type <t> [--status <s>] [...] | regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--rebuild] [--json] | regulus trace prune-exec [--keep N]")
 		return 2
 	}
 	switch args[0] {
@@ -49,9 +49,15 @@ func (c CLI) traceCmd(args []string) int {
 		return c.traceCostCmd(args[1:])
 	case "usage":
 		return c.traceUsageCmd(args[1:])
+	case "emit":
+		return c.traceEmitCmd(args[1:])
+	case "timeline":
+		return c.traceTimelineCmd(args[1:])
+	case "prune-exec":
+		return c.tracePruneExecCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json] | regulus trace emit --run <r> --type <t> [--status <s>] [...] | regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--rebuild] [--json] | regulus trace prune-exec [--keep N]")
 		return 2
 	}
 }
