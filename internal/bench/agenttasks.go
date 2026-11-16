@@ -112,14 +112,7 @@ func LoadAgentSplits(path string, corpus []AgentTask) (AgentSplits, error) {
 	return sp, nil
 }
 
-func splitOf(sp AgentSplits, id string) string {
-	for _, e := range sp.Exploration {
-		if e == id {
-			return "exploration"
-		}
-	}
-	return "holdout"
-}
+func splitOf(sp AgentSplits, id string) string { return SplitOf(sp, id) }
 
 // AgentOutcome is one executed task attempt.
 type AgentOutcome struct {
