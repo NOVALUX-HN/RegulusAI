@@ -26,9 +26,9 @@ opencode v2, todo verde antes de reportar."
 - F1 (S1): cap global de experimentos — route: delegated (gentle-ai-worker) — commit: 8d2d83e
 - F2 (S2): guardian decision log + métrica — route: delegated (gentle-ai-worker) — commit: 23c0602
 - F3 (S3): tracking odd/tasks — route: inline — commit: bc6f098
-- F4 (S4): reindex operativo — route: inline — commit: n/a (operacional, ver L4)
-- F5 (S5): micro-deuda segura — route: inline — commit: n/a (evaluada, sin cambio: const pineada por diseño, Encode insignificante, Negotiate cosmético; ver L3)
-- F6 (S6): verificación total + reporte — route: inline — commit: n/a (verificación, ver L5)
+- F4 (S4): reindex operativo — route: inline — commit: done (operacional, ver L4)
+- F5 (S5): micro-deuda segura — route: inline — commit: done (evaluada, sin cambio: const pineada por diseño, Encode insignificante, Negotiate cosmético; ver L3)
+- F6 (S6): verificación total + reporte — route: inline — commit: done (verificación, ver L5)
 
 ## Log
 
@@ -39,3 +39,4 @@ L4 (2026-10-31, F4 reindex): `regulus memory reindex` 42 obs sha256 f97d179f + `
 L3 (2026-10-31, F5 veredicto): los tres micros se evaluaron y se dejan como están: (a) mcpProtocolVersion en cli/mcp.go parece en desuso pero TestProtocolVersionPinned la lee del source a propósito — quitarla exigiría reescribir el test hacia el path servido (cross-package, scope creep sin ganancia funcional); (b) `_ = Encode` solo fallaría con conexión rota, sin nada útil que hacer; (c) Negotiate case-sensitive/duplicados es cosmético. Ninguno califica como "trivial y testeado" sin churn.
 
 L1 (user original verbatim): "soluciona todos los problemas y mejoras en orden hasta finalizarlos todos, luego prueba todo nuevamente para verificar que las mejoras funcionaron"
+- L6 (2026-11-16, sync done): F4/F5/F6 done (operacional). F4 reindex 42 obs + memory fresh (L4), F5 micro-deuda evaluada sin cambio (L3), F6 vet+build+tests+bun+doctor verde (L5). F1-F3 con commits 8d2d83e/23c0602/bc6f098.

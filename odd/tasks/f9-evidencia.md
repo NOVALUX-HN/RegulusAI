@@ -32,15 +32,15 @@ P0 exige veredicto independiente (no auto-cierre).
 
 | ID | Spec | Route | Estado |
 |----|------|-------|--------|
-| T1 | S1 | NOV-72 labels + conformidad + release 0.15 | in_progress |
-| T2 | S2 | NOV-73 tokens e2e | pending |
-| T3 | S3 | NOV-76 journeys 2 hosts | pending |
-| T4 | S4 | NOV-77 corpus ampliado | pending |
-| T5 | S5 | NOV-74 Done + reconciliacion | pending |
-| T6 | S6 | NOV-78 cierre obligatorio | pending |
-| T7 | S7 | NOV-79 benchmarks | pending |
-| T8 | S8 | NOV-80 segundo ciclo | pending |
-| T9 | S9 | NOV-75 higiene docs | pending |
+| T1 | S1 | NOV-72 labels + conformidad + release 0.15 | done |
+| T2 | S2 | NOV-73 tokens e2e | done |
+| T3 | S3 | NOV-76 journeys 2 hosts | done |
+| T4 | S4 | NOV-77 corpus ampliado | done |
+| T5 | S5 | NOV-74 Done + reconciliacion | done |
+| T6 | S6 | NOV-78 cierre obligatorio | done |
+| T7 | S7 | NOV-79 benchmarks | done |
+| T8 | S8 | NOV-80 segundo ciclo | done |
+| T9 | S9 | NOV-75 higiene docs | done |
 
 ## Log
 
@@ -57,3 +57,4 @@ P0 exige veredicto independiente (no auto-cierre).
 - L7 (T2 NOV-77 parcial, 2 commits): corpus v2 30 tareas en agentcorpus.go + splits v2 + version agent-tasks-v2; fixtures verificados (30/30 fallan pre-fix), trampas verificadas; pipeline evidencia (manifest+sha256, agent-report desde archivos); --execution-id; hook usageFlags + 184 bun OK; doc host-usage.md; deriva verde. Fix test agent-report (INCONCLUSIVE solo sin evaluables). Pendiente ejecucion local: bloqueo App Control intermitente en binarios frescos (reputacion por hash); reintentar mismos binarios + corrida real beam-free x3 + Linear.
 - L8 (T9 NOV-75): H10 verificado (token-savings ya separado con puntero a host-usage; PRD/inventory/elite/prompts congelados legítimos); f7-cycle-real.md marcado H10 + puntero a agent-evals.md vigente; unificado v1-cerrado vs v3-vigente; f7-cycle-*.json sueltos declarados ausentes y sustituidos por pipeline versionado; drift excluye f7-cycle-real.md. Docs solo, sin ejecución.
 - L9 (slices F9+F10 para push): c1 docs(nov-74+nov-78) close-trace; c2 feat(nov-78) task close+traceability job+CODEOWNERS; c3 feat(nov-79) perf-baseline+script+workflow+fixture; c4 docs(nov-80) hipótesis; c5 feat(nov-81) envallow+redacción; c6 feat(nov-82) guard dashboard; c7 ci(nov-83) pins+permisos+scans; c8 feat(nov-84) race x7+mutation-weekly+pisos; c9 feat(nov-85) fsx+locks+perms; c10 docs(nov-86) gobierno; c11 docs(nov-75) higiene. Multi-issue solo donde un archivo lo exige (close-trace, ci.yml con Justified:).
+- L10 (2026-11-16, sync done F9): T1 done (Linear NOV-72 Done, evidencia T1 NOV-72 posteada 2026-11-15); T2 done (Linear NOV-73 Done, evidencia T2 NOV-73 posteada); T3 done NOV-76 commit 04ad4df (3 hosts host-probado + manifest + conformity-matrix); T4 done NOV-77 commits 9f28af5 (corpus v2 36 tasks + pipeline) + c6e68cb (fast-loop + corpus v3 44 tasks + outcomes beamfree) + fixes e22e61f/60580d1; T5 done NOV-74 commit f6caf25 (close-traceability F8 + Done verificable); T6 done NOV-78 commits f6caf25 + 0bf44f7 (task close + CODEOWNERS + CI job trazable); T7 done NOV-79 commit 13a6e8b (perf-baseline + script + workflow + fixture); T8 done NOV-80 commit faf6bed (hipótesis pre-registrada segundo ciclo); T9 done NOV-75 commit 6efca60 (higiene H10 + drift). Extras F10 con commits propios (no en tabla F9): NOV-81 d6c8e81 + fix 6bdb63b, NOV-82 57c68c5, NOV-83 24be8eb + fix ddc4103, NOV-84 4b6771d + fix f2385b9, NOV-85 3602487 + fix 5eaf062, NOV-86 3cadf58. Linear Backlog NOV-74..86 a cerrar con este L10 como evidencia.

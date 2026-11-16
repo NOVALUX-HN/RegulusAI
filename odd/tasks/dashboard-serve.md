@@ -15,7 +15,7 @@ S3: "analiza como poder hacer esto"
 - T1 (S1): serve read-only + JSON /v1/* sobre stores existentes — route: inline — commit: 62ca372
 - T2 (S1,S2): UI embebida Harness/Guardado/Aprendizaje con auto-refresh — route: inline — commit: 62ca372
 - T3 (S2): arranque automático al encender la PC (Windows) + docs — route: inline — commit: 62ca372
-- T4 (S1,S2,S3): verificación total + probe vivo en puerto fijo — route: inline — commit: —
+- T4 (S1,S2,S3): verificación total + probe vivo en puerto fijo — route: inline — commit: 62ca372
 
 ## Log
 
@@ -23,3 +23,4 @@ L3 (T1-T3 probe vivo puerto 18083): `/` HTML con Harness/Guardado/Aprendizaje + 
 
 L1 (user original verbatim): "quiero tener una pagina siempre en un puerto especial donde poder ver la informacion importante del harness donde ver informacion relevante de lo que guardamos y tambien de almanac para ver como aprnede, que informacion aprende y conocer como esta mejorando mis desarrollos y proyectos."
 L2 (user follow-up verbatim): "procede con al parte visual que se ejecute en cuanto se encienda la pc siempre porque es necesario siempre tener visibilidad"
+- L4 (2026-11-16, sync done): T4 done. T1-T3 commit 62ca372 verificado (serve read-only + UI + autostart). Probe vivo puerto 18083: / HTML + /v1/metrics + /v1/almanac/summary + POST 405, serve --help y --port=abc exit 2.
