@@ -1,0 +1,46 @@
+{
+  "claude": {
+    "host": "claude",
+    "host_version": "2.1.325 (Claude Code)",
+    "level": "contrato-probado",
+    "status": "not-run",
+    "reason": "probe only: binary present, version 2.1.325 (Claude Code) (journey not executed, no model cost)",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:08Z"
+  },
+  "codex": {
+    "host": "codex",
+    "host_version": "codex-cli 0.169.0",
+    "level": "contrato-probado",
+    "status": "not-run",
+    "reason": "probe only: binary present, version codex-cli 0.169.0 (journey not executed, no model cost)",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:08Z"
+  },
+  "devin": {
+    "host": "devin",
+    "host_version": "",
+    "level": "no-ejecutado",
+    "status": "not-run",
+    "reason": "devin ships desktop-only, no non-interactive CLI",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:08Z"
+  },
+  "opencode": {
+    "host": "opencode",
+    "host_version": "opencode v2.2.5",
+    "level": "contrato-probado",
+    "status": "not-run",
+    "reason": "probe only: binary present, version opencode v2.2.5 (journey not executed, no model cost)",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:08Z"
+  }
+}

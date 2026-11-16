@@ -1,0 +1,17 @@
+{
+  "suite": "host-journeys",
+  "date": "2026-11-16",
+  "windows": true,
+  "hosts": [
+    "opencode v2.2.5",
+    "claude 2.1.325",
+    "codex-cli 0.169.0",
+    "devin desktop-only"
+  ],
+  "result": "PASS 3 green",
+  "git_head": "9f28af57c0aad271d0f28b0da4f5afcbc4c1d4ee",
+  "files": {
+    "host-journeys-20261116T005408Z.json": "a1a553d674e274fecbb13b7fa94609ad9f13396430db888a673724f2fea16a67",
+    "host-journeys-20261116T005418Z.json": "d6cc7dd86353931364f3198250fa4fdcc0707fd7b879b343660fa05dc8b953d3"
+  }
+}

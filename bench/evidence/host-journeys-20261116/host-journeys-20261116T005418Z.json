@@ -1,0 +1,46 @@
+{
+  "claude": {
+    "host": "claude",
+    "host_version": "2.1.325 (Claude Code)",
+    "level": "host-probado",
+    "status": "pass",
+    "reason": "install, doctor, context, spec, gate, receipt and close green",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:15Z"
+  },
+  "codex": {
+    "host": "codex",
+    "host_version": "codex-cli 0.169.0",
+    "level": "host-probado",
+    "status": "pass",
+    "reason": "install, doctor, context, spec, gate, receipt and close green",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:15Z"
+  },
+  "devin": {
+    "host": "devin",
+    "host_version": "",
+    "level": "no-ejecutado",
+    "status": "not-run",
+    "reason": "devin ships desktop-only, no non-interactive CLI",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:15Z"
+  },
+  "opencode": {
+    "host": "opencode",
+    "host_version": "opencode v2.2.5",
+    "level": "host-probado",
+    "status": "pass",
+    "reason": "install, doctor, context, spec, gate, receipt and close green",
+    "evidence": "",
+    "latency_ms": 0,
+    "windows": true,
+    "recorded_at": "2026-11-16T00:54:15Z"
+  }
+}
