@@ -19,6 +19,7 @@
 package trace
 
 import (
+	"fmt"
 	"sort"
 )
 
@@ -48,6 +49,7 @@ type TaskCost struct {
 	TotalOutputBytes  int64    `json:"total_output_bytes"`
 	TotalInputTokens  int64    `json:"total_input_tokens"`
 	TotalOutputTokens int64    `json:"total_output_tokens"`
+	TotalReasoning    int64    `json:"total_reasoning_tokens"`
 	TotalCacheRead    int64    `json:"total_cache_read_tokens"`
 	TotalCacheWrite   int64    `json:"total_cache_write_tokens"`
 	TokenSource       string   `json:"token_source"`
@@ -56,6 +58,7 @@ type TaskCost struct {
 	TokensKnown       bool     `json:"tokens_known"`
 	TotalLocalTokens  int64    `json:"total_local_tokens"`
 	LocalTokensKnown  bool     `json:"local_tokens_known"`
+	RateKeys          []string `json:"rate_keys,omitempty"`
 	Sessions          []string `json:"sessions"`
 	Entries           int      `json:"entries"`
 }
@@ -122,20 +125,43 @@ func hookKey(e Entry) string {
 // an entry carries host-exposed counts. The local proxy is always
 // measured per folded entry (LocalTokensKnown), summed from
 // EstimateLocalTokens — even a legacy line with every host field 0
-// contributes its descriptor-chars proxy.
-func (c *TaskCost) fold(session string, e Entry) {
+// contributes its descriptor-chars proxy. Reasoning sums alongside
+// output (the original breakdown, never folded away). RateKeys
+// collects the distinct model@version pairs behind the token totals
+// so money math can demand one explicit tariff. Sums are
+// overflow-safe: a hostile total aborts the fold instead of
+// wrapping, so the report never prints a corrupted figure.
+func (c *TaskCost) fold(session string, e Entry) error {
 	c.Calls++
 	c.Entries++
 	if e.Status == StatusError {
 		c.Errors++
 	}
-	c.TotalDurationMS += e.DurationMS
-	c.TotalOutputBytes += e.OutputBytes
-	c.TotalInputTokens += e.InputTokens
-	c.TotalOutputTokens += e.OutputTokens
-	c.TotalCacheRead += e.CacheRead
-	c.TotalCacheWrite += e.CacheWrite
-	c.TotalLocalTokens += EstimateLocalTokens(e)
+	var err error
+	if c.TotalDurationMS, err = addCounts(c.TotalDurationMS, e.DurationMS); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalOutputBytes, err = addCounts(c.TotalOutputBytes, e.OutputBytes); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalInputTokens, err = addCounts(c.TotalInputTokens, e.InputTokens); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalOutputTokens, err = addCounts(c.TotalOutputTokens, e.OutputTokens); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalReasoning, err = addCounts(c.TotalReasoning, e.ReasoningTokens); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalCacheRead, err = addCounts(c.TotalCacheRead, e.CacheRead); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalCacheWrite, err = addCounts(c.TotalCacheWrite, e.CacheWrite); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	if c.TotalLocalTokens, err = addCounts(c.TotalLocalTokens, EstimateLocalTokens(e)); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
 	c.LocalTokensKnown = true
 	if e.DurationMS > 0 {
 		c.DurationKnown = true
@@ -143,10 +169,23 @@ func (c *TaskCost) fold(session string, e Entry) {
 	if e.OutputBytes > 0 {
 		c.BytesKnown = true
 	}
-	if e.InputTokens > 0 || e.OutputTokens > 0 || e.CacheRead > 0 || e.CacheWrite > 0 {
+	if e.InputTokens > 0 || e.OutputTokens > 0 || e.ReasoningTokens > 0 || e.CacheRead > 0 || e.CacheWrite > 0 {
 		c.TokensKnown = true
 		if c.TokenSource == "" {
 			c.TokenSource = SourceMeasuredHost
+		}
+		if e.Model != "" {
+			key := e.Model + "@" + e.HostVersion
+			found := false
+			for _, k := range c.RateKeys {
+				if k == key {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.RateKeys = append(c.RateKeys, key)
+			}
 		}
 	}
 	if e.UsageSource != "" && c.TokenSource == "" {
@@ -154,10 +193,11 @@ func (c *TaskCost) fold(session string, e Entry) {
 	}
 	for _, s := range c.Sessions {
 		if s == session {
-			return
+			return nil
 		}
 	}
 	c.Sessions = append(c.Sessions, session)
+	return nil
 }
 
 // CostByTask folds every session trace under root into per-task
@@ -168,12 +208,21 @@ func CostByTask(root string) ([]TaskCost, error) {
 }
 
 // costByDimension folds every session trace under root into
-// per-bucket costs using one dimension key (task, phase, agent or
-// hook), sorted by bucket. It reuses fold, so every dimension carries
-// the same measured-vs-unknown accounting; a root with no traces
-// yields no costs and no error, and a malformed line fails like List
-// does.
+// per-bucket costs using one dimension key (task, phase, agent,
+// host or hook), sorted by bucket. It reuses fold, so every
+// dimension carries the same measured-vs-unknown accounting; a root
+// with no traces yields no costs and no error, and a malformed line
+// fails like List does. A hostile total aborts the fold instead of
+// wrapping, so the report never prints a corrupted figure.
 func costByDimension(root string, key func(Entry) string) ([]TaskCost, error) {
+	return costByDimensionFiltered(root, key, nil)
+}
+
+// costByDimensionFiltered folds like costByDimension but only over
+// entries the keep predicate accepts (nil keeps everything). The CLI
+// scopes cost reports by task, agent or run through it, so filters
+// and grouping share one auditable fold.
+func costByDimensionFiltered(root string, key func(Entry) string, keep func(Entry) bool) ([]TaskCost, error) {
 	sessions, err := Sessions(root)
 	if err != nil {
 		return nil, err
@@ -185,13 +234,18 @@ func costByDimension(root string, key func(Entry) string) ([]TaskCost, error) {
 			return nil, err
 		}
 		for _, e := range entries {
+			if keep != nil && !keep(e) {
+				continue
+			}
 			k := key(e)
 			c, ok := byBucket[k]
 			if !ok {
 				c = &TaskCost{Task: k}
 				byBucket[k] = c
 			}
-			c.fold(s, e)
+			if err := c.fold(s, e); err != nil {
+				return nil, err
+			}
 		}
 	}
 	out := make([]TaskCost, 0, len(byBucket))
@@ -223,6 +277,77 @@ func CostByAgent(root string) ([]TaskCost, error) {
 // the UnattributedHook bucket.
 func CostByHook(root string) ([]TaskCost, error) {
 	return costByDimension(root, hookKey)
+}
+
+// CostScope folds costs grouped by dim (task, agent or host; empty
+// means task) over only the entries matching the non-empty
+// task/agent/run filters (task and agent match their dimension
+// buckets, run matches the F11.1 execution id). Filters and
+// grouping share the auditable fold, so a scoped report squares
+// with the same hand fold over List. An unknown dim fails with a
+// naming error; no match yields no buckets and no error.
+func CostScope(root, dim, task, agent, run string) ([]TaskCost, error) {
+	var key func(Entry) string
+	switch dim {
+	case "", "task":
+		key = taskKey
+	case "agent":
+		key = agentKey
+	case "host":
+		key = hostKey
+	default:
+		return nil, fmt.Errorf("cost grouping must be task, agent or host, got %q", dim)
+	}
+	return costByDimensionFiltered(root, key, func(e Entry) bool {
+		if task != "" && taskKey(e) != task {
+			return false
+		}
+		if agent != "" && agentKey(e) != agent {
+			return false
+		}
+		if run != "" && e.ExecutionID != run {
+			return false
+		}
+		return true
+	})
+}
+
+// hostKey maps an entry to its host bucket: the recorded host, or
+// the unattributed bucket for lines written without one (legacy
+// lines and local-only entries). An empty host never reads as a
+// measured zero — it reads as unattributed.
+func hostKey(e Entry) string {
+	if e.Host == "" {
+		return UnattributedAgent
+	}
+	return e.Host
+}
+
+// CostByHost folds every session trace under root into per-host
+// costs, sorted by host. The host dimension keeps measured-host
+// totals beside unattributed buckets so one report shows which
+// host measured and which stayed unknown.
+func CostByHost(root string) ([]TaskCost, error) {
+	return costByDimension(root, hostKey)
+}
+
+// DedupEntries drops exact duplicate entries (same session, message
+// and call id), keeping the first occurrence. Usage attribution
+// runs over deduplicated entries so a re-ingested host report or a
+// retried record cannot double-count one call; the input slice is
+// never mutated.
+func DedupEntries(entries []Entry) []Entry {
+	seen := map[string]bool{}
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		k := e.Session + "\x00" + e.Message + "\x00" + e.Call
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, e)
+	}
+	return out
 }
 
 // ToolCost is the folded measured-local proxy cost of one tool: call

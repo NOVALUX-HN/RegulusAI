@@ -31,7 +31,10 @@ const maxReaderBytes = 64 << 20
 
 // checked validates a reader-built report through the same strict gate
 // as hand-written usage: bounds, absurdity caps, single-line ids.
+// Free text is redacted before validation so no credential shape
+// from a host document ever reaches the store.
 func checked(u HostUsage) (HostUsage, error) {
+	u = RedactHostUsage(u)
 	raw, err := json.Marshal(u)
 	if err != nil {
 		return HostUsage{}, err
@@ -64,9 +67,11 @@ type opencodeExport struct {
 // ParseOpencodeExport reads one `opencode session export` document,
 // attributing its session totals. Reasoning tokens fold into output
 // (OpenAI accounting: completions include reasoning); the fold is
-// explicit so totals stay meaningful. hostVersion comes from
+// explicit so totals stay meaningful, and ReasoningTokens preserves
+// the original split so no figure is lost. hostVersion comes from
 // `opencode --version` (empty when the binary is absent: unknown,
-// never guessed).
+// never guessed). A null model subtree (seen live 2026-11-16)
+// parses as unknown model, not an error.
 func ParseOpencodeExport(data []byte, hostVersion string) (HostUsage, error) {
 	if len(data) > maxReaderBytes {
 		return HostUsage{}, fmt.Errorf("opencode export too large: %d bytes", len(data))
@@ -79,16 +84,21 @@ func ParseOpencodeExport(data []byte, hostVersion string) (HostUsage, error) {
 	if strings.TrimSpace(exp.Info.ID) == "" {
 		return HostUsage{}, fmt.Errorf("opencode export has no session id")
 	}
+	out, err := addCounts(exp.Info.Tokens.Output, exp.Info.Tokens.Reasoning)
+	if err != nil {
+		return HostUsage{}, fmt.Errorf("opencode export counts overflow: %v", err)
+	}
 	return checked(HostUsage{
-		InputTokens:  exp.Info.Tokens.Input,
-		OutputTokens: exp.Info.Tokens.Output + exp.Info.Tokens.Reasoning,
-		CacheRead:    exp.Info.Tokens.Cache.Read,
-		CacheWrite:   exp.Info.Tokens.Cache.Write,
-		Model:        exp.Info.Model.ID,
-		Host:         "opencode",
-		HostVersion:  hostVersion,
-		Source:       SourceMeasuredHost,
-		RunID:        exp.Info.ID,
+		InputTokens:     exp.Info.Tokens.Input,
+		OutputTokens:    out,
+		ReasoningTokens: exp.Info.Tokens.Reasoning,
+		CacheRead:       exp.Info.Tokens.Cache.Read,
+		CacheWrite:      exp.Info.Tokens.Cache.Write,
+		Model:           exp.Info.Model.ID,
+		Host:            "opencode",
+		HostVersion:     hostVersion,
+		Source:          SourceMeasuredHost,
+		RunID:           exp.Info.ID,
 	})
 }
 
@@ -104,10 +114,17 @@ type claudeUsage struct {
 
 // ParseClaudeTranscript sums assistant usage over a Claude Code
 // transcript (*.jsonl, one object per line). Unknown lines are skipped;
-// malformed JSON fails closed. The first non-empty message.model wins;
-// the transcript-level sessionId (summary lines) becomes the run id.
+// malformed JSON fails closed. Extra usage keys the host adds over
+// time (server_tool_use, service_tier, ...) are ignored: only the
+// four verified counts are summed. The first non-empty message.model
+// wins; the transcript-level sessionId (summary lines) becomes the
+// run id. Oversize input fails closed before any partial sum.
 func ParseClaudeTranscript(r io.Reader) (HostUsage, error) {
-	dec := json.NewDecoder(io.LimitReader(r, maxReaderBytes+1))
+	data, err := readCapped(r, "claude transcript")
+	if err != nil {
+		return HostUsage{}, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	var u HostUsage
 	u.Host = "claude"
 	u.Source = SourceMeasuredHost
@@ -136,10 +153,19 @@ func ParseClaudeTranscript(r io.Reader) (HostUsage, error) {
 			u.Model = o.Message.Model
 		}
 		us := o.Message.Usage
-		u.InputTokens += us.InputTokens
-		u.OutputTokens += us.OutputTokens
-		u.CacheRead += us.CacheReadInputTokens
-		u.CacheWrite += us.CacheCreationInputTokens
+		var err error
+		if u.InputTokens, err = addCounts(u.InputTokens, us.InputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("claude transcript counts overflow at object %d: %v", lines, err)
+		}
+		if u.OutputTokens, err = addCounts(u.OutputTokens, us.OutputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("claude transcript counts overflow at object %d: %v", lines, err)
+		}
+		if u.CacheRead, err = addCounts(u.CacheRead, us.CacheReadInputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("claude transcript counts overflow at object %d: %v", lines, err)
+		}
+		if u.CacheWrite, err = addCounts(u.CacheWrite, us.CacheCreationInputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("claude transcript counts overflow at object %d: %v", lines, err)
+		}
 	}
 	if lines == 0 {
 		return HostUsage{}, fmt.Errorf("empty claude transcript")
@@ -162,8 +188,16 @@ type codexUsage struct {
 // rollout (*.jsonl). The session id comes from the session_meta line;
 // the model from the first response line that names one. Malformed
 // lines fail closed; lines of other types are skipped.
+// reasoning_output_tokens is a subset breakdown of output_tokens
+// (total = input + output), so output maps straight across and
+// ReasoningTokens preserves the original breakdown. Oversize input
+// fails closed before any partial sum.
 func ParseCodexRollout(r io.Reader) (HostUsage, error) {
-	dec := json.NewDecoder(io.LimitReader(r, maxReaderBytes+1))
+	data, err := readCapped(r, "codex rollout")
+	if err != nil {
+		return HostUsage{}, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	var u HostUsage
 	u.Host = "codex"
 	u.Source = SourceMeasuredHost
@@ -195,10 +229,22 @@ func ParseCodexRollout(r io.Reader) (HostUsage, error) {
 			continue
 		}
 		us := o.Payload.Usage
-		u.InputTokens += us.InputTokens
-		u.OutputTokens += us.OutputTokens
-		u.CacheRead += us.CachedInputTokens
-		u.CacheWrite += us.CacheWriteInputTokens
+		var err error
+		if u.InputTokens, err = addCounts(u.InputTokens, us.InputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("codex rollout counts overflow at object %d: %v", lines, err)
+		}
+		if u.OutputTokens, err = addCounts(u.OutputTokens, us.OutputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("codex rollout counts overflow at object %d: %v", lines, err)
+		}
+		if u.ReasoningTokens, err = addCounts(u.ReasoningTokens, us.ReasoningOutputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("codex rollout counts overflow at object %d: %v", lines, err)
+		}
+		if u.CacheRead, err = addCounts(u.CacheRead, us.CachedInputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("codex rollout counts overflow at object %d: %v", lines, err)
+		}
+		if u.CacheWrite, err = addCounts(u.CacheWrite, us.CacheWriteInputTokens); err != nil {
+			return HostUsage{}, fmt.Errorf("codex rollout counts overflow at object %d: %v", lines, err)
+		}
 		records++
 	}
 	if lines == 0 {
@@ -208,4 +254,31 @@ func ParseCodexRollout(r io.Reader) (HostUsage, error) {
 		return HostUsage{}, fmt.Errorf("codex rollout has no token_usage_record lines")
 	}
 	return checked(u)
+}
+
+// readCapped reads one host session document whole, failing closed
+// when it exceeds the session-document cap: transcripts and
+// rollouts are small text, so anything bigger is not a session
+// document and no partial sum may report.
+func readCapped(r io.Reader, what string) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxReaderBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("malformed %s: %v", what, err)
+	}
+	if int64(len(data)) > maxReaderBytes {
+		return nil, fmt.Errorf("%s too large (max %d bytes)", what, maxReaderBytes)
+	}
+	return data, nil
+}
+
+// DevinUnknown declares the verified Devin state: the host exposes
+// no counters (MCP only, verified F8), so Devin usage is unknown
+// with the reason — never a guessed number. Callers store or
+// forward this instead of inventing counts.
+func DevinUnknown() (HostUsage, error) {
+	return checked(HostUsage{
+		Host:   "devin",
+		Source: SourceUnknown,
+		Reason: DeclareHostProvenance("devin").Reason,
+	})
 }
