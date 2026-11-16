@@ -116,6 +116,7 @@ La imagen de arriba es captura real del panel nuevo (tema Obsidian & Gold que re
 | [Chart — v1](charts/regulus-ai-v1.md) | Verbatim specs, task list, ship's log of the whole build |
 | [Chart — F5](charts/f5-release.md) | The release phase's own acceptance scenarios |
 | [Devin](docs/devin.md) | Windows blueprint, CLI/Desktop/Cloud recipe, MCP trust boundary, deliberate tool gaps |
+| [Release](docs/release-f11.md) | Reproducible release (F11.9): tag-to-install procedure, workflow and dependency audits, support-claim reconciliation |
 | [Troubleshooting](docs/troubleshooting.md) | YOLO reload, console flashing, whitelist/reserved refusals, cap refusals |
 | [Agents](docs/agents.md) | Crew and guardian roles, permissions, delegation rules |
 | [Security](SECURITY.md) | Private vulnerability reporting, scope, supported versions |

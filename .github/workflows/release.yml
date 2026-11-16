@@ -47,10 +47,12 @@ jobs:
           cache: false
       - name: Goversioninfo resources (Windows only)
         if: matrix.goos == 'windows'
+        # NOV-95 (F11.9): fail closed — a silent version-resource drop
+        # would ship Windows binaries without version info. No `|| true`.
         run: |
           go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
-          goversioninfo -64 -o cmd/regulus/resource_windows_amd64.syso versioninfo.json || true
-          goversioninfo -arm -64 -o cmd/regulus/resource_windows_arm64.syso versioninfo.json || true
+          goversioninfo -64 -o cmd/regulus/resource_windows_amd64.syso versioninfo.json
+          goversioninfo -arm -64 -o cmd/regulus/resource_windows_arm64.syso versioninfo.json
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -78,6 +80,10 @@ jobs:
     # NOV-83: publishing the release needs contents:write; fetching the
     # built binaries needs actions:read. No id-token here (attestation
     # already happened in build).
+    # NOV-95 (F11.9): publish only on version tags. A manual
+    # workflow_dispatch run exercises build (dry-run artifacts) but must
+    # never cut or overwrite a GitHub Release.
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
       actions: read
@@ -95,8 +101,14 @@ jobs:
       - name: Notes from CHANGELOG
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          awk -v v="## [$VERSION]" 'BEGIN{p=0} $0==v{p=1; print; next} p&&/^## \[/{exit} p{print}' CHANGELOG.md > release-notes.md
+          # NOV-95 (F11.9): prefix match — CHANGELOG heads carry a date
+          # suffix (`## [X.Y.Z] - DATE`), so exact-line `$0==v` never
+          # matched and notes shipped empty. `index()==1` fixes it.
+          awk -v v="## [$VERSION]" 'index($0,v)==1{p=1; print; next} p&&/^## \[/{exit} p{print}' CHANGELOG.md > release-notes.md
           cat release-notes.md
+          # NOV-95 (F11.9): fail closed — an undocumented version must
+          # never publish with empty notes.
+          test -s release-notes.md || (echo "no CHANGELOG entry for $VERSION" >&2; exit 1)
       # NOV-83: third-party release action kept but SHA-pinned; replacing
       # it with `gh release` (or verified own steps) is a separate tested
       # change, deferred on purpose.
