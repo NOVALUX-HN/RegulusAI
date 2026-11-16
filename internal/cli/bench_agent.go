@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,10 +20,65 @@ import (
 	"regulus-ai/internal/executil"
 )
 
+// benchAgentTasksOptions carries the parsed `bench agent-tasks` flags:
+// repetition count, split selection, host identity and evidence sinks.
+type benchAgentTasksOptions struct {
+	reps            int
+	split           string
+	model           string
+	host            string
+	budget          int
+	variant         string
+	save            string
+	evidenceDir     string
+	hostVersionFlag string
+	taskFilter      string
+	dryRun          bool
+	maxWallS        int
+}
+
 func (c CLI) benchAgentTasksCmd(args []string) int {
 	started := time.Now().UTC()
+	opts, code, ok := parseBenchAgentTasksOptions(args, c.Stderr)
+	if !ok {
+		return code
+	}
+	corpus := bench.AgentCorpus()
+	splits, code, ok := c.loadBenchAgentSplits(corpus)
+	if !ok {
+		return code
+	}
+	splits, code, ok = applyBenchAgentTaskFilter(splits, corpus, opts.taskFilter, c.Stderr)
+	if !ok {
+		return code
+	}
+	// NOV-77 fast-loop: --dry-run validates corpus+splits and lists the
+	// selected tasks without touching any model. Zero model cost.
+	if opts.dryRun {
+		printBenchAgentDryRun(c.Stdout, splits, opts.reps)
+		return 0
+	}
+	outcomes, hostVersion, code, ok := c.executeBenchAgentSuite(opts, corpus, splits)
+	if !ok {
+		return code
+	}
+	if code := saveBenchAgentOutcomes(c.Stdout, c.Stderr, opts.save, outcomes); code != 0 {
+		return code
+	}
+	if code := c.writeBenchAgentEvidence(opts, outcomes, splits, hostVersion, started); code != 0 {
+		return code
+	}
+	return reportBenchAgentResults(c.Stdout, opts.variant, outcomes)
+}
+
+// parseBenchAgentTasksOptions parses the `bench agent-tasks` flags and
+// validates the positional contract: no positional args, reps >= 1.
+// On failure it prints the byte-identical usage to stderr and reports
+// exit 2 with ok=false.
+func parseBenchAgentTasksOptions(args []string, stderr io.Writer) (benchAgentTasksOptions, int, bool) {
+	var opts benchAgentTasksOptions
 	fs := flag.NewFlagSet("bench agent-tasks", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
+	fs.SetOutput(stderr)
 	reps := fs.Int("reps", 1, "repetitions per task (protocol wants >=3 for real evals)")
 	split := fs.String("split", "all", "exploration | holdout | all")
 	model := fs.String("model", "", "model for the headless host (host default when empty)")
@@ -36,149 +92,237 @@ func (c CLI) benchAgentTasksCmd(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "validate corpus+splits and list selected tasks without model calls")
 	maxWallS := fs.Int("max-wall-time-s", 0, "global deadline in seconds, stops with partial outcomes on expiry (0 = none)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return benchAgentTasksOptions{}, 2, false
 	}
 	if fs.NArg() != 0 || *reps < 1 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] [--task AT1,AT2] [--dry-run] [--max-wall-time-s N]")
-		return 2
+		fmt.Fprintln(stderr, "usage: regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] [--task AT1,AT2] [--dry-run] [--max-wall-time-s N]")
+		return benchAgentTasksOptions{}, 2, false
 	}
-	corpus := bench.AgentCorpus()
-	splitsPath := bench.AgentSplitsPath
+	opts = benchAgentTasksOptions{
+		reps: *reps, split: *split, model: *model, host: *host, budget: *budget,
+		variant: *variant, save: *save, evidenceDir: *evidenceDir,
+		hostVersionFlag: *hostVersionFlag, taskFilter: *taskFilter,
+		dryRun: *dryRun, maxWallS: *maxWallS,
+	}
+	return opts, 0, true
+}
+
+// benchAgentSplitsPath resolves the splits file: the REGULUS_AGENT_SPLITS
+// override wins, otherwise the tracked path, otherwise the project-root
+// join for callers running from a subdirectory.
+func (c CLI) benchAgentSplitsPath() string {
 	if env := os.Getenv("REGULUS_AGENT_SPLITS"); env != "" {
-		splitsPath = env
-	} else if _, err := os.Stat(splitsPath); err != nil {
-		splitsPath = c.dir() + "/" + bench.AgentSplitsPath
+		return env
 	}
-	splits, err := bench.LoadAgentSplits(splitsPath, corpus)
+	if _, err := os.Stat(bench.AgentSplitsPath); err != nil {
+		return c.dir() + "/" + bench.AgentSplitsPath
+	}
+	return bench.AgentSplitsPath
+}
+
+// loadBenchAgentSplits resolves the splits path and validates it against
+// the corpus. On failure it prints the byte-identical refusal and
+// reports exit 1 with ok=false.
+func (c CLI) loadBenchAgentSplits(corpus []bench.AgentTask) (bench.AgentSplits, int, bool) {
+	splits, err := bench.LoadAgentSplits(c.benchAgentSplitsPath(), corpus)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
-		return 1
+		return bench.AgentSplits{}, 1, false
 	}
-	// NOV-77 fast-loop: --task restricts the run to a comma-separated
-	// subset of task IDs for cheap smoke runs. Filtering happens after
-	// validation, so single-task smokes stay allowed even though the
-	// committed splits require >=20% holdout.
-	if *taskFilter != "" {
-		want := map[string]bool{}
-		for _, id := range splitList(*taskFilter) {
-			want[id] = true
-		}
-		known := map[string]bool{}
-		for _, t := range corpus {
-			known[t.ID] = true
-		}
-		for id := range want {
-			if !known[id] {
-				fmt.Fprintf(c.Stderr, "bench agent-tasks: unknown task %q\n", id)
-				return 2
-			}
-		}
-		var exp, hold []string
-		for _, id := range splits.Exploration {
-			if want[id] {
-				exp = append(exp, id)
-			}
-		}
-		for _, id := range splits.Holdout {
-			if want[id] {
-				hold = append(hold, id)
-			}
-		}
-		if len(exp)+len(hold) == 0 {
-			fmt.Fprintln(c.Stderr, "bench agent-tasks: --task matched no tasks")
-			return 2
-		}
-		splits.Exploration, splits.Holdout = exp, hold
+	return splits, 0, true
+}
+
+// indexBenchAgentCorpus indexes the corpus IDs for --task validation.
+func indexBenchAgentCorpus(corpus []bench.AgentTask) map[string]bool {
+	known := make(map[string]bool, len(corpus))
+	for _, t := range corpus {
+		known[t.ID] = true
 	}
-	// NOV-77 fast-loop: --dry-run validates corpus+splits and lists the
-	// selected tasks without touching any model. Zero model cost.
-	if *dryRun {
-		total := (len(splits.Exploration) + len(splits.Holdout)) * *reps
-		fmt.Fprintf(c.Stdout, "agent-tasks %s dry-run: %d task(s) x %d rep(s) = %d attempt(s), no model calls\n",
-			bench.AgentSuiteVersion, len(splits.Exploration)+len(splits.Holdout), *reps, total)
-		for _, id := range splits.Exploration {
-			fmt.Fprintf(c.Stdout, "  - %s [exploration]\n", id)
+	return known
+}
+
+// selectBenchAgentSplits restricts both splits to the wanted IDs,
+// preserving committed order.
+func selectBenchAgentSplits(splits bench.AgentSplits, want map[string]bool) bench.AgentSplits {
+	var exp, hold []string
+	for _, id := range splits.Exploration {
+		if want[id] {
+			exp = append(exp, id)
 		}
-		for _, id := range splits.Holdout {
-			fmt.Fprintf(c.Stdout, "  - %s [holdout]\n", id)
-		}
-		return 0
 	}
-	agent, notRunMsg, notRunCode, ok := resolveAgentRunner(*host)
+	for _, id := range splits.Holdout {
+		if want[id] {
+			hold = append(hold, id)
+		}
+	}
+	splits.Exploration, splits.Holdout = exp, hold
+	return splits
+}
+
+// applyBenchAgentTaskFilter restricts the run to a comma-separated
+// subset of task IDs for cheap smoke runs (NOV-77 fast-loop).
+// Filtering happens after validation, so single-task smokes stay
+// allowed even though the committed splits require >=20% holdout.
+// Unknown IDs and empty matches print the byte-identical refusals
+// and report exit 2 with ok=false.
+func applyBenchAgentTaskFilter(splits bench.AgentSplits, corpus []bench.AgentTask, taskFilter string, stderr io.Writer) (bench.AgentSplits, int, bool) {
+	if taskFilter == "" {
+		return splits, 0, true
+	}
+	want := map[string]bool{}
+	for _, id := range splitList(taskFilter) {
+		want[id] = true
+	}
+	known := indexBenchAgentCorpus(corpus)
+	for id := range want {
+		if !known[id] {
+			fmt.Fprintf(stderr, "bench agent-tasks: unknown task %q\n", id)
+			return bench.AgentSplits{}, 2, false
+		}
+	}
+	splits = selectBenchAgentSplits(splits, want)
+	if len(splits.Exploration)+len(splits.Holdout) == 0 {
+		fmt.Fprintln(stderr, "bench agent-tasks: --task matched no tasks")
+		return bench.AgentSplits{}, 2, false
+	}
+	return splits, 0, true
+}
+
+// printBenchAgentDryRun lists the selected tasks without touching any
+// model. Zero model cost.
+func printBenchAgentDryRun(stdout io.Writer, splits bench.AgentSplits, reps int) {
+	total := (len(splits.Exploration) + len(splits.Holdout)) * reps
+	fmt.Fprintf(stdout, "agent-tasks %s dry-run: %d task(s) x %d rep(s) = %d attempt(s), no model calls\n",
+		bench.AgentSuiteVersion, len(splits.Exploration)+len(splits.Holdout), reps, total)
+	for _, id := range splits.Exploration {
+		fmt.Fprintf(stdout, "  - %s [exploration]\n", id)
+	}
+	for _, id := range splits.Holdout {
+		fmt.Fprintf(stdout, "  - %s [holdout]\n", id)
+	}
+}
+
+// executeBenchAgentSuite materializes the headless host and runs the
+// suite. An unusable host degrades to the byte-identical NOT RUN line
+// on stdout with its exit code and ok=false: the suite never passes in
+// false and never fails tasks the agent never attempted.
+func (c CLI) executeBenchAgentSuite(opts benchAgentTasksOptions, corpus []bench.AgentTask, splits bench.AgentSplits) ([]bench.AgentOutcome, string, int, bool) {
+	agent, notRunMsg, notRunCode, ok := resolveAgentRunner(opts.host)
 	if !ok {
 		fmt.Fprintln(c.Stdout, notRunMsg)
-		return notRunCode
+		return nil, "", notRunCode, false
 	}
-	hostVersion := *hostVersionFlag
-	if hostVersion == "" && *host == "opencode" {
+	hostVersion := opts.hostVersionFlag
+	if hostVersion == "" && opts.host == "opencode" {
 		hostVersion = probeOpenCodeVersion()
 	}
 	ctx := context.Background()
-	if *maxWallS > 0 {
+	if opts.maxWallS > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(*maxWallS)*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.maxWallS)*time.Second)
 		defer cancel()
 	}
-	total := (len(splits.Exploration) + len(splits.Holdout)) * *reps
+	total := (len(splits.Exploration) + len(splits.Holdout)) * opts.reps
 	done := 0
 	outcomes := bench.RunAgentSuite(ctx, agent, corpus, splits, bench.AgentOptions{
-		Reps: *reps, Variant: *variant, Model: *model, Host: *host, HostVersion: hostVersion, Split: *split, BudgetS: *budget,
+		Reps: opts.reps, Variant: opts.variant, Model: opts.model, Host: opts.host, HostVersion: hostVersion, Split: opts.split, BudgetS: opts.budget,
 		Progress: func(o bench.AgentOutcome) {
 			done++
 			fmt.Fprintf(c.Stdout, "  [%d/%d] %s [%s] rep=%d: %s\n", done, total, o.TaskID, o.Split, o.Rep, o.Status)
 		},
 	})
-	if *save != "" {
-		raw, err := json.MarshalIndent(outcomes, "", "  ")
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
-			return 1
-		}
-		if err := os.WriteFile(*save, raw, 0o644); err != nil {
-			fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(c.Stdout, "evidence: %d outcome(s) saved to %s\n", len(outcomes), *save)
+	return outcomes, hostVersion, 0, true
+}
+
+// saveBenchAgentOutcomes writes the raw outcomes JSON evidence pack.
+// An empty path is a no-op success; failures print the byte-identical
+// refusal and report exit 1.
+func saveBenchAgentOutcomes(stdout, stderr io.Writer, save string, outcomes []bench.AgentOutcome) int {
+	if save == "" {
+		return 0
 	}
-	if *evidenceDir != "" {
-		head := gitHeadBounded(c.runner())
-		if head == "" {
-			head = "unknown"
-		}
-		seeds := make([]int64, 0, *reps)
-		for rep := 0; rep < *reps; rep++ {
-			seeds = append(seeds, splits.Seed+int64(rep))
-		}
-		if _, err := bench.WriteAgentEvidence(*evidenceDir, outcomes, bench.AgentRunManifest{
-			SuiteVersion: bench.AgentSuiteVersion, Model: *model, Host: *host, HostVersion: hostVersion,
-			Variant: *variant, Reps: *reps, Split: *split, Seeds: seeds, GitHead: head,
-			StartedAt: started.Format(time.RFC3339),
-		}); err != nil {
-			fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(c.Stdout, "evidence: versioned run recorded in %s\n", *evidenceDir)
+	raw, err := json.MarshalIndent(outcomes, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "bench agent-tasks: %v\n", err)
+		return 1
 	}
-	sum := bench.SummarizeAgent(*variant, outcomes)
+	if err := os.WriteFile(save, raw, 0o644); err != nil {
+		fmt.Fprintf(stderr, "bench agent-tasks: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "evidence: %d outcome(s) saved to %s\n", len(outcomes), save)
+	return 0
+}
+
+// writeBenchAgentEvidence records the versioned evidence dir
+// (outcomes.json + manifest.json with config, git head and sha256).
+// An empty dir is a no-op success; failures print the byte-identical
+// refusal and report exit 1.
+func (c CLI) writeBenchAgentEvidence(opts benchAgentTasksOptions, outcomes []bench.AgentOutcome, splits bench.AgentSplits, hostVersion string, started time.Time) int {
+	if opts.evidenceDir == "" {
+		return 0
+	}
+	head := gitHeadBounded(c.runner())
+	if head == "" {
+		head = "unknown"
+	}
+	seeds := make([]int64, 0, opts.reps)
+	for rep := 0; rep < opts.reps; rep++ {
+		seeds = append(seeds, splits.Seed+int64(rep))
+	}
+	if _, err := bench.WriteAgentEvidence(opts.evidenceDir, outcomes, bench.AgentRunManifest{
+		SuiteVersion: bench.AgentSuiteVersion, Model: opts.model, Host: opts.host, HostVersion: hostVersion,
+		Variant: opts.variant, Reps: opts.reps, Split: opts.split, Seeds: seeds, GitHead: head,
+		StartedAt: started.Format(time.RFC3339),
+	}); err != nil {
+		fmt.Fprintf(c.Stderr, "bench agent-tasks: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(c.Stdout, "evidence: versioned run recorded in %s\n", opts.evidenceDir)
+	return 0
+}
+
+// printBenchAgentOutcomes prints one line per outcome and returns the
+// count of not-run attempts.
+func printBenchAgentOutcomes(stdout io.Writer, outcomes []bench.AgentOutcome) int {
 	notRun := 0
 	for _, o := range outcomes {
-		fmt.Fprintf(c.Stdout, "  - %s [%s] rep=%d seed=%d: %s in=%d out=%d %s (%s)\n",
+		fmt.Fprintf(stdout, "  - %s [%s] rep=%d seed=%d: %s in=%d out=%d %s (%s)\n",
 			o.TaskID, o.Split, o.Rep, o.Seed, o.Status, o.TokensIn, o.TokensOut, o.TokenSource, shortOutcomeDetail(o.Detail))
 		if o.Status == bench.AgentNotRun {
 			notRun++
 		}
 	}
-	fmt.Fprintf(c.Stdout, "agent-tasks %s: %d task(s), %d evaluable, %d pass, %d fail, %d timeout, %d infra (pass-rate %.2f, reps spread %.2f-%.2f)\n",
-		bench.AgentSuiteVersion, sum.Total, sum.Evaluable, sum.Pass, sum.Fail, sum.Timeout, sum.Infra, sum.PassRate, sum.RepMin, sum.RepMax)
+	return notRun
+}
+
+// decideBenchAgentExit maps the summary to the terminal verdict:
+// exit 3 NOT RUN when the host produced no attempts, exit 1
+// INCONCLUSIVE when nothing is evaluable, else exit 0. The message is
+// the byte-identical closing line (empty on pass).
+func decideBenchAgentExit(sum bench.AgentSummary, notRun int) (int, string) {
 	if notRun == sum.Total && sum.Total > 0 {
-		fmt.Fprintln(c.Stdout, "agent-tasks NOT RUN: host produced no attempts (nothing passed or failed)")
-		return 3
+		return 3, "agent-tasks NOT RUN: host produced no attempts (nothing passed or failed)"
 	}
 	if sum.Evaluable == 0 {
-		fmt.Fprintln(c.Stdout, "agent-tasks INCONCLUSIVE: no evaluable outcomes (infra/timeout only)")
-		return 1
+		return 1, "agent-tasks INCONCLUSIVE: no evaluable outcomes (infra/timeout only)"
 	}
-	return 0
+	return 0, ""
+}
+
+// reportBenchAgentResults prints the per-outcome lines, the summary
+// line and the terminal verdict, preserving exit codes 3=NOT RUN,
+// 1=INCONCLUSIVE, 0=pass.
+func reportBenchAgentResults(stdout io.Writer, variant string, outcomes []bench.AgentOutcome) int {
+	sum := bench.SummarizeAgent(variant, outcomes)
+	notRun := printBenchAgentOutcomes(stdout, outcomes)
+	fmt.Fprintf(stdout, "agent-tasks %s: %d task(s), %d evaluable, %d pass, %d fail, %d timeout, %d infra (pass-rate %.2f, reps spread %.2f-%.2f)\n",
+		bench.AgentSuiteVersion, sum.Total, sum.Evaluable, sum.Pass, sum.Fail, sum.Timeout, sum.Infra, sum.PassRate, sum.RepMin, sum.RepMax)
+	code, msg := decideBenchAgentExit(sum, notRun)
+	if msg != "" {
+		fmt.Fprintln(stdout, msg)
+	}
+	return code
 }
 
 // probeOpenCodeVersion best-efforts `opencode --version` ("opencode
