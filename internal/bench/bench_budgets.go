@@ -221,7 +221,7 @@ func chooseGateProfile(changed []string, forceFull bool) string {
 
 // checkGateProfileDecision pins the tradeoff through real selection:
 // docs-only chooses quick (12 required, no full-only gates), gate code
-// or forced full chooses the 16-gate gauntlet.
+// or forced full chooses the 23-gate gauntlet.
 func checkGateProfileDecision() (string, error) {
 	cfg := realGateConfig()
 	quick, err := gates.SelectGates(cfg, chooseGateProfile([]string{"charts/flow.md", "README.md"}, false))

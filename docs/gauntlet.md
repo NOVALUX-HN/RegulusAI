@@ -37,11 +37,11 @@ conditions and reproducibility — and executes nothing.
 
 ### Gate roster (pinned)
 
-The sixteen gates below are the contract: `bench/gauntlet-shape.json`
+The twenty-three gates below are the contract: `bench/gauntlet-shape.json`
 mirrors this table (generated from `regulus.json` plus the T5 `--quick`
 preset in `internal/gates/quick_lean.go`), and the bench suite fails
 when any of the three drifts. `required` is the `regulus.json` value
-(`true` for every gate except `mutation-receipts`, `mutation-gates`, `vulncheck` and `race-almanac`); `profiles`
+(`true` for every gate except `mutation-receipts`, `mutation-gates`, `vulncheck` and the `race-*` gates); `profiles`
 lists the declared memberships (`—` means none).
 
 | gate | layer | required | profiles |
@@ -62,6 +62,13 @@ lists the declared memberships (`—` means none).
 | gofmt | 14 | true | — |
 | race-almanac | 15 | false | full |
 | size | 16 | true | — |
+| race-evolve | 17 | false | full |
+| race-gates | 18 | false | full |
+| race-runtime | 19 | false | full |
+| race-httpapi | 20 | false | full |
+| race-mcp | 21 | false | full |
+| race-trace | 22 | false | full |
+| race-guardians | 23 | false | full |
 
 ## 3. Semantic verification: guardians
 
