@@ -6,13 +6,17 @@
 // the server: MCP exposes the Core, never duplicates its logic.
 //
 // Authentication: stdio is local-trust. There is no auth on the wire —
-// no token, bearer, or handshake. The server enforces no permission layer;
-// clients (project permissions) are the enforcement point. This package
-// therefore defines no auth fields, and capability discovery payloads
-// must stay auth-free.
+// no token, bearer, or handshake. Authorization is server-side
+// (F11.8/NOV-94, internal/mcp/policy.go): the server derives the
+// principal from its environment and resolved workspace and enforces
+// minimal scopes deny-by-default before dispatch — client arguments
+// are DATA, never authority. Capability discovery payloads stay
+// auth-free: the matrix (PolicyMatrix) is served as documentation,
+// never as a wire handshake the client could negotiate.
 //
 // Authorization, capability discovery, error contracts and versioning are
-// pinned by tests in this package.
+// pinned by tests in this package; the server-side policy matrix is
+// pinned by policy_test.go against Tools() in both directions.
 package mcp
 
 // Tool is one capability descriptor: the stable name the server
