@@ -6,7 +6,7 @@
 [extend]
 useDefault = true
 
-[[allowlist]]
+[allowlist]
 description = "unit-test fixtures with fake secrets (never real credentials)"
 paths = [
   '''internal/gates/.*_test\.go''',
