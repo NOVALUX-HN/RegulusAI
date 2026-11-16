@@ -74,8 +74,9 @@ func AppendLine(path string, line []byte) error {
 
 // LockDir acquires an inter-process lock for dir via dir/.lock
 // (O_CREATE|O_EXCL, pid-tagged, stale after lockStaleAfter, waits up
-// to lockWait polling every lockPoll). Portable: no flock/x/sys,
-// atomic O_EXCL works on Windows too.
+// to lockWait polling every lockPoll). Portable: no flock/x/sys.
+// On Windows a racy exclusive create can surface as access denied
+// rather than exists; that is treated as contention, not failure.
 func LockDir(dir string) (release func(), err error) {
 	if err := MkdirPrivate(dir); err != nil {
 		return nil, err
@@ -90,7 +91,7 @@ func LockDir(dir string) (release func(), err error) {
 			_ = f.Close()
 			return func() { _ = os.Remove(lp) }, nil
 		}
-		if !os.IsExist(err) {
+		if !os.IsExist(err) && !(runtime.GOOS == "windows" && os.IsPermission(err)) {
 			return nil, err
 		}
 		if fi, serr := os.Stat(lp); serr == nil && time.Since(fi.ModTime()) > lockStaleAfter {
