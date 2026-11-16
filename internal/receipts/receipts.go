@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/fsx"
 )
 
 // MaxCapture bounds the stdout/stderr text stored verbatim in a receipt;
@@ -116,7 +118,7 @@ func Slug(task string) string {
 // and stderr, which keep truncated receipts verifiable), then returns the
 // file path.
 func Write(dir string, r Receipt) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := fsx.MkdirPrivate(dir); err != nil {
 		return "", err
 	}
 	ts := r.StartedAt.UnixNano()
@@ -127,7 +129,7 @@ func Write(dir string, r Receipt) (string, error) {
 		if r.ID == "" {
 			r.ID = "rec_" + strconv.FormatInt(ts, 16)
 		}
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if os.IsExist(err) {
 			ts++
 			r.ID = ""

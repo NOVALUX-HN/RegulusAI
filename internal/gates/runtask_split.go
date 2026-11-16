@@ -97,8 +97,20 @@ func resolveRunRunner(cfg Config, absRoot string, r CmdRunner) CmdRunner {
 		}
 		return nil
 	}()...)
+	// NOV-81: allowlist follows the runner; FullEnv is the union of the
+	// runner flag and the config escape hatch.
+	out := ShRunner{Dir: absRoot, EnvUnset: merged, FullEnv: sh.FullEnv}
+	out.Allow = append(append([]string(nil), sh.Allow...), func() []string {
+		if cfg.Execution != nil {
+			return cfg.Execution.EnvAllow
+		}
+		return nil
+	}()...)
+	if cfg.Execution != nil && cfg.Execution.InheritEnv {
+		out.FullEnv = true
+	}
 	// cwd pin: gates execute in the repo root
-	return ShRunner{Dir: absRoot, EnvUnset: merged}
+	return out
 }
 
 // executeTaskRun runs the gauntlet with a bounded git probe and a

@@ -12,6 +12,11 @@ type ExecutionConfig struct {
 	Allowlist        []string `json:"allowlist,omitempty"`
 	EnvUnset         []string `json:"env_unset,omitempty"`
 	DockerImage      string   `json:"docker_image,omitempty"`
+	// EnvAllow adds names to the gate environment allowlist (NOV-81).
+	EnvAllow []string `json:"env_allow,omitempty"`
+	// InheritEnv restores legacy inherit-everything for every gate
+	// (the documented per-run escape hatch; default is allowlist).
+	InheritEnv bool `json:"inherit_env,omitempty"`
 
 	// EnforceDenyByDefault opts this run into deny-by-default (S6): with
 	// no allowlist configured every gate refuses unless ExplicitYes
