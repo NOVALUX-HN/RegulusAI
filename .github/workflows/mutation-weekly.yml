@@ -1,0 +1,80 @@
+# Mutation ampliada (NOV-84 Paso 64)
+#
+# gremlins sobre evolve, guardians, hostcfg, spec y trace con umbral de
+# eficacia 70 (igual que mutation-receipts/mutation-gates del gauntlet).
+# Corre programado + manual: el gauntlet de push no lo absorbe porque
+# sumaría ~35 min al loop. Falla cerrado bajo el umbral.
+# Paquetes que NO se analizan y por qué (veredicto 2026-11-16):
+# - plugin TS (.opencode): bun, sin gremlins/race de Go; cubierto por
+#   `bun test` en gauntlet.
+# - red/vulncheck: requieren red y herramienta ausente; corren bajo
+#   STRICT_ENV en gauntlet, no aquí.
+# - internal/mcp, internal/trace, internal/guardians en race: sin
+#   primitivas de concurrencia hoy; el gate -race es pin de regresión,
+#   no detector.
+
+name: Mutation ampliada
+
+on:
+  schedule:
+    - cron: "23 3 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-weekly
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.27"
+          cache: false
+
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+
+      - name: Mutate evolve
+        run: |
+          timeout 1500s gremlins unleash ./internal/evolve --threshold-efficacy 70 --workers 4 --timeout-coefficient 10 > mutation-evolve.log 2>&1; code=$?
+          tail -n 30 mutation-evolve.log; exit $code
+
+      - name: Mutate guardians
+        run: |
+          timeout 600s gremlins unleash ./internal/guardians --threshold-efficacy 70 --workers 4 --timeout-coefficient 10 > mutation-guardians.log 2>&1; code=$?
+          tail -n 30 mutation-guardians.log; exit $code
+
+      - name: Mutate hostcfg
+        run: |
+          timeout 600s gremlins unleash ./internal/hostcfg --threshold-efficacy 70 --workers 4 --timeout-coefficient 10 > mutation-hostcfg.log 2>&1; code=$?
+          tail -n 30 mutation-hostcfg.log; exit $code
+
+      - name: Mutate spec
+        run: |
+          timeout 600s gremlins unleash ./internal/spec --threshold-efficacy 70 --workers 4 --timeout-coefficient 10 > mutation-spec.log 2>&1; code=$?
+          tail -n 30 mutation-spec.log; exit $code
+
+      - name: Mutate trace
+        run: |
+          timeout 600s gremlins unleash ./internal/trace --threshold-efficacy 70 --workers 4 --timeout-coefficient 10 > mutation-trace.log 2>&1; code=$?
+          tail -n 30 mutation-trace.log; exit $code
+
+      - name: Upload mutation logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-weekly-logs
+          path: mutation-*.log
+          retention-days: 90
+          if-no-files-found: warn

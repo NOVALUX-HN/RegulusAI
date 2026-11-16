@@ -87,6 +87,12 @@ func TestParseServeFlags(t *testing.T) {
 		{"projects without equals", []string{"--projects"}, def, 2, false},
 		{"projects repeated accumulates", []string{"--projects=/a", "--projects=/b"}, serveConfig{port: 17817, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
 		{"projects with port", []string{"--port=8080", "--projects=/a,/b"}, serveConfig{port: 8080, bind: "127.0.0.1", projects: []string{"/a", "/b"}}, 0, true},
+		{"token valid", []string{"--token=abc"}, serveConfig{port: 17817, bind: "127.0.0.1", token: "abc"}, 0, true},
+		{"token space form", []string{"--token", "abc"}, serveConfig{port: 17817, bind: "127.0.0.1", token: "abc"}, 0, true},
+		{"token empty", []string{"--token="}, def, 2, false},
+		{"token without equals", []string{"--token"}, def, 2, false},
+		{"token-file valid", []string{"--token-file=/t"}, serveConfig{port: 17817, bind: "127.0.0.1", tokenFile: "/t"}, 0, true},
+		{"token-file empty", []string{"--token-file="}, def, 2, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

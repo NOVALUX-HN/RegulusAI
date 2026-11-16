@@ -30,12 +30,14 @@ import (
 
 // AgentSuiteVersion pins the task corpus: reports compare only within
 // one version. Adding a task bumps the version and re-baselines.
-const AgentSuiteVersion = "agent-tasks-v1"
+// v3 expands the v2 set (36 tasks) with 8 hard tasks (NOV-77): 34
+// exploration + 10 holdout, same splits validation and evidence pipeline.
+const AgentSuiteVersion = "agent-tasks-v3"
 
 // AgentSplitsPath is the tracked exploration/holdout split (committed,
 // not runtime state): holdout stays >= 20% with no repo/pattern
 // overlap with exploration.
-const AgentSplitsPath = "bench/agent-splits-v1.json"
+const AgentSplitsPath = "bench/agent-splits-v3.json"
 
 // Agent task outcome statuses. Only pass/fail are evaluable; the rest
 // dilute nothing and never promote.
@@ -60,67 +62,6 @@ type AgentTask struct {
 	Files   map[string]string
 	Check   []string
 	BudgetS int
-}
-
-// AgentCorpus is the v1 starter corpus: 4 exploration + 1 holdout
-// (20%). Every fixture is offline and deterministic (Go toolchain,
-// node, bash only).
-func AgentCorpus() []AgentTask {
-	return []AgentTask{
-		{
-			ID: "AT1", Title: "fix off-by-one Sum", Lang: "go",
-			Prompt: "Fix the off-by-one bug in Sum.",
-			Files: map[string]string{
-				"sum.go":      "package calc\n\n// Sum returns the sum of xs.\nfunc Sum(xs []int) int {\n\ttotal := 0\n\tfor i := 0; i < len(xs)-1; i++ {\n\t\ttotal += xs[i]\n\t}\n\treturn total\n}\n",
-				"sum_test.go": "package calc\n\nimport \"testing\"\n\nfunc TestSum(t *testing.T) {\n\tif got := Sum([]int{1, 2, 3}); got != 6 {\n\t\tt.Fatalf(\"Sum = %d, want 6\", got)\n\t}\n\tif got := Sum(nil); got != 0 {\n\t\tt.Fatalf(\"Sum(nil) = %d, want 0\", got)\n\t}\n}\n",
-			},
-			Check:   []string{"go", "test", "./..."},
-			BudgetS: 120,
-		},
-		{
-			ID: "AT2", Title: "fix Reverse dropping rune", Lang: "go",
-			Prompt: "Fix Reverse to keep every rune.",
-			Files: map[string]string{
-				"rev.go":      "package text\n\n// Reverse returns s reversed.\nfunc Reverse(s string) string {\n\tr := []rune(s)\n\tfor i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {\n\t\tr[i], r[j] = r[j], r[i]\n\t}\n\treturn string(r[:len(r)-1])\n}\n",
-				"rev_test.go": "package text\n\nimport \"testing\"\n\nfunc TestReverse(t *testing.T) {\n\tif got := Reverse(\"hola\"); got != \"aloh\" {\n\t\tt.Fatalf(\"Reverse = %q, want aloh\", got)\n\t}\n\tif got := Reverse(\"a\"); got != \"a\" {\n\t\tt.Fatalf(\"Reverse(a) = %q, want a\", got)\n\t}\n}\n",
-			},
-			Check:   []string{"go", "test", "./..."},
-			BudgetS: 120,
-		},
-		{
-			ID: "AT3", Title: "fix median of even list", Lang: "node",
-			Prompt: "Fix median() for even-length arrays.",
-			Files: map[string]string{
-				"median.js": "export function median(xs) {\n  const s = [...xs].sort((a, b) => a - b);\n  const m = Math.floor(s.length / 2);\n  return s[m];\n}\n",
-				"test.mjs":  "import assert from 'node:assert';\nimport { median } from './median.js';\nassert.strictEqual(median([1, 2, 3, 4]), 2.5);\nassert.strictEqual(median([5]), 5);\nconsole.log('ok');\n",
-			},
-			Check:   []string{"node", "test.mjs"},
-			BudgetS: 120,
-		},
-		{
-			ID: "AT4", Title: "sort script output", Lang: "shell",
-			Prompt: "Make sortnums.sh print nums.txt sorted ascending, one per line.",
-			Files: map[string]string{
-				"nums.txt":    "3\n1\n2\n",
-				"sortnums.sh": "#!/usr/bin/env bash\ncat nums.txt\n",
-			},
-			// Hidden check lives in the task definition (runner-only):
-			// the agent sees nums.txt and sortnums.sh only. It runs
-			// with cwd set to the fixture dir so relative paths work.
-			Check:   []string{"bash", "-c", "diff <(bash sortnums.sh) <(sort nums.txt)"},
-			BudgetS: 60,
-		},
-		{
-			ID: "AT5", Title: "fix Clamp upper bound (holdout)", Lang: "go",
-			Prompt: "Fix Clamp so values above hi return hi.",
-			Files: map[string]string{
-				"clamp.go":      "package math2\n\n// Clamp restricts v to [lo, hi].\nfunc Clamp(v, lo, hi int) int {\n\tif v < lo {\n\t\treturn lo\n\t}\n\tif v > hi {\n\t\treturn hi - 1\n\t}\n\treturn v\n}\n",
-				"clamp_test.go": "package math2\n\nimport \"testing\"\n\nfunc TestClamp(t *testing.T) {\n\tif got := Clamp(9, 0, 5); got != 5 {\n\t\tt.Fatalf(\"Clamp = %d, want 5\", got)\n\t}\n\tif got := Clamp(-1, 0, 5); got != 0 {\n\t\tt.Fatalf(\"Clamp = %d, want 0\", got)\n\t}\n}\n",
-			},
-			Check:   []string{"go", "test", "./..."},
-			BudgetS: 120,
-		},
-	}
 }
 
 // AgentSplits versions exploration vs holdout task ids.
@@ -222,6 +163,9 @@ type AgentOptions struct {
 	HostVersion string
 	Split       string // exploration|holdout|all
 	BudgetS     int
+	// Progress, when non-nil, is called after each attempt completes.
+	// Nil (default) preserves the old silent behavior.
+	Progress func(AgentOutcome)
 }
 
 // RunAgentSuite executes the corpus tasks with the given agent: one
@@ -243,11 +187,22 @@ func RunAgentSuite(ctx context.Context, agent HeadlessAgent, corpus []AgentTask,
 	for _, id := range ids {
 		t := byID[id]
 		for rep := 0; rep < opts.Reps; rep++ {
+			select {
+			case <-ctx.Done():
+				return out
+			default:
+			}
 			seed := splits.Seed + int64(rep)
 			if rep < len(opts.Seeds) {
 				seed = opts.Seeds[rep]
 			}
-			out = append(out, runOne(ctx, agent, t, splitOf(splits, id), rep, seed, opts))
+			oc := runOne(ctx, agent, t, splitOf(splits, id), rep, seed, opts)
+			if opts.Progress != nil {
+				// Observable fast-loop: one callback per completed attempt.
+				// Nil by default, so existing callers are unaffected.
+				opts.Progress(oc)
+			}
+			out = append(out, oc)
 		}
 	}
 	return out
@@ -297,8 +252,11 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 	defer cancel()
 	start := time.Now()
 	// Anchor the agent: some hosts resolve relative paths against
-	// their own startup directory instead of the child cwd.
-	anchored := fmt.Sprintf("Working directory: %s. Read and edit only files inside it.\n\n%s", fix, t.Prompt)
+	// their own startup directory instead of the child cwd. Test
+	// files are the spec and must not be modified (gaming voids the
+	// run; the runner verifies their hashes below).
+	anchored := fmt.Sprintf("Working directory: %s. Read and edit only files inside it. Do not modify test files.\n\n%s", fix, t.Prompt)
+	testSnap := snapshotTestFiles(fix, t.Files)
 	raw, usage, err := agent.Run(tctx, fix, anchored, opts.Model)
 	oc.LatencyMS = time.Since(start).Milliseconds()
 	if truncated := strings.TrimSpace(raw); len(truncated) > 4000 {
@@ -313,6 +271,11 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 			oc.Status = AgentInfra
 		}
 		oc.Detail = err.Error()
+		return oc
+	}
+	if tampered := changedTestFiles(fix, t.Files, testSnap); len(tampered) > 0 {
+		oc.Status = AgentFail
+		oc.Detail = fmt.Sprintf("gaming: test files must not be modified: %s", strings.Join(tampered, ", "))
 		return oc
 	}
 	oc.TokensIn, oc.TokensOut = usage.InputTokens, usage.OutputTokens
@@ -338,6 +301,43 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 	}
 	oc.Status = AgentPass
 	return oc
+}
+
+// snapshotTestFiles records the content of shipped test files so the
+// runner can tell a real fix from gaming: modifying a spec file voids
+// the run with AgentFail instead of letting doctored tests pass.
+func snapshotTestFiles(dir string, files map[string]string) map[string]string {
+	snap := map[string]string{}
+	for name := range files {
+		if !isTestFile(name) {
+			continue
+		}
+		if raw, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			snap[name] = string(raw)
+		}
+	}
+	return snap
+}
+
+// changedTestFiles lists shipped test files whose content no longer
+// matches the snapshot (modified or deleted).
+func changedTestFiles(dir string, files map[string]string, snap map[string]string) []string {
+	var out []string
+	for name, want := range snap {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || string(raw) != want {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isTestFile reports whether a fixture path is a test file: the spec
+// the agent must satisfy, never rewrite.
+func isTestFile(name string) bool {
+	base := strings.ToLower(filepath.Base(name))
+	return strings.Contains(base, "test")
 }
 
 // appControlBlocked reports the Windows App Control execution block

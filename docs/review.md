@@ -69,6 +69,6 @@ La lente automática mira qué toca el cambio:
   parte. Nunca bloquea.
 - **Solo lectura**: no commitea, no escribe recibos, no toca gates ni
   charts. La entrega es el humano leyendo stdout.
-- **Sin debilitar**: `regulus.json` y los 16 gates no cambian; la prueba
+- **Sin debilitar**: `regulus.json` y los 23 gates no cambian; la prueba
   completa sigue siendo `regulus gate run [--profile full] <task>`.
   Alto/CRITICAL siempre van al gauntlet.

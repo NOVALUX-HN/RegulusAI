@@ -14,13 +14,20 @@ on:
       - "v*"
   workflow_dispatch:
 
+# NOV-83: least privilege by default; each job below declares only
+# what it needs instead of one blanket write block.
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   build:
+    # NOV-83: attest needs id-token + attestations; binary upload needs
+    # actions:write. Checkout is covered by the top-level read.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      actions: write
     strategy:
       matrix:
         include:
@@ -30,11 +37,11 @@ jobs:
           - { goos: darwin, goarch: arm64, ext: "" }
           - { goos: windows, goarch: amd64, ext: ".exe" }
           - { goos: windows, goarch: arm64, ext: ".exe" }
-    runs-on: ubuntu-24-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.27"
           cache: false
@@ -54,11 +61,11 @@ jobs:
           go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
             -o "regulus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/regulus
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: "regulus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
           path: "regulus-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
@@ -66,11 +73,17 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-24-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # NOV-83: publishing the release needs contents:write; fetching the
+    # built binaries needs actions:read. No id-token here (attestation
+    # already happened in build).
+    permissions:
+      contents: write
+      actions: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
@@ -84,8 +97,11 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           awk -v v="## [$VERSION]" 'BEGIN{p=0} $0==v{p=1; print; next} p&&/^## \[/{exit} p{print}' CHANGELOG.md > release-notes.md
           cat release-notes.md
+      # NOV-83: third-party release action kept but SHA-pinned; replacing
+      # it with `gh release` (or verified own steps) is a separate tested
+      # change, deferred on purpose.
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             dist/regulus-*
@@ -95,6 +111,9 @@ jobs:
           prerelease: false
 
   verify-published:
+    # NOV-83: read-only verification (download + checks).
+    permissions:
+      contents: read
     needs: release
     strategy:
       matrix:
@@ -102,8 +121,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
+      # NOV-83: third-party downloader kept but SHA-pinned; same
+      # deferral rationale as the publisher above.
       - name: Download release
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1
         with:
           tag: ${{ github.ref_name }}
           fileName: "regulus-*"
@@ -116,7 +137,8 @@ jobs:
       - name: Contract and doctor
         shell: bash
         run: |
-          BIN=$(ls dl/regulus-* | grep -v checksums | head -n 1)
+          BIN=""
+          for f in dl/regulus-*; do case "$f" in *checksums*) continue;; *) BIN="$f"; break;; esac; done
           chmod +x "$BIN" || true
           "$BIN" contract
           "$BIN" doctor || true
@@ -130,7 +152,8 @@ jobs:
       - name: Minimal journey on published binary
         shell: bash
         run: |
-          BIN=$(ls dl/regulus-* | grep -v checksums | head -n 1)
+          BIN=""
+          for f in dl/regulus-*; do case "$f" in *checksums*) continue;; *) BIN="$f"; break;; esac; done
           chmod +x "$BIN" || true
           rm -rf /tmp/pubjourney && mkdir -p /tmp/pubjourney && cd /tmp/pubjourney
           "$OLDPWD/$BIN" init --stack smoke --force

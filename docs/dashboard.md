@@ -22,6 +22,12 @@ regulus serve --port=17817        # default 127.0.0.1:17817
 - Solo GET + loopback por defecto (`--bind` para cambiar, bajo tu riesgo:
   si bindeas fuera de loopback el servidor avisa por stderr que los datos
   del proyecto quedan expuestos a esa red).
+- Defensa anti rebinding siempre activa: el `Host` debe ser loopback
+  (o el `--bind` explícito) con el puerto configurado; `Origin`/`Referer`
+  cruzados y `Sec-Fetch-Site: cross-site` se rechazan con 403.
+- Bind fuera de loopback exige Bearer token: `--token T`,
+  `--token-file F` o `REGULUS_DASH_TOKEN`; si no das ninguno se genera
+  uno y se imprime una sola vez al arrancar (sin token no arranca).
 - Errores con el mismo envelope que MCP (`regulus.http/v1` pineado).
 - Auto-refresh cada 30s, sin dependencias (cero JS externo; la UI viene
   embebida en el binario).

@@ -1,0 +1,22 @@
+name: Feature request
+description: A scoped behavior change (no security requests here — use a private advisory, see SECURITY.md).
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and scope
+      description: What hurts, and what is explicitly out of scope.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance (Given/When/Then)
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How it will be proven
+      description: Commands, receipts, or gates that demonstrate the rule.

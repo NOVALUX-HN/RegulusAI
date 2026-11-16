@@ -11,10 +11,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/fsx"
 )
 
 // Payload is one exportable telemetry unit: metrics, budgets or any
@@ -77,18 +77,8 @@ func (e FileExporter) Export(p Payload) error {
 	if err != nil {
 		return fmt.Errorf("observability: cannot encode payload: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(e.Path()), 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(e.Path(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
+	// NOV-85: private dir + inter-process lock for the append.
+	if err := fsx.AppendLine(e.Path(), append(line, '\n')); err != nil {
 		return err
 	}
 	return nil

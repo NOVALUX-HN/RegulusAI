@@ -7,7 +7,7 @@
 // alive across compaction — always framed as DATA, never as instructions.
 
 import { Plugin } from "@opencode/plugin"
-import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatDisciplineForToolset, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, getCachedUsage, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache } from "../lib/domain"
+import { applyUsagePruning, candidates, compactionContextArgs, contextResolveArgs, dataBlock, explainSpawnError, extractPaths, filterSeenSkills, findChartRefs, formatDisciplineForToolset, formatGateFailure, formatGateResult, formatResolveLog, gateRunTimeoutMs, getCachedUsage, isLoopGuardEnabled, isToolEnabled, loadDiscipline, loadSkills, loadToolGuidance, LoopGuard, memoryHistoryArgs, memorySaveArgs, memorySearchArgs, pickRegulus, REGULUS_CONTRACT, resolveToolset, suggestSkills, TOOLSET_FULL, toolsetTools, TraceBatcher, TtlCache, usageFlags } from "../lib/domain"
 
 // loadDiscipline / loadToolGuidance / parseToolGuidance / dataBlock /
 // candidates / pickRegulus live in lib/domain.ts (pure, host-free) so
@@ -742,6 +742,9 @@ export default Plugin.define({
           event.tool,
           "--status",
           status,
+          // NOV-73: forward host-exposed usage when the event carries
+          // it (current SDK does not — usageFlags([]) is a no-op then).
+          ...usageFlags((event as { usage?: unknown }).usage),
         ]
         const files = extractPaths(JSON.stringify((event as { input?: unknown }).input ?? ""))
         if (files.length > 0) args.push("--files", files.join(","))

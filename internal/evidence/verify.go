@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"regulus-ai/internal/fsx"
 	"regulus-ai/internal/manifest"
 	"regulus-ai/internal/receipts"
 )
@@ -285,7 +286,7 @@ func checkManifests(dir string, quarantined map[string]bool, rep *Report) int {
 // returns the new path. It never deletes.
 func quarantineFile(dir, name string) (string, error) {
 	qdir := filepath.Join(dir, "corrupt")
-	if err := os.MkdirAll(qdir, 0o755); err != nil {
+	if err := fsx.MkdirPrivate(qdir); err != nil {
 		return "", err
 	}
 	dst := filepath.Join(qdir, name)

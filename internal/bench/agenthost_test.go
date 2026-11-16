@@ -34,6 +34,21 @@ func TestScanOpenCodeUsageRealShapes(t *testing.T) {
 	}
 }
 
+func TestScanOpenCodeUsageReasoningAndCache(t *testing.T) {
+	raw := `{"tokens":{"input":3865,"output":4,"reasoning":22,"cache":{"read":1600,"write":0}}}
+`
+	u := scanOpenCodeUsage(raw)
+	if u.InputTokens != 3865 || u.OutputTokens != 26 {
+		t.Fatalf("counts = %+v, want 3865/26 (reasoning folded)", u)
+	}
+	if u.CacheRead != 1600 || u.CacheWrite != 0 {
+		t.Fatalf("cache = %+v, want 1600/0", u)
+	}
+	if u.Source != trace.SourceMeasuredHost {
+		t.Fatalf("source = %q", u.Source)
+	}
+}
+
 func TestScanOpenCodeUsageUnknownStaysUnknown(t *testing.T) {
 	for _, raw := range []string{"", "\n\n", "plain text", "[1,2]", "{\"usage\":{\"inputTokens\":-3}}", strings.Repeat("x", 300*1024)} {
 		u := scanOpenCodeUsage(raw)
@@ -69,5 +84,20 @@ func TestOpenCodeRunnerMissingBinaryIsInfra(t *testing.T) {
 	_, _, err := r.Run(ctx, t.TempDir(), "hi", "")
 	if err == nil || strings.Contains(err.Error(), "panic") {
 		t.Fatalf("missing binary must fail cleanly, got %v", err)
+	}
+}
+
+func TestScanOpenCodeUsageSumsSteps(t *testing.T) {
+	raw := "{\"type\":\"step_finish\",\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":100,\"output\":10,\"reasoning\":5,\"cache\":{\"read\":50,\"write\":1}}}}\n" +
+		"{\"type\":\"step_finish\",\"part\":{\"type\":\"step-finish\",\"tokens\":{\"input\":200,\"output\":20,\"reasoning\":0,\"cache\":{\"read\":70,\"write\":2}}}}\n"
+	u := scanOpenCodeUsage(raw)
+	if u.InputTokens != 300 || u.OutputTokens != 35 {
+		t.Fatalf("step sums = %+v, want 300 in / 35 out", u)
+	}
+	if u.CacheRead != 120 || u.CacheWrite != 3 {
+		t.Fatalf("step cache = %+v, want 120/3", u)
+	}
+	if u.Source != trace.SourceMeasuredHost {
+		t.Fatalf("source = %q", u.Source)
 	}
 }

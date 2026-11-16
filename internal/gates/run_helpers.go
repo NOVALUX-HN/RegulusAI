@@ -3,6 +3,7 @@ package gates
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ type runSetup struct {
 	max          int
 	dockerImage  string
 	execEnvUnset []string
+	inheritEnv   bool
+	envAllow     []string
 }
 
 // selectOrdered resolves which gates run in layer order plus the execution
@@ -33,6 +36,8 @@ func selectOrdered(cfg Config, profile string) (runSetup, error) {
 	if cfg.Execution != nil {
 		setup.dockerImage = cfg.Execution.DockerImage
 		setup.execEnvUnset = cfg.Execution.EnvUnset
+		setup.inheritEnv = cfg.Execution.InheritEnv
+		setup.envAllow = cfg.Execution.EnvAllow
 	}
 	return setup, nil
 }
@@ -168,12 +173,15 @@ type execResult struct {
 	start     time.Time
 	dur       time.Duration
 	facts     verdict.Facts
+	// secrets are redacted from stdout/stderr before the receipt is
+	// written (sha matches stored bytes by construction).
+	secrets []string
 }
 
 // execGate runs one gate through the ShRunner fast path or the generic
 // runner, mapping runner failures to verdict facts. Refused gates never
 // touch a runner: they carry the policy note with a zero duration.
-func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage string, execEnvUnset []string, refused bool, refuseNote string) execResult {
+func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage string, execEnvUnset []string, inheritEnv bool, envAllow []string, refused bool, refuseNote string) execResult {
 	if refused {
 		isolation := IsolationUnknown
 		if isShRunner(r) {
@@ -193,16 +201,23 @@ func execGate(ctx context.Context, g Gate, r CmdRunner, timeout int, dockerImage
 	}
 	if sh, ok := asShRunner(r); ok {
 		if isMutationGate(g) {
-			return execMutationSh(ctx, g, sh, timeout, dockerImage, execEnvUnset)
+			return execMutationSh(ctx, g, sh, timeout, dockerImage, execEnvUnset, inheritEnv, envAllow)
 		}
 		mergedEnv := append(append([]string(nil), sh.EnvUnset...), execEnvUnset...)
-		shGate := ShRunner{Dir: sh.Dir, EnvUnset: mergedEnv}
+		// NOV-81: allowlist follows the runner; FullEnv is the union of
+		// the runner flag and the config escape hatch.
+		shGate := ShRunner{
+			Dir:      sh.Dir,
+			EnvUnset: mergedEnv,
+			Allow:    append(append([]string(nil), sh.Allow...), envAllow...),
+			FullEnv:  sh.FullEnv || inheritEnv,
+		}
 		gctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		start := time.Now().UTC()
 		so, se, c, cpu, iso, err := shGate.runWithStats(gctx, g.Command, sh.Dir, dockerImage, g.Isolate)
 		dur := time.Since(start)
 		cancel()
-		out := execResult{stdout: so, stderr: se, code: c, cpuMs: cpu, isolation: iso, rerr: err, start: start, dur: dur, exit: c}
+		out := execResult{stdout: so, stderr: se, code: c, cpuMs: cpu, isolation: iso, rerr: err, start: start, dur: dur, exit: c, secrets: SecretValues(os.Environ(), mergedEnv)}
 		if err != nil {
 			if out.exit == 0 {
 				out.exit = -1
@@ -291,8 +306,10 @@ func adjudicateAndWrite(g Gate, res *Result, evidenceDir, task, gitHead string, 
 	if condNote != "" {
 		stderr = appendGateNote(stderr, condNote)
 	}
-	rec.Stdout, rec.StdoutSHA = receipts.Capture(ex.stdout)
-	rec.Stderr, rec.StderrSHA = receipts.Capture(stderr)
+	// NOV-81: redact before Capture so the stored sha matches the
+	// stored (redacted) bytes; verification never sees raw secrets.
+	rec.Stdout, rec.StdoutSHA = receipts.Capture(receipts.Redact(ex.stdout, ex.secrets))
+	rec.Stderr, rec.StderrSHA = receipts.Capture(receipts.Redact(stderr, ex.secrets))
 	path, err := receipts.Write(evidenceDir, rec)
 	if err != nil {
 		return false, fmt.Errorf("gate %s: writing receipt: %w", g.Name, err)

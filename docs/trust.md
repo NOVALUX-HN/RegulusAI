@@ -49,6 +49,8 @@ dispute a verdict — the dispute is recorded, the core verdict stands.
   "allow_destructive": false,
   "allowlist": ["go", "bun", "git"],
   "env_unset": ["AWS_SECRET_ACCESS_KEY"],
+  "env_allow": ["CI_CUSTOM"],
+  "inherit_env": false,
   "docker_image": "golang:1.27"
 }
 ```
@@ -60,6 +62,17 @@ Plus per gate: `"timeout_sec"`, `"reproducibility": "exact|statistical"`,
 opt-in: without a daemon the gate runs host-contained and says so in the
 receipt. Host permissions remain the real boundary — this policy is the
 auditable backstop.
+
+Gates run with a minimal environment (NOV-81): an allowlist of process,
+toolchain and CI names plus anything the gate declares; `env_unset`
+names are always filtered first, even when the gate sets its own vars.
+`env_allow` adds names per run; `inherit_env: true` restores full
+inheritance for one run (documented escape hatch, never the default).
+Receipts redact secret values before storage: unset values and
+secret-looking names (`*_TOKEN`, `*_SECRET`, `*_KEY`, ...) plus known
+token shapes are replaced with `[redacted]`, and the stored sha256
+covers the redacted bytes — verification stays consistent by
+construction.
 
 A repo is trusted only when `.regulus/trusted` exists (created by
 explicit operator action, never by a gate). `gate run` on an untrusted
@@ -87,6 +100,6 @@ imported lessons, receipt stdout, chart text, MCP paths/receipts, and subagent
 output all render as `| ` data lines inside the block — visible, never executed.
 Imports always enter PROPOSED until reviewed (`memory status`), never instructions.
 Limit, honestly: framing is not sanitization — a model can still obey framed text;
-secrets redaction lives in NOV-22 S12, not here. No false positives known: benign
+secrets redaction lives in NOV-22 S12, not here; vulnerability reports go through SECURITY.md (private advisories, never public issues). No false positives known: benign
 words like "ignora" stay visible as data. Report bypasses as issues with the
 offending block + expected precedence.

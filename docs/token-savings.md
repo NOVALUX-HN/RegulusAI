@@ -135,32 +135,8 @@ Notas por mecanismo:
   sigue 20/20; `critical` es full-store solo con justificación escrita.
   Ver `internal/observability/budgets.go` (ruta de escalamiento por preset).
 
-## Tokens reales por host (NOV-62, 2026-11-14)
+## Tokens reales por host — movido a `docs/host-usage.md`
 
-Inventario por host (fuentes verificadas en repo y máquina, sin asumir):
-
-| Host | Fuente real | Estado |
-|------|-------------|--------|
-| OpenCode | hook `execute.after` (`.opencode/plugins/regulus.ts:729-748`) arma `trace record` sin usage; `TRACE_RECORD_NUM_FLAGS` (`domain.ts:550-554`) soporta los flags pero el hook nunca los envía | `unknown (host exposes none)` |
-| Claude Code | sin transcripts en máquina (`~/.claude/projects/*` vacío); formato no verificado | `unknown (host exposes none)` |
-| Codex | sin sesiones en máquina (`~/.codex/sessions/*` vacío); formato no verificado | `unknown (host exposes none)` |
-| Devin | MCP + skills, sin contadores locales | `unknown (host exposes none)` |
-
-Esquema neutral (`internal/trace/hostusage.go`): `input/output/cache_read/cache_write`,
-`model`, `host`, `host_version`, `source`, `run_id`/`execution_id`.
-`ParseHostUsage` valida forma y cotas (64KB, sin negativos, sin absurdos >1e12,
-strings single-line ≤512, source del enum) y falla cerrado; el contenido de
-transcripts se trata como dato no confiable (nunca se ejecuta).
-
-`trace record` acepta `--input-tokens/--output-tokens/--cache-read-tokens/
---cache-write-tokens/--model/--host/--host-version/--usage-source`
-(auto: con conteos u host → `measured-host`); `record-batch` acepta los mismos
-campos por NDJSON. `trace cost` etiqueta cada cifra (`measured-host` vs
-`measured-local` vs `unknown`) y nunca suma desconocidos como cero:
-una task con entradas medidas ya no devuelve `no entries attributed`.
-
-Re-medición: en esta máquina ningún host expone conteos (tabla de arriba),
-por lo que todo total real sigue `unknown` salvo entradas registradas con
-flags explícitos (cubierto por `TestTraceRecordHostFlagsAttributed`).
-Lo no medible se marca como tal; el proxy chars/4 sigue siendo el fallback
-explícito y etiquetado.
+La seccion viva de medicion con hosts reales (NOV-73) vive ahora en
+docs/host-usage.md (documento vivo, no H10). Este archivo queda como
+registro H10 congelado hasta la linea anterior.

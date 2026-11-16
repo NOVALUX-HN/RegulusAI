@@ -15,14 +15,14 @@ unidades revisables sobre `develop`, push y `gh run watch` hasta PASS.
 
 | ID | Spec | Work | Estado |
 |----|------|------|--------|
-| T1 | S1 | coverage fresco local (paquetes tocados) + baseline crap | in_progress |
-| T2 | S1,S4 | COVER `Report.TierMaxima` (cx6 cov0) | pending |
-| T3 | S1,S4 | `benchHostJourneysCmd` (cx19 cov57.9): COVER a ~70%+ o split leve | pending |
-| T4 | S1,S4 | SPLIT `checkToolManifest` (cx41) | pending |
-| T5 | S1,S4 | SPLIT `RunExplorationResume` (cx46) | pending |
-| T6 | S1,S4 | SPLIT `execAndReport` (cx31) | pending |
-| T7 | S3,S4 | triage windows-native: clasificar 233 fallos, fix código vs entorno | pending |
-| T8 | S2,S3,S5 | commit + push + watch; repetir hasta verde | pending |
+| T1 | S1 | coverage fresco local (paquetes tocados) + baseline crap | done |
+| T2 | S1,S4 | COVER `Report.TierMaxima` (cx6 cov0) | done |
+| T3 | S1,S4 | `benchHostJourneysCmd` (cx19 cov57.9): COVER a ~70%+ o split leve | done |
+| T4 | S1,S4 | SPLIT `checkToolManifest` (cx41) | done |
+| T5 | S1,S4 | SPLIT `RunExplorationResume` (cx46) | done |
+| T6 | S1,S4 | SPLIT `execAndReport` (cx31) | done |
+| T7 | S3,S4 | triage windows-native: clasificar 233 fallos, fix código vs entorno | done |
+| T8 | S2,S3,S5 | commit + push + watch; repetir hasta verde | done |
 
 ## Log
 
@@ -34,4 +34,7 @@ unidades revisables sobre `develop`, push y `gh run watch` hasta PASS.
 - L6: paridad local↔CI: journey tenia 3 fallos mas (F2 repoRoot + S8 repoRoot x2, mismo patron Getwd+../.. — anclados a runtime.Caller en 9224330). F2: fixture mutation necesitaba --timeout-coefficient 10 como los gates del repo (en Windows los mutantes agotan el timeout por defecto); gremlins da 100% en el fixture. Full script local: 32 PASS + bench x2 (sin node/bash en PATH de PowerShell, en CI existen) + journey F2 (loteria App Control local; pasa en retry) + gates BLOCKED (loteria). Script impone STRICT_ENV=1 como el job; doc de paridad agregada.
 - L7: single ordered workflow: ci.yml fusiona gauntlet+windows (mismos jobs, steps, pins, timeouts verbatim; job ids preservados) + pre-commit local documentado (gate run ci/push + test-windows.ps1). race-almanac: verdict perf con stand-down bajo -race (build tags), layer 5 sigue dueno del techo.
 - L8: CI corre con los fixes (14/15: cae solo race-almanac perf bajo -race, 0 data races) -> fix con build tags; el usuario pushea y CI cae en unit-tests por TestS8GateEfficacy (leia gauntlet.yml eliminado) -> apunta a ci.yml; verificado local.
-- L9: CI VERDE (usuario confirma). Warning Node20/upload-artifact@v4: triado — v5 declara node20 igual (action.yml identicos, verificado 2026-11-15); no hay major al que subir, pin v4 correcto; comentario actualizado. Loop completo.
+- L9: CI VERDE (usuario confirma). Warning Node20/upload-artifact@v4: triado — v5 declara node20 igual (action.yml identicos, verificado 2026-11-15); no hay major al que subir, pin v4 correcto; comentario actualizado.
+- L10 (2026-11-16, sync done): T1-T8 done. Evidencia: crap max 29.84 (0a743bf), windows hermetico (c2d42c9), anchors runtime.Caller (9224330), single workflow + pre-commit, CI verde confirmado por usuario.
+- L11 (2026-11-16, post-push 4ae6737 rojo): run 43876004108 cae en Secret scan (gitleaks not found exit 127, fix 33ad06f con GOPATH/bin en GITHUB_PATH) + 9 tests Windows (cli x3, gates x5, journey x1) + Gauntlet layer 5. Raíces: allowlist filtra %LocalAppData% y mata la toolchain Go (envfilter.go +LOCALAPPDATA/APPDATA, arregla 5), helper de splits con holdout 1/44 bajo el piso 20% (bench_agent_test.go, arregla 2), IDs de receipt atados a timestamp colisionan entre gates (receipts.go registro process-unique, arregla 1), 2 funciones de corpus sobre el cap (agentcorpus 376>200, hard 313>200, partidas). Verificación local parcial (App Control bloquea binarios; vet+build+gofmt verdes); verde real lo confirma CI. Sin cambio de comportamiento (mensajes/exits intactos).
+- L12 (2026-11-16, CI VERDE TOTAL): run 43918345859 success en los 5 jobs (Gauntlet, Secret scan, Windows compatibility, Windows protected audit, Traceable close). Camino: secret config map (54ad9c1) + allowlist fixtures (6f38e0c), lock EACCES reintentable (a7dd7fb), AT31 -race (38d65c9), split benchAgentTasksCmd (f39fe77) + top-3 crap (218cc46). Cierran #4/#5/#6.

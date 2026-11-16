@@ -78,7 +78,7 @@ export { GATE_RUN_TIMEOUT_MS_DEFAULT, GATE_RUN_TIMEOUT_MS_FLOOR, gateRunTimeoutM
 export { DISCIPLINE_MARKER, loadDiscipline, parseToolGuidance, loadToolGuidance, dataBlock, candidates, staleDoctorRefusal } from "./domain-guidance.js";
 export type { ProbeRun } from "./domain-guidance.js";
 export { pickRegulus, withTimeout, TtlCache } from "./domain-runtime.js";
-export { traceRecordArgvToEntry, TraceBatcher, clearDomainHitCache, clearDomainsCache, resolveDomain } from "./domain-trace.js";
+export { traceRecordArgvToEntry, usageFlags, TraceBatcher, clearDomainHitCache, clearDomainsCache, resolveDomain } from "./domain-trace.js";
 export type { TraceEntry, TraceFlushResult } from "./domain-trace.js";
 export { memoryHistoryArgs, memorySaveArgs, memorySearchArgs } from "./domain-memory.js";
 export { LOOPGUARD_THRESHOLD, LOOPGUARD_MAX_SESSIONS, normalizeLoopMessage, loopSignature, isLoopGuardEnabled, formatLoopRedirect, LoopGuard } from "./domain-loopguard.js";

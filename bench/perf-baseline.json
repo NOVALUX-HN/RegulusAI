@@ -1,0 +1,25 @@
+{
+  "suite": "go-bench",
+  "version": 1,
+  "generated_by": "docs/perf-baselines.md table 2026-11-14 (manual) — regenerate with scripts/perf-check.sh --update",
+  "env": {
+    "cpu": "Ryzen 7 5700X",
+    "os": "linux/amd64",
+    "go": "go1.27.3"
+  },
+  "benchtime": {
+    "internal/almanac": "100x",
+    "internal/trace": "100x",
+    "internal/cli": "30x"
+  },
+  "benchmarks": {
+    "BenchmarkNotes":                   { "ns_per_op": 3200000,   "max_regression": 2.0 },
+    "BenchmarkContext":                 { "ns_per_op": 15400000,  "max_regression": 2.0 },
+    "BenchmarkHybridSearch":            { "ns_per_op": 13600000,  "max_regression": 2.0 },
+    "BenchmarkRecord":                  { "ns_per_op": 4500000,   "max_regression": 2.0 },
+    "BenchmarkCostByTask":              { "ns_per_op": 7400000,   "max_regression": 2.0 },
+    "BenchmarkMemorySearchCached":      { "ns_per_op": 186727411, "max_regression": 2.0 },
+    "BenchmarkMemorySearchNoStaleness": { "ns_per_op": 200259661, "max_regression": 2.0 }
+  },
+  "notes": "N small (30-100): orders of magnitude, not SLOs. Thresholds stay at 2x until 3+ scheduled runs allow per-benchmark variability bands (see docs/perf-baselines.md update procedure)."
+}

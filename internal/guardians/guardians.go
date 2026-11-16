@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"regulus-ai/internal/evidence"
+	"regulus-ai/internal/fsx"
 	"regulus-ai/internal/verdict"
 )
 
@@ -180,19 +181,12 @@ func Evaluate(root, task, guardianID, status, note string, evidenceRefs []string
 		At:       time.Now().UTC().Format(time.RFC3339),
 	}
 	path := EvaluationsFile(root, task)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return Evaluation{}, err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return Evaluation{}, err
-	}
-	defer f.Close()
 	raw, err := json.Marshal(ev)
 	if err != nil {
 		return Evaluation{}, err
 	}
-	if _, err := f.Write(append(raw, '\n')); err != nil {
+	// NOV-85: private dir + inter-process lock for the append.
+	if err := fsx.AppendLine(path, append(raw, '\n')); err != nil {
 		return Evaluation{}, err
 	}
 	return ev, nil

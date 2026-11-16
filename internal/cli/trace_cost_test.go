@@ -3,9 +3,38 @@ package cli
 // F1 `trace cost`: per-task proxy cost folded auditably from disk.
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
+
+	"regulus-ai/internal/trace"
 )
+
+func TestTraceRecordExecutionIDRoundTrip(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c, out, errb := newCLI(nil)
+	args := []string{"trace", "record", "--session", "s1", "--message", "m1", "--call", "c1",
+		"--tool", "read", "--status", "completed", "--task", "demo/T1", "--execution-id", "exec-9",
+		"--input-tokens", "10", "--output-tokens", "5", "--model", "m", "--host", "opencode"}
+	if code := c.Run(args); code != 0 {
+		t.Fatalf("record exit = %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "trace recorded") {
+		t.Fatalf("record output = %q", out.String())
+	}
+	raw, err := os.ReadFile(trace.File(".", "s1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e trace.Entry
+	if err := json.Unmarshal(raw, &e); err != nil {
+		t.Fatalf("stored entry must parse: %v", err)
+	}
+	if e.ExecutionID != "exec-9" || e.Task != "demo/T1" || e.InputTokens != 10 {
+		t.Fatalf("stored entry = %+v, want execution exec-9 task demo/T1 10 in", e)
+	}
+}
 
 func TestTraceRecordCostFlagsRoundTrip(t *testing.T) {
 	t.Chdir(t.TempDir())

@@ -221,7 +221,7 @@ func linkTarEntry(dest, target string, hdr *tar.Header) error {
 // records the in-situ warning. Either way the receipt stderr carries the
 // mode note via appendGateNote (no schema change) and the verdict still
 // comes from efficacy/exit facts. Tmp is always removed.
-func execMutationSh(ctx context.Context, g Gate, sh ShRunner, timeout int, dockerImage string, execEnvUnset []string) execResult {
+func execMutationSh(ctx context.Context, g Gate, sh ShRunner, timeout int, dockerImage string, execEnvUnset []string, inheritEnv bool, envAllow []string) execResult {
 	mergedEnv := append(append([]string(nil), sh.EnvUnset...), execEnvUnset...)
 	srcDir := mutationSrcDir(sh)
 	gctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
@@ -235,17 +235,17 @@ func execMutationSh(ctx context.Context, g Gate, sh ShRunner, timeout int, docke
 	var modeNote string
 	if exportErr == nil {
 		defer cleanup()
-		shTmp := ShRunner{Dir: tmp, EnvUnset: mergedEnv}
+		shTmp := ShRunner{Dir: tmp, EnvUnset: mergedEnv, Allow: append(append([]string(nil), sh.Allow...), envAllow...), FullEnv: sh.FullEnv || inheritEnv}
 		so, se, c, cpu, iso, rerr = shTmp.runWithStats(gctx, g.Command, tmp, dockerImage, g.Isolate)
 		modeNote = MutationNoteCleanExport
 	} else {
-		shIn := ShRunner{Dir: sh.Dir, EnvUnset: mergedEnv}
+		shIn := ShRunner{Dir: sh.Dir, EnvUnset: mergedEnv, Allow: append(append([]string(nil), sh.Allow...), envAllow...), FullEnv: sh.FullEnv || inheritEnv}
 		so, se, c, cpu, iso, rerr = shIn.runWithStats(gctx, g.Command, sh.Dir, dockerImage, g.Isolate)
 		modeNote = MutationNoteInSitu
 	}
 	dur := time.Since(start)
 	cancel()
-	out := execResult{stdout: so, stderr: se, code: c, cpuMs: cpu, isolation: iso, rerr: rerr, start: start, dur: dur, exit: c}
+	out := execResult{stdout: so, stderr: se, code: c, cpuMs: cpu, isolation: iso, rerr: rerr, start: start, dur: dur, exit: c, secrets: SecretValues(os.Environ(), mergedEnv)}
 	if rerr != nil {
 		if out.exit == 0 {
 			out.exit = -1

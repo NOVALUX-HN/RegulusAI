@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/fsx"
 )
 
 // Statuses.
@@ -178,23 +180,12 @@ func Record(root string, e Entry, now time.Time) (Entry, error) {
 	if saved.At.IsZero() {
 		saved.At = now.UTC()
 	}
-	if err := os.MkdirAll(filepath.Dir(File(root, e.Session)), 0o755); err != nil {
-		return Entry{}, err
-	}
-	f, err := os.OpenFile(File(root, e.Session), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return Entry{}, err
-	}
 	line, err := json.Marshal(saved)
 	if err != nil {
-		f.Close()
 		return Entry{}, err
 	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
-		return Entry{}, err
-	}
-	if err := f.Close(); err != nil {
+	// NOV-85: private dir + inter-process lock for the append.
+	if err := fsx.AppendLine(File(root, e.Session), append(line, '\n')); err != nil {
 		return Entry{}, err
 	}
 	return saved, nil

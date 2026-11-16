@@ -196,7 +196,7 @@ func run(ctx context.Context, cfg Config, cfgBytes []byte, evidenceDir, task, gi
 			}
 		}
 
-		ex := execGate(ctx, g, r, timeout, dockerImage, execEnvUnset, refused, refuseNote)
+		ex := execGate(ctx, g, r, timeout, dockerImage, execEnvUnset, setup.inheritEnv, setup.envAllow, refused, refuseNote)
 
 		metricValue, metricThreshold, metricOp, metricFailed, metricNote, facts := evalMetric(g, ex.stdout, ex.code, ex.rerr, refused, ex.facts)
 

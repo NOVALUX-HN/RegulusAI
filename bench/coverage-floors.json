@@ -1,0 +1,18 @@
+{
+  "generated": "manual ratchet (NOV-84). Tighten after the first green scheduled run; procedure in docs/perf-baselines.md style: intentional change -> bump floor in its own commit, never lower a floor to silence a regression.",
+  "note": "Regression floors, not targets or SLOs. Values are conservative first guesses (packages with strong suites sit higher); CI is the verifier. unit-tests gate stays the global 80% gate.",
+  "floors": {
+    "internal/almanac": 50,
+    "internal/cli": 50,
+    "internal/evolve": 40,
+    "internal/gates": 50,
+    "internal/guardians": 25,
+    "internal/hostcfg": 40,
+    "internal/httpapi": 40,
+    "internal/mcp": 25,
+    "internal/receipts": 50,
+    "internal/runtime": 25,
+    "internal/spec": 40,
+    "internal/trace": 25
+  }
+}

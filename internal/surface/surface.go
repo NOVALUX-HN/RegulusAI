@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"regulus-ai/internal/budget"
+	"regulus-ai/internal/fsx"
 	"regulus-ai/internal/reflect"
 )
 
@@ -80,20 +81,12 @@ func readAll(root string) ([]Edit, error) {
 }
 
 func appendEdit(root string, e Edit) error {
-	if err := os.MkdirAll(filepath.Dir(File(root)), 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(File(root), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 	line, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(append(line, '\n'))
-	return err
+	// NOV-85: private dir + inter-process lock for the append.
+	return fsx.AppendLine(File(root), append(line, '\n'))
 }
 
 // Guardians are the only Apply validators: the six read-only guardians

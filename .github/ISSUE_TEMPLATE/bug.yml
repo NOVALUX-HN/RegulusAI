@@ -1,0 +1,41 @@
+name: Bug report
+description: A reproducible defect (no security reports here — use a private advisory, see SECURITY.md).
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version (`regulus doctor` + commit)
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS / arch
+      placeholder: Windows 11 x64
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command run
+      placeholder: regulus gate run demo/T1
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed (exit code + output)
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Receipts / logs
+      description: regulus evidence paths or pasted output (redact secrets first)

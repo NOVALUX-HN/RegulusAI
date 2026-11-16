@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/fsx"
 )
 
 // Decision states.
@@ -169,7 +171,7 @@ func Propose(root string, c Contract) (Decision, error) {
 			From: "", To: StateProposed, By: "proposer", Note: "decision proposed",
 		}},
 	}
-	if err := os.MkdirAll(Dir(root), 0o755); err != nil {
+	if err := fsx.MkdirPrivate(Dir(root)); err != nil {
 		return Decision{}, err
 	}
 	path := filepath.Join(Dir(root), id+".json")
@@ -177,7 +179,7 @@ func Propose(root string, c Contract) (Decision, error) {
 	if err != nil {
 		return Decision{}, err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		if os.IsExist(err) {
 			return Decision{}, fmt.Errorf("decision: %s already exists", id)
@@ -210,7 +212,7 @@ func (d Decision) Save(root string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(Dir(root), d.ID+".json"), append(raw, '\n'), 0o644)
+	return fsx.WriteFilePrivate(filepath.Join(Dir(root), d.ID+".json"), append(raw, '\n'))
 }
 
 // allowed maps each state to its legal successors.

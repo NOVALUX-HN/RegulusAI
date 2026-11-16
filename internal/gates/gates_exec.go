@@ -83,6 +83,12 @@ type CmdRunner interface {
 type ShRunner struct {
 	Dir      string
 	EnvUnset []string
+	// Allow adds names to the default allowlist for this runner.
+	Allow []string
+	// FullEnv restores legacy inherit-everything behavior (minus
+	// EnvUnset). Prefer the allowlist; FullEnv is the documented
+	// per-gate escape hatch (config inherit_env).
+	FullEnv bool
 }
 
 // StructuredCmd is one native invocation without shell (NOV-45):
@@ -100,6 +106,12 @@ type StructuredCmd struct {
 type StructuredRunner struct {
 	Dir      string
 	EnvUnset []string
+	// Allow adds names to the default allowlist for this runner.
+	Allow []string
+	// FullEnv restores legacy inherit-everything behavior (minus
+	// EnvUnset). Prefer the allowlist; FullEnv is the documented
+	// per-gate escape hatch (config inherit_env).
+	FullEnv bool
 }
 
 // RunStructured runs cmd natively with output caps, HideWindow and
@@ -116,28 +128,10 @@ func (s StructuredRunner) RunStructured(ctx context.Context, cmd StructuredCmd) 
 	if dir != "" {
 		c.Dir = dir
 	}
-	if len(cmd.Env) > 0 {
-		c.Env = append(os.Environ(), cmd.Env...)
-	} else if len(s.EnvUnset) > 0 {
-		unset := map[string]bool{}
-		for _, n := range s.EnvUnset {
-			if n != "" {
-				unset[n] = true
-			}
-		}
-		if len(unset) > 0 {
-			filtered := []string{}
-			for _, kv := range os.Environ() {
-				if i := strings.IndexByte(kv, '='); i > 0 {
-					if unset[kv[:i]] {
-						continue
-					}
-				}
-				filtered = append(filtered, kv)
-			}
-			c.Env = filtered
-		}
-	}
+	// NOV-81: filter first (unset always wins, even with cmd.Env),
+	// gate-declared vars last (always visible). Allowlist by default;
+	// FullEnv is the escape hatch.
+	c.Env = buildEnv(cmd.Env, s.EnvUnset, s.Allow, s.FullEnv)
 	executil.HideWindow(c)
 	stdout, stderr, code, _, err := runShellCap(c, ctx, cmd.Executable, MaxOutputBytes)
 	return stdout, stderr, code, err
@@ -165,7 +159,7 @@ func (s ShRunner) runWithStats(ctx context.Context, command, root, dockerImage, 
 	if isolate == "docker" && dockerImage != "" {
 		if !dockerProbe(ctx) {
 			reason := "docker daemon unavailable"
-			stdout, stderr, code, cpuMs, err := runShell(ctx, shellName(command), shellArgs(command), s.Dir, s.EnvUnset)
+			stdout, stderr, code, cpuMs, err := runShell(ctx, shellName(command), shellArgs(command), s)
 			note := "isolation: docker requested but unavailable (" + reason + "); ran host-contained:degraded"
 			if stderr == "" {
 				stderr = note
@@ -189,12 +183,12 @@ func (s ShRunner) runWithStats(ctx context.Context, command, root, dockerImage, 
 			vol = abs
 		}
 		args := []string{"run", "--rm", "-v", vol + ":/work", "-w", "/work", dockerImage, "sh", "-c", command}
-		stdout, stderr, code, cpuMs, err := runShell(ctx, "docker", args, "", nil)
+		stdout, stderr, code, cpuMs, err := runShell(ctx, "docker", args, ShRunner{})
 		return stdout, stderr, code, cpuMs, IsolationDocker, err
 	}
 	if isolate == "docker" && dockerImage == "" {
 		reason := "no docker image configured"
-		stdout, stderr, code, cpuMs, err := runShell(ctx, shellName(command), shellArgs(command), s.Dir, s.EnvUnset)
+		stdout, stderr, code, cpuMs, err := runShell(ctx, shellName(command), shellArgs(command), s)
 		note := "isolation: docker requested but unavailable (" + reason + "); ran host-contained:degraded"
 		if stderr == "" {
 			stderr = note
@@ -203,7 +197,7 @@ func (s ShRunner) runWithStats(ctx context.Context, command, root, dockerImage, 
 		}
 		return stdout, stderr, code, cpuMs, IsolationHostDegraded, err
 	}
-	stdout, stderr, code, cpuMs, err = runShell(ctx, shellName(command), shellArgs(command), s.Dir, s.EnvUnset)
+	stdout, stderr, code, cpuMs, err = runShell(ctx, shellName(command), shellArgs(command), s)
 	return stdout, stderr, code, cpuMs, IsolationHostContained, err
 }
 
@@ -237,7 +231,7 @@ func shellArgs(command string) []string {
 // missing binary reads the same on every platform (sh reports 127; cmd
 // reports 1/9009 and PowerShell reports 1 for the same condition).
 func runShellFallback(ctx context.Context, name string, args []string, dir string, envUnset []string) (string, string, int, int64, error) {
-	stdout, stderr, code, cpu, err := runShell(ctx, name, args, dir, envUnset)
+	stdout, stderr, code, cpu, err := runShell(ctx, name, args, ShRunner{Dir: dir, EnvUnset: envUnset})
 	if err == nil && code != 0 && isShellNotFound(stdout, stderr) {
 		return stdout, stderr, 127, cpu, nil
 	}
@@ -273,33 +267,13 @@ func cpuMillis(cmd *exec.Cmd) int64 {
 	return (u + s).Milliseconds()
 }
 
-func runShell(ctx context.Context, name string, args []string, dir string, envUnset []string) (string, string, int, int64, error) {
+func runShell(ctx context.Context, name string, args []string, sh ShRunner) (string, string, int, int64, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	if dir != "" {
-		cmd.Dir = dir
+	if sh.Dir != "" {
+		cmd.Dir = sh.Dir
 	}
-	if len(envUnset) > 0 {
-		unset := map[string]bool{}
-		for _, n := range envUnset {
-			if n != "" {
-				unset[n] = true
-			}
-		}
-		if len(unset) > 0 {
-			filtered := os.Environ()[:0:0]
-			// rebuild without the unset names (exact match)
-			filtered = filtered[:0]
-			for _, kv := range os.Environ() {
-				if i := strings.IndexByte(kv, '='); i > 0 {
-					if unset[kv[:i]] {
-						continue
-					}
-				}
-				filtered = append(filtered, kv)
-			}
-			cmd.Env = filtered
-		}
-	}
+	// NOV-81: same unified policy as RunStructured (allowlist default).
+	cmd.Env = buildEnv(nil, sh.EnvUnset, sh.Allow, sh.FullEnv)
 	executil.HideWindow(cmd)
 	return runShellCap(cmd, ctx, name, MaxOutputBytes)
 }

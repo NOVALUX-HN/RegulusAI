@@ -4,7 +4,7 @@
 
 **An OpenCode-native, self-improving engineering harness: a guardian gauntlet over the code, the Sextant workflow over the work, and evidence-driven evolution of the harness itself.**
 
-> Status: v0.13.0 — Gauntlet · Discipline · self-improving Evolution, now with speed-tokens (context 1 spawn, compaction concurrente, staleness cache, reindex diferido, gate --quick, toolset cache, record-batch, minimal recortado, bench budget gate), fresh-fixes (CI en develop, MCP 14→17, gate --quick en tools, serve espacio/timeouts, status acotado, HTTP 500s honestos, did-you-mean), regulus-100 al 100, CRAP paydown bajo 30 y bench gate exit — proven by the suite (Go + bun) on this very repository.
+> Status: v0.15.0 — Gauntlet · Discipline · self-improving Evolution, now with speed-tokens (context 1 spawn, compaction concurrente, staleness cache, reindex diferido, gate --quick, toolset cache, record-batch, minimal recortado, bench budget gate), fresh-fixes (CI en develop, MCP 14→17, gate --quick en tools, serve espacio/timeouts, status acotado, HTTP 500s honestos, did-you-mean), regulus-100 al 100, CRAP paydown bajo 30 y bench gate exit — proven by the suite (Go + bun) on this very repository.
 
 Regulus AI fuses four proven ideas into one harness for [OpenCode](https://opencode.ai) V2:
 
@@ -93,7 +93,7 @@ Then open `opencode` in the project: the plugin registers the regulus tools, the
 | `regulus reflect --domain --task --cue --lesson <doc>` | propose an evidence-gated lesson candidate (nothing admitted without a guardian) |
 | `regulus library candidates` | pending candidates |
 
-![The 16-gate gauntlet](docs/assets/gauntlet.png)
+![The 23-gate gauntlet](docs/assets/gauntlet.png)
 | `regulus library admit --domain --candidate --guardian` | complete the admission: INDEX + Almanac + ledger |
 | `regulus library list / show` | admitted lessons / the domain INDEX, verbatim |
 | `regulus budget show` | the evolution ledger, oldest first |
@@ -119,6 +119,9 @@ La imagen de arriba es captura real del panel nuevo (tema Obsidian & Gold que re
 | [Devin](docs/devin.md) | Windows blueprint, CLI/Desktop/Cloud recipe, MCP trust boundary, deliberate tool gaps |
 | [Troubleshooting](docs/troubleshooting.md) | YOLO reload, console flashing, whitelist/reserved refusals, cap refusals |
 | [Agents](docs/agents.md) | Crew and guardian roles, permissions, delegation rules |
+| [Security](SECURITY.md) | Private vulnerability reporting, scope, supported versions |
+| [Contributing](CONTRIBUTING.md) | Branches, reviews, checks, close format, language policy |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | Expected behavior and enforcement |
 
 ## Name
 

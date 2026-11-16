@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"regulus-ai/internal/fsx"
 	"regulus-ai/internal/gates"
 )
 
@@ -213,6 +214,25 @@ func ancestorRegulusJSON() (string, bool) {
 func (c CLI) printInitValidation() {
 	c.printInitDoctorLine()
 	c.printInitDryRunLine()
+	c.printInitPermissionsLine()
+}
+
+// printInitPermissionsLine applies the private-perms baseline to an
+// existing .regulus (fresh scaffolds have none yet: ok either way).
+// Best-effort like the other validation lines; never fails init.
+func (c CLI) printInitPermissionsLine() {
+	defer func() { _ = recover() }()
+	fixed, err := fsx.FixPermissions(".")
+	switch {
+	case err == fsx.ErrWindowsACL:
+		fmt.Fprintln(c.Stdout, "validate: permissions skipped on Windows (ACLs rule; use a per-user profile and encrypted disk)")
+	case err != nil:
+		fmt.Fprintf(c.Stdout, "validate: permissions fix failed — %v (init still complete)\n", err)
+	case len(fixed) > 0:
+		fmt.Fprintf(c.Stdout, "validate: permissions fixed %d path(s) to 0700/0600\n", len(fixed))
+	default:
+		fmt.Fprintln(c.Stdout, "validate: permissions ok (.regulus private or not yet created)")
+	}
 }
 
 // printInitDoctorLine prints the doctor half of the post-init validation:
