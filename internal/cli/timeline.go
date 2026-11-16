@@ -25,6 +25,12 @@ import (
 // version when known, UTC + monotonic timestamps, a duration, and a
 // terminal-unequivocal status (see docs/trace-schema.md).
 func (c CLI) traceEmitCmd(args []string) int {
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			fmt.Fprintln(c.Stdout, "usage: regulus trace emit --run <r> --type <t> [--status <s>] [--task <t>] [--agent <a>] [--delegation <d>] [--session <s>] [--parent <p>] [--host <h>] [--model <m>] [--host-version <v>] [--duration-ms N] [--event-id <e>] [--payload <json>] [--error <msg>]")
+			return 0
+		}
+	}
 	fs := flag.NewFlagSet("trace emit", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	run := fs.String("run", "", "the run id (required)")
@@ -96,6 +102,12 @@ func (c CLI) traceEmitCmd(args []string) int {
 // adapter consumers. An empty store is an empty report, never an
 // error.
 func (c CLI) traceTimelineCmd(args []string) int {
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			fmt.Fprintln(c.Stdout, "usage: regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--delegation <d>] [--session <s>] [--type <t>] [--status <s>] [--rebuild] [--json]")
+			return 0
+		}
+	}
 	fs := flag.NewFlagSet("trace timeline", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	run := fs.String("run", "", "show this run")
@@ -173,6 +185,12 @@ func (c CLI) traceTimelineCmd(args []string) int {
 // the last N events (default observability.DefaultExecKeep). Files
 // are never removed (prune rewrites via temp+rename only).
 func (c CLI) tracePruneExecCmd(args []string) int {
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			fmt.Fprintln(c.Stdout, "usage: regulus trace prune-exec [--keep N]")
+			return 0
+		}
+	}
 	fs := flag.NewFlagSet("trace prune-exec", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	keep := fs.Int("keep", observability.DefaultExecKeep, "keep the last N execution events")

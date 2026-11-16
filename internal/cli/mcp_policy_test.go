@@ -223,11 +223,11 @@ func TestMCPPolicyConfusedDeputyContained(t *testing.T) {
 	t.Chdir(ws)
 	outside := t.TempDir()
 	evilFile := filepath.Join(outside, "evil.md")
-	if err := os.WriteFile(evilFile, []byte("# Evil\n\n## Acceptance\n\n### Scenario: x\n\n- Given a\n- When b\n- Then c\n"), 0o644); err != nil {
+	if err := os.WriteFile(evilFile, []byte("# Evil\n\n## Acceptance\n\n### Scenario: x\n\n- Given a server\n- When it serves\n- Then it passes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	goodFile := filepath.Join(ws, "good.md")
-	if err := os.WriteFile(goodFile, []byte("# Good\n\n## Acceptance\n\n### Scenario: x\n\n- Given a\n- When b\n- Then c\n"), 0o644); err != nil {
+	if err := os.WriteFile(goodFile, []byte("# Good\n\n## Acceptance\n\n### Scenario: x\n\n- Given a server\n- When it serves\n- Then it passes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	os.Unsetenv("REGULUS_MCP_SCOPES")
