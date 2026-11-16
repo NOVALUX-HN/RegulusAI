@@ -100,6 +100,6 @@ imported lessons, receipt stdout, chart text, MCP paths/receipts, and subagent
 output all render as `| ` data lines inside the block — visible, never executed.
 Imports always enter PROPOSED until reviewed (`memory status`), never instructions.
 Limit, honestly: framing is not sanitization — a model can still obey framed text;
-secrets redaction lives in NOV-22 S12, not here. No false positives known: benign
+secrets redaction lives in NOV-22 S12, not here; vulnerability reports go through SECURITY.md (private advisories, never public issues). No false positives known: benign
 words like "ignora" stay visible as data. Report bypasses as issues with the
 offending block + expected precedence.

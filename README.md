@@ -118,6 +118,9 @@ La imagen de arriba es captura real del panel nuevo (tema Obsidian & Gold que re
 | [Devin](docs/devin.md) | Windows blueprint, CLI/Desktop/Cloud recipe, MCP trust boundary, deliberate tool gaps |
 | [Troubleshooting](docs/troubleshooting.md) | YOLO reload, console flashing, whitelist/reserved refusals, cap refusals |
 | [Agents](docs/agents.md) | Crew and guardian roles, permissions, delegation rules |
+| [Security](SECURITY.md) | Private vulnerability reporting, scope, supported versions |
+| [Contributing](CONTRIBUTING.md) | Branches, reviews, checks, close format, language policy |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | Expected behavior and enforcement |
 
 ## Name
 
