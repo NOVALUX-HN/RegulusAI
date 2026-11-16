@@ -17,4 +17,4 @@ Para marcar uno nuevo, añade al inicio una línea como:
 
 `> **Nota (H10):** frozen <qué> (<fecha>); ...`
 
-Excluidos hoy: `docs/token-savings.md`, `docs/PRD.md`, `docs/audit/repository-inventory.md`.
+Excluidos hoy: `docs/token-savings.md`, `docs/PRD.md`, `docs/audit/repository-inventory.md`, `docs/f7-cycle-real.md`.

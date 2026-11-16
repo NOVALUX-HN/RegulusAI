@@ -17,6 +17,8 @@ fallo de guardrail rechaza.
 
 Estado 2026-11-15 (corpus v3, NOV-77): fixtures verificados (44/44 fallan pre-fix), trampas verificadas (hardcode falla, fix real pasa). Corridas completas con reps y multi-modelo pendientes de ejecucion con creditos (ver bench/evidence/ + agent-report).
 
+Ciclo v1 cerrado: ver `docs/f7-cycle-real.md` (2026-11-14, veredicto TIE + adopción humana registrada). Sin conflicto con este estado: aquel fue v1 de 5 tareas, este es v3 vigente de 44. Rutas `bench/evidence/v2-*`: corridas legacy v1/v2; la evidencia v3 vigente vive en los subdirectorios `v3-*-beamfree` (anidados bajo `v2-exploration-beamfree/` por la migración, se leen igual con `agent-report --evidence-dir <dir>`).
+
 ## Reproducir una corrida (v3)
 
 Requiere: Go toolchain, node, bash y `python3` en el PATH, más un host

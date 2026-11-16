@@ -1,5 +1,7 @@
 # Primer ciclo real de auto-mejora (NOV-71 / T47) — 2026-11-14
 
+> **Nota (H10):** registro point-in-time del ciclo v1 cerrado (2026-11-14); el corpus vigente vive en `docs/agent-evals.md`. Se conserva como evidencia histórica.
+
 Hipótesis: recortar los prompts de `agent-tasks-v1` (~81→~40 chars, -50%)
 mantiene el pass-rate. Superficie reversible y no crítica (textos de
 prompt; checks, splits y harness intactos). Canary: no aplica
@@ -79,3 +81,8 @@ en vez de fallos (visto en corridas previas AT1/AT4, no en la final).
   el runner los clasifica como infra (NOV-68), no como fail.
 - Prompts más cortos no degradan en esta suite (n=5): señal para
   repetir con n mayor antes de afirmar ahorro.
+
+## Nota de higiene (NOV-75 Paso 60)
+
+- `f7-cycle-base.json`, `f7-cycle-cand.json` y `f7-cycle-neg.json` se citaron con rutas relativas sueltas (`--save`) y nunca se versionaron: no existen en el repo. No se reconstruyen (corridas 2026-11-14, tier gratuito). Quedan sustituidos por el pipeline versionado (`--evidence-dir` con manifest + sha256) que exige `agent-report`.
+- Regla vigente: la evidencia de evals solo vale versionada en `bench/evidence/<corrida>/` con manifest; los `--save` sueltos no son evidencia.
