@@ -197,3 +197,73 @@ jobs:
           path: audit-codeintegrity.txt
           retention-days: 90
           if-no-files-found: warn
+
+  # NOV-78: cierre trazable obligatorio. Verifica por cada NOV-xx citado
+  # en el rango que al menos un commit lo cite y que los commits
+  # multi-issue lleven trailer Justified: (o --justified al cerrar).
+  # Alcance/receipts/veredicto P0 se verifican por cierre explícito
+  # (task close --issue ... --verify-only), porque el chart no se puede
+  # inferir del diff de forma fail-safe. Falla cerrado si el rango no
+  # se puede determinar. El job id se preserva como el resto para las
+  # reglas de rama que referencien contextos.
+  traceability:
+    name: Traceable close
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.27"
+          cache: false
+
+      - name: Verify issue linkage for commits in range
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+            range="$base..HEAD"
+          else
+            base="${{ github.event.before }}"
+            range="$base..${{ github.sha }}"
+          fi
+          if ! git rev-parse --verify "$base" >/dev/null 2>&1; then
+            echo "traceability: cannot determine base ($base); failing closed"
+            exit 1
+          fi
+          ids=$(git log --format='%B' "$range" | grep -oE 'NOV-[0-9]+' | sort -u || true)
+          if [ -z "$ids" ]; then
+            echo "traceability: no NOV-xx cited in range $range (nothing to verify)"
+            exit 0
+          fi
+          fail=0
+          for id in $ids; do
+            n=$(git log --format='%H' --grep="$id" "$range" | wc -l)
+            if [ "$n" -eq 0 ]; then
+              echo "traceability: no commit cites $id"
+              fail=1
+              continue
+            fi
+            echo "traceability: $id cited by $n commit(s)"
+            while IFS= read -r sha; do
+              others=$(git log -1 --format='%B' "$sha" | grep -oE 'NOV-[0-9]+' | sort -u | grep -v "$id" || true)
+              if [ -n "$others" ]; then
+                body=$(git log -1 --format='%B' "$sha")
+                if ! echo "$body" | grep -qi 'justified:'; then
+                  echo "traceability: commit ${sha:0:12} cites $id with others ($others) but no Justified: trailer"
+                  fail=1
+                fi
+              fi
+            done < <(git log --format='%H' --grep="$id" "$range")
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "traceability: FAIL (see gaps above)"
+            exit 1
+          fi
+          echo "traceability: PASS (linkage + justification; scope/receipts/P0 via task close --issue --verify-only)"
+
+      - name: Traceability fixture matrix
+        run: go test ./internal/sextant/ -run 'TestTrace' -count=1

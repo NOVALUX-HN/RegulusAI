@@ -1,0 +1,10 @@
+# Review routing (NOV-78 Paso 57).
+#
+# Handles need a repo admin to confirm; until then GitHub ignores unknown
+# handles with a warning (safe failure, never a silent pass). The branch
+# prefix used for this program's work is oscarcamarena3110/.
+# Protected paths: only their owners approve changes to them.
+/internal/gates/ @oscarcamarena3110
+/internal/evolve/ @oscarcamarena3110
+/internal/hostcfg/ @oscarcamarena3110
+/.github/workflows/ @oscarcamarena3110

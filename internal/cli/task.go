@@ -157,6 +157,22 @@ func (c CLI) taskStatusCmd(args []string) int {
 	return 0
 }
 
+// validateCloseSkip enforces explicit, recorded traceability skips:
+// skipping is only meaningful with --issue and always needs --justified.
+// Empty means the flag combination is allowed.
+func validateCloseSkip(issue string, skip bool, justified string) string {
+	if !skip {
+		return ""
+	}
+	if strings.TrimSpace(issue) == "" {
+		return "task close: --skip-traceability needs --issue (nothing to skip without an issue)"
+	}
+	if strings.TrimSpace(justified) == "" {
+		return "task close: --skip-traceability needs --justified <reason> (skips are explicit and recorded, never silent)"
+	}
+	return ""
+}
+
 func (c CLI) taskCloseCmd(args []string) int {
 	fs := flag.NewFlagSet("task close", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -164,12 +180,18 @@ func (c CLI) taskCloseCmd(args []string) int {
 	justified := fs.String("justified", "", "reason covering multi-issue commits (or put a Justified: trailer in the commit)")
 	implementer := fs.String("implementer", "", "who did the work (compared against the reviewer for P0 independence)")
 	independent := fs.Bool("independent-review", false, "P0: require a recorded review verdict by someone other than --implementer")
+	verifyOnly := fs.Bool("verify-only", false, "run all close checks without writing: exit 1 on any unmet item, nothing is modified (CI path)")
+	skipTraceability := fs.Bool("skip-traceability", false, "bypass the --issue traceability check (requires --justified with a recorded reason; CI never uses it)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	rest := fs.Args()
 	if len(rest) != 2 {
-		fmt.Fprintln(c.Stderr, "usage: regulus task close [--issue NOV-xx] [--justified reason] [--implementer id] [--independent-review] <chart> <id>")
+		fmt.Fprintln(c.Stderr, "usage: regulus task close [--issue NOV-xx] [--justified reason] [--implementer id] [--independent-review] [--verify-only] [--skip-traceability] <chart> <id>")
+		return 2
+	}
+	if msg := validateCloseSkip(*issue, *skipTraceability, *justified); msg != "" {
+		fmt.Fprintln(c.Stderr, msg)
 		return 2
 	}
 	path, doc, err := readChart(rest[0])
@@ -189,8 +211,10 @@ func (c CLI) taskCloseCmd(args []string) int {
 	}
 	// NOV-64: with --issue, the close additionally needs auditable
 	// linkage: commit(s) citing the issue, scope-clean diffs and, for
-	// P0, an independent review verdict.
-	if *issue != "" {
+	// P0, an independent review verdict. NOV-78: the check runs by
+	// default; --skip-traceability bypasses it only with an explicit,
+	// recorded --justified reason (never silently; CI never skips).
+	if *issue != "" && !*skipTraceability {
 		sc, serr := sextant.ParseScope(doc)
 		if serr != nil {
 			res.Unmet = append(res.Unmet, fmt.Sprintf("scope: %v", serr))
@@ -203,6 +227,9 @@ func (c CLI) taskCloseCmd(args []string) int {
 			res.Closed = false
 		}
 	}
+	if *skipTraceability {
+		fmt.Fprintf(c.Stdout, "traceability skipped (--skip-traceability): %s\n", *justified)
+	}
 	if !res.Closed {
 		fmt.Fprintf(c.Stdout, "task %s cannot close:\n", id)
 		for _, u := range res.Unmet {
@@ -211,6 +238,20 @@ func (c CLI) taskCloseCmd(args []string) int {
 		fmt.Fprintln(c.Stdout, "why: self-report closes nothing — close needs contract, receipts PASS, and shut dependencies")
 		fmt.Fprintf(c.Stdout, "next: run regulus task check %s, then regulus gate run %s/%s, then retry close\n", rest[0], chartBase, id)
 		return 1
+	}
+	// NOV-78: --verify-only runs every check above and reports, but
+	// writes nothing: no chart rewrite, no receipt, no memory note.
+	// CI calls this per close; exit 1 names each gap (fail-closed).
+	if *verifyOnly {
+		if !res.Closed {
+			fmt.Fprintf(c.Stdout, "task %s would NOT close:\n", id)
+			for _, u := range res.Unmet {
+				fmt.Fprintf(c.Stdout, "  - %s\n", u)
+			}
+			return 1
+		}
+		fmt.Fprintf(c.Stdout, "task %s verifies: spec OK + %d receipt(s) PASS (nothing written)\n", id, len(res.Receipts))
+		return 0
 	}
 	updated := sextant.ApplyClose(doc, id, res)
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
