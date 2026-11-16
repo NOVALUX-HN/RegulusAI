@@ -62,7 +62,10 @@ foreach ($pkg in $pkgs) {
   $run = & $exe @('-test.count=1') 2>&1
   $code = $LASTEXITCODE
   $text = ($run -join "`n")
-  if ($code -ne 0 -and (Test-IsAppControlBlock $text)) {
+  # Nota: si App Control bloquea el .exe, PowerShell lanza
+  # NativeCommandFailed y $LASTEXITCODE queda con el valor viejo
+  # (0 del go build) — por eso el texto manda: un bloqueo nunca es PASS.
+  if (($code -ne 0 -and (Test-IsAppControlBlock $text)) -or ($text -match "NativeCommandFailed")) {
     $blocked += $pkg
     Write-Host "BLOCKED (App Control): $pkg"
     Write-Host "  Diagnóstico: CodeIntegrity Operational, eventos 3033/3077/3089/3118 con ruta, hash y firmante."
