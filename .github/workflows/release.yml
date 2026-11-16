@@ -137,7 +137,8 @@ jobs:
       - name: Contract and doctor
         shell: bash
         run: |
-          BIN=$(ls dl/regulus-* | grep -v checksums | head -n 1)
+          BIN=""
+          for f in dl/regulus-*; do case "$f" in *checksums*) continue;; *) BIN="$f"; break;; esac; done
           chmod +x "$BIN" || true
           "$BIN" contract
           "$BIN" doctor || true
@@ -151,7 +152,8 @@ jobs:
       - name: Minimal journey on published binary
         shell: bash
         run: |
-          BIN=$(ls dl/regulus-* | grep -v checksums | head -n 1)
+          BIN=""
+          for f in dl/regulus-*; do case "$f" in *checksums*) continue;; *) BIN="$f"; break;; esac; done
           chmod +x "$BIN" || true
           rm -rf /tmp/pubjourney && mkdir -p /tmp/pubjourney && cd /tmp/pubjourney
           "$OLDPWD/$BIN" init --stack smoke --force
