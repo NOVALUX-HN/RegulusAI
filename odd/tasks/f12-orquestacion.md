@@ -56,9 +56,9 @@ Header: milestone F12 (8 issues NOV-96..103, todas Backlog, sin estimates ni com
 
 | ID | Spec | NOV | Deps | Route | Commit |
 |----|------|-----|------|-------|--------|
-| T1 | S1 | NOV-96 F12.1 | F11.2,F11.4,F11.5,F11.7,F11.8 | worker | — |
-| T2 | S2 | NOV-97 F12.2 | F11.1,F11.3,F11.4,F11.8,T1 | worker | — |
-| T3 | S3 | NOV-98 F12.3 | F11.1,F11.5,T1 | worker | — |
+| T1 | S1 | NOV-96 F12.1 | F11.2,F11.4,F11.5,F11.7,F11.8 | worker | 42e73f1 |
+| T2 | S2 | NOV-97 F12.2 | F11.1,F11.3,F11.4,F11.8,T1 | worker | dd1566d |
+| T3 | S3 | NOV-98 F12.3 | F11.1,F11.5,T1 | worker | 9d17d8e |
 | T4 | S4 | NOV-99 F12.4 | F11.1,F11.3,F11.4,F11.5 | worker | — |
 | T5 | S5 | NOV-100 F12.5 | F11.1,F11.8,T1,T2 | worker | — |
 | T6 | S6 | NOV-101 F12.6 | F11.1,F11.8,T3 | worker | — |
@@ -69,3 +69,7 @@ Header: milestone F12 (8 issues NOV-96..103, todas Backlog, sin estimates ni com
 
 - L1 (usuario, verbatim): "arranca, pero siempre en cada tarea trae toda la información de linear de cada tarea ya que explica que es lo que se desea. haz esto hasta finalizar todas las tareas y solo haz commits de cada tarea terminada, no hagas ningún push"
 - L2: corre después de F11 (todas dependen de F11.x). Orden numérico F12.1→F12.8 (la .7 ya exige 7 dependencias incl. F12.4/F12.6).
+- L3 (2026-11-16): F11 completa 9/9 (commits c59c9a7..015cd1f, Linear Done). Arranca F12.
+- L4 (2026-11-16, T1 done): NOV-96 F12.1 implementado (orquestador: descriptor + registry + scoring explicable + dry-run + evaluate, 10+7 tests; RED real de gate crítico corregido) commit 42e73f1; pin de dispatch actualizado por parent; Linear con evidencia y Done; CLI BLOCKED local (verifica CI).
+- L5 (2026-11-16, T2 done): NOV-97 F12.2 implementado (DAG + serialización por colisión + scheduler por niveles + worktrees reales + merge controlado + gate + orphans, tests verdes local incl. overlap real) commit dd1566d; Linear con evidencia y Done.
+- L6 (2026-11-16, T3 done): NOV-98 F12.3 implementado (inventario + ranking explicable + detección dup/obsolescencia/contradicción/inyección + capas + ACLs + fallback, 9+5 tests; 2 RED reales corregidos) commit 9d17d8e; pin de dispatch actualizado por parent; Linear con evidencia y Done.

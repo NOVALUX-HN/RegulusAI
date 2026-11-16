@@ -62,17 +62,26 @@ Header: milestone F11 (9 issues NOV-87..95, todas Backlog, sin estimates ni come
 
 | ID | Spec | NOV | Deps | Route | Commit |
 |----|------|-----|------|-------|--------|
-| T1 | S1 | NOV-87 F11.1 | — | worker | — |
-| T2 | S8 | NOV-94 F11.8 | T1 | worker | — |
-| T3 | S2 | NOV-88 F11.2 | T1 | worker | — |
-| T4 | S3 | NOV-89 F11.3 | T1 | worker | — |
-| T5 | S4 | NOV-90 F11.4 | T1,T3 | worker | — |
-| T6 | S5 | NOV-91 F11.5 | T1 | worker | — |
-| T7 | S6 | NOV-92 F11.6 | T1,T4,T6 | worker | — |
-| T8 | S7 | NOV-93 F11.7 | T1 | worker | — |
-| T9 | S9 | NOV-95 F11.9 | T1-T8 | worker | — |
+| T1 | S1 | NOV-87 F11.1 | — | worker | c59c9a7 |
+| T2 | S8 | NOV-94 F11.8 | T1 | worker | d8255e8 |
+| T3 | S2 | NOV-88 F11.2 | T1 | worker | 701a74a |
+| T4 | S3 | NOV-89 F11.3 | T1 | worker | a249cde |
+| T5 | S4 | NOV-90 F11.4 | T1,T3 | worker | 51be13e |
+| T6 | S5 | NOV-91 F11.5 | T1 | worker | bfe6f16 |
+| T7 | S6 | NOV-92 F11.6 | T1,T4,T6 | worker | 3a98875 |
+| T8 | S7 | NOV-93 F11.7 | T1 | worker | 4309084 |
+| T9 | S9 | NOV-95 F11.9 | T1-T8 | worker | 015cd1f |
 
 ## Log
 
 - L1 (usuario, verbatim): "arranca, pero siempre en cada tarea trae toda la información de linear de cada tarea ya que explica que es lo que se desea. haz esto hasta finalizar todas las tareas y solo haz commits de cada tarea terminada, no hagas ningún push"
 - L2: F11+F12 nuevas en Linear (17 issues Backlog, sin estimates ni comentarios, prioridades High salvo NOV-94 Urgent y NOV-95/101/103 Medium). F9/F10 100% Done. Orden: F11.1 base primero, F11.8 urgent segunda (depende F11.1), resto numérico, F11.9 cierra; luego F12 en orden (F12.1 exige F11.2/F11.4/F11.5/F11.7/F11.8).
+- L3 (2026-11-16, T1 done): NOV-87 F11.1 implementado (exec.go schema v1 + CLI timeline + docs/trace-schema.md + 19 tests) commit c59c9a7; Linear con evidencia y Done; cli tests BLOCKED local (verifica CI).
+- L4 (2026-11-16, T2 done): NOV-94 F11.8 implementado (policy deny-by-default v1 + enforcement en mcpCallTool + auditoría F11.1 + suite adversarial + docs/mcp-policy.md + devin.md actualizado) commit d8255e8; Linear con evidencia y Done; tests BLOCKED local (verifica CI; mcp tests pasaron 1 vez pre-bloqueo).
+- L5 (2026-11-16, T3 done): NOV-88 F11.2 implementado (registry baseline/anchored/verify-first + modos individual/comparativo/integrado + aislamiento + replay + enlace trazas F11.1, sin routing) commit 701a74a; Linear con evidencia y Done; tests BLOCKED local (verifica CI).
+- L6 (2026-11-16, T4 done): NOV-89 F11.3 implementado (tiers L0-L3 + selectores + budgets + holdout sellado + comandos bench tiers|tier-plan|tier-report + docs/eval-tiers.md, 17+7 tests) commit a249cde; fallout T1-T3 reparado aparte commit b880c18 (RunLab split, trace --help, fixture 2 palabras; 3/3 PASS vía binario C:/Temp); Linear con evidencia y Done.
+- L7 (2026-11-16, T5 done): NOV-90 F11.4 implementado (motor diag + bench diag + docs/perf-diagnosis.md + informe reproducible, 9+6 tests en verde local) commit 51be13e; cableado case diag aplicado por parent; Linear con evidencia y Done.
+- L8 (2026-11-16, T6 done): NOV-91 F11.5 implementado (re-auditoría 4 hosts + readers + correlación + RateCard + CLI procedencia + fixtures, 22+5 tests verdes + money E2E) commit bfe6f16; fallout diag.go partido en 4 módulos commit d9f23ee (SizeCheck verde); Linear con evidencia y Done.
+- L9 (2026-11-16, T7 done): NOV-92 F11.6 implementado (protocolo declare→run→compare→finalize con pin SHA + holdout sellado + controles + informe reproducible + reconciliación NOV-80/71, 14+4 tests) commit 3a98875; cableado validation aplicado por parent; Linear con evidencia y Done.
+- L10 (2026-11-16, T8 done): NOV-93 F11.7 implementado (capability manifest 12 dims + matriz 4 estados + journeys OpenCode/Codex/Claude + estrategia Devin + CI probe/journey + degradación, 13+5+5 tests verdes local) commit 4309084; reconcilia NOV-76/NOV-69; Linear con evidencia y Done.
+- L11 (2026-11-16, T9 done — F11 COMPLETA): NOV-95 F11.9 implementado (release.yml 4 fixes fail-closed + reproducibilidad 6/6 + checksums + journey + dependencias auditadas + docs/release-f11.md, tests verdes) commit 015cd1f; release real/tag/publicación los hace el usuario; Linear con evidencia y Done. F11 9/9 Done.
