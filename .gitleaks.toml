@@ -1,0 +1,19 @@
+# NOV-83: secret-scan allowlist. Unit-test fixtures carry fake secrets
+# by design (redaction unit tests, env-filter probes, dashboard guard
+# tests); they are excluded by path so the scan stays red on real
+# leaks anywhere else. Do NOT add real tokens here to silence the scan —
+# rotate the secret instead.
+[extend]
+useDefault = true
+
+[[allowlist]]
+description = "unit-test fixtures with fake secrets (never real credentials)"
+paths = [
+  '''internal/gates/.*_test\.go''',
+  '''internal/receipts/.*_test\.go''',
+  '''internal/cli/.*_test\.go''',
+  '''internal/bench/.*_test\.go''',
+  '''internal/sextant/.*_test\.go''',
+  '''internal/httpapi/.*_test\.go''',
+  '''cmd/regulus/.*_test\.go''',
+]

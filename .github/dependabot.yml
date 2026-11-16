@@ -1,0 +1,17 @@
+# NOV-83: automatic dependency updates (weekly). Action SHAs pinned in
+# workflows stay fresh via the github-actions updater; Go and bun
+# dependencies update the same way instead of rotting.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "bun"
+    directory: "/.opencode"
+    schedule:
+      interval: "weekly"

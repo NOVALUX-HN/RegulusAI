@@ -21,6 +21,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+# NOV-83: least privilege by default; jobs that need more say so.
+permissions:
+  contents: read
+
 jobs:
   gauntlet:
     name: Gauntlet
@@ -32,34 +36,43 @@ jobs:
     # con STRICT=1 el skip se convierte en fallo.
     env:
       REGULUS_STRICT_ENV: "1"
-    # the receipts-trail commit (S8) writes docs/EVIDENCE.md back to main
+    # NOV-83: S8 retired, no doc commits anymore; artifact upload
+    # needs actions:write under the top-level read-only default.
     permissions:
-      contents: write
+      contents: read
+      actions: write
     steps:
-      # S4: actions stay on vendor-maintained major tags (checkout v5,
-      # setup-go v6 with go 1.27, setup-bun v2) — GitHub/Oven keep these
-      # majors backwards-compatible, so a floating major is intentional here.
-      # Exact pins are required only for the Go tool installs below.
+      # NOV-83: every action is pinned by full commit SHA with its tag
+      # in a trailing comment (supply-chain over floating-major
+      # convenience; the old S4 float-major policy is retired). Refresh
+      # via Dependabot (.github/dependabot.yml, weekly); exact pins were
+      # already required for the Go tool installs below.
       # S2 (docs-ci-hygiene/C2): checkout v4 -> v5 y setup-go v5 -> v6
       # porque los majors viejos corren en node20 (aviso de deprecación) y
       # los nuevos en node24 (verificado 2026-11-01 en sus action.yml).
       # setup-bun@v2 ya corre en node24, se queda.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.27"
           # Zero-dep module (no go.sum by invariant TestZeroDepsGoMod):
           # default cache restore warns on every run, so opt out.
           cache: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install gremlins
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+      - name: Gofmt clean
+        run: test -z "$(gofmt -l internal/ cmd/)"
 
       # NOV-72: lint de workflows antes del gauntlet — una etiqueta o
       # expresión inválida falla acá, no en un runner que nunca llega.
@@ -72,7 +85,7 @@ jobs:
       - name: Typecheck the plugin
         working-directory: .opencode
         run: |
-          bun install
+          bun install --frozen-lockfile
           bunx tsc --noEmit
 
       - name: Test the plugin domain logic
@@ -113,7 +126,7 @@ jobs:
       # dejar receipts del task si falla typecheck.
       - name: Upload gate receipts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           path: .regulus/evidence/ci__push/
           retention-days: 30
@@ -121,6 +134,10 @@ jobs:
 
   windows-native:
     name: Windows compatibility
+    # NOV-83: evidence upload needs actions:write under the read-only default.
+    permissions:
+      contents: read
+      actions: write
     runs-on: windows-2022
     timeout-minutes: 30
     # NOV-65: ningún test puede omitirse por herramienta ausente;
@@ -128,9 +145,9 @@ jobs:
     env:
       REGULUS_STRICT_ENV: "1"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.27"
           cache: false
@@ -171,7 +188,7 @@ jobs:
 
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-native-evidence
           path: .regulus/evidence/
@@ -180,10 +197,14 @@ jobs:
 
   windows-protected-audit:
     name: Windows protected audit
+    # NOV-83: audit upload needs actions:write under the read-only default.
+    permissions:
+      contents: read
+      actions: write
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Audit policy state (not enforcement)
         run: |
           Get-WinEvent -LogName 'Microsoft-Windows-CodeIntegrity/Operational' -MaxEvents 20 | Format-Table TimeCreated, Id -AutoSize | Out-File -FilePath audit-codeintegrity.txt
@@ -191,7 +212,7 @@ jobs:
           echo "Standard GitHub runner is NOT Smart App Control enforced. Protected validation requires lab VM (see docs/windows-diagnosis.md). Audit only, never confuses audit with enforcement."
       - name: Upload audit evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-audit-evidence
           path: audit-codeintegrity.txt
@@ -267,3 +288,18 @@ jobs:
 
       - name: Traceability fixture matrix
         run: go test ./internal/sextant/ -run 'TestTrace' -count=1
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: go install github.com/gitleaks/gitleaks/v8@v8.30.1
+
+      - name: Scan history and worktree
+        run: gitleaks detect --source . --config .gitleaks.toml --redact -v
