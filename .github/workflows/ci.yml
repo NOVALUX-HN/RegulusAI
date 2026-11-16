@@ -303,7 +303,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install gitleaks
-        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Scan history and worktree
         run: gitleaks detect --source . --config .gitleaks.toml --redact -v
