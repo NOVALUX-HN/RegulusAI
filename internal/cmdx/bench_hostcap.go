@@ -1,0 +1,356 @@
+package cmdx
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"regulus-ai/internal/bench"
+	"regulus-ai/internal/executil"
+	"regulus-ai/internal/hostcfg"
+	"regulus-ai/internal/observability"
+)
+
+// BenchHostCapabilitiesCmd implements `regulus bench
+// host-capabilities`. Moved from internal/cli (bench_hostcap.go)
+// without behavior change.
+func (io IO) BenchHostCapabilitiesCmd(args []string) int {
+	fs := flag.NewFlagSet("bench host-capabilities", flag.ContinueOnError)
+	fs.SetOutput(io.Stderr)
+	run := fs.Bool("run", false, "execute fixture journeys where the host is usable (default: probe only, no model cost)")
+	model := fs.String("model", "", "model for headless hosts (host default when empty)")
+	out := fs.String("out", "", "write redacted per-host evidence JSON into this directory")
+	only := fs.String("host", "all", "opencode | claude | codex | devin | all")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(io.Stderr, "usage: regulus bench host-capabilities [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		return 2
+	}
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339)
+	execClass := bench.ClassProbe
+	if *run {
+		execClass = bench.ClassJourney
+	}
+
+	manifests := bench.DefaultHostManifests(now)
+	outcomes := probeHostJourneys(ctx, io, false, "", *only, now)
+	if *run {
+		for _, p := range bench.DefaultHostProbes() {
+			if *only != "all" && p.ID != *only {
+				continue
+			}
+			m := manifests[p.ID]
+			if m.Class == bench.ClassStrategy {
+				continue // no CLI to run: strategy hosts never execute
+			}
+			ver, err := p.Version(ctx)
+			if err != nil {
+				continue // probe already recorded the reason
+			}
+			outcomes[p.ID] = io.executeHostJourney(ctx, p.ID, ver, *model, now)
+		}
+	}
+	for host, m := range manifests {
+		if *only != "all" && host != *only {
+			delete(manifests, host)
+			continue
+		}
+		if o, ok := outcomes[host]; ok {
+			manifests[host] = bench.ApplyJourneyOutcome(m, o, now)
+		} else {
+			manifests[host] = m
+		}
+	}
+	if err := bench.ValidateCapabilitiesAttributable(manifests); err != nil {
+		fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
+		return 1
+	}
+	if err := bench.ValidateNoProbeAsJourney(manifests); err != nil {
+		fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
+		return 1
+	}
+
+	runID, traceHint := io.recordHostCapabilitiesTrace(manifests, outcomes, execClass)
+	for host, m := range manifests {
+		m.TraceHint = traceHint
+		manifests[host] = m
+	}
+
+	if execClass == bench.ClassProbe {
+		fmt.Fprintln(io.Stdout, "host-capabilities: clase de ejecución probe (sin costo de modelo; esto no es un journey)")
+	} else {
+		fmt.Fprintln(io.Stdout, "host-capabilities: clase de ejecución journey (fixture E2E; el agent-leg con modelo sigue siendo agent-journey credencial-gated)")
+	}
+	hosts := orderedHostIDs(*only)
+	fmt.Fprint(io.Stdout, bench.RenderCapabilityMatrix(hosts, manifests))
+	for _, h := range hosts {
+		m := manifests[h]
+		fmt.Fprint(io.Stdout, bench.RenderManifestSummary(m))
+		if o, ok := outcomes[h]; ok {
+			fmt.Fprintf(io.Stdout, "hoy: %s (%s)\n", o.Status, o.Reason)
+		}
+	}
+	if traceHint != "" {
+		fmt.Fprintf(io.Stdout, "traza: %s\n", traceHint)
+	} else {
+		fmt.Fprintf(io.Stdout, "traza: sin vínculo F11.1 (run id no emitido: %s)\n", runID)
+	}
+	if *out != "" {
+		if err := saveHostCapabilities(*out, manifests, execClass, traceHint, now); err != nil {
+			fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
+			return 1
+		}
+	}
+	fmt.Fprintf(io.Stdout, "host-capabilities OK: %d host(s) con capabilities atribuidas (clase %s)\n", len(manifests), execClass)
+	return 0
+}
+
+// recordHostCapabilitiesTrace links the run to its F11.1 timeline.
+func (io IO) recordHostCapabilitiesTrace(manifests map[string]bench.HostManifest, outcomes map[string]bench.HostJourneyOutcome, execClass string) (string, string) {
+	runID, err := observability.MintRunID()
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "host-capabilities: sin traza F11.1 (%v)\n", err)
+		return "mint run id: " + err.Error(), ""
+	}
+	root := io.Dir
+	if root == "" {
+		if wd, werr := os.Getwd(); werr == nil {
+			root = wd
+		} else {
+			fmt.Fprintln(io.Stderr, "host-capabilities: sin traza F11.1 (sin raíz de proyecto)")
+			return "sin raíz de proyecto", ""
+		}
+	}
+	emit := func(e observability.ExecEvent) {
+		if _, _, rerr := observability.RecordExec(root, e, time.Now().UTC()); rerr != nil {
+			fmt.Fprintf(io.Stderr, "host-capabilities: evento de traza no registrado (%v)\n", rerr)
+		}
+	}
+	emit(observability.ExecEvent{
+		RunID: runID, Type: observability.ExecRunStart, Status: observability.ExecStarted,
+		Payload: map[string]any{"command": "bench host-capabilities", "execution_class": execClass},
+	})
+	for _, h := range orderedHostCapabilitiesHosts(manifests) {
+		m := manifests[h]
+		status := observability.ExecSucceeded
+		detail := "capabilities atribuidas (clase " + m.Class + ")"
+		if o, ok := outcomes[h]; ok {
+			switch {
+			case o.Status == bench.AgentFail:
+				status = observability.ExecFailed
+				detail = o.Reason
+			case o.Status == bench.AgentNotRun && m.Class != bench.ClassStrategy:
+				status = observability.ExecCancelled
+				detail = o.Reason
+			case o.Status == bench.AgentNotRun:
+				detail = o.Reason
+			}
+		}
+		emit(observability.ExecEvent{
+			RunID: runID, TaskID: "host-cap/" + h,
+			Type: observability.ExecTaskEnd, Status: status,
+			Host: h, HostVersion: m.Version,
+			Payload:      map[string]any{"capability_class": m.Class, "execution_class": execClass},
+			ErrorDetails: detail,
+		})
+	}
+	emit(observability.ExecEvent{
+		RunID: runID, Type: observability.ExecRunEnd, Status: observability.ExecSucceeded,
+		Payload: map[string]any{"command": "bench host-capabilities", "execution_class": execClass},
+	})
+	return runID, bench.TraceHintFor(runID)
+}
+
+// orderedHostCapabilitiesHosts lists manifests in stable order.
+func orderedHostCapabilitiesHosts(manifests map[string]bench.HostManifest) []string {
+	hosts := make([]string, 0, len(manifests))
+	for h := range manifests {
+		hosts = append(hosts, h)
+	}
+	for i := 0; i < len(hosts); i++ {
+		for j := i + 1; j < len(hosts); j++ {
+			if hosts[j] < hosts[i] {
+				hosts[i], hosts[j] = hosts[j], hosts[i]
+			}
+		}
+	}
+	return hosts
+}
+
+// saveHostCapabilities writes the redacted evidence pack.
+func saveHostCapabilities(out string, manifests map[string]bench.HostManifest, execClass, traceHint, now string) error {
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+	home, _ := os.UserHomeDir()
+	pack := map[string]any{
+		"execution_class": execClass,
+		"trace_hint":      traceHint,
+		"recorded_at":     now,
+	}
+	for host, m := range manifests {
+		artifacts := []string{
+			"host " + host + " version " + m.Version,
+			"class " + m.Class,
+		}
+		if m.ProbeNote != "" {
+			artifacts = append(artifacts, m.ProbeNote)
+		}
+		if m.JourneyEvidence != "" {
+			artifacts = append(artifacts, m.JourneyEvidence+" ("+m.JourneyDate+")")
+		}
+		pack[host] = bench.NewHostEvidence(m, hostcfg.ConfigRefs(host, home), artifacts)
+	}
+	raw, err := json.MarshalIndent(pack, "", "  ")
+	if err != nil {
+		return err
+	}
+	name := fmt.Sprintf("host-capabilities-%s.json", time.Now().UTC().Format("20060102T150405Z"))
+	return os.WriteFile(filepath.Join(out, name), raw, 0o644)
+}
+
+// Journey helpers duplicated trivially from internal/cli
+// (bench_host.go) so host-capabilities keeps its probe/journey
+// behavior without importing cli (which would be a cycle).
+
+func probeHostJourneys(ctx context.Context, io IO, run bool, model, only, now string) map[string]bench.HostJourneyOutcome {
+	results := map[string]bench.HostJourneyOutcome{}
+	for _, p := range bench.DefaultHostProbes() {
+		if only != "all" && p.ID != only {
+			continue
+		}
+		results[p.ID] = probeOneHostJourney(ctx, io, p, run, model, now)
+	}
+	return results
+}
+
+func probeOneHostJourney(ctx context.Context, io IO, p bench.HostProbe, run bool, model, now string) bench.HostJourneyOutcome {
+	ver, err := p.Version(ctx)
+	r := bench.HostJourneyOutcome{Host: p.ID, Version: ver, RecordedAt: now, Windows: isWindows()}
+	if err != nil {
+		r.Level, r.Status, r.Reason = bench.LevelNotRun, bench.AgentNotRun, err.Error()
+		return r
+	}
+	if !run {
+		r.Level, r.Status, r.Reason = bench.LevelContract, bench.AgentNotRun, "probe only: binary present, version "+ver+" (journey not executed, no model cost)"
+		return r
+	}
+	return io.executeHostJourney(ctx, p.ID, ver, model, now)
+}
+
+// orderedHostIDs lists the matrix rows in stable order, honoring --host.
+// Duplicated from internal/cli (bench_host.go).
+func orderedHostIDs(only string) []string {
+	ordered := []string{}
+	for _, h := range []string{"opencode", "claude", "codex", "devin"} {
+		if only != "all" && h != only {
+			continue
+		}
+		ordered = append(ordered, h)
+	}
+	return ordered
+}
+
+// executeHostJourney runs the conformity journey for one usable host.
+// Duplicated from internal/cli (bench_host.go).
+func (io IO) executeHostJourney(ctx context.Context, host, version, model, now string) bench.HostJourneyOutcome {
+	r := bench.HostJourneyOutcome{Host: host, Version: version, Level: bench.LevelHost, RecordedAt: now, Windows: isWindows()}
+	work, err := os.MkdirTemp("", "host-journey-")
+	if err != nil {
+		r.Status, r.Reason = bench.AgentInfra, err.Error()
+		return r
+	}
+	defer os.RemoveAll(work)
+	if err := bench.JourneyFixture(work); err != nil {
+		r.Status, r.Reason = bench.AgentInfra, err.Error()
+		return r
+	}
+	steps := hostJourneySteps(journeyBin(), work)
+	for _, s := range steps {
+		tctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		detail, err := s.Run(tctx, work)
+		cancel()
+		if err != nil {
+			status, reason := classifyJourneyErr(s.Name, err)
+			r.Status, r.Reason = status, reason
+			r.Evidence = detail
+			if status == bench.AgentNotRun {
+				r.Level = bench.LevelContract
+			}
+			return r
+		}
+	}
+	r.Status, r.Reason = bench.AgentPass, "install, doctor, context, spec, gate, receipt and close green"
+	return r
+}
+
+func hostJourneySteps(selfBin, workdir string) []bench.JourneyStep {
+	sub := func(args ...string) func(context.Context, string) (string, error) {
+		return func(ctx context.Context, _ string) (string, error) {
+			cmd := exec.CommandContext(ctx, selfBin, args...)
+			cmd.Dir = workdir
+			executil.HideWindow(cmd)
+			var out, errb strings.Builder
+			cmd.Stdout = &out
+			cmd.Stderr = &errb
+			if err := cmd.Run(); err != nil {
+				return out.String(), fmt.Errorf("%s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+			}
+			return out.String(), nil
+		}
+	}
+	return []bench.JourneyStep{
+		{Name: "install", Run: sub("init", "--stack", "smoke", "--force")},
+		{Name: "doctor", Run: sub("doctor")},
+		{Name: "context", Run: sub("memory", "context")},
+		{Name: "spec", Run: sub("spec", "check", "charts/demo.md")},
+		{Name: "gate", Run: sub("gate", "run", "--yes", "demo/T1")},
+		{Name: "close", Run: sub("task", "close", "charts/demo.md", "T1")},
+	}
+}
+
+func journeyBin() string {
+	if b := os.Getenv("REGULUS_BIN"); b != "" {
+		return b
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		return exe
+	}
+	return "regulus"
+}
+
+func isQuotaErr(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "quota") || strings.Contains(msg, "insufficient balance") ||
+		strings.Contains(msg, "not logged in") || strings.Contains(msg, "402")
+}
+
+func classifyJourneyErr(step string, err error) (string, string) {
+	if isQuotaErr(err) {
+		return bench.AgentNotRun, "host unusable at run time: " + shortErr(err)
+	}
+	if step == "doctor" {
+		return bench.AgentNotRun, "doctor refused (runtime probe; advisory, not a journey verdict)"
+	}
+	return bench.AgentFail, step + ": " + shortErr(err)
+}
+
+func shortErr(err error) string {
+	msg := strings.TrimSpace(err.Error())
+	if len(msg) > 300 {
+		return msg[:300]
+	}
+	return msg
+}
+
+func isWindows() bool { return runtime.GOOS == "windows" }
