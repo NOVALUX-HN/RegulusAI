@@ -102,7 +102,7 @@ jobs:
           "$OLDPWD/bin/regulus" trace files --session nobody | grep -q "no trace" || (echo "trace files smoke failed"; exit 1)
           "$OLDPWD/bin/regulus" probe contrast --task demo/T1 --gate missing 2>&1 | grep -q . || (echo "probe usage smoke failed"; exit 1)
 
-      - name: Run the gauntlet (16 layers, receipts)
+      - name: Run the gauntlet (23 gates, receipts)
         run: |
           go build -o bin/regulus ./cmd/regulus
           # Non-interactive CI cannot create .regulus/trusted (explicit operator
@@ -124,6 +124,10 @@ jobs:
       # migre la action a node24.
       # warn (no error) si no hay ficheros: capas tempranas pueden no
       # dejar receipts del task si falla typecheck.
+      - name: Check per-package coverage floors
+        if: always()
+        run: bash scripts/check-coverage-floors.sh
+
       - name: Upload gate receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

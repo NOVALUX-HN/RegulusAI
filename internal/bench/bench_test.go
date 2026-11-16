@@ -45,11 +45,12 @@ func TestSuitePromptsHideAnswers(t *testing.T) {
 }
 
 // P1: the B8-B10 prompts are golden — fixed reference strings. Any edit
+// (this one: sixteen-gate -> twenty-three-gate for the NOV-84 race widening)
 // must update this pin deliberately, never drift silently.
 func TestSuiteGoldenPromptsPinned(t *testing.T) {
 	golden := map[string]string{
 		"B8":  "Persist three harbor field notes in a fresh local memory, then surface the note about restoring service after a failed deploy.",
-		"B9":  "Select the full and quick gate profiles over a realistic sixteen-gate gauntlet and refuse unknown profiles.",
+		"B9":  "Select the full and quick gate profiles over a realistic twenty-three-gate gauntlet and refuse unknown profiles.",
 		"B10": "Measure golden token estimates over fixed trace entries and fold them into per-task totals.",
 	}
 	for _, task := range Suite() {

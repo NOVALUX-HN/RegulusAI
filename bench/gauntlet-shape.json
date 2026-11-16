@@ -1,5 +1,5 @@
 {
-  "generation": "DO NOT EDIT — generated file. sources: regulus.json (.gates: name/layer/required/profiles, 16 gates) + internal/gates/quick_lean.go QuickLeanNames (T5 --quick preset, 6 names). regenerate from repo root: jq --argjson lean '[\"typecheck\",\"lint\",\"build\",\"unit-tests\",\"spec\",\"gofmt\"]' '{gates: [.gates[] | {name, layer, required, profiles: (.profiles // [])}], quick_lean: $lean}' regulus.json > /tmp/gauntlet-data.json, then re-insert this generation key as the first object field (key order: generation, gates, quick_lean).",
+  "generation": "DO NOT EDIT — generated file. sources: regulus.json (.gates: name/layer/required/profiles, 23 gates) + internal/gates/quick_lean.go QuickLeanNames (T5 --quick preset, 6 names). regenerate from repo root: jq --argjson lean '[\"typecheck\",\"lint\",\"build\",\"unit-tests\",\"spec\",\"gofmt\"]' '{gates: [.gates[] | {name, layer, required, profiles: (.profiles // [])}], quick_lean: $lean}' regulus.json > /tmp/gauntlet-data.json, then re-insert this generation key as the first object field (key order: generation, gates, quick_lean).",
   "gates": [
     {
       "name": "manifest-check",
@@ -105,6 +105,62 @@
       "layer": 16,
       "required": true,
       "profiles": []
+    },
+    {
+      "name": "race-evolve",
+      "layer": 17,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "race-gates",
+      "layer": 18,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "race-runtime",
+      "layer": 19,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "race-httpapi",
+      "layer": 20,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "race-mcp",
+      "layer": 21,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "race-trace",
+      "layer": 22,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "race-guardians",
+      "layer": 23,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
     }
   ],
   "quick_lean": [

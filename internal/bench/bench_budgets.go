@@ -229,13 +229,13 @@ func checkGateProfileDecision() (string, error) {
 		return "", fmt.Errorf("docs-only: got %d gates (%v), want 12 quick", len(quick), err)
 	}
 	for _, g := range quick {
-		if g.Name == "mutation-receipts" || g.Name == "mutation-gates" || g.Name == "vulncheck" || g.Name == "race-almanac" {
+		if g.Name == "mutation-receipts" || g.Name == "mutation-gates" || g.Name == "vulncheck" || g.Name == "race-almanac" || g.Name == "race-evolve" || g.Name == "race-gates" || g.Name == "race-runtime" || g.Name == "race-httpapi" || g.Name == "race-mcp" || g.Name == "race-trace" || g.Name == "race-guardians" {
 			return "", fmt.Errorf("docs-only quick kept full-only gate %q", g.Name)
 		}
 	}
 	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
-	if err != nil || len(full) != 16 {
-		return "", fmt.Errorf("gate code: got %d gates (%v), want 16 full", len(full), err)
+	if err != nil || len(full) != 23 {
+		return "", fmt.Errorf("gate code: got %d gates (%v), want 23 full", len(full), err)
 	}
 	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
 		return "", fmt.Errorf("forced full: chose %q, want full", got)
@@ -243,7 +243,7 @@ func checkGateProfileDecision() (string, error) {
 	if got := chooseGateProfile([]string{"charts/flow.md", "internal/x.go"}, false); got != "" {
 		return "", fmt.Errorf("mixed scope: chose %q, want full", got)
 	}
-	return "docs-only edits ride quick=12, gate code rides full=16, forced full honored", nil
+	return "docs-only edits ride quick=12, gate code rides full=23, forced full honored", nil
 }
 
 // missDoc is one eval corpus entry for the miss-rate golden (B14).
