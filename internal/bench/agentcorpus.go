@@ -342,7 +342,7 @@ func agentCorpusBase3() []AgentTask {
 				"counter.go":      "package m\n\n// Counter counts events from many goroutines.\ntype Counter struct {\n\tn int64\n}\n\n// Add records one event.\nfunc (c *Counter) Add() {\n\tc.n++\n}\n\n// N returns the total recorded.\nfunc (c *Counter) N() int64 {\n\treturn c.n\n}\n",
 				"counter_test.go": "package m\n\nimport (\n\t\"sync\"\n\t\"testing\"\n)\n\nfunc TestCounterConcurrent(t *testing.T) {\n\tvar c Counter\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 100; i++ {\n\t\twg.Add(1)\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\tfor j := 0; j < 10000; j++ {\n\t\t\t\tc.Add()\n\t\t\t}\n\t\t}()\n\t}\n\twg.Wait()\n\tif got := c.N(); got != 1000000 {\n\t\tt.Fatalf(\"N = %d, want 1000000 (lost updates?)\", got)\n\t}\n}\n",
 			},
-			Check:   []string{"bash", "-c", "GOMAXPROCS=4 go test ./..."},
+			Check:   []string{"bash", "-c", "GOMAXPROCS=4 go test -race -count=1 ./..."},
 			BudgetS: 120,
 		},
 		{
