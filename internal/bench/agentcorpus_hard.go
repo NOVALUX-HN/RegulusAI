@@ -4,11 +4,9 @@
 // and passes with the straightforward correct fix.
 package bench
 
-// hardCorpusTasks returns the v3 hard slice: multi-step reasoning,
-// unstable-sort awareness, stateful parsing, NUL-safe shell,
-// order-preserving parallelism with cancel, quoted-key paths,
-// TTL caches with injected clocks, and INI interpolation.
-func hardCorpusTasks() []AgentTask {
+// hardCorpusTasks1 returns hard tasks AT37-AT40: stable sort,
+// multiline CSV, continuation-line logs and NUL-safe duplicates.
+func hardCorpusTasks1() []AgentTask {
 	return []AgentTask{
 		{
 			ID: "AT37", Title: "stable sort by score desc", Lang: "go",
@@ -119,6 +117,13 @@ print("ok")
 			Check:   []string{"bash", "-c", "diff <(bash dup.sh | LC_ALL=C sort) <(printf 'b.txt\\nsp ace.txt\\n')"},
 			BudgetS: 60,
 		},
+	}
+}
+
+// hardCorpusTasks2 returns hard tasks AT41-AT42: bounded parallel map
+// with cancel and the quoted-key JSON path getter.
+func hardCorpusTasks2() []AgentTask {
+	return []AgentTask{
 		{
 			ID: "AT41", Title: "bounded parallel map with cancel", Lang: "go",
 			Prompt: "Run at most limit tasks at once, keep input order, first error wins, honor cancel.",
@@ -221,6 +226,13 @@ console.log('ok');
 			Check:   []string{"node", "test.mjs"},
 			BudgetS: 60,
 		},
+	}
+}
+
+// hardCorpusTasks3 returns hard tasks AT43-AT44: the TTL cache with
+// injected clock and INI interpolation.
+func hardCorpusTasks3() []AgentTask {
+	return []AgentTask{
 		{
 			ID: "AT43", Title: "TTL cache with injected clock (holdout)", Lang: "go",
 			Prompt: "Implement an LRU cache with absolute TTL from an injected clock.",
@@ -320,6 +332,18 @@ local = ${name}-local
 			BudgetS: 120,
 		},
 	}
+}
+
+// hardCorpusTasks returns the v3 hard slice: multi-step reasoning,
+// unstable-sort awareness, stateful parsing, NUL-safe shell,
+// order-preserving parallelism with cancel, quoted-key paths,
+// TTL caches with injected clocks, and INI interpolation. The three
+// helpers hold consecutive ID ranges so the order stays byte-identical.
+func hardCorpusTasks() []AgentTask {
+	out := append([]AgentTask{}, hardCorpusTasks1()...)
+	out = append(out, hardCorpusTasks2()...)
+	out = append(out, hardCorpusTasks3()...)
+	return out
 }
 
 // hardCorpusNote documents why these tasks exist separately: they were
