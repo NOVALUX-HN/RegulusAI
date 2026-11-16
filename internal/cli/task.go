@@ -173,7 +173,24 @@ func validateCloseSkip(issue string, skip bool, justified string) string {
 	return ""
 }
 
-func (c CLI) taskCloseCmd(args []string) int {
+// taskCloseOptions carries the parsed `task close` flags plus the two
+// positional arguments. Splitting the parse out of taskCloseCmd keeps the
+// entry point under the CRAP ceiling without changing behavior.
+type taskCloseOptions struct {
+	issue            string
+	justified        string
+	implementer      string
+	independent      bool
+	verifyOnly       bool
+	skipTraceability bool
+	chart            string
+	id               string
+}
+
+// parseTaskCloseOptions parses flags and positionals, printing the exact
+// legacy usage strings on Stderr. ok=false means the caller returns code.
+func (c CLI) parseTaskCloseOptions(args []string) (taskCloseOptions, int, bool) {
+	var opts taskCloseOptions
 	fs := flag.NewFlagSet("task close", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	issue := fs.String("issue", "", "Linear issue closed (e.g. NOV-64): require linked commit(s), scope-clean diffs and, for P0, an independent review")
@@ -183,29 +200,37 @@ func (c CLI) taskCloseCmd(args []string) int {
 	verifyOnly := fs.Bool("verify-only", false, "run all close checks without writing: exit 1 on any unmet item, nothing is modified (CI path)")
 	skipTraceability := fs.Bool("skip-traceability", false, "bypass the --issue traceability check (requires --justified with a recorded reason; CI never uses it)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return opts, 2, false
 	}
 	rest := fs.Args()
 	if len(rest) != 2 {
 		fmt.Fprintln(c.Stderr, "usage: regulus task close [--issue NOV-xx] [--justified reason] [--implementer id] [--independent-review] [--verify-only] [--skip-traceability] <chart> <id>")
-		return 2
+		return opts, 2, false
 	}
 	if msg := validateCloseSkip(*issue, *skipTraceability, *justified); msg != "" {
 		fmt.Fprintln(c.Stderr, msg)
-		return 2
+		return opts, 2, false
 	}
-	path, doc, err := readChart(rest[0])
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "%v\n", err)
-		return 1
-	}
-	id := rest[1]
-	chartBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	opts.issue = *issue
+	opts.justified = *justified
+	opts.implementer = *implementer
+	opts.independent = *independent
+	opts.verifyOnly = *verifyOnly
+	opts.skipTraceability = *skipTraceability
+	opts.chart = rest[0]
+	opts.id = rest[1]
+	return opts, 0, true
+}
+
+// verifyTaskClose runs every close check: the pure CheckClose, the S11/NOV-32
+// worktree scope enforcement (needs git I/O, so it lives here rather than
+// in pure CheckClose), and the NOV-64/NOV-78 issue traceability linkage.
+func (c CLI) verifyTaskClose(doc, chartPath, chartBase, id string, opts taskCloseOptions) sextant.CloseResult {
 	res := sextant.CheckClose(doc, c.dir(), chartBase, id)
 	// S11/NOV-32: tasks inherit the chart scope. The worktree check
 	// needs git I/O, so it runs here (not in pure CheckClose): any file
 	// outside the declared Scope blocks the close by name.
-	if unmet := c.scopeUnmet(doc, path); len(unmet) != 0 {
+	if unmet := c.scopeUnmet(doc, chartPath); len(unmet) != 0 {
 		res.Unmet = append(res.Unmet, unmet...)
 		res.Closed = false
 	}
@@ -214,58 +239,81 @@ func (c CLI) taskCloseCmd(args []string) int {
 	// P0, an independent review verdict. NOV-78: the check runs by
 	// default; --skip-traceability bypasses it only with an explicit,
 	// recorded --justified reason (never silently; CI never skips).
-	if *issue != "" && !*skipTraceability {
+	if opts.issue != "" && !opts.skipTraceability {
 		sc, serr := sextant.ParseScope(doc)
 		if serr != nil {
 			res.Unmet = append(res.Unmet, fmt.Sprintf("scope: %v", serr))
 			res.Closed = false
 		} else if unmet := sextant.CheckTraceability(c.dir(), sextant.TraceOptions{
-			Issue: *issue, Justified: *justified, Implementer: *implementer,
-			IndependentReview: *independent, ChartBase: chartBase, TaskID: id, Scope: sc,
+			Issue: opts.issue, Justified: opts.justified, Implementer: opts.implementer,
+			IndependentReview: opts.independent, ChartBase: chartBase, TaskID: id, Scope: sc,
 		}); len(unmet) != 0 {
 			res.Unmet = append(res.Unmet, unmet...)
 			res.Closed = false
 		}
 	}
-	if *skipTraceability {
-		fmt.Fprintf(c.Stdout, "traceability skipped (--skip-traceability): %s\n", *justified)
+	return res
+}
+
+// finishTaskClose reports the verification outcome and, unless --verify-only,
+// persists the close. Messages and exit codes are byte-identical to the
+// legacy monolith: the skip notice, the cannot-close block, the verify-only
+// report, the chart rewrite, the CLOSED evidence list.
+func (c CLI) finishTaskClose(opts taskCloseOptions, chartPath, doc, chartBase string, res sextant.CloseResult) int {
+	if opts.skipTraceability {
+		fmt.Fprintf(c.Stdout, "traceability skipped (--skip-traceability): %s\n", opts.justified)
 	}
 	if !res.Closed {
-		fmt.Fprintf(c.Stdout, "task %s cannot close:\n", id)
+		fmt.Fprintf(c.Stdout, "task %s cannot close:\n", opts.id)
 		for _, u := range res.Unmet {
 			fmt.Fprintf(c.Stdout, "  - %s\n", u)
 		}
 		fmt.Fprintln(c.Stdout, "why: self-report closes nothing — close needs contract, receipts PASS, and shut dependencies")
-		fmt.Fprintf(c.Stdout, "next: run regulus task check %s, then regulus gate run %s/%s, then retry close\n", rest[0], chartBase, id)
+		fmt.Fprintf(c.Stdout, "next: run regulus task check %s, then regulus gate run %s/%s, then retry close\n", opts.chart, chartBase, opts.id)
 		return 1
 	}
 	// NOV-78: --verify-only runs every check above and reports, but
 	// writes nothing: no chart rewrite, no receipt, no memory note.
 	// CI calls this per close; exit 1 names each gap (fail-closed).
-	if *verifyOnly {
+	if opts.verifyOnly {
 		if !res.Closed {
-			fmt.Fprintf(c.Stdout, "task %s would NOT close:\n", id)
+			fmt.Fprintf(c.Stdout, "task %s would NOT close:\n", opts.id)
 			for _, u := range res.Unmet {
 				fmt.Fprintf(c.Stdout, "  - %s\n", u)
 			}
 			return 1
 		}
-		fmt.Fprintf(c.Stdout, "task %s verifies: spec OK + %d receipt(s) PASS (nothing written)\n", id, len(res.Receipts))
+		fmt.Fprintf(c.Stdout, "task %s verifies: spec OK + %d receipt(s) PASS (nothing written)\n", opts.id, len(res.Receipts))
 		return 0
 	}
-	updated := sextant.ApplyClose(doc, id, res)
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+	updated := sextant.ApplyClose(doc, opts.id, res)
+	if err := os.WriteFile(chartPath, []byte(updated), 0o644); err != nil {
 		fmt.Fprintf(c.Stderr, "task close: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(c.Stdout, "CLOSED %s (%s): spec OK + %d receipt(s) PASS\n", id, res.Class, len(res.Receipts))
+	fmt.Fprintf(c.Stdout, "CLOSED %s (%s): spec OK + %d receipt(s) PASS\n", opts.id, res.Class, len(res.Receipts))
 	for _, r := range res.Receipts {
 		fmt.Fprintf(c.Stdout, "  evidence: %s\n", r)
 	}
 	// M3 auto-save: a side effect only — the close already succeeded, and
 	// this call never changes its verdict.
-	c.autoSaveCloseNote(chartBase, id, doc, res)
+	c.autoSaveCloseNote(chartBase, opts.id, doc, res)
 	return 0
+}
+
+func (c CLI) taskCloseCmd(args []string) int {
+	opts, code, ok := c.parseTaskCloseOptions(args)
+	if !ok {
+		return code
+	}
+	path, doc, err := readChart(opts.chart)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "%v\n", err)
+		return 1
+	}
+	chartBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	res := c.verifyTaskClose(doc, path, chartBase, opts.id, opts)
+	return c.finishTaskClose(opts, path, doc, chartBase, res)
 }
 
 func (c CLI) taskClassifyCmd(args []string) int {

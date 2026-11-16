@@ -219,29 +219,68 @@ func chooseGateProfile(changed []string, forceFull bool) string {
 	return "quick"
 }
 
+// checkDocsOnlyQuick selects the lean set for docs-only edits: 12
+// required gates. Pure selection split from checkGateProfileDecision.
+func checkDocsOnlyQuick(cfg gates.Config) ([]gates.Gate, error) {
+	quick, err := gates.SelectGates(cfg, chooseGateProfile([]string{"charts/flow.md", "README.md"}, false))
+	if err != nil || len(quick) != 12 {
+		return nil, fmt.Errorf("docs-only: got %d gates (%v), want 12 quick", len(quick), err)
+	}
+	return quick, nil
+}
+
+// isFullOnlyGate reports the gates the quick profile must never keep:
+// the mutation, vulncheck and race jobs that only run in full. One
+// case clause keeps the helper itself under the CRAP ceiling.
+func isFullOnlyGate(name string) bool {
+	switch name {
+	case "mutation-receipts", "mutation-gates", "vulncheck", "race-almanac", "race-evolve", "race-gates", "race-runtime", "race-httpapi", "race-mcp", "race-trace", "race-guardians":
+		return true
+	}
+	return false
+}
+
+// checkQuickHasNoFullOnly refuses a docs-only quick set that kept a
+// full-only gate. Pure scan split from checkGateProfileDecision.
+func checkQuickHasNoFullOnly(quick []gates.Gate) error {
+	for _, g := range quick {
+		if isFullOnlyGate(g.Name) {
+			return fmt.Errorf("docs-only quick kept full-only gate %q", g.Name)
+		}
+	}
+	return nil
+}
+
+// checkFullAndForcedProfiles pins the precision side: gate code rides
+// the 23-gate gauntlet and a forced full always wins over quick.
+func checkFullAndForcedProfiles(cfg gates.Config) error {
+	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
+	if err != nil || len(full) != 23 {
+		return fmt.Errorf("gate code: got %d gates (%v), want 23 full", len(full), err)
+	}
+	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
+		return fmt.Errorf("forced full: chose %q, want full", got)
+	}
+	if got := chooseGateProfile([]string{"charts/flow.md", "internal/x.go"}, false); got != "" {
+		return fmt.Errorf("mixed scope: chose %q, want full", got)
+	}
+	return nil
+}
+
 // checkGateProfileDecision pins the tradeoff through real selection:
 // docs-only chooses quick (12 required, no full-only gates), gate code
 // or forced full chooses the 23-gate gauntlet.
 func checkGateProfileDecision() (string, error) {
 	cfg := realGateConfig()
-	quick, err := gates.SelectGates(cfg, chooseGateProfile([]string{"charts/flow.md", "README.md"}, false))
-	if err != nil || len(quick) != 12 {
-		return "", fmt.Errorf("docs-only: got %d gates (%v), want 12 quick", len(quick), err)
+	quick, err := checkDocsOnlyQuick(cfg)
+	if err != nil {
+		return "", err
 	}
-	for _, g := range quick {
-		if g.Name == "mutation-receipts" || g.Name == "mutation-gates" || g.Name == "vulncheck" || g.Name == "race-almanac" || g.Name == "race-evolve" || g.Name == "race-gates" || g.Name == "race-runtime" || g.Name == "race-httpapi" || g.Name == "race-mcp" || g.Name == "race-trace" || g.Name == "race-guardians" {
-			return "", fmt.Errorf("docs-only quick kept full-only gate %q", g.Name)
-		}
+	if err := checkQuickHasNoFullOnly(quick); err != nil {
+		return "", err
 	}
-	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
-	if err != nil || len(full) != 23 {
-		return "", fmt.Errorf("gate code: got %d gates (%v), want 23 full", len(full), err)
-	}
-	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
-		return "", fmt.Errorf("forced full: chose %q, want full", got)
-	}
-	if got := chooseGateProfile([]string{"charts/flow.md", "internal/x.go"}, false); got != "" {
-		return "", fmt.Errorf("mixed scope: chose %q, want full", got)
+	if err := checkFullAndForcedProfiles(cfg); err != nil {
+		return "", err
 	}
 	return "docs-only edits ride quick=12, gate code rides full=23, forced full honored", nil
 }

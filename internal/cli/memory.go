@@ -76,19 +76,9 @@ func (c CLI) memoryCmd(args []string) int {
 	}
 }
 
-// memoryDoctorCmd implements `regulus memory doctor`: the Almanac
-// health report — counts by type, oldest/newest, malformed lines, and
-// provenance events (pins, relations) pointing outside the log.
-func (c CLI) memoryDoctorCmd(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus memory doctor")
-		return 2
-	}
-	h, err := almanac.Doctor(c.dir())
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "memory doctor: %v\n", err)
-		return 1
-	}
+// reportDoctorBasics prints the log shape: counts by type plus the
+// oldest/newest annotations. Pure renderer split from memoryDoctorCmd.
+func (c CLI) reportDoctorBasics(h almanac.Health, now time.Time) {
 	fmt.Fprintf(c.Stdout, "observations: %d\n", h.Total)
 	types := make([]string, 0, len(h.ByType))
 	for t := range h.ByType {
@@ -98,7 +88,6 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 	for _, t := range types {
 		fmt.Fprintf(c.Stdout, "  %s: %d\n", t, h.ByType[t])
 	}
-	now := time.Now().UTC()
 	if h.Oldest.IsZero() {
 		fmt.Fprintln(c.Stdout, "oldest:     (empty log)")
 	} else {
@@ -109,6 +98,11 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 	} else {
 		fmt.Fprintf(c.Stdout, "newest:     %s (%s)\n", h.Newest.Format(time.RFC3339), humanAge(now, h.Newest))
 	}
+}
+
+// reportDoctorIntegrity prints the damage report: malformed lines and
+// provenance events (pins, relations) pointing outside the log.
+func (c CLI) reportDoctorIntegrity(h almanac.Health) {
 	if len(h.MalformedLines) == 0 {
 		fmt.Fprintln(c.Stdout, "malformed:  none")
 	} else {
@@ -130,6 +124,11 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 			fmt.Fprintf(c.Stdout, "orphan relations: %s %s %s\n", r.From, r.Relation, r.To)
 		}
 	}
+}
+
+// reportDoctorRetrieval prints miss-rate honesty plus index freshness:
+// the hybrid-search fallback must never surprise. Pure renderer split.
+func (c CLI) reportDoctorRetrieval() {
 	// Miss rate (A3): zero-hit searches log their terms; the doctor
 	// reports the count plus the most-missed sets — save the fact,
 	// reword the query, or reindex. A missing log reads as none.
@@ -164,8 +163,11 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 	default: // stale | missing
 		fmt.Fprintf(c.Stdout, "index:      %s — run `regulus memory reindex`\n", state)
 	}
-	// NOV-85: existing installs get private perms fixed on doctor runs,
-	// with notice. Never fails the report: advisory only.
+}
+
+// reportDoctorPermissions applies the NOV-85 private-perms fix with
+// notice. Never fails the report: advisory only.
+func (c CLI) reportDoctorPermissions() {
 	fixed, ferr := fsx.FixPermissions(c.dir())
 	switch {
 	case ferr == fsx.ErrWindowsACL:
@@ -177,6 +179,27 @@ func (c CLI) memoryDoctorCmd(args []string) int {
 	default:
 		fmt.Fprintln(c.Stdout, "permissions: .regulus already private")
 	}
+}
+
+// memoryDoctorCmd implements `regulus memory doctor`: the Almanac
+// health report — counts by type, oldest/newest, malformed lines, and
+// provenance events (pins, relations) pointing outside the log.
+func (c CLI) memoryDoctorCmd(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(c.Stderr, "usage: regulus memory doctor")
+		return 2
+	}
+	h, err := almanac.Doctor(c.dir())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "memory doctor: %v\n", err)
+		return 1
+	}
+	c.reportDoctorBasics(h, time.Now().UTC())
+	c.reportDoctorIntegrity(h)
+	c.reportDoctorRetrieval()
+	// NOV-85: existing installs get private perms fixed on doctor runs,
+	// with notice. Never fails the report: advisory only.
+	c.reportDoctorPermissions()
 	return 0
 }
 
