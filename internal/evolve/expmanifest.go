@@ -170,6 +170,11 @@ func redactManifestString(s string) string {
 // RedactedMarker replaces secret-bearing values.
 const RedactedMarker = "[redacted]"
 
+// RedactFreeText scrubs secret-bearing free text before persistence.
+// Alias over the manifest redactor so validation plans reuse the exact
+// same scrubbing instead of re-implementing it with a different shape.
+func RedactFreeText(s string) string { return redactManifestString(s) }
+
 // RedactManifest returns a copy with secret-bearing free text scrubbed
 // (baseline label, evaluator label, notes). References, hashes, ids and
 // statuses pass through: they are pointers, never secret carriers.
