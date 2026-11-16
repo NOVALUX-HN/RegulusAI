@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -43,9 +45,11 @@ func main() {
 // import cycle: main already owns both sides.
 // serveConfig holds the parsed `regulus serve` flags.
 type serveConfig struct {
-	port     int
-	bind     string
-	projects []string
+	port      int
+	bind      string
+	projects  []string
+	token     string
+	tokenFile string
 }
 
 // parseServeFlags validates the `regulus serve` flags. It prints usage (or
@@ -57,22 +61,22 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 		a := args[i]
 		// F5: space form (--port N) normalizes into =-form so the single
 		// validation below serves both spellings; a trailing bare flag is a usage error.
-		if a == "--port" || a == "--bind" || a == "--projects" {
+		if a == "--port" || a == "--bind" || a == "--projects" || a == "--token" || a == "--token-file" {
 			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F]")
 				return cfg, 2, false
 			}
 			i++
 			a = a + "=" + args[i]
 		}
 		if a == "--help" || a == "-h" {
-			fmt.Println("usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+			fmt.Println("usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F]")
 			return cfg, 0, false
 		}
 		if v, ok := strings.CutPrefix(a, "--port="); ok {
 			n, err := strconv.Atoi(strings.TrimSpace(v))
 			if err != nil || n < 1 || n > 65535 {
-				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F]")
 				return cfg, 2, false
 			}
 			cfg.port = n
@@ -87,6 +91,22 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 			cfg.bind = bind
 			continue
 		}
+		if v, ok := strings.CutPrefix(a, "--token="); ok {
+			if strings.TrimSpace(v) == "" {
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F]")
+				return cfg, 2, false
+			}
+			cfg.token = strings.TrimSpace(v)
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "--token-file="); ok {
+			if strings.TrimSpace(v) == "" {
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F]")
+				return cfg, 2, false
+			}
+			cfg.tokenFile = strings.TrimSpace(v)
+			continue
+		}
 		if v, ok := strings.CutPrefix(a, "--projects="); ok {
 			var dirs []string
 			for _, d := range strings.Split(v, ",") {
@@ -95,13 +115,13 @@ func parseServeFlags(args []string) (serveConfig, int, bool) {
 				}
 			}
 			if len(dirs) == 0 {
-				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>]")
+				fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F]")
 				return cfg, 2, false
 			}
 			cfg.projects = append(cfg.projects, dirs...)
 			continue
 		}
-		fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] (use --port=N --bind=ADDR --projects=dirA,dirB)")
+		fmt.Fprintln(os.Stderr, "usage: regulus serve [--port N] [--bind ADDR] [--projects <dirA>,<dirB>] [--token T | --token-file F] (use --port=N --bind=ADDR --projects=dirA,dirB)")
 		return cfg, 2, false
 	}
 	return cfg, 0, true
@@ -178,9 +198,69 @@ func serve(args []string) int {
 	srv := httpapi.New(version, func() doctor.Result {
 		return doctor.Probe(context.Background(), doctor.DefaultRunner())
 	}, gates.ShRunner{}, roots...)
+	// NOV-82: non-loopback binds always carry a token (operator-provided
+	// or freshly generated and printed once); the guard enforces it.
+	// Loopback binds need none: Host/Origin checks still apply.
+	loopback := isLoopbackBind(cfg.bind)
+	tok, err := resolveServeToken(cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if !loopback && tok == "" {
+		tok, err = generateServeToken()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
+		fmt.Println("dashboard token (non-loopback bind; keep secret): " + tok)
+	}
+	guarded := httpapi.Guard(srv.Handler(), httpapi.GuardConfig{Bind: cfg.bind, Port: cfg.port, Token: tok, RequireAuth: !loopback})
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	return listenAndServe(cfg, srv.Handler(), serveRunner(ctx, (*http.Server).ListenAndServe))
+	return listenAndServe(cfg, guarded, serveRunner(ctx, (*http.Server).ListenAndServe))
+}
+
+// resolveServeToken returns the dashboard bearer token in precedence
+// order: --token, --token-file, REGULUS_DASH_TOKEN. Empty means none
+// was provided (loopback binds need none; non-loopback binds generate).
+func resolveServeToken(cfg serveConfig) (string, error) {
+	if strings.TrimSpace(cfg.token) != "" {
+		return strings.TrimSpace(cfg.token), nil
+	}
+	if strings.TrimSpace(cfg.tokenFile) != "" {
+		raw, err := os.ReadFile(strings.TrimSpace(cfg.tokenFile))
+		if err != nil {
+			return "", fmt.Errorf("regulus serve: cannot read --token-file: %v", err)
+		}
+		if tok := strings.TrimSpace(string(raw)); tok != "" {
+			return tok, nil
+		}
+		return "", fmt.Errorf("regulus serve: --token-file is empty")
+	}
+	if tok := strings.TrimSpace(os.Getenv("REGULUS_DASH_TOKEN")); tok != "" {
+		return tok, nil
+	}
+	return "", nil
+}
+
+// generateServeToken mints a random bearer token for non-loopback binds
+// without an operator-provided one, so a guarded bind never starts
+// unauthenticated.
+func generateServeToken() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("regulus serve: cannot generate dashboard token: %v", err)
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+// isLoopbackBind reports whether the validated bind address is loopback.
+// parseServeFlags already rejected non-IP binds, so anything unparsable
+// here is treated as non-loopback (fail closed).
+func isLoopbackBind(bind string) bool {
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
 }
 
 // nonLoopbackWarning reports a visible exposure warning when serve binds
