@@ -15,5 +15,7 @@ paths = [
   '''internal/bench/.*_test\.go''',
   '''internal/sextant/.*_test\.go''',
   '''internal/httpapi/.*_test\.go''',
+  '''internal/observability/.*_test\.go''',
+  '''\.opencode/lib/domain\.test\.ts''',
   '''cmd/regulus/.*_test\.go''',
 ]
