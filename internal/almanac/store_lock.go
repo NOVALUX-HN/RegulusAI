@@ -87,6 +87,12 @@ func acquireLock(root string) (func(), error) {
 		return func() { _ = os.Remove(path) }, nil
 	}
 	if !os.IsExist(err) {
+		// Windows: create/delete bursts surface DELETE_PENDING as
+		// ERROR_ACCESS_DENIED instead of EEXIST — transient lock
+		// contention, retryable like a held lock (TestConcurrentDedupRace).
+		if errors.Is(err, os.ErrPermission) {
+			return nil, fmt.Errorf("%w (transient lock contention)", ErrStoreLocked)
+		}
 		return nil, err
 	}
 	st, statErr := os.Stat(path)
@@ -109,6 +115,10 @@ func acquireLock(root string) (func(), error) {
 	if err != nil {
 		if os.IsExist(err) {
 			return nil, fmt.Errorf("%w (lost a steal race)", ErrStoreLocked)
+		}
+		// Same transient Windows contention as the first create above.
+		if errors.Is(err, os.ErrPermission) {
+			return nil, fmt.Errorf("%w (transient lock contention after steal)", ErrStoreLocked)
 		}
 		return nil, err
 	}
