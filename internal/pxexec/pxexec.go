@@ -314,6 +314,9 @@ func isPolicyDenied(err error) bool {
 func blockHint(s Spec) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "file: %s", s.Name)
+	if lp, err := exec.LookPath(s.Name); err == nil {
+		fmt.Fprintf(&b, " (%s)", lp)
+	}
 	if abs, err := filepath.Abs(s.Name); err == nil {
 		if raw, err := os.ReadFile(abs); err == nil {
 			sum := sha256.Sum256(raw)

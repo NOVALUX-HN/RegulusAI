@@ -76,6 +76,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"decide":   func(c CLI, args []string) int { return c.decideCmd(args) },
 	"manifest": func(c CLI, args []string) int { return c.manifestCmd(args) },
 	"bench":    func(c CLI, args []string) int { return c.benchCmd(args) },
+	"testflow": func(c CLI, args []string) int { return c.testflowCmd(args) },
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
 	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
