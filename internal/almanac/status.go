@@ -53,6 +53,13 @@ var allowedTransitions = map[string][]string{
 
 // RecordStatus validates a transition from the observation's effective
 // status and appends it to the status log.
+//
+// Learn gates (F12.6): hypotheses can never reach VERIFIED or ACCEPTED
+// (they are not facts — promote the evidence to a verified-solution
+// instead), and the five new kinds verify only against cited evidence
+// (no Evidence, no VERIFIED/ACCEPTED). Lessons and legacy decisions
+// keep their own paths: bare decisions still verify by reviewer
+// judgment, so the gate never rewrites legacy governance.
 func RecordStatus(root, id, to, by, note string, now time.Time) error {
 	if strings.TrimSpace(by) == "" {
 		return errors.New("status transitions need an actor (by)")
@@ -61,15 +68,23 @@ func RecordStatus(root, id, to, by, note string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	found := false
-	for _, o := range all {
-		if o.ID == id {
-			found = true
+	var found *Observation
+	for i := range all {
+		if all[i].ID == id {
+			found = &all[i]
 			break
 		}
 	}
-	if !found {
+	if found == nil {
 		return fmt.Errorf("no observation %q", id)
+	}
+	if (found.Type == KindHypothesis || isEvidenceGatedKind(found.Type)) && (to == StatusVerified || to == StatusAccepted) {
+		if found.Type == KindHypothesis {
+			return fmt.Errorf("hypothesis %q can never be %s: hypotheses are not facts — promote the evidence to a verified-solution instead", id, to)
+		}
+		if len(found.Evidence) == 0 {
+			return fmt.Errorf("cannot mark %q %s: verified knowledge needs evidence (cite at least one test or proof)", id, to)
+		}
 	}
 	from, err := EffectiveStatus(root, id)
 	if err != nil {

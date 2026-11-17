@@ -279,6 +279,7 @@ Commands:
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   library forget --domain <d> --task <t>  drop one task snapshot
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
+  learn save|search|verify|invalidate|resolve|metrics [--json]   cross-agent learning: verified knowledge with provenance (F12.6)
   mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
   serve [--port N] [--bind ADDR]   serve the read-only dashboard (default 127.0.0.1:17817)
   size check         file/function/package size budgets with critical-kernel tiers (regulus size --help)

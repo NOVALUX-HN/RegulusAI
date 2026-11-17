@@ -67,6 +67,13 @@ const (
 // Observation is one append-only record in the Almanac. SavedAt is both
 // created_at and observed_at: the log only ever appends the moment an
 // observation entered. ExpiresAt is optional temporal validity.
+//
+// Cross-agent learning (F12.6) enriches the same record: Author names
+// the agent/human author, Version the knowledge version, Scope the
+// visibility (private/task/project/shared), Confidence the author's
+// self-assessment and Evidence the cited tests/proofs. Lessons keep
+// their own block (Lesson.Cue/Lesson/Evidence/Confidence); learn
+// kinds carry the top-level fields.
 type Observation struct {
 	ID         string      `json:"id"`
 	Type       string      `json:"type"`
@@ -78,6 +85,11 @@ type Observation struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	Source     string      `json:"source,omitempty"`
 	Origin     string      `json:"origin,omitempty"`
+	Author     string      `json:"author,omitempty"`
+	Version    string      `json:"version,omitempty"`
+	Scope      string      `json:"scope,omitempty"`
+	Confidence string      `json:"confidence,omitempty"`
+	Evidence   []string    `json:"evidence,omitempty"`
 	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
 	SavedAt    time.Time   `json:"saved_at"`
 }
@@ -106,19 +118,25 @@ func ParseSystem(s string) (string, error) {
 	}
 }
 
-// SystemOf maps an observation type to its memory system.
+// SystemOf maps an observation type to its memory system. Learn
+// kinds (F12.6) read through the same buckets: verified knowledge
+// and patterns are semantic, errors episodic, workarounds
+// procedural — hypotheses stay semantic (rankable) but never
+// verified (RecordStatus refuses, LearnSearch labels).
 func SystemOf(typ string) string {
 	switch typ {
 	case TypeSessionNote:
 		return SystemEpisodic
-	case TypeDiscovery:
+	case TypeDiscovery, KindVerified, KindPattern, KindHypothesis:
 		return SystemSemantic
 	case TypeDecision:
 		return SystemDecision
-	case TypePreference:
+	case TypePreference, KindWorkaround:
 		return SystemProcedural
 	case TypeLesson:
 		return SystemEvolution
+	case KindError:
+		return SystemEpisodic
 	default:
 		return "unknown"
 	}
@@ -161,7 +179,8 @@ func relationsFile(root string) string {
 
 func validType(t string) bool {
 	switch t {
-	case TypeSessionNote, TypeDecision, TypeDiscovery, TypeLesson, TypePreference:
+	case TypeSessionNote, TypeDecision, TypeDiscovery, TypeLesson, TypePreference,
+		KindVerified, KindPattern, KindError, KindWorkaround, KindHypothesis:
 		return true
 	}
 	return false
@@ -169,7 +188,7 @@ func validType(t string) bool {
 
 func validate(o *Observation) error {
 	if !validType(o.Type) {
-		return fmt.Errorf("type %q is not one of session-note, decision, discovery, lesson, preference", o.Type)
+		return fmt.Errorf("type %q is not one of session-note, decision, discovery, lesson, preference, verified-solution, pattern, error, workaround, hypothesis", o.Type)
 	}
 	if strings.TrimSpace(o.Title) == "" {
 		return errors.New("title must not be empty")
@@ -206,7 +225,7 @@ func validate(o *Observation) error {
 			return fmt.Errorf("dimension must be inv or dom, got %q", o.Lesson.Dimension)
 		}
 	}
-	return nil
+	return validateLearn(o)
 }
 
 // Save validates one observation, assigns its id and timestamp, and
