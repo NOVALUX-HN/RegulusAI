@@ -177,20 +177,25 @@ func discover(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, ListTimeout)
 	defer cancel()
 	res := pxexec.Run(ctx, pxexec.Spec{Name: "go",
-		Args:    []string{"list", "-f", "{{.ImportPath}} {{.TestGoFiles}}", "./internal/..."},
+		Args:    []string{"list", "-f", "{{.ImportPath}}|{{if .TestGoFiles}}yes{{else}}no{{end}}", "./internal/..."},
 		Timeout: ListTimeout})
 	if res.Outcome != pxexec.OutcomePass {
 		return nil, fmt.Errorf("package discovery %s: %s", res.Outcome, res.Detail)
 	}
-	var out []string
+	var pkgs []string
 	for _, line := range strings.Split(res.Stdout, "\n") {
-		f := strings.Fields(strings.TrimSpace(line))
-		if len(f) == 2 && f[1] != "[]" && !strings.Contains(line, "no test files") {
-			out = append(out, f[0])
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// <importpath>|yes — the pipe separator survives multi-file
+		// TestGoFiles lists, which the old space-split dropped.
+		if parts := strings.SplitN(line, "|", 2); len(parts) == 2 && parts[1] == "yes" {
+			pkgs = append(pkgs, parts[0])
 		}
 	}
-	sort.Strings(out)
-	return out, nil
+	sort.Strings(pkgs)
+	return pkgs, nil
 }
 
 // classifyGoTest is the pure verdict core: executor outcome plus
@@ -223,6 +228,15 @@ func runPackage(ctx context.Context, pkg string) PackageResult {
 	out := res.Combined
 	dur := time.Since(start).Milliseconds()
 	outcome, detail := classifyGoTest(res.Outcome, out)
+	if outcome != OutcomePass {
+		// Tail for diagnosis: the first line says what, the tail says why.
+		if tail := lastLines(out, 20); tail != "" && tail != detail {
+			if len(tail) > 2000 {
+				tail = tail[len(tail)-2000:]
+			}
+			detail += "\n[tail]\n" + tail
+		}
+	}
 	if res.Outcome == pxexec.OutcomeBlocked {
 		detail += ": " + res.BlockHint
 	}
@@ -291,6 +305,14 @@ func hostname() string {
 		return h
 	}
 	return runtime.GOOS + "-unknown"
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func firstLine(s string) string {

@@ -87,7 +87,9 @@ func TestSuitePassesExploration(t *testing.T) {
 	}
 	results := RunSuite(Exploration())
 	for _, r := range results {
-		if !r.AssistedOK || !r.EvidenceValid || r.Violations != 0 {
+		// SafeRefusal carries no expediente by construction (no mission
+		// exists to report on): the refusal line IS the evidence.
+		if !r.AssistedOK || (!r.EvidenceValid && !r.SafeRefusal) || r.Violations != 0 {
 			t.Fatalf("case %s not green: %+v", r.CaseID, r)
 		}
 	}
