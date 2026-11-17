@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"regulus-ai/internal/executil"
 	"regulus-ai/internal/mcp"
 )
 
@@ -189,6 +190,7 @@ type GitWorktreeOps struct{}
 func gitRun(ctx context.Context, dir, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	executil.HideWindow(cmd)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

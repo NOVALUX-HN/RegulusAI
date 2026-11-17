@@ -308,7 +308,9 @@ func TestRunLabJailsCheckEnv(t *testing.T) {
 	}
 	env := labChildEnv([]string{"FIXTURE_DIR=/w"})
 	joined := "\n" + strings.Join(env, "\n") + "\n"
-	if !strings.Contains(joined, "\nPATH=") || !strings.Contains(joined, "\nFIXTURE_DIR=/w\n") {
+	// Env names are case-insensitive on Windows (os.Environ yields
+	// "Path", not "PATH"), so the presence check folds case.
+	if !strings.Contains(strings.ToUpper(joined), "\nPATH=") || !strings.Contains(joined, "\nFIXTURE_DIR=/w\n") {
 		t.Fatalf("allowlist must keep PATH and extras: %v", env)
 	}
 	for _, kv := range env {

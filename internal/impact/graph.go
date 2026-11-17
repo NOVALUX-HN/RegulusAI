@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/executil"
 )
 
 // GitLookup resolves the last-touch commit and ISO date of one
@@ -39,6 +41,7 @@ func DefaultGitLookup(root string) GitLookup {
 		abs := filepath.Join(root, filepath.FromSlash(rel))
 		cmd := exec.Command("git", "log", "-1", "--format=%H%x00%cI", "--", rel)
 		cmd.Dir = root
+		executil.HideWindow(cmd)
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &bytes.Buffer{}
@@ -175,6 +178,7 @@ func BuildGraph(root string, prev *Graph, lookup GitLookup) (Graph, error) {
 // headOf best-efforts the HEAD sha (empty when git is absent).
 func headOf(root string) string {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
+	executil.HideWindow(cmd)
 	cmd.Dir = root
 	var out bytes.Buffer
 	cmd.Stdout = &out
