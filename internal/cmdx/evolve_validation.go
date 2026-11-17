@@ -10,7 +10,7 @@ import (
 	"regulus-ai/internal/evolve"
 )
 
-const evolveValidationUsage = "usage: regulus evolve validation declare --plan <spec.json> | regulus evolve validation run --plan <id> --arm <baseline|candidate> --task <t> --seed <n> --rep <n> --model <m> --status <s> --latency-ms <n> --tokens <n> --source <s> [--receipt <r>] [--trace <t>] | regulus evolve validation holdout-run <same> --audit <ref> | regulus evolve validation control --plan <id> --kind <positive|negative> --name <n> --expectation <e> --outcome <o> --held <true|false> [--detail <d>] | regulus evolve validation discard --plan <id> --candidate <c> --reason <r> --by <h> | regulus evolve validation link --plan <id> --exp <id> | regulus evolve validation compare --plan <id> | regulus evolve validation finalize --plan <id> --verdict <v> --approved-by <h> --reason <r> --inherited <adopt|keep|revisit> --inherited-reason <r> --commits <c,...> --manifests <m,...> | regulus evolve validation report --plan <id>"
+const evolveValidationUsage = "usage: regulus evolve validation declare --plan <spec.json> | regulus evolve validation run --plan <id> --arm <baseline|candidate> --task <t> --seed <n> --rep <n> --model <m> --status <s> --latency-ms <n> --tokens <n> --source <s> [--receipt <r>] [--trace <t>] | regulus evolve validation holdout-run <same> --audit <ref> | regulus evolve validation control --plan <id> --kind <positive|negative> --name <n> --expectation <e> --outcome <o> --held <true|false> [--detail <d>] | regulus evolve validation discard --plan <id> --candidate <c> --reason <r> --by <h> | regulus evolve validation link --plan <id> --exp <id> | regulus evolve validation compare --plan <id> | regulus evolve validation finalize --plan <id> --verdict <v> --approved-by <h> --reason <r> --inherited <adopt|keep|revisit> --inherited-reason <r> --commits <c,...> --manifests <m,...> | regulus evolve validation report --plan <id> | " + evolveGovernedUsage
 
 // EvolveValidationCmd routes the validation subverbs. Moved from
 // internal/cli (evolve_validation.go) without behavior change.
@@ -38,6 +38,8 @@ func (io IO) EvolveValidationCmd(args []string) int {
 		return io.EvolveValidationFinalizeCmd(args[1:])
 	case "report":
 		return io.EvolveValidationReportCmd(args[1:])
+	case "cycle-declare", "cycle-propose", "cycle-link", "cycle-compare", "cycle-review", "cycle-approve", "cycle-canary", "cycle-monitor", "cycle-promote", "cycle-rollback", "cycle-report":
+		return io.EvolveValidationCycleCmd(args)
 	default:
 		fmt.Fprintf(io.Stderr, "evolve validation: unknown subcommand %q\n", args[0])
 		fmt.Fprintln(io.Stderr, evolveValidationUsage)
