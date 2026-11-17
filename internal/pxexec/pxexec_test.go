@@ -6,10 +6,42 @@ package pxexec
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 )
+
+// sleepCommand returns a ~5s blocking command present on this OS:
+// Windows ping (-n) or POSIX sleep. Skips when neither exists so the
+// timeout/cancel tests never fail for a missing helper binary.
+func sleepCommand(t *testing.T) (string, []string) {
+	t.Helper()
+	if _, err := exec.LookPath("sleep"); err == nil {
+		return "sleep", []string{"5"}
+	}
+	if _, err := exec.LookPath("ping"); err == nil {
+		return "ping", []string{"-n", "6", "127.0.0.1"}
+	}
+	t.Skip("no sleep-capable helper binary (sleep/ping) available")
+	return "", nil
+}
+
+// testShell resolves a PowerShell for shell-behavior tests: pwsh
+// preferred (portable name), powershell as Windows fallback. Tests
+// that need a real shell skip when neither exists — they exercise
+// shell passthrough, never the executor core (covered without a
+// subprocess by TestValidate/TestScrubParity/TestRender*).
+func testShell(t *testing.T) string {
+	t.Helper()
+	for _, n := range []string{"pwsh", "powershell"} {
+		if _, err := exec.LookPath(n); err == nil {
+			return n
+		}
+	}
+	t.Skip("no PowerShell available (shell passthrough untestable here)")
+	return ""
+}
 
 func TestValidate(t *testing.T) {
 	if err := (Spec{}).Validate(); err == nil {
@@ -58,7 +90,8 @@ func TestExitCodeIsFail(t *testing.T) {
 }
 
 func TestTimeoutIsNotRun(t *testing.T) {
-	r := Run(context.Background(), Spec{Name: "ping", Args: []string{"-n", "6", "127.0.0.1"}, Timeout: 500 * time.Millisecond})
+	bin, args := sleepCommand(t)
+	r := Run(context.Background(), Spec{Name: bin, Args: args, Timeout: 500 * time.Millisecond})
 	if r.Outcome != OutcomeNotRun || r.ErrClass != ErrTimeout {
 		t.Fatalf("expired launch must be NOT_RUN/timeout, got %+v", r)
 	}
@@ -67,7 +100,8 @@ func TestTimeoutIsNotRun(t *testing.T) {
 func TestCancelIsNotRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	r := Run(ctx, Spec{Name: "ping", Args: []string{"-n", "6", "127.0.0.1"}, Timeout: 30 * time.Second})
+	bin, args := sleepCommand(t)
+	r := Run(ctx, Spec{Name: bin, Args: args, Timeout: 30 * time.Second})
 	if r.Outcome != OutcomeNotRun || (r.ErrClass != ErrCancel && r.ErrClass != ErrTimeout) {
 		t.Fatalf("cancelled launch must be NOT_RUN, got %+v", r)
 	}
@@ -76,7 +110,7 @@ func TestCancelIsNotRun(t *testing.T) {
 func TestBlockSignalClassifiesBlocked(t *testing.T) {
 	// Real blocks never exit 0 (the process never starts): fail with
 	// the policy marker on stderr, mirroring a SAC denial.
-	r := Run(context.Background(), Spec{Name: "powershell", Args: []string{"-NoProfile", "-Command", "Write-Error 'blocked this file by policy'; exit 1"}, Timeout: 30 * time.Second})
+	r := Run(context.Background(), Spec{Name: testShell(t), Args: []string{"-NoProfile", "-Command", "Write-Error 'blocked this file by policy'; exit 1"}, Timeout: 30 * time.Second})
 	if r.Outcome != OutcomeBlocked || r.ErrClass != ErrPolicy || r.BlockHint == "" {
 		t.Fatalf("policy signal must be BLOCKED with a hint, got %+v", r)
 	}
@@ -85,14 +119,14 @@ func TestBlockSignalClassifiesBlocked(t *testing.T) {
 func TestPassOutputIsNotBlocked(t *testing.T) {
 	// Exit 0 with block-like words in stdout stays PASS: classifying it
 	// BLOCKED would be a false positive on diagnostic chatter.
-	r := Run(context.Background(), Spec{Name: "powershell", Args: []string{"-NoProfile", "-Command", "Write-Output 'blocked this file by policy (simulated log line)'"}, Timeout: 30 * time.Second})
+	r := Run(context.Background(), Spec{Name: testShell(t), Args: []string{"-NoProfile", "-Command", "Write-Output 'blocked this file by policy (simulated log line)'"}, Timeout: 30 * time.Second})
 	if r.Outcome != OutcomePass {
 		t.Fatalf("exit-0 output must stay PASS, got %+v", r)
 	}
 }
 
 func TestArgsWithSpacesPassThrough(t *testing.T) {
-	r := Run(context.Background(), Spec{Name: "powershell", Args: []string{"-NoProfile", "-Command", "Write-Output 'a b c'"}, Timeout: 30 * time.Second})
+	r := Run(context.Background(), Spec{Name: testShell(t), Args: []string{"-NoProfile", "-Command", "Write-Output 'a b c'"}, Timeout: 30 * time.Second})
 	if r.Outcome != OutcomePass || !strings.Contains(r.Stdout, "a b c") {
 		t.Fatalf("spaced args must pass through intact, got %+v", r)
 	}
