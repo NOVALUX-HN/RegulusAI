@@ -48,7 +48,14 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
   - "## Pruebas requeridas — Prompt injection intentando saltar aprobación, replay de aprobación, hash alterado, scope ampliado, revocación, autoaprobación, política desconocida y acciones irreversibles."
   - "## Entregables — Policy engine de misión o extensión del existente, flujo de aprobación, documentación y pruebas adversariales."
 
-(Se añaden S7-S8 con el cuerpo verbatim de NOV-110..111 al arrancar cada tarea.)
+- S7 (NOV-110 F13.7 · Mission Evidence, reporting y expediente reproducible):
+  - "## Objetivo — Entregar un expediente verificable de cada misión para que otra persona pueda reconstruir qué hizo REGULUS y comprobar el resultado sin depender de la memoria conversacional."
+  - "## Implementación — * Definir MissionReport versionado y exportable (JSON y resumen legible). * Incluir objetivo, restricciones, criterios de aceptación, plan y revisiones, tareas, DAG, agentes/hosts, decisiones de routing, contexto/fuentes, approvals, commits/diffs, pruebas/gates, fallos, recuperación, costes/tokens/latencia y resultado. * Enlazar traces, receipts, artifacts y evidence IDs; preservar hashes/procedencia. * Diferenciar datos medidos, estimados, desconocidos y no aplicables. * Resumir archivos/componentes cambiados y relación con el análisis de impacto. * Declarar criterios satisfechos/no satisfechos y evidencia concreta por criterio. * Clasificar outcome: completed, partially_completed, blocked, failed o cancelled. * Evitar secretos, credenciales y contenido sensible; aplicar redacción existente. * Permitir consultar/exportar reporte y verificar integridad. * Reporte debe incluir fallos y limitaciones, no solo éxitos."
+  - "## Criterios de aceptación — * Cada misión terminal produce expediente completo y validable. * Cada criterio de aceptación enlaza evidencia o explica por qué no se cumplió. * Hashes y referencias permiten detectar alteraciones. * Métricas distinguen measured/estimated/unknown; no se inventan datos. * No se filtran secretos. * Un tercero puede reconstruir cronología, cambios, gates y aprobaciones."
+  - "## Pruebas requeridas — Round-trip JSON, integridad/tampering, redacción, misión parcial, misión bloqueada, datos desconocidos, múltiples agentes, recuperación y consistencia entre report y traces."
+  - "## Entregables — Schema de reporte, generador/verificador, CLI/API, ejemplos y documentación."
+
+(Se añade S8 con el cuerpo verbatim de NOV-111 al arrancar T8.)
 
 ## Tasks
 
@@ -60,7 +67,7 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 | T4 | S4 | NOV-107 F13.4 | F11.1,F11.3 + F12.8,F12.4 | worker | e890345 |
 | T5 | S5 | NOV-108 F13.5 | F12.5 + feeds F12.6 | worker | d4997ec |
 | T6 | S6 | NOV-109 F13.6 | F11.8 + policies | worker | fea93da |
-| T7 | S7 | NOV-110 F13.7 | F12.4 + gates | worker | — |
+| T7 | S7 | NOV-110 F13.7 | F12.4 + gates | worker | 471980b |
 | T8 | S8 | NOV-111 F13.8 | todas | worker | — |
 
 ## Log
@@ -73,3 +80,4 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 - L6 (2026-11-17, T4 done): NOV-107 F13.4 implementado (Verification Engine + matriz riesgo→7 gates + veredictos + vinculación + regresiones + gateo + rerun + corpus 11 escenarios, 14 tests; 3 RED reales) commit e890345; pin+usage actualizados por parent; suite cli completa verde; Linear con evidencia y Done.
 - L7 (2026-11-17, T5 done): NOV-108 F13.5 implementado (Failure Coordinator 10 clases→7 acciones + guardas + ledger F12.5 reutilizado + lecciones F12.6, 33+7 tests; 1 RED real) commit d4997ec; pin+usage actualizados por parent; Linear con evidencia y Done.
 - L8 (2026-11-17, T6 done): NOV-109 F13.6 implementado (matriz riesgo→autonomía + perfiles locked/standard/wide deny-by-default + ApprovalRequest ligada a hash/policy/scope/expiry + 4 deberes sin autoaprobación + pause/resume/reject/revoke + audit log hash-chained, engine 33+ tests + CLI `govern` 13 subcomandos, smoke matrix ok) commit fea93da; Linear con evidencia y Done.
+- L9 (2026-11-17, T7 done): NOV-110 F13.7 implementado (MissionReport versionado + outcome de 5 estados + calidad measured/estimated/unknown/na + criterios con evidencia o motivo + redacción + hash de integridad + verify + render, ensamblador cmdx desde mission/planning/ledger/govern/failure con unknowns declarados, CLI `mission report|verify-report`, 6+3 tests incl. E2E round-trip/tamper/no-terminal; suite cli BLOCKED por WDAC — registrado, no afirmado) commit 471980b; Linear con evidencia y Done.
