@@ -31,9 +31,9 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
   - "## Entregables — recommendation.md bajo docs/diagnostics/windows-test-block/; matriz comparativa; recomendación principal y fallback; plan detallado F15; prerrequisitos humanos/admin; referencias a evidencias F14.1–F14.3."
   - "## Aceptación — La recomendación se basa en la política y el fallo observados en el equipo real. Explica qué puede hacer OpenCode sin presencia del usuario y qué requiere intervención autorizada. F14 queda lista para revisión antes de iniciar F15."
 
-- S5 (NOV-116 F15.1 · Implementar la corrección de causa raíz identificada en F14): prerrequisito NOV-115 completada y revisada + recommendation.md; cambio mínimo sin tocar política del host; si la salida requiere aprobación admin, detenerse y preparar el cambio exacto; tests + rollback; sin debilitar seguridad. (Gateado a revisión humana de F14.)
+- S5 (NOV-116 F15.1 · Inventario completo de procesos y matriz de ejecución Windows — REESCRITO por el usuario 16:16Z): descubrir con evidencia todos los procesos que Regulus ejecuta; análisis y diseño, NO implementar. Inventariar os/exec, exec.Command*, cmd.exe, PowerShell, Bash, Start-Process, scripts, helpers, test binaries, invocaciones Go e indirectos con caller/flujo/argv/shell/cwd/env/salida/timeout/padre-hijo/artefactos/EXE-temporal. Reconciliar estático con trazas reales. Matriz experimental de mecanismos (go test/run/build/vet, EXE directo, PS nativo, Bash, otros usados) ×3 reps con PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN + eventos CI/SAC + hash/ruta/padre/exit. Clasificar caller: mantener / migrar a Go nativo / migrar a Process Executor / rediseñar sin temporal / investigar. Proponer arquitectura + plan por impacto/riesgo. Restricciones: sin tocar seguridad, certificados, cachés/logs, nada destructivo. Entregables: inventario versionado, matriz reproducible, listas bloqueado/permitido/variable/no-probado, árbol de procesos, plan + alternativas. Aceptación: todo clasificado con comando/entorno/repetición/evidencia; ninguna causa sin demostrar.
 
-- S6 (NOV-117 F15.2 · Runner de tests Windows desatendido, nativo y observable): prerrequisitos NOV-115 revisada + F15.1; invocación nativa, procesos reales, resultado estructurado passed/failed/blocked/skipped/not-run (nunca blocked→passed), exit no-cero ante fallos, reproducible. (Gateado a revisión humana de F14 + F15.1.)
+- S6 (NOV-117 F15.2 · Implementar Process Executor centralizado y política de lanzamiento — REESCRITO 16:16Z): prereq NOV-116 revisada y aceptada; ÚNICO componente para crear/ejecutar/observar/cancelar/clasificar procesos; contrato tipado (argv separado sin shell, cwd, env, stdin, timeout, cancelación, salida, captura); adaptadores por tipo de operación según matriz F15.1; Go nativo donde corresponda; shell solo explícito/justificado/acotado/probado; env/secretos/PATH/cwd/encoding/señales; sin huérfanos; exit/duración/PID/comando redactado/mecanismo/errores; clasifica PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN (lanzamiento vs política vs timeout vs cancelación vs fallo); diagnóstico no destructivo con ruta/hash/eventos sin eludir; tests unit/integration/contract + docs API y reglas. Restricciones: sin Start-Process-fallback sin validar, sin ocultar errores con shell, sin tocar SAC/WDAC/Defender/AppLocker ni elevar. Aceptación: una API determinista con tests, distingue creación/ejecución/finalización, usable por todos sin shells POSIX.
 
 - S7 (NOV-121 F14.5 · Trazabilidad causal del árbol de procesos y contexto de lanzamiento): probar (no asumir) la hipótesis padre/contexto: 5 caminos (go test, go test -c + exec PS, exec Bash, go run, exec directa PS) × 3 repeticiones, bytes idénticos, PID/PPID/imagen/cmdline redactada/token/sesión/cwd/env/timestamp por intento, correlación 3077/3089/3118 + hash + ruta; separar correlación de causalidad; entregables process-launch-matrix.md + JSONL/CSV + árboles + conclusión con confianza y limitaciones.
 
@@ -57,20 +57,27 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T2 | S2 | NOV-113 F14.2 | T1 | inline | 9067d62 |
 | T3 | S3 | NOV-114 F14.3 | T1 (+NOV-43/45/46/47/66 leídos) | inline | 3bf7f86 |
 | T4 | S4 | NOV-115 F14.4 | T1-T3 | inline | f19a64f |
-| T5 | S5 | NOV-116 F15.1 | T4 + revisión humana | bloqueado | — |
-| T6 | S6 | NOV-117 F15.2 | T4 + T5 | bloqueado | — |
+| T5 | S5 | NOV-116 F15.1 | F14 (revisión humana concedida: "procede con fase 15") | inline | — |
+| T6 | S6 | NOV-117 F15.2 | T5 revisada+aceptada | bloqueado | — |
 | T7 | S7 | NOV-121 F14.5 | T1-T4 | inline | 72e69f1 |
 | T8 | S8 | NOV-122 F14.6 | T7 | inline | 37d64e8 |
 | T9 | S9 | NOV-123 F14.7 | T7 | inline | b7a4b82 |
 | T10 | S10 | NOV-124 F14.8 | T7-T9 | inline | 8ad9157 |
-| T11 | S11 | NOV-118 F15.3 | T10 + revisión humana + T6? (spec: NOV-115 rev + F15.2) | bloqueado | — |
-| T12 | S12 | NOV-119 F15.4 | T5+T6+T11 | bloqueado | — |
-| T13 | S13 | NOV-120 F15.5 | T12 | bloqueado | — |
+| T11 | S11 | NOV-118 F15.3 migrar todo al executor | T5+T6 | bloqueado | — |
+| T12 | S14 | NOV-125 F15.4 runner verificación integral | T11 | bloqueado | — |
+| T13 | S15 | NOV-126 F15.5 CI Windows con gates | T12 | bloqueado | — |
+| T14 | S12 | NOV-119 F15.6 validación integral Windows | T5+T6+T11+T12+T13 | bloqueado | — |
+| T15 | S13 | NOV-120 F15.7 docs + prevención regresiones | T14 | bloqueado | — |
+
+- S14 (NOV-125 F15.4 · Runner de verificación integral y ejecución real de tests): prereq NOV-118; auditar/reutilizar scripts/runner existentes (test-windows.ps1); modos smoke/focused/full reproducibles; go test cuando la matriz lo confirme (no compilar+lanzar EXE directo salvo excepción validada); build/vet/unit/integration/E2E separados; prueba descubrimiento+ejecución real (conteos, exit, duración); JSON versionado; PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN (full falla si incompleto); preserva logs; tests del runner (falsos PASS, cero tests, timeout, cancelación, bloqueo); invocable OpenCode + PS. Aceptación: contabiliza real, imposible PASS sin tests/ante faltantes/BLOCKED; reproducible.
+
+- S15 (NOV-126 F15.5 · CI Windows con gates y artefactos, High): prereq NOV-125; ampliar job Windows sin duplicar; build/vet/unit/integration/E2E por mecanismos soportados; falla ante FAIL/BLOCKED/NOT_RUN/no-descubiertos/matriz incompleta/sin artefactos; artefactos JSON+logs+resumen+metadatos; permisos mínimos, acciones fijadas; distinguir CI limpia vs host afectado; probar fallos intencionales (gates bloquean merge); documentar límites. Aceptación: workflow probado en éxito y fallo; parcial nunca verde; artefactos reconstruyen lo ejecutado.
 
 ## Log
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L12: F15 reescrita por el usuario (16:15-16:16Z): 7 issues encadenadas F15.1 NOV-116 (inventario+matriz) → F15.2 NOV-117 (Process Executor) → F15.3 NOV-118 (migrar callers) → F15.4 NOV-125 (runner verificación) → F15.5 NOV-126 (CI gates) → F15.6 NOV-119 (validación integral) → F15.7 NOV-120 (docs+antiregresión). Usuario autoriza: "procede con la fase 15" (= revisión F14 concedida).
 - L11 (T10 done): NOV-124 F14.8 implementado (revisión adversarial 10 afirmaciones con confianza; descartadas 6 hipótesis incl. per-file-first-seen; abiertas 4; falsos positivos revisados; experimento decisivo: copia 5B66 nueva identidad corre → reputación por contenido; recomendación NOV-115 SIN invalidación + matiz para F15.1) commit 8ad9157; Linear con evidencia y Done. F14 8/8 COMPLETA — pendiente revisión humana antes de F15.
 - L10 (T9 done): NOV-123 F14.7 implementado (rutas inventariadas; ciclo build→link→exec→limpieza por modo; mismos bytes 2CB3 en 3 rutas bloqueados igual; ACL/propietario idénticos, MOTW ausente; caché fría rehusada por spec; Defender consultado sin bloquear; ruta/caché/procedencia NO discriminan; recomendación sidecar+clasificar) commit b7a4b82; Linear con evidencia y Done.
 - L9 (T8 done): NOV-122 F14.6 implementado (política VerifiedAndReputableDesktop GUID {0283ac0f} en enforcement probado por denegación; .cip activa listada; criterio oficial firmado-o-predicho-seguro + reputación temporal con fuentes MS citadas; tabla 4 artefactos firma/origen/MOTW→evento→decisión; SAC única capa con evidencia; 5 incógnitas irresolubles incl. citool/DeviceGuard sin elevación) commit 37d64e8; Linear con evidencia y Done.
