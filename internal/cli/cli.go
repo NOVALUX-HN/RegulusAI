@@ -273,6 +273,7 @@ Commands:
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file> | verify [--task <t>] | prune --task <t> [--keep N] [--yes] [--force]   audit gauntlet receipts
   evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>] | evolve validation declare|run|holdout-run|control|discard|link|compare|finalize|report|cycle-declare|cycle-propose|cycle-link|cycle-compare|cycle-review|cycle-approve|cycle-canary|cycle-monitor|cycle-promote|cycle-rollback|cycle-report | evolve baseline --set|--show | evolve evaluate --exp <id> | evolve adopt|reject|rollback --exp <id>   evidence pack; periodic proposer; lesson economics; deterministic verdicts; governed cycle (baseline->evaluate->adopt/reject->rollback)
+  failure classify|decide|status|explain --mission <id> [--json]   mission failure intelligence (regulus failure --help)
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
