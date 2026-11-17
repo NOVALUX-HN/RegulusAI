@@ -60,7 +60,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T5 | S5 | NOV-116 F15.1 | T4 + revisión humana | bloqueado | — |
 | T6 | S6 | NOV-117 F15.2 | T4 + T5 | bloqueado | — |
 | T7 | S7 | NOV-121 F14.5 | T1-T4 | inline | 72e69f1 |
-| T8 | S8 | NOV-122 F14.6 | T7 | inline | — |
+| T8 | S8 | NOV-122 F14.6 | T7 | inline | 37d64e8 |
 | T9 | S9 | NOV-123 F14.7 | T7 | inline | — |
 | T10 | S10 | NOV-124 F14.8 | T7-T9 | inline | — |
 | T11 | S11 | NOV-118 F15.3 | T10 + revisión humana + T6? (spec: NOV-115 rev + F15.2) | bloqueado | — |
@@ -71,6 +71,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L9 (T8 done): NOV-122 F14.6 implementado (política VerifiedAndReputableDesktop GUID {0283ac0f} en enforcement probado por denegación; .cip activa listada; criterio oficial firmado-o-predicho-seguro + reputación temporal con fuentes MS citadas; tabla 4 artefactos firma/origen/MOTW→evento→decisión; SAC única capa con evidencia; 5 incógnitas irresolubles incl. citool/DeviceGuard sin elevación) commit 37d64e8; Linear con evidencia y Done.
 - L8 (T7 done): NOV-121 F14.5 implementado (binario único 2CB3 × 5 caminos × 3 reps: A go test 3/3 corre, B PS-& 3/3 bloqueado, C bash 3/3 bloqueado con 3077 rec 9706/9711/9716, D go run 3/3 corre, E Start-Process 3/3 start-fail; CTRL Temp-path bloqueado elimina ruta; CTRL2 PS-creator bloqueado elimina creador; variable discriminante = camino de lanzamiento, confianza media-alta; process-launch-matrix.md + process-launch-log.jsonl; probes limpiados) commit 72e69f1; Linear con evidencia y Done.
 - L7: Fase extendida traída de Linear (2026-11-17): F14.5 NOV-121 + F14.6 NOV-122 + F14.7 NOV-123 + F14.8 NOV-124 (forense, Urgent) y F15.3 NOV-118 + F15.4 NOV-119 + F15.5 NOV-120. Orden: T7→T8→T9→T10, luego gate humano (F15.1-5 siguen bloqueadas: NOV-115 debe estar completada Y revisada; F14.8 actualiza la recomendación pero no sustituye la revisión humana).
 - L6 (T4 done): NOV-115 F14.4 implementado (auditoría runner/gates/scripts/Go/workflows/docs con file:línea; separación interno/externo; matriz 5 alternativas con eficacia/requisitos/riesgos/prueba; descartadas falsas universales; recomendación A runner in-repo + fallback host limpio; plan F15 2 tareas con rollback; prerrequisitos humanos; referencias a evidencia F14.1-3; sin implementar nada) commit f19a64f; Linear con evidencia y Done. F14 4/4 COMPLETA — pendiente revisión humana antes de F15 (gate spec).
