@@ -64,7 +64,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T9 | S9 | NOV-123 F14.7 | T7 | inline | b7a4b82 |
 | T10 | S10 | NOV-124 F14.8 | T7-T9 | inline | 8ad9157 |
 | T11 | S11 | NOV-118 F15.3 migrar callers al executor | T5+T6 | inline | d7a262e |
-| T12 | S14 | NOV-125 F15.4 runner verificación integral | T11 | bloqueado | — |
+| T12 | S14 | NOV-125 F15.4 runner verificación integral | T11 | inline | 98b7f34 |
 | T13 | S15 | NOV-126 F15.5 CI Windows con gates | T12 | bloqueado | — |
 | T14 | S12 | NOV-119 F15.6 validación integral Windows | T5+T6+T11+T12+T13 | bloqueado | — |
 | T15 | S13 | NOV-120 F15.7 docs + prevención regresiones | T14 | bloqueado | — |
@@ -77,6 +77,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L16 (T12 done): NOV-125 F15.4 implementado (internal/testflow: descubrimiento go list con tests, modos smoke/focused/full, checks build/vet separados, clasificación pura+testeable, veredicto estricto, JSON versionado; CLI testflow run exit 0 solo en verde; pxexec blockHint con LookPath; E2E real vía harness ×3: discovery ok, checks PASS, paquete BLOCKED con hint, verdict=false correcto sin falsos PASS; unit tests pendientes de host sin bloqueo) commit 98b7f34; Linear con evidencia y Done.
 - L15 (T11 done): NOV-118 F15.3 implementado (18 callers migrados: gitRun/workState/probes/toolVersion/selfBin/agenthost-lab-checks/git-lookups/ProjectName/git-archive/cli-probes/gitTopLevel con semántica 1:1 incl. timeouts/truncados/error-strings/combined-streams; ShRunner/StructuredRunner/tests/scripts como excepciones documentadas; ciclos rotos desacoplando pxexec de observability (hojas + test de paridad); guard_test anti-regresión endurecido (solo gates_exec.py fuera); vet/build/gofmt verdes; exec.Command restante solo gates; tests no ejecutables en host — registrado, pendiente CI/F15.6) commits d607663+ba75a40+d7a262e; Linear con evidencia y Done.
 - L14 (T6 done): NOV-117 F15.2 implementado (internal/pxexec: contrato Spec tipado argv-separado + cwd/env-mínimo/stdin/timeout/cancelación/anti-shell-por-defecto con Justify + sin huérfanos best-effort declarado + exit/duración/PID/mecanismo + clasifica PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN + diagnóstico no destructivo con hash/query de eventos + tests unit/integration/contract + docs/process-executor.md con API y reglas; vet/build/gofmt verdes; ejecución de tests frescos BLOCKED por Device Guard en este host — registrado, pendiente CI/F15.6) commit 0875f3b; Linear con evidencia y Done.
 - L13 (T5 done): NOV-116 F15.1 implementado (inventario 22 callers con archivo:línea + clasificación mantener/migrar/rediseñar; matriz mecanismo×reps con F14 + probes nuevos build/vet/git/direct-exe; bloqueadas/permitidas/variables/no-probadas; árbol de procesos; plan migración por impacto/riesgo + 3 alternativas descartadas; process-inventory.md) commit a7b22b0; Linear con evidencia y Done.
