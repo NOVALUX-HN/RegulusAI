@@ -59,11 +59,11 @@ Header: milestone F12 (8 issues NOV-96..103, todas Backlog, sin estimates ni com
 | T1 | S1 | NOV-96 F12.1 | F11.2,F11.4,F11.5,F11.7,F11.8 | worker | 42e73f1 |
 | T2 | S2 | NOV-97 F12.2 | F11.1,F11.3,F11.4,F11.8,T1 | worker | dd1566d |
 | T3 | S3 | NOV-98 F12.3 | F11.1,F11.5,T1 | worker | 9d17d8e |
-| T4 | S4 | NOV-99 F12.4 | F11.1,F11.3,F11.4,F11.5 | worker | — |
-| T5 | S5 | NOV-100 F12.5 | F11.1,F11.8,T1,T2 | worker | — |
-| T6 | S6 | NOV-101 F12.6 | F11.1,F11.8,T3 | worker | — |
-| T7 | S7 | NOV-102 F12.7 | F11.1,F11.3,F11.5,F11.6,F11.8,T4,T6 | worker | — |
-| T8 | S8 | NOV-103 F12.8 | F11.1,F11.3,T3,T4 | worker | — |
+| T4 | S4 | NOV-99 F12.4 | F11.1,F11.3,F11.4,F11.5 | worker | 2998409 |
+| T5 | S5 | NOV-100 F12.5 | F11.1,F11.8,T1,T2 | worker | b0dba30 |
+| T6 | S6 | NOV-101 F12.6 | F11.1,F11.8,T3 | worker | 46ce8b7 |
+| T7 | S7 | NOV-102 F12.7 | F11.1,F11.3,F11.5,F11.6,F11.8,T4,T6 | worker | e107764 |
+| T8 | S8 | NOV-103 F12.8 | F11.1,F11.3,T3,T4 | worker | 56db80a |
 
 ## Log
 
@@ -73,3 +73,8 @@ Header: milestone F12 (8 issues NOV-96..103, todas Backlog, sin estimates ni com
 - L4 (2026-11-16, T1 done): NOV-96 F12.1 implementado (orquestador: descriptor + registry + scoring explicable + dry-run + evaluate, 10+7 tests; RED real de gate crítico corregido) commit 42e73f1; pin de dispatch actualizado por parent; Linear con evidencia y Done; CLI BLOCKED local (verifica CI).
 - L5 (2026-11-16, T2 done): NOV-97 F12.2 implementado (DAG + serialización por colisión + scheduler por niveles + worktrees reales + merge controlado + gate + orphans, tests verdes local incl. overlap real) commit dd1566d; Linear con evidencia y Done.
 - L6 (2026-11-16, T3 done): NOV-98 F12.3 implementado (inventario + ranking explicable + detección dup/obsolescencia/contradicción/inyección + capas + ACLs + fallback, 9+5 tests; 2 RED reales corregidos) commit 9d17d8e; pin de dispatch actualizado por parent; Linear con evidencia y Done.
+- L7 (2026-11-16, T4 done): NOV-99 F12.4 implementado (baselines versionadas + ingesta exec/lab + detección por N + segmentación + alertas, 9+3 tests verdes) commits ad77428 (refactor cmdx: coupling 31→26) + 2998409 (feature); Linear con evidencia y Done.
+- L8 (2026-11-16, T5 done): NOV-100 F12.5 implementado (checkpoints durables + ledger idempotente + retry budgets + reasignación con gates + cancel/rollback, 8+4 tests verdes + suite cli 602 PASS) commit b0dba30; pin de dispatch actualizado por parent; Linear con evidencia y Done.
+- L9 (2026-11-16, T6 done): NOV-101 F12.6 implementado (6 tipos + ACLs + invalidación auditada + resolución + métricas + comando learn, 12+10 tests verdes local incl. dispatch) commit 46ce8b7; pin+usage actualizados por parent; Linear con evidencia y Done.
+- L10 (2026-11-16, T7 done): NOV-102 F12.7 implementado (ciclo gobernado: señales + pin SHA + K acotado + 5 dimensiones + review adversarial + aprobación humana anti auto-aprobación + canary/rollback preaprobado, 14+ tests; 11 verbos cycle-*) commit e107764; usages actualizados por parent; Linear con evidencia y Done.
+- L11 (2026-11-16, T8 done — F12 COMPLETA, FIN DE LAS 17): NOV-103 F12.8 implementado (censo + grafo 1000n/275e verificables + diff→consumidores + riesgo + suite enfocada + fallback + benchmark CodeGraph, 12+5 tests; dogfood corrigió bug real de filtro) commit 56db80a; pin actualizado por parent; cobertura vieja local eliminada; Linear con evidencia y Done.
