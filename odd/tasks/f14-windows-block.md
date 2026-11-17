@@ -58,7 +58,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T3 | S3 | NOV-114 F14.3 | T1 (+NOV-43/45/46/47/66 leídos) | inline | 3bf7f86 |
 | T4 | S4 | NOV-115 F14.4 | T1-T3 | inline | f19a64f |
 | T5 | S5 | NOV-116 F15.1 | F14 (revisión humana concedida: "procede con fase 15") | inline | a7b22b0 |
-| T6 | S6 | NOV-117 F15.2 | T5 revisada+aceptada | bloqueado | — |
+| T6 | S6 | NOV-117 F15.2 | T5 revisada+aceptada ("procede") | inline | 0875f3b |
 | T7 | S7 | NOV-121 F14.5 | T1-T4 | inline | 72e69f1 |
 | T8 | S8 | NOV-122 F14.6 | T7 | inline | 37d64e8 |
 | T9 | S9 | NOV-123 F14.7 | T7 | inline | b7a4b82 |
@@ -77,6 +77,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L14 (T6 done): NOV-117 F15.2 implementado (internal/pxexec: contrato Spec tipado argv-separado + cwd/env-mínimo/stdin/timeout/cancelación/anti-shell-por-defecto con Justify + sin huérfanos best-effort declarado + exit/duración/PID/mecanismo + clasifica PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN + diagnóstico no destructivo con hash/query de eventos + tests unit/integration/contract + docs/process-executor.md con API y reglas; vet/build/gofmt verdes; ejecución de tests frescos BLOCKED por Device Guard en este host — registrado, pendiente CI/F15.6) commit 0875f3b; Linear con evidencia y Done.
 - L13 (T5 done): NOV-116 F15.1 implementado (inventario 22 callers con archivo:línea + clasificación mantener/migrar/rediseñar; matriz mecanismo×reps con F14 + probes nuevos build/vet/git/direct-exe; bloqueadas/permitidas/variables/no-probadas; árbol de procesos; plan migración por impacto/riesgo + 3 alternativas descartadas; process-inventory.md) commit a7b22b0; Linear con evidencia y Done.
 - L12: F15 reescrita por el usuario (16:15-16:16Z): 7 issues encadenadas F15.1 NOV-116 (inventario+matriz) → F15.2 NOV-117 (Process Executor) → F15.3 NOV-118 (migrar callers) → F15.4 NOV-125 (runner verificación) → F15.5 NOV-126 (CI gates) → F15.6 NOV-119 (validación integral) → F15.7 NOV-120 (docs+antiregresión). Usuario autoriza: "procede con la fase 15" (= revisión F14 concedida).
 - L11 (T10 done): NOV-124 F14.8 implementado (revisión adversarial 10 afirmaciones con confianza; descartadas 6 hipótesis incl. per-file-first-seen; abiertas 4; falsos positivos revisados; experimento decisivo: copia 5B66 nueva identidad corre → reputación por contenido; recomendación NOV-115 SIN invalidación + matiz para F15.1) commit 8ad9157; Linear con evidencia y Done. F14 8/8 COMPLETA — pendiente revisión humana antes de F15.
