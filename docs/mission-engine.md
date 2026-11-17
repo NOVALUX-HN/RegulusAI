@@ -84,7 +84,20 @@ regulus mission cancel --id <id> --reason <r> [--actor a] [--idem-key k]
 regulus mission link --id <id> [--run a,b] [--task a,b] [--agent a,b] [--worktree a,b] \
   [--commit a,b] [--trace a,b] [--receipt a,b] [--actor a]
 regulus mission reopen --id <id> --reason <r> [--actor a] [--idem-key k]
+regulus mission report --id <mid> [--json]
+regulus mission verify-report --id <mid>
 ```
+
+`report` arma el expediente versionado (`report-v1.json` junto al
+record: objetivo, criterios con evidencia o motivo, planes y DAG,
+tareas con agentes/commits/evidencia, approvals, tests/gates,
+fallos y recuperación, costes con calidad
+measured/estimated/unknown, limitaciones) y lo sella con hash;
+redacta secretos antes de sellar. Lo desconocido se registra
+como unknown con su motivo, nunca se inventa. Solo misiones
+terminadas o bloqueadas producen expediente (otra cosa = exit
+1). `verify-report` revalida versión, outcome y hash: alterado
+= INVALID exit 1.
 
 Salidas: `0` éxito, `1` rechazo (transición ilegal, conflicto de
 generación, store corrupto, terminal), `2` uso. `list` con una

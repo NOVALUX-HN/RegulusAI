@@ -54,3 +54,11 @@ func (c CLI) missionLinkCmd(args []string) int {
 func (c CLI) missionReopenCmd(args []string) int {
 	return cmdx.New(c.Stdout, c.Stderr, c.dir(), c.Version, c.runner()).MissionReopenCmd(args)
 }
+
+func (c CLI) missionReportCmd(args []string) int {
+	return cmdx.New(c.Stdout, c.Stderr, c.dir(), c.Version, c.runner()).MissionReportCmd(args)
+}
+
+func (c CLI) missionVerifyReportCmd(args []string) int {
+	return cmdx.New(c.Stdout, c.Stderr, c.dir(), c.Version, c.runner()).MissionVerifyReportCmd(args)
+}
