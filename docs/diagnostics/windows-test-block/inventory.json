@@ -1,0 +1,32 @@
+{
+  "schema": "windows-test-block/inventory-v1",
+  "generated_at": "2026-11-17",
+  "generator": "manual-session",
+  "fields": [
+    {"name": "os.caption", "value": "Microsoft Windows 11 Pro", "source": "Win32_OperatingSystem.Caption", "command": "Get-CimInstance Win32_OperatingSystem", "exit": 0, "status": "observed"},
+    {"name": "os.version", "value": "10.0.26300", "source": "Win32_OperatingSystem.Version", "command": "Get-CimInstance Win32_OperatingSystem", "exit": 0, "status": "observed"},
+    {"name": "os.build", "value": "26300", "source": "Win32_OperatingSystem.BuildNumber", "command": "Get-CimInstance Win32_OperatingSystem", "exit": 0, "status": "observed"},
+    {"name": "os.arch", "value": "64 bits", "source": "Win32_OperatingSystem.OSArchitecture", "command": "Get-CimInstance Win32_OperatingSystem", "exit": 0, "status": "observed"},
+    {"name": "session.kind", "value": "console-native", "source": "SESSIONNAME=Console, SessionId=1, no WSL", "command": "$env:SESSIONNAME; (Get-Process -Id $PID).SessionId", "exit": 0, "status": "observed"},
+    {"name": "go.version", "value": "go1.27.3 windows/amd64", "source": "go version", "command": "go version", "exit": 0, "status": "observed"},
+    {"name": "go.goroot", "value": "C:\\Program Files\\Go", "source": "go env", "command": "go env GOROOT", "exit": 0, "status": "observed"},
+    {"name": "go.toolchain", "value": "auto", "source": "go env", "command": "go env GOTOOLCHAIN", "exit": 0, "status": "observed"},
+    {"name": "go.target", "value": "windows/amd64, cgo=0", "source": "go env", "command": "go env GOOS GOARCH CGO_ENABLED", "exit": 0, "status": "observed"},
+    {"name": "go.gocache", "value": "AppData/Local/go-build (user FullControl)", "source": "go env + Get-Acl", "command": "go env GOCACHE; Get-Acl $env:LOCALAPPDATA\\go-build", "exit": 0, "status": "observed"},
+    {"name": "go.gotmpdir", "value": "unset (OS temp per session)", "source": "go env", "command": "go env GOTMPDIR", "exit": 0, "status": "observed"},
+    {"name": "git.version", "value": "2.56.0.windows.3", "source": "git --version", "command": "git --version", "exit": 0, "status": "observed"},
+    {"name": "powershell.version", "value": "5.1.26100.9818", "source": "$PSVersionTable", "command": "$PSVersionTable.PSVersion", "exit": 0, "status": "observed"},
+    {"name": "opencode.version", "value": "v2.2.5", "source": "opencode --version", "command": "opencode --version", "exit": 0, "status": "observed"},
+    {"name": "identity.user", "value": "DESKTOP-R0IUAOR\\Andragon (non-elevated)", "source": "WindowsPrincipal.IsInRole=False", "command": "IsInRole(Administrator)", "exit": 0, "status": "observed"},
+    {"name": "identity.integrity", "value": "Medium (S-1-16-8192)", "source": "whoami.exe /groups", "command": "C:\\Windows\\System32\\whoami.exe /groups", "exit": 0, "status": "observed"},
+    {"name": "identity.admins", "value": "deny-only", "source": "whoami.exe /groups", "command": "C:\\Windows\\System32\\whoami.exe /groups", "exit": 0, "status": "observed"},
+    {"name": "defender.av", "value": "enabled, real-time on", "source": "Get-MpComputerStatus", "command": "Get-MpComputerStatus", "exit": 0, "status": "observed"},
+    {"name": "execpolicy", "value": "CurrentUser=RemoteSigned, rest Undefined", "source": "Get-ExecutionPolicy -List", "command": "Get-ExecutionPolicy -List", "exit": 0, "status": "observed"},
+    {"name": "applocker.effective", "value": "empty", "source": "Get-AppLockerPolicy -Effective", "command": "Get-AppLockerPolicy -Effective", "exit": 0, "status": "observed"},
+    {"name": "ci.policy.key", "value": "present (Emode=0,Sku=0,VerifiedAndReputable=1); enforcement NOT inferred", "source": "HKLM CI Policy", "command": "Get-ItemProperty HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CI\\Policy", "exit": 0, "status": "observed"},
+    {"name": "deviceguard.effective", "value": "unknown (needs event correlation)", "source": "none", "command": "pending T2", "exit": null, "status": "unknown"},
+    {"name": "smartappcontrol", "value": "unknown", "source": "no readable key", "command": "registry + MpPreference", "exit": 0, "status": "unknown"},
+    {"name": "smartscreen", "value": "unknown", "source": "no readable key", "command": "registry SmartScreenEnabled", "exit": 0, "status": "unknown"},
+    {"name": "gpo.origin", "value": "unknown (gpresult partial)", "source": "gpresult /r", "command": "gpresult /r", "exit": 0, "status": "unknown"}
+  ]
+}
