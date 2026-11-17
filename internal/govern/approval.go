@@ -438,10 +438,13 @@ func Revoke(req ApprovalRequest, by, reason string, now time.Time) (ApprovalRequ
 		return ApprovalRequest{}, fmt.Errorf("govern: approval %s is %s: terminal, nothing to revoke", req.ID, req.State)
 	}
 	b := strings.TrimSpace(by)
+	// The executor never un-signs what authorizes it: a human operator
+	// may revoke, but never under the executor's own identity (four
+	// distinct duties, no self-governance — same rule as Approve).
 	allowed := strings.EqualFold(b, req.Proposer) || strings.EqualFold(b, req.Reviewer) ||
-		strings.EqualFold(b, req.Approver) || IsHuman(b)
+		strings.EqualFold(b, req.Approver) || (IsHuman(b) && !strings.EqualFold(b, req.Executor))
 	if !allowed {
-		return ApprovalRequest{}, fmt.Errorf("govern: %q cannot revoke %s (proposer, reviewer, approver or a human operator)", b, req.ID)
+		return ApprovalRequest{}, fmt.Errorf("govern: %q cannot revoke %s (proposer, reviewer, approver or a human operator other than the executor)", b, req.ID)
 	}
 	if err := singleLine("revoke reason", reason, true); err != nil {
 		return ApprovalRequest{}, err
