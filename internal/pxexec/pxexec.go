@@ -68,17 +68,27 @@ const (
 )
 
 // Spec is one typed launch request: WHAT to run, never HOW. Args
-// are separate values (no shell concatenation, ever). Env adds to
-// the minimal base (see DefaultEnv); stdin is optional; Timeout
-// overrides the default (0 = default, negative = none — refused
-// without an explicit justification, see NoTimeout).
+// are separate values (no shell concatenation, ever). EnvMode
+// selects the base: "inherit" (default, os.Environ — zero behavior
+// change for migrated callers), "minimal" (DefaultEnv only, for new
+// hardened callers), or "exact" (Spec.Env IS the complete
+// environment — for callers with their own allowlist filters such
+// as gates buildEnv or bench labChildEnv; nothing is added, so
+// filtered policies survive migration byte-for-byte). Env adds on
+// top of inherit/minimal. Stdin is optional; Timeout overrides the
+// default (0 = default, negative = refused).
 type Spec struct {
 	Name    string
 	Args    []string
 	Dir     string
+	EnvMode string
 	Env     []string
 	Stdin   []byte
 	Timeout time.Duration
+	// MaxOutput caps captured output per stream (0 = default).
+	// Callers with tighter budgets (bench, 256K) keep their exact
+	// truncation point instead of silently changing it.
+	MaxOutput int64
 	// Shell forces shell execution and is refused unless Justify
 	// names the requirement: shells are explicit, justified,
 	// bounded and tested — never the default path.
@@ -104,6 +114,10 @@ type Result struct {
 	Mechanism string
 	Stdout    string
 	Stderr    string
+	// Combined preserves the interleaved stdout+stderr stream, so
+	// callers migrated from CombinedOutput keep byte-equivalent
+	// behavior (interleave order is inherently racy either way).
+	Combined  string
 	Truncated bool
 	// BlockHint carries the nondestructive diagnostic for policy
 	// blocks: path, SHA-256 when the file exists, and the event
@@ -131,6 +145,12 @@ func DefaultEnv() []string {
 func (s Spec) Validate() error {
 	if s.SkipReason != "" {
 		return nil
+	}
+	if s.EnvMode != "" && s.EnvMode != "inherit" && s.EnvMode != "minimal" {
+		return fmt.Errorf("pxexec: unknown env mode %q (want inherit|minimal|exact)", s.EnvMode)
+	}
+	if s.MaxOutput < 0 {
+		return fmt.Errorf("pxexec: negative output cap refused")
 	}
 	if strings.TrimSpace(s.Name) == "" {
 		return fmt.Errorf("pxexec: command name required (argv-separated, never a shell string)")
@@ -171,14 +191,25 @@ func Run(ctx context.Context, s Spec) Result {
 	if s.Dir != "" {
 		cmd.Dir = s.Dir
 	}
-	cmd.Env = append(DefaultEnv(), s.Env...)
+	base := os.Environ()
+	if s.EnvMode == "minimal" {
+		base = DefaultEnv()
+	}
+	if s.EnvMode == "exact" {
+		base = nil
+	}
+	cmd.Env = append(base, s.Env...)
 	if len(s.Stdin) > 0 {
 		cmd.Stdin = bytes.NewReader(s.Stdin)
 	}
 	executil.HideWindow(cmd)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &limitedWriter{w: &stdout, n: MaxOutputBytes}
-	cmd.Stderr = &limitedWriter{w: &stderr, n: MaxOutputBytes}
+	capBytes := s.MaxOutput
+	if capBytes == 0 {
+		capBytes = int64(MaxOutputBytes)
+	}
+	var stdout, stderr, combined bytes.Buffer
+	cmd.Stdout = &limitedWriter{w: &stdout, n: capBytes, tee: &combined, tn: capBytes}
+	cmd.Stderr = &limitedWriter{w: &stderr, n: capBytes, tee: &combined, tn: capBytes}
 	err := cmd.Run()
 	dur := time.Since(start)
 	pid := -1
@@ -188,7 +219,8 @@ func Run(ctx context.Context, s Spec) Result {
 	res := Result{Exit: -1, Duration: dur, PID: pid, Mechanism: mech,
 		Stdout:    stdout.String(),
 		Stderr:    stderr.String(),
-		Truncated: stdout.Len() >= MaxOutputBytes || stderr.Len() >= MaxOutputBytes,
+		Combined:  combined.String(),
+		Truncated: stdout.Len() >= int(capBytes) || stderr.Len() >= int(capBytes),
 	}
 	if res.Truncated {
 		res.Stdout += "\n" + TruncateNotice
@@ -295,18 +327,31 @@ func firstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// limitedWriter caps captured output at n bytes.
+// limitedWriter caps captured output at n bytes, optionally
+// teeing into a second capped buffer (the combined stream).
+// Teeing never fails the primary write: the tee is best effort.
 type limitedWriter struct {
-	w *bytes.Buffer
-	n int
+	w   *bytes.Buffer
+	n   int64
+	tee *bytes.Buffer
+	tn  int64
 }
 
 func (l *limitedWriter) Write(p []byte) (int, error) {
-	room := l.n - l.w.Len()
+	if l.tee != nil {
+		if room := l.tn - int64(l.tee.Len()); room > 0 {
+			q := p
+			if int64(len(q)) > room {
+				q = q[:room]
+			}
+			_, _ = l.tee.Write(q)
+		}
+	}
+	room := l.n - int64(l.w.Len())
 	if room <= 0 {
 		return len(p), nil
 	}
-	if len(p) > room {
+	if int64(len(p)) > room {
 		p = p[:room]
 	}
 	return l.w.Write(p)
