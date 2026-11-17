@@ -120,3 +120,25 @@ explícito, sin pérdida silenciosa.
 - CLI/API (`internal/cli/mission_test.go`: help, subcomando
   desconocido, ciclo completo por dispatch, cancel sin motivo =
   exit 2, validación, lista+link, cancel/resume tras restart).
+
+## Gate F13.8 — Full Autonomous Engineering Benchmark
+
+Corpus versionado (`mission-corpus-v1`: 10 exploration MB1..MB10 +
+3 holdout sellado MH1..MH3, 23% ≥ 20%) con splits commiteados
+(`bench/mission-splits-v1.json`, seed 20261117): exploration siempre,
+holdout solo con flag explícito (sin flag = exit 2, nunca parcial
+silencioso). Cada caso corre su journey completo sobre los motores
+reales (mission, governance, report, verify) en stores aislados; los
+mocks solo cubren señales deterministas de fallo y van etiquetados
+`simulated` en el resultado.
+
+```sh
+regulus bench mission [--split exploration|holdout|all] [--holdout] [--save P] [--json] [--dry-run]
+```
+
+`--dry-run` valida corpus+splits y lista casos sin ejecutar. El run
+agrega con `mbench.Aggregate`: PASS exige cero violaciones, outcomes
+según oráculo, expedientes válidos, todas las clases cubiertas y
+baseline contrastada; `--save` escribe veredicto+resultados en JSON.
+Salidas: `0` solo en PASS, `1` FAIL/INSUFFICIENT_EVIDENCE o error de
+evidencia, `2` uso (incluye holdout sin `--holdout`).

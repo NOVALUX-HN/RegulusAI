@@ -23,7 +23,7 @@ import (
 // benchTopUsage is the top-level bench usage: every subcommand family
 // stays listed so --help documents tiers alongside the suite.
 func benchTopUsage() string {
-	return "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin] | regulus bench host-capabilities [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin] | regulus bench lab agents|run|compare|flow|report [...] | regulus bench tiers [--json] | regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--json] | regulus bench tier-report --evidence-dir <dir> | regulus bench diag --run <id> [--baseline <id>] [--evidence-dir <dir>] [--thresholds <file>] [--json]"
+	return "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench mission [--split exploration|holdout|all] [--holdout] [--save P] [--json] [--dry-run] | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin] | regulus bench host-capabilities [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin] | regulus bench lab agents|run|compare|flow|report [...] | regulus bench tiers [--json] | regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--json] | regulus bench tier-report --evidence-dir <dir> | regulus bench diag --run <id> [--baseline <id>] [--evidence-dir <dir>] [--thresholds <file>] [--json]"
 }
 
 func (c CLI) benchCmd(args []string) int {
@@ -50,6 +50,8 @@ func (c CLI) benchCmd(args []string) int {
 		return c.benchAgentCompareCmd(args[1:])
 	case "agent-report":
 		return c.benchAgentReportCmd(args[1:])
+	case "mission":
+		return c.benchMissionCmd(args[1:])
 	case "lab":
 		return c.benchLabCmd(args[1:])
 	case "host-journeys":

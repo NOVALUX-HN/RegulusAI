@@ -1,0 +1,6 @@
+{
+  "version": "mission-splits-v1",
+  "seed": 20261117,
+  "exploration": ["MB1", "MB2", "MB3", "MB4", "MB5", "MB6", "MB7", "MB8", "MB9", "MB10"],
+  "holdout": ["MH1", "MH2", "MH3"]
+}
