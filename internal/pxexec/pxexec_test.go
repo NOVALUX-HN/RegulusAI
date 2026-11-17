@@ -74,9 +74,20 @@ func TestCancelIsNotRun(t *testing.T) {
 }
 
 func TestBlockSignalClassifiesBlocked(t *testing.T) {
-	r := Run(context.Background(), Spec{Name: "powershell", Args: []string{"-NoProfile", "-Command", "Write-Output 'blocked this file by policy'"}, Timeout: 30 * time.Second})
+	// Real blocks never exit 0 (the process never starts): fail with
+	// the policy marker on stderr, mirroring a SAC denial.
+	r := Run(context.Background(), Spec{Name: "powershell", Args: []string{"-NoProfile", "-Command", "Write-Error 'blocked this file by policy'; exit 1"}, Timeout: 30 * time.Second})
 	if r.Outcome != OutcomeBlocked || r.ErrClass != ErrPolicy || r.BlockHint == "" {
 		t.Fatalf("policy signal must be BLOCKED with a hint, got %+v", r)
+	}
+}
+
+func TestPassOutputIsNotBlocked(t *testing.T) {
+	// Exit 0 with block-like words in stdout stays PASS: classifying it
+	// BLOCKED would be a false positive on diagnostic chatter.
+	r := Run(context.Background(), Spec{Name: "powershell", Args: []string{"-NoProfile", "-Command", "Write-Output 'blocked this file by policy (simulated log line)'"}, Timeout: 30 * time.Second})
+	if r.Outcome != OutcomePass {
+		t.Fatalf("exit-0 output must stay PASS, got %+v", r)
 	}
 }
 
