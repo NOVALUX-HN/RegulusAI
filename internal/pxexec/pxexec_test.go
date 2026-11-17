@@ -87,6 +87,24 @@ func TestArgsWithSpacesPassThrough(t *testing.T) {
 	}
 }
 
+func TestScrubParity(t *testing.T) {
+	// Pinned against internal/observability.RedactText vectors (kept
+	// as literals: importing observability here would cycle via
+	// manifest once callers migrate. If observability/redact.go
+	// patterns change, update this copy deliberately.)
+	vectors := map[string]string{
+		"bearer abc123":        "bearer [redacted]",
+		`{"api_key": "xyz"}`:   `{"api_key": "[redacted]"}`,
+		"token=abc123":         "token=[redacted]",
+		"nothing to hide here": "nothing to hide here",
+	}
+	for in, want := range vectors {
+		if got := scrubCredentials(in); got != want {
+			t.Fatalf("scrub drift for %q: got %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestRenderRedactsSecrets(t *testing.T) {
 	s := Spec{Name: "deploy", Args: []string{"--token=abc123", "--env=prod"}, Secrets: []string{"token"}}
 	out := s.Render()

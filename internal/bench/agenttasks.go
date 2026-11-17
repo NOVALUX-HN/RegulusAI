@@ -16,15 +16,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"regulus-ai/internal/executil"
 	"sort"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/evolve"
+	"regulus-ai/internal/pxexec"
 	"regulus-ai/internal/trace"
 )
 
@@ -275,16 +274,13 @@ func runOne(ctx context.Context, agent HeadlessAgent, t AgentTask, split string,
 	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
 		oc.TokenSource = trace.SourceMeasuredHost
 	}
-	cmd := exec.CommandContext(ctx, t.Check[0], t.Check[1:]...)
-	cmd.Dir = fix
-	executil.HideWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	oc.Detail = strings.TrimSpace(string(out))
+	res := pxexec.Run(ctx, pxexec.Spec{Name: t.Check[0], Args: t.Check[1:], Dir: fix})
+	oc.Detail = strings.TrimSpace(res.Combined)
 	if len(oc.Detail) > 2000 {
 		oc.Detail = oc.Detail[:2000]
 	}
-	if err != nil {
-		if appControlBlocked(oc.Detail) || appControlBlocked(err.Error()) {
+	if res.Outcome != pxexec.OutcomePass {
+		if res.ErrClass == pxexec.ErrPolicy || appControlBlocked(oc.Detail) {
 			oc.Status = AgentInfra
 			oc.Detail = "check could not execute (execution blocked by policy): " + oc.Detail
 			return oc

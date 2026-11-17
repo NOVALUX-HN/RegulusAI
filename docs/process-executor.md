@@ -61,3 +61,74 @@ elevar privilegios.
 (`go version`), launch-vs-fail, timeout (`ping -n 6`, 500 ms), cancel,
 clasificador BLOCKED (señal sintética), argv con espacios, redacción.
 Solo binarios inbox/toolchain: determinista bajo SAC.
+
+`internal/pxexec/guard_test.go`: auditoría de lanzadores. Recorre el
+repo (salta `.git`), parsea cada `.go` no-test fuera de `internal/pxexec`
+y falla si llama `exec.Command`/`exec.CommandContext` o importa
+`os/exec` sin excepción documentada. Excepciones: `internal/gates`
+(ShRunner/StructuredRunner), `*_test.go`, `scripts/` (sin Go). La
+allowlist cubre además los usos import-only sin lanzamiento
+(`LookPath`, clasificación `exec.Error`, `HideWindow`) y los callers
+pendientes documentados abajo.
+
+## Migrated callers (executor-first, cero cambio de conducta)
+
+Cada sitio conserva argv, cwd, streams, puntos de truncado y forma de
+error; solo cambia el mecanismo (pxexec):
+
+- `internal/doctor/doctor.go` — `ExecRunner.Run`: `Combined` +
+  error mapeado (nil si PASS; si no, error con `Detail`).
+- `internal/cmdx/helpers.go` — `probeOpenCodeVersion` (15s): `Stdout`.
+- `internal/cmdx/verify.go` — `probeGoToolchain` (15s): `Stdout`,
+  `"missing-go"` si falla.
+- `internal/bench/hostjourney.go` — `toolVersion` (30s): `Combined`,
+  primera línea ≤120 chars, `"%s probe failed: exit status N"`.
+- `internal/orchestrate/worktree.go` — `gitRun`: `Dir` + `Combined`,
+  error con forma `exit status N`.
+- `internal/planning/planner.go` — `workState` (2×10s): `Stdout`;
+  misma lógica de fallbacks.
+- `internal/impact/graph.go` — `DefaultGitLookup`: `Dir` + `Stdout`,
+  timeout 10s vía contexto (reemplaza goroutine+select manual con la
+  MISMA semántica: timeout→`fallbackStamp`); `headOf` igual.
+- `internal/sextant/traceability.go` — `git()`: `Stdout`; error con
+  forma `"git ARGS: exit status N (STDERR)"` usando `res.Stderr`.
+- `internal/bench/agenthost.go` — `OpenCodeRunner.Run`:
+  `Dir=workdir`, `MaxOutput` 256K (truncado idéntico), deadline del
+  ctx y quota/auth intactos, mismo raw+usage.
+- `internal/cmdx/bench_hostcap.go` — journey sub: `Dir=workdir`,
+  `Stdout`/`Stderr` separados, error `"%s: exit status N (STDERR)"`.
+
+## Migrated (segunda oleada, misma regla)
+
+- `internal/bench/agenttasks.go` — check: `Dir=fix`, entorno heredado
+  (igual que antes), `Combined` + corte 2000 idéntico, `AgentInfra`
+  ante BLOCKED (clasificador + fallback textual).
+- `internal/bench/agentlab_run.go` — check: `Dir=work`, `EnvMode exact`
+  con `labChildEnv(...)` byte-idéntico, corte `labDetailCap`, veredictos
+  `LabInfraError`/`LabFail`/`LabPass` intactos.
+- `internal/manifest/branch.go` — `runGit`: `Dir` + `Stdout`, `""`
+  ante no-PASS (ciclos rotos: pxexec solo depende de hojas).
+- `internal/almanac/export.go` — `ProjectName`: timeout 30s donde antes
+  no había (delta documentado: un git colgado fallaba colgando; ahora
+  falla cerrado como el resto de probes).
+- `internal/gates/mutation_export.go` — `git archive`: 60s, captura
+  capada a 64MB (delta documentado: antes sin cap; el tar mayor falla
+  cerrado en vez de truncarse en silencio).
+- `internal/cli/bench_agent.go` — `probeOpenCodeVersion`: `Stdout`.
+- `internal/cli/bench_host.go` — journey sub: `Dir`, `Stdout`/`Stderr`,
+  error `"%s: exit status N (STDERR)"`.
+- `internal/cli/root.go` — `gitTopLevel`: `Dir` + `Stdout`.
+
+## Exceptions (las audita el guard test)
+
+- `internal/gates/gates_exec.go` (`ShRunner`/`runShell`/`StructuredRunner`):
+  env-policy NOV-81 + kill-gate + cpu stats son security features,
+  nunca lanzamientos planos. Alcance F15.4.
+- `*_test.go`: orquestación de tests (runners falsos, probes de fixtures,
+  helpers multiproceso, probes de portabilidad).
+- `scripts/`: sin fuentes Go.
+- Usos import-only de `os/exec` (sin lanzamiento, con motivo):
+  probes `exec.LookPath` (`agenthost.go`, `cli/gate_run.go`,
+  `cli/status.go`, `testenv.go`), clasificación `exec.Error` de
+  runners inyectados (`doctor.go`, exigido por `doctor_test.go`),
+  infra `HideWindow` (`executil`, usada por el propio pxexec).

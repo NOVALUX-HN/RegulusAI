@@ -6,11 +6,10 @@ package manifest
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 )
 
 // Unknown is the best-effort fallback when the branch (or HEAD) cannot
@@ -55,12 +54,9 @@ func runGit(root string, args ...string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), branchProbeTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = root
-	executil.HideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
+	res := pxexec.Run(ctx, pxexec.Spec{Name: "git", Args: args, Dir: root})
+	if res.Outcome != pxexec.OutcomePass {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(res.Stdout)
 }

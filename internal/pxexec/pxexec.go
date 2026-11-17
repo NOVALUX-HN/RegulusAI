@@ -7,7 +7,11 @@
 // Reuse, never duplication:
 //   - console hiding: executil.HideWindow (F11 runner work) —
 //     every child gets it so background runs never flash.
-//   - redaction: observability.RedactText for rendered commands.
+//   - redaction: local scrubCredentials mirrors
+//     observability/redact.go patterns (parity-tested); pxexec
+//     depends only on leaf packages (executil) so any module —
+//     including manifest, almanac and gates — can import it
+//     without an import cycle.
 //   - verdict vocabulary: PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN is
 //     shared with the mission report (F13.7) and the F15.4 runner.
 //
@@ -26,11 +30,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/executil"
-	"regulus-ai/internal/observability"
 )
 
 // Outcomes: the closed classification vocabulary. BLOCKED is a
@@ -146,7 +150,7 @@ func (s Spec) Validate() error {
 	if s.SkipReason != "" {
 		return nil
 	}
-	if s.EnvMode != "" && s.EnvMode != "inherit" && s.EnvMode != "minimal" {
+	if s.EnvMode != "" && s.EnvMode != "inherit" && s.EnvMode != "minimal" && s.EnvMode != "exact" {
 		return fmt.Errorf("pxexec: unknown env mode %q (want inherit|minimal|exact)", s.EnvMode)
 	}
 	if s.MaxOutput < 0 {
@@ -259,9 +263,9 @@ func (s Spec) Render() string {
 	for _, a := range s.Args {
 		masked := a
 		if eq := strings.Index(a, "="); eq > 0 && redact[strings.ToLower(a[:eq])] {
-			masked = a[:eq+1] + observability.Redacted
+			masked = a[:eq+1] + redactedMarker
 		}
-		parts = append(parts, observability.RedactText(masked))
+		parts = append(parts, scrubCredentials(masked))
 	}
 	return strings.Join(parts, " ")
 }
@@ -325,6 +329,32 @@ func firstLine(s string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return strings.TrimSpace(s)
+}
+
+// redactedMarker replaces secret-bearing values (same literal as
+// observability.Redacted; kept local so pxexec never imports the
+// observability tree — see package doc).
+const redactedMarker = "[redacted]"
+
+var (
+	// Mirrors internal/observability/redact.go (bearerRe, jsonKVRe,
+	// bareKVRe): same patterns, same replacements. Parity is pinned
+	// by TestScrubParity (test-only import, no cycle). If the source
+	// patterns change, this copy and its test fail loudly.
+	scrubBearerRe = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9\-._~+/=]+`)
+	scrubJsonKVRe = regexp.MustCompile(`(?i)"([^"]*(?:api_key|apikey|secret|token|password|credential|authorization|system_prompt|private_prompt|prompt|private_key)[^"]*)"\s*:\s*"[^"]*"`)
+	scrubBareKVRe = regexp.MustCompile(`(?i)\b(api_key|apikey|secret|token|password|credential|authorization|system_prompt|private_prompt|prompt|private_key)\b\s*([:=])\s*("[^"]*"|'[^']*'|[^\s,}]+)`)
+)
+
+// scrubCredentials removes embedded credential patterns from free
+// text (bearer tokens, deny-listed key=value pairs). Deliberate
+// non-coverage mirrors the source: bare paths and space-separated
+// secrets are NOT scrubbed.
+func scrubCredentials(s string) string {
+	s = scrubBearerRe.ReplaceAllString(s, "bearer "+redactedMarker)
+	s = scrubJsonKVRe.ReplaceAllString(s, `"$1": "`+redactedMarker+`"`)
+	s = scrubBareKVRe.ReplaceAllString(s, `$1$2`+redactedMarker)
+	return s
 }
 
 // limitedWriter caps captured output at n bytes, optionally

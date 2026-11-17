@@ -27,14 +27,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
 	"regulus-ai/internal/observability"
+	"regulus-ai/internal/pxexec"
 	"regulus-ai/internal/trace"
 )
 
@@ -411,18 +410,14 @@ func (l *labExecution) labEvaluateCheck() {
 	}
 	if l.res.Verdict == "" {
 		checkCtx := l.ctx
-		cmd := exec.CommandContext(checkCtx, l.task.Check[0], l.task.Check[1:]...)
-		cmd.Dir = l.work
-		cmd.Env = labChildEnv([]string{"FIXTURE_DIR=" + l.work, "LAB_RUN_ID=" + l.runID, "LAB_SESSION=" + l.session})
-		executil.HideWindow(cmd)
-		out, err := cmd.CombinedOutput()
-		detail := strings.TrimSpace(string(out))
+		res := pxexec.Run(checkCtx, pxexec.Spec{Name: l.task.Check[0], Args: l.task.Check[1:], Dir: l.work, EnvMode: "exact", Env: labChildEnv([]string{"FIXTURE_DIR=" + l.work, "LAB_RUN_ID=" + l.runID, "LAB_SESSION=" + l.session})})
+		detail := strings.TrimSpace(res.Combined)
 		if len(detail) > labDetailCap {
 			detail = detail[:labDetailCap]
 		}
 		oc.Detail = detail
-		if err != nil {
-			if appControlBlocked(detail) || appControlBlocked(err.Error()) {
+		if res.Outcome != pxexec.OutcomePass {
+			if res.ErrClass == pxexec.ErrPolicy || appControlBlocked(detail) {
 				l.res.Verdict = LabInfraError
 				l.res.Errors = append(l.res.Errors, "check could not execute (execution blocked by policy)")
 			} else {
@@ -430,7 +425,7 @@ func (l *labExecution) labEvaluateCheck() {
 				if detail != "" {
 					l.res.Errors = append(l.res.Errors, "check failed: "+shortLabDetail(detail))
 				} else {
-					l.res.Errors = append(l.res.Errors, "check failed: "+err.Error())
+					l.res.Errors = append(l.res.Errors, "check failed: "+res.Detail)
 				}
 			}
 		} else {
