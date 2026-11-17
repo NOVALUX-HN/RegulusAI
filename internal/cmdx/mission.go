@@ -26,7 +26,7 @@ import (
 )
 
 func missionUsage() string {
-	return "usage: regulus mission create --objective <o> [--id <id>] [--description <d>] [--repo <r>] [--workspace <w>] [--constraint <a,b>] [--criteria <a,b>] [--risk low|medium|high|critical] [--budget-time-ms N] [--budget-tokens N] [--budget-cost N] [--creator <c>] [--actor <a>] [--json] | regulus mission show --id <id> [--json] | regulus mission list [--state <s>] [--json] | regulus mission status --id <id> [--json] | regulus mission advance --id <id> --to <state> [--reason <r>] [--actor <a>] [--idem-key <k>] | regulus mission pause --id <id> [--reason <r>] [--actor <a>] [--idem-key <k>] | regulus mission resume --id <id> [--reason <r>] [--actor <a>] [--idem-key <k>] | regulus mission cancel --id <id> --reason <r> [--actor <a>] [--idem-key <k>] | regulus mission link --id <id> [--run <a,b>] [--task <a,b>] [--agent <a,b>] [--worktree <a,b>] [--commit <a,b>] [--trace <a,b>] [--receipt <a,b>] [--actor <a>] | regulus mission reopen --id <id> --reason <r> [--actor <a>] [--idem-key <k>]"
+	return "usage: regulus mission create --objective <o> [--id <id>] [--description <d>] [--repo <r>] [--workspace <w>] [--constraint <a,b>] [--criteria <a,b>] [--risk low|medium|high|critical] [--budget-time-ms N] [--budget-tokens N] [--budget-cost N] [--creator <c>] [--actor <a>] [--json] | regulus mission show --id <id> [--json] | regulus mission list [--state <s>] [--json] | regulus mission status --id <id> [--json] | regulus mission advance --id <id> --to <state> [--reason <r>] [--actor <a>] [--idem-key <k>] | regulus mission pause --id <id> [--reason <r>] [--actor <a>] [--idem-key <k>] | regulus mission resume --id <id> [--reason <r>] [--actor <a>] [--idem-key <k>] | regulus mission cancel --id <id> --reason <r> [--actor <a>] [--idem-key <k>] | regulus mission link --id <id> [--run <a,b>] [--task <a,b>] [--agent <a,b>] [--worktree <a,b>] [--commit <a,b>] [--trace <a,b>] [--receipt <a,b>] [--actor <a>] | regulus mission reopen --id <id> --reason <r> [--actor <a>] [--idem-key <k>] | regulus mission plan --id <id> [--objective <o>] [--constraint <a,b>] [--criteria <a,b>] [--author <a>] [--actor <a>] [--dry-run] [--json] | regulus mission replan --id <id> --change <reason> [--objective <o>] [--constraint <a,b>] [--criteria <a,b>] [--confirm <task=result,a,b>] [--author <a>] [--actor <a>] [--dry-run] [--json] | regulus mission explain --id <id> [--version N] [--json]"
 }
 
 // MissionCmd routes `regulus mission ...`.
@@ -60,6 +60,12 @@ func (io IO) MissionCmd(args []string) int {
 		return io.MissionLinkCmd(args[1:])
 	case "reopen":
 		return io.MissionReopenCmd(args[1:])
+	case "plan":
+		return io.MissionPlanCmd(args[1:])
+	case "replan":
+		return io.MissionReplanCmd(args[1:])
+	case "explain":
+		return io.MissionExplainCmd(args[1:])
 	default:
 		fmt.Fprintf(io.Stderr, "mission: unknown subcommand %q\n", args[0])
 		fmt.Fprintln(io.Stderr, missionUsage())
