@@ -17,7 +17,7 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 
 | ID | Spec | NOV | Deps | Route | Commit |
 |----|------|-----|------|-------|--------|
-| T1 | S1 | NOV-104 F13.1 | F11.1,F12.2,F12.5 | worker | — |
+| T1 | S1 | NOV-104 F13.1 | F11.1,F12.2,F12.5 | worker | 160f0e1 |
 | T2 | S2 | NOV-105 F13.2 | T1 + F12.3,F12.8,F12.1 | worker | — |
 | T3 | S3 | NOV-106 F13.3 | T1 + F12.1,F12.2 | worker | — |
 | T4 | S4 | NOV-107 F13.4 | F11.1,F11.3 + F12.8,F12.4 | worker | — |
@@ -30,3 +30,4 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 
 - L1 (usuario, verbatim): "ya se hizo push de forma manual. revisa detenidamente cada tarea y cumple con lo que se pide"
 - L2: F13 nueva en Linear (8 issues NOV-104..111, Urgent salvo NOV-110 High, sin estimates ni comentarios). Previo obligatorio cumplido: push verificado en origen, CI del árbol F11+F12 diagnosticado y reparado localmente (secret scan exit 0, 2 tests Windows PASS, size/vet/build verdes; commit 397a93f ahead 1 sin push) antes de arrancar F13.1 como exige la spec.
+- L3 (2026-11-17, T1 done): NOV-104 F13.1 implementado (motor 13 estados + store durable + migración + concurrencia optimista + ledger exactly-once + CLI mínima, tests incl. multi-proceso real) commit 160f0e1; pin de dispatch actualizado por parent; Linear con evidencia y Done.
