@@ -25,7 +25,30 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
   - "## Pruebas requeridas — E2E con workers reales/simulados según el host disponible; concurrencia; colisiones; timeout; worker offline; cancelación; límites de presupuesto; deadlock; reinicio del coordinador y limpieza de worktrees."
   - "## Entregables — Executor integrado, comandos/API de misión, documentación de scheduling, tests y benchmark secuencial vs paralelo con calidad equivalente."
 
-(Se añaden S4-S8 con el cuerpo verbatim de NOV-107..111 al arrancar cada tarea.)
+- S4 (NOV-107 F13.4 · Continuous Verification y gates durante la misión):
+  - "## Objetivo — Verificar continuamente cada cambio y cada integración, no solo al final de la misión. Reutilizar F12.8 Impact Analysis, F12.4 Quality Intelligence y gates existentes."
+  - "## Implementación — * Definir VerificationPlan por tarea y por misión a partir del diff, grafo de impacto, contratos, riesgo y criterios de aceptación. * Ejecutar pruebas enfocadas y ampliar a suites superiores cuando exista incertidumbre o riesgo. * Diferenciar PASS, FAIL, BLOCKED, SKIPPED, UNKNOWN y NOT_APPLICABLE; conservar causa y evidencia. * Ejecutar compilación, análisis estático, unit, integration, E2E, security/adversarial y mutation/fuzz según matriz de riesgo. * Vincular resultados a commit SHA, diff hash, toolchain, host, agente, versión y run_id. * Detectar regresiones con F12.4, mostrando baseline, muestra y limitaciones. * Gatear merge/integración y transición de misión; fallos críticos impiden completar. * No permitir que una selección predictiva débil omita pruebas críticas; ante incertidumbre, ampliar suite. * Soportar rerun reproducible y comparar resultados sin sobrescribir evidencias anteriores."
+  - "## Criterios de aceptación — * Cada cambio integrado tiene plan y resultado de verificación trazable. * BLOCKED/SKIPPED/UNKNOWN nunca se interpretan como PASS. * Un test fallido o gate crítico rojo bloquea la integración. * La selección enfocada se contrasta contra full suite y reporta precisión/recall. * Se demuestra detección de regresiones inyectadas y vinculación al cambio responsable. * Se puede reproducir un resultado desde commit y configuración registrados."
+  - "## Pruebas requeridas — Fallos inyectados, regresiones, tests omitidos, host sin toolchain, suite parcial, diff multi-paquete, cambios de contrato, evidencia tampered y rerun."
+  - "## Entregables — Verification Engine, matriz de riesgo→gates, reportes por tarea/misión, documentación y corpus de validación."
+
+- S5 (NOV-108 F13.5 · Mission Failure Intelligence y recuperación a nivel de misión):
+  - "## Objetivo — Extender F12.5 Autonomous Recovery desde la recuperación de tareas individuales a decisiones de recuperación del plan y de la misión completa."
+  - "## Implementación — * Construir Failure Coordinator que consume estados, errores, gates, traces y receipts de la misión. * Clasificar fallos: transient, permanent, agent_unavailable, host_unavailable, permission_denied, budget_exceeded, merge_conflict, validation_failed, corrupted_state y unknown. * Seleccionar retry, reasignación, replan, isolate, rollback, pause_for_approval o fail_closed. * Reutilizar checkpoints/ledger/idempotency de F12.5; nunca crear un segundo mecanismo. * Reasignar solo tras verificar capabilities, contexto, estado del worktree y scopes; los permisos solo pueden mantenerse o estrecharse. * Replanificar dependientes sin invalidar resultados confirmados. * Rollback por unidad transaccional con compensaciones explícitas; no revertir cambios ajenos a la misión. * Establecer límites de retry, backoff, circuit breaker y escalamiento humano. * Registrar causa, evidencia, decisión, alternativas descartadas y resultado de la recuperación. * Alimentar F12.6 con aprendizajes etiquetados por confianza y procedencia, sin autoelevar hipótesis a hechos."
+  - "## Criterios de aceptación — * Fallos transitorios se recuperan dentro de budgets y sin duplicar efectos. * Fallos permanentes/de permisos detienen o escalan de forma segura. * Reasignación conserva contexto/evidencia y nunca amplía scopes. * Replanificación preserva dependencias y no repite tareas completadas. * Rollback no afecta cambios externos a la misión. * El sistema explica por qué reintentó, reasignó, replanificó o se detuvo. * Ante estado desconocido/corrupto, falla cerrado y solicita intervención."
+  - "## Pruebas requeridas — Crash coordinador, worker desaparecido, host offline, merge conflict, gate rojo, presupuesto agotado, permiso denegado, estado corrupto, rollback parcial y recuperación repetida."
+  - "## Entregables — Mission Failure Coordinator, políticas de decisión, documentación, escenarios de fallo y evidencia de recuperación E2E."
+
+- S6 (NOV-109 F13.6 · Human Governance y control de autonomía basado en riesgo):
+  - "## Objetivo — Aplicar gobernanza uniforme a nivel de misión, con autonomía proporcional al riesgo y autorizaciones vinculadas exactamente a las acciones/cambios aprobados."
+  - "## Implementación (1/2) — * Definir matriz de riesgo por operación, superficie afectada, reversibilidad, permisos, impacto y confianza de evidencia. * Definir políticas deny-by-default y perfiles de autonomía configurables por proyecto/entorno. * Permitir acciones autónomas solo dentro de scopes y políticas explícitas. * Exigir aprobación humana para Core, seguridad, permisos, políticas, evaluadores, despliegues y acciones irreversibles/críticas. * Crear ApprovalRequest con resumen, diff/hash, plan/version, riesgos, tests, rollback, coste y alcance."
+
+  - "## Implementación (2/2) — * Vincular aprobación a hashes de artefactos, versión de policy, identidad del aprobador, fecha y expiración; cualquier cambio material invalida la aprobación. * Soportar pause/resume/reject/revoke y audit log inmutable o append-only. * Separar proposer, reviewer, approver y executor; impedir autoaprobación de cambios críticos. * No solicitar aprobación por cada operación trivial; agrupar solicitudes seguras sin ampliar alcance. * Integrar los gates y permisos MCP existentes."
+  - "## Criterios de aceptación — * Operaciones no autorizadas se bloquean por defecto. * Acciones críticas requieren aprobación válida y ligada al artefacto exacto. * Modificar diff, scope o policy invalida aprobación anterior. * Ningún agente puede aprobar su propio cambio crítico ni modificar las reglas que lo gobiernan. * Revocación/cancelación detiene acciones pendientes. * Todas las decisiones pueden auditarse y reconstruirse."
+  - "## Pruebas requeridas — Prompt injection intentando saltar aprobación, replay de aprobación, hash alterado, scope ampliado, revocación, autoaprobación, política desconocida y acciones irreversibles."
+  - "## Entregables — Policy engine de misión o extensión del existente, flujo de aprobación, documentación y pruebas adversariales."
+
+(Se añaden S7-S8 con el cuerpo verbatim de NOV-110..111 al arrancar cada tarea.)
 
 ## Tasks
 
@@ -34,9 +57,9 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 | T1 | S1 | NOV-104 F13.1 | F11.1,F12.2,F12.5 | worker | 160f0e1 |
 | T2 | S2 | NOV-105 F13.2 | T1 + F12.3,F12.8,F12.1 | worker | fe14c5a |
 | T3 | S3 | NOV-106 F13.3 | T1 + F12.1,F12.2 | worker | 4e08f49 |
-| T4 | S4 | NOV-107 F13.4 | F11.1,F11.3 + F12.8,F12.4 | worker | — |
-| T5 | S5 | NOV-108 F13.5 | F12.5 + feeds F12.6 | worker | — |
-| T6 | S6 | NOV-109 F13.6 | F11.8 + policies | worker | — |
+| T4 | S4 | NOV-107 F13.4 | F11.1,F11.3 + F12.8,F12.4 | worker | e890345 |
+| T5 | S5 | NOV-108 F13.5 | F12.5 + feeds F12.6 | worker | d4997ec |
+| T6 | S6 | NOV-109 F13.6 | F11.8 + policies | worker | fea93da |
 | T7 | S7 | NOV-110 F13.7 | F12.4 + gates | worker | — |
 | T8 | S8 | NOV-111 F13.8 | todas | worker | — |
 
@@ -47,3 +70,6 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 - L3 (2026-11-17, T1 done): NOV-104 F13.1 implementado (motor 13 estados + store durable + migración + concurrencia optimista + ledger exactly-once + CLI mínima, tests incl. multi-proceso real) commit 160f0e1; pin de dispatch actualizado por parent; Linear con evidencia y Done.
 - L4 (2026-11-17, T2 done): NOV-105 F13.2 implementado (planner versionado + DAG + presupuestos etiquetados + dry-run/explicación/replan append-only + corpus, `go test ./...` todo ok) commit fe14c5a; Linear con evidencia y Done.
 - L5 (2026-11-17, T3 done): NOV-106 F13.3 implementado (executor por olas vía scheduler F12.2 + ledger 9 estados + idempotencia por claves + gates de integración + dry-run/supervisado, 17+5 tests) commit 4e08f49; Linear con evidencia y Done.
+- L6 (2026-11-17, T4 done): NOV-107 F13.4 implementado (Verification Engine + matriz riesgo→7 gates + veredictos + vinculación + regresiones + gateo + rerun + corpus 11 escenarios, 14 tests; 3 RED reales) commit e890345; pin+usage actualizados por parent; suite cli completa verde; Linear con evidencia y Done.
+- L7 (2026-11-17, T5 done): NOV-108 F13.5 implementado (Failure Coordinator 10 clases→7 acciones + guardas + ledger F12.5 reutilizado + lecciones F12.6, 33+7 tests; 1 RED real) commit d4997ec; pin+usage actualizados por parent; Linear con evidencia y Done.
+- L8 (2026-11-17, T6 done): NOV-109 F13.6 implementado (matriz riesgo→autonomía + perfiles locked/standard/wide deny-by-default + ApprovalRequest ligada a hash/policy/scope/expiry + 4 deberes sin autoaprobación + pause/resume/reject/revoke + audit log hash-chained, engine 33+ tests + CLI `govern` 13 subcomandos, smoke matrix ok) commit fea93da; Linear con evidencia y Done.
