@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 )
 
 // SupportedMajor is the only OpenCode major version Regulus supports.
@@ -25,8 +25,8 @@ const SupportedMajor = 2
 // startup while keeping the probe bounded.
 const ProbeTimeout = 15 * time.Second
 
-// Runner runs a command and returns its combined output. exec.CommandContext
-// backs the real one; tests substitute fakes.
+// Runner runs a command and returns its combined output. pxexec backs
+// the real one; tests substitute fakes.
 type Runner interface {
 	Run(ctx context.Context, name string, args ...string) (string, error)
 }
@@ -35,10 +35,11 @@ type Runner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	executil.HideWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	res := pxexec.Run(ctx, pxexec.Spec{Name: name, Args: args})
+	if res.Outcome == pxexec.OutcomePass {
+		return res.Combined, nil
+	}
+	return res.Combined, errors.New(res.Detail)
 }
 
 // DefaultRunner returns the real runner.

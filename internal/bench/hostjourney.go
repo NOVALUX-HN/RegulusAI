@@ -11,13 +11,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"regulus-ai/internal/executil"
 	"sort"
 	"strings"
 	"time"
+
+	"regulus-ai/internal/pxexec"
 )
 
 // Host levels, in increasing evidence order.
@@ -85,13 +85,14 @@ func DefaultHostProbes() []HostProbe {
 func toolVersion(ctx context.Context, bin string, args ...string) (string, error) {
 	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(tctx, bin, args...)
-	executil.HideWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%s probe failed: %v", bin, err)
+	res := pxexec.Run(tctx, pxexec.Spec{Name: bin, Args: args, Timeout: 30 * time.Second})
+	if res.Outcome != pxexec.OutcomePass {
+		if res.ErrClass == pxexec.ErrFail {
+			return "", fmt.Errorf("%s probe failed: exit status %d", bin, res.Exit)
+		}
+		return "", fmt.Errorf("%s probe failed: %s", bin, res.Detail)
 	}
-	first := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+	first := strings.TrimSpace(strings.SplitN(res.Combined, "\n", 2)[0])
 	if len(first) > 120 {
 		first = first[:120]
 	}

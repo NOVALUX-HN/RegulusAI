@@ -15,12 +15,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/impact"
 	"regulus-ai/internal/observability"
+	"regulus-ai/internal/pxexec"
 	"regulus-ai/internal/quality"
 	"regulus-ai/internal/verify"
 )
@@ -115,16 +115,15 @@ func (io IO) verifyProvenance(agent string, diffHash string) verify.Provenance {
 func probeGoToolchain() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "version")
-	out, err := cmd.Output()
-	if err != nil {
+	res := pxexec.Run(ctx, pxexec.Spec{Name: "go", Args: []string{"version"}, Timeout: 15 * time.Second})
+	if res.Outcome != pxexec.OutcomePass {
 		return "missing-go"
 	}
-	fields := strings.Fields(strings.TrimSpace(string(out)))
+	fields := strings.Fields(strings.TrimSpace(res.Stdout))
 	if len(fields) >= 4 && fields[0] == "go" && fields[1] == "version" {
 		return strings.Join(fields[2:], " ")
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(res.Stdout)
 }
 
 // hostName best-efforts the host id; unknown stays unknown, never empty-guessed.

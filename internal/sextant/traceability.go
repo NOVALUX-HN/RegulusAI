@@ -11,18 +11,17 @@
 package sextant
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
-	"regulus-ai/internal/executil"
 	"regulus-ai/internal/guardians"
+	"regulus-ai/internal/pxexec"
 )
 
 // TraceOptions names the issue being closed and its provenance.
@@ -95,17 +94,19 @@ func shortSHA(sha string) string {
 	return sha
 }
 
-// git runs git -C root and returns trimmed stdout.
+// git runs git -C root and returns trimmed stdout. The error preserves
+// the "git ARGS: exit status N (STDERR)" form.
 func git(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	executil.HideWindow(cmd)
-	var out, errb bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+	res := pxexec.Run(context.Background(), pxexec.Spec{
+		Name: "git", Args: append([]string{"-C", root}, args...),
+	})
+	if res.Outcome == pxexec.OutcomePass {
+		return strings.TrimRight(res.Stdout, "\n"), nil
 	}
-	return strings.TrimRight(out.String(), "\n"), nil
+	if res.ErrClass == pxexec.ErrFail {
+		return "", fmt.Errorf("git %s: exit status %d (%s)", strings.Join(args, " "), res.Exit, strings.TrimSpace(res.Stderr))
+	}
+	return "", fmt.Errorf("git %s: %s (%s)", strings.Join(args, " "), res.Detail, strings.TrimSpace(res.Stderr))
 }
 
 // linkedCommits lists commits citing the issue, plus the other issues

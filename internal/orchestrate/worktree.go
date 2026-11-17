@@ -13,13 +13,13 @@ package orchestrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 
-	"regulus-ai/internal/executil"
 	"regulus-ai/internal/mcp"
+	"regulus-ai/internal/pxexec"
 )
 
 // DefaultParallelBranchPrefix names every worker branch; the orphan
@@ -187,12 +187,17 @@ type WorktreeOps interface {
 type GitWorktreeOps struct{}
 
 // gitRun executes one git command in dir and returns combined output.
+// The error preserves the exit-status form so callers keep their
+// byte-identical messages.
 func gitRun(ctx context.Context, dir, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	executil.HideWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	res := pxexec.Run(ctx, pxexec.Spec{Name: name, Args: args, Dir: dir})
+	if res.Outcome == pxexec.OutcomePass {
+		return res.Combined, nil
+	}
+	if res.ErrClass == pxexec.ErrFail {
+		return res.Combined, fmt.Errorf("exit status %d", res.Exit)
+	}
+	return res.Combined, errors.New(res.Detail)
 }
 
 // Create adds one isolated checkout: `git worktree add <path> -b

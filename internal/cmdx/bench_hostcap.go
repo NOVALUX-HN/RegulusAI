@@ -6,16 +6,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/bench"
-	"regulus-ai/internal/executil"
 	"regulus-ai/internal/hostcfg"
 	"regulus-ai/internal/observability"
+	"regulus-ai/internal/pxexec"
 )
 
 // BenchHostCapabilitiesCmd implements `regulus bench
@@ -297,16 +296,14 @@ func (io IO) executeHostJourney(ctx context.Context, host, version, model, now s
 func hostJourneySteps(selfBin, workdir string) []bench.JourneyStep {
 	sub := func(args ...string) func(context.Context, string) (string, error) {
 		return func(ctx context.Context, _ string) (string, error) {
-			cmd := exec.CommandContext(ctx, selfBin, args...)
-			cmd.Dir = workdir
-			executil.HideWindow(cmd)
-			var out, errb strings.Builder
-			cmd.Stdout = &out
-			cmd.Stderr = &errb
-			if err := cmd.Run(); err != nil {
-				return out.String(), fmt.Errorf("%s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+			res := pxexec.Run(ctx, pxexec.Spec{Name: selfBin, Args: args, Dir: workdir})
+			if res.Outcome == pxexec.OutcomePass {
+				return res.Stdout, nil
 			}
-			return out.String(), nil
+			if res.ErrClass == pxexec.ErrFail {
+				return res.Stdout, fmt.Errorf("%s: exit status %d (%s)", strings.Join(args, " "), res.Exit, strings.TrimSpace(res.Stderr))
+			}
+			return res.Stdout, fmt.Errorf("%s: %s (%s)", strings.Join(args, " "), res.Detail, strings.TrimSpace(res.Stderr))
 		}
 	}
 	return []bench.JourneyStep{

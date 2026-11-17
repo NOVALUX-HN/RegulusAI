@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/bench"
-	"regulus-ai/internal/executil"
 	"regulus-ai/internal/gates"
+	"regulus-ai/internal/pxexec"
 )
 
 // splitList splits a comma-separated flag value, trimming spaces.
@@ -56,13 +55,11 @@ func gitHeadBounded(r gates.CmdRunner) string {
 func probeOpenCodeVersion() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "opencode", "--version")
-	executil.HideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
+	res := pxexec.Run(ctx, pxexec.Spec{Name: "opencode", Args: []string{"--version"}, Timeout: 15 * time.Second})
+	if res.Outcome != pxexec.OutcomePass {
 		return ""
 	}
-	fields := strings.Fields(strings.TrimSpace(string(out)))
+	fields := strings.Fields(strings.TrimSpace(res.Stdout))
 	if len(fields) == 2 && fields[0] == "opencode" {
 		return fields[1]
 	}

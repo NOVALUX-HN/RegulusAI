@@ -13,19 +13,18 @@
 package impact
 
 import (
-	"bytes"
+	"context"
 	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 )
 
 // GitLookup resolves the last-touch commit and ISO date of one
@@ -39,23 +38,16 @@ type GitLookup func(rel string) (commit, date string, err error)
 func DefaultGitLookup(root string) GitLookup {
 	return func(rel string) (string, string, error) {
 		abs := filepath.Join(root, filepath.FromSlash(rel))
-		cmd := exec.Command("git", "log", "-1", "--format=%H%x00%cI", "--", rel)
-		cmd.Dir = root
-		executil.HideWindow(cmd)
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &bytes.Buffer{}
-		done := make(chan error, 1)
-		go func() { done <- cmd.Run() }()
-		select {
-		case err := <-done:
-			if err == nil {
-				if parts := strings.SplitN(strings.TrimSpace(out.String()), "\x00", 2); len(parts) == 2 && parts[0] != "" {
-					return parts[0], parts[1], nil
-				}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		res := pxexec.Run(ctx, pxexec.Spec{
+			Name: "git", Args: []string{"log", "-1", "--format=%H%x00%cI", "--", rel},
+			Dir: root, Timeout: 10 * time.Second,
+		})
+		if res.Outcome == pxexec.OutcomePass {
+			if parts := strings.SplitN(strings.TrimSpace(res.Stdout), "\x00", 2); len(parts) == 2 && parts[0] != "" {
+				return parts[0], parts[1], nil
 			}
-		case <-time.After(10 * time.Second):
-			return fallbackStamp(abs)
 		}
 		return fallbackStamp(abs)
 	}
@@ -175,24 +167,19 @@ func BuildGraph(root string, prev *Graph, lookup GitLookup) (Graph, error) {
 	return g, nil
 }
 
-// headOf best-efforts the HEAD sha (empty when git is absent).
+// headOf best-efforts the HEAD sha (empty when git is absent or the
+// probe times out).
 func headOf(root string) string {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	executil.HideWindow(cmd)
-	cmd.Dir = root
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	done := make(chan error, 1)
-	go func() { done <- cmd.Run() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(out.String())
-	case <-time.After(10 * time.Second):
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res := pxexec.Run(ctx, pxexec.Spec{
+		Name: "git", Args: []string{"rev-parse", "HEAD"},
+		Dir: root, Timeout: 10 * time.Second,
+	})
+	if res.Outcome != pxexec.OutcomePass {
 		return ""
 	}
+	return strings.TrimSpace(res.Stdout)
 }
 
 // fingerprint identifies an evidence file state (mtime+size): equal

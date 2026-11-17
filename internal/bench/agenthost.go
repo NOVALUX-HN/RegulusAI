@@ -7,7 +7,6 @@
 package bench
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 	"regulus-ai/internal/trace"
 )
 
@@ -44,30 +43,26 @@ func (r OpenCodeRunner) Run(ctx context.Context, workdir, prompt, model string) 
 		args = append(args, "--model", model)
 	}
 	args = append(args, prompt)
-	cmd := exec.CommandContext(ctx, r.Bin, args...)
-	cmd.Dir = workdir
-	executil.HideWindow(cmd)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	res := pxexec.Run(ctx, pxexec.Spec{
+		Name: r.Bin, Args: args, Dir: workdir, MaxOutput: 256 * 1024,
+	})
 	start := time.Now()
-	err := cmd.Run()
 	_ = start
-	raw := buf.String()
-	if len(raw) > 256*1024 {
-		raw = raw[:256*1024]
-	}
+	raw := res.Combined
 	usage = scanOpenCodeUsage(raw)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return raw, usage, ctx.Err()
-		}
-		if strings.Contains(raw, "402") || strings.Contains(raw, "quota") || strings.Contains(raw, "Insufficient balance") {
-			return raw, usage, fmt.Errorf("host unavailable (quota/auth): agent did not run")
-		}
-		return raw, usage, fmt.Errorf("host run failed: %v", err)
+	if res.Outcome == pxexec.OutcomePass {
+		return raw, usage, nil
 	}
-	return raw, usage, nil
+	if ctx.Err() == context.DeadlineExceeded {
+		return raw, usage, ctx.Err()
+	}
+	if strings.Contains(raw, "402") || strings.Contains(raw, "quota") || strings.Contains(raw, "Insufficient balance") {
+		return raw, usage, fmt.Errorf("host unavailable (quota/auth): agent did not run")
+	}
+	if res.ErrClass == pxexec.ErrFail {
+		return raw, usage, fmt.Errorf("host run failed: exit status %d", res.Exit)
+	}
+	return raw, usage, fmt.Errorf("host run failed: %s", res.Detail)
 }
 
 // scanOpenCodeUsage defensively extracts token counts from opencode

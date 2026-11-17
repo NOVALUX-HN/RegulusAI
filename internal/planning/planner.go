@@ -7,20 +7,18 @@
 package planning
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/bench"
 	ictx "regulus-ai/internal/context"
-	"regulus-ai/internal/executil"
 	"regulus-ai/internal/impact"
 	"regulus-ai/internal/mission"
 	"regulus-ai/internal/orchestrate"
+	"regulus-ai/internal/pxexec"
 )
 
 // Request carries one planning or replanning input: optional
@@ -401,27 +399,21 @@ func workState(root string) (head, status string) {
 	head, status = "worktree", "git no disponible (se planifica sobre el árbol visible)"
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	headCmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
-	headCmd.Dir = root
-	executil.HideWindow(headCmd)
-	if out, err := headCmd.Output(); err == nil {
-		if h := strings.TrimSpace(string(bytes.TrimSpace(out))); h != "" {
-			head = h
-		}
-	} else {
+	headRes := pxexec.Run(ctx, pxexec.Spec{Name: "git", Args: []string{"rev-parse", "HEAD"}, Dir: root, Timeout: 10 * time.Second})
+	if headRes.Outcome != pxexec.OutcomePass {
 		return head, status
+	}
+	if h := strings.TrimSpace(headRes.Stdout); h != "" {
+		head = h
 	}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel2()
-	statusCmd := exec.CommandContext(ctx2, "git", "status", "--porcelain")
-	statusCmd.Dir = root
-	executil.HideWindow(statusCmd)
-	out, err := statusCmd.Output()
-	if err != nil {
+	statusRes := pxexec.Run(ctx2, pxexec.Spec{Name: "git", Args: []string{"status", "--porcelain"}, Dir: root, Timeout: 10 * time.Second})
+	if statusRes.Outcome != pxexec.OutcomePass {
 		return head, "HEAD " + shortSHA(head) + " (estado sin leer: git status falló, se planifica sobre el árbol visible)"
 	}
 	n := 0
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(statusRes.Stdout, "\n") {
 		if strings.TrimSpace(line) != "" {
 			n++
 		}
