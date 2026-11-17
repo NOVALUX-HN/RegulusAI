@@ -35,6 +35,20 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - S6 (NOV-117 F15.2 · Runner de tests Windows desatendido, nativo y observable): prerrequisitos NOV-115 revisada + F15.1; invocación nativa, procesos reales, resultado estructurado passed/failed/blocked/skipped/not-run (nunca blocked→passed), exit no-cero ante fallos, reproducible. (Gateado a revisión humana de F14 + F15.1.)
 
+- S7 (NOV-121 F14.5 · Trazabilidad causal del árbol de procesos y contexto de lanzamiento): probar (no asumir) la hipótesis padre/contexto: 5 caminos (go test, go test -c + exec PS, exec Bash, go run, exec directa PS) × 3 repeticiones, bytes idénticos, PID/PPID/imagen/cmdline redactada/token/sesión/cwd/env/timestamp por intento, correlación 3077/3089/3118 + hash + ruta; separar correlación de causalidad; entregables process-launch-matrix.md + JSONL/CSV + árboles + conclusión con confianza y limitaciones.
+
+- S8 (NOV-122 F14.6 · Análisis de política Smart App Control y criterios de confianza/reputación): qué significa VerifiedAndReputableDesktop en este host y qué criterio bloquea; política efectiva + GUID/modo/reglas/eventos; tabla artefacto→firma/origen/MOTW→evento→decisión; distinguir observable de inferido; fuentes oficiales con versión/fecha; evaluar SAC vs WDAC adicional vs otra capa. Entregables smart-app-control-policy-analysis.md + exportación redactada + tabla + incógnitas.
+
+- S9 (NOV-123 F14.7 · Auditoría de rutas temporales, cachés Go y procedencia de test binaries): descartar/confirmar ruta/cache/procedencia/MOTW: inventariar GOTMPDIR/TMP/TEMP/GOCACHE/GOMODCACHE/volumen/ACL; trazar generación/link/almacenamiento/eliminación; comparar mismos bytes en distintas rutas y misma ruta con binarios frescos; SHA-256/tamaño/tiempos/ACL/firma/MOTW; caché fría/caliente; entregar go-test-artifact-provenance.md + JSON + matriz + recomendación de ruta.
+
+- S10 (NOV-124 F14.8 · Revisión independiente de evidencias y diseño del experimento decisivo): revisión adversarial de F14.1–F14.7 (cada afirmación con evidencia trazable, repetir experimentos críticos, buscar alternativas/contradicciones/falsos positivos); experimento mínimo que discrimine hipótesis restantes (ejecutar si seguro); actualizar NOV-115 (registrar qué recomendación queda invalidada si cambia); sin cambios de producto. Entregables f14-independent-review.md + matriz afirmación→evidencia→reproducción→confianza + hipótesis + experimento + recomendación final. F15 no empieza con causa especulativa.
+
+- S11 (NOV-118 F15.3 · Integrar runner y diagnóstico en CI, High): prereqs NOV-115 revisada + F15.2; auditar workflows sin duplicar; separar CI estándar de validación bajo política; artefactos + redacción; CI falla ante blocked/not-run/skips/partial; permisos mínimos; no afirmar que CI limpia valida el PC del usuario.
+
+- S12 (NOV-119 F15.4 · Validación integral en Windows afectado, Urgent): prereqs F15.1-3; smoke→focused→full desde OpenCode, repetir desde proceso nuevo, 0 blocked/omitidos injustificados, eventos sin bloqueos (o clasificados), checks complementarios sin confundirlos, versions/hashes/artefactos; si política externa lo impide, F15 no se cierra resuelta.
+
+- S13 (NOV-120 F15.5 · Documentación operativa y prevención de regresiones, High): prereq F15.4; docs smoke/focused/full, diagnóstico no destructivo con eventos, recuperación/limpieza/escalamiento, test de regresión blocked/not-run≠passed, enlace con NOV-43/45/46/47/66 y brecha cerrada.
+
 ## Tasks
 
 | ID | Spec | NOV | Deps | Route | Commit |
@@ -45,11 +59,20 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T4 | S4 | NOV-115 F14.4 | T1-T3 | inline | f19a64f |
 | T5 | S5 | NOV-116 F15.1 | T4 + revisión humana | bloqueado | — |
 | T6 | S6 | NOV-117 F15.2 | T4 + T5 | bloqueado | — |
+| T7 | S7 | NOV-121 F14.5 | T1-T4 | inline | 72e69f1 |
+| T8 | S8 | NOV-122 F14.6 | T7 | inline | — |
+| T9 | S9 | NOV-123 F14.7 | T7 | inline | — |
+| T10 | S10 | NOV-124 F14.8 | T7-T9 | inline | — |
+| T11 | S11 | NOV-118 F15.3 | T10 + revisión humana + T6? (spec: NOV-115 rev + F15.2) | bloqueado | — |
+| T12 | S12 | NOV-119 F15.4 | T5+T6+T11 | bloqueado | — |
+| T13 | S13 | NOV-120 F15.5 | T12 | bloqueado | — |
 
 ## Log
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L8 (T7 done): NOV-121 F14.5 implementado (binario único 2CB3 × 5 caminos × 3 reps: A go test 3/3 corre, B PS-& 3/3 bloqueado, C bash 3/3 bloqueado con 3077 rec 9706/9711/9716, D go run 3/3 corre, E Start-Process 3/3 start-fail; CTRL Temp-path bloqueado elimina ruta; CTRL2 PS-creator bloqueado elimina creador; variable discriminante = camino de lanzamiento, confianza media-alta; process-launch-matrix.md + process-launch-log.jsonl; probes limpiados) commit 72e69f1; Linear con evidencia y Done.
+- L7: Fase extendida traída de Linear (2026-11-17): F14.5 NOV-121 + F14.6 NOV-122 + F14.7 NOV-123 + F14.8 NOV-124 (forense, Urgent) y F15.3 NOV-118 + F15.4 NOV-119 + F15.5 NOV-120. Orden: T7→T8→T9→T10, luego gate humano (F15.1-5 siguen bloqueadas: NOV-115 debe estar completada Y revisada; F14.8 actualiza la recomendación pero no sustituye la revisión humana).
 - L6 (T4 done): NOV-115 F14.4 implementado (auditoría runner/gates/scripts/Go/workflows/docs con file:línea; separación interno/externo; matriz 5 alternativas con eficacia/requisitos/riesgos/prueba; descartadas falsas universales; recomendación A runner in-repo + fallback host limpio; plan F15 2 tareas con rollback; prerrequisitos humanos; referencias a evidencia F14.1-3; sin implementar nada) commit f19a64f; Linear con evidencia y Done. F14 4/4 COMPLETA — pendiente revisión humana antes de F15 (gate spec).
 - L5 (T3 done): NOV-114 F14.3 implementado (prior-art leído: test-windows.ps1 + windows-diagnosis.md + NOV-43/45/46/47/66; matriz 8 escenarios: vet/build exit 0, go test temp corre 2 veces, exec directa de frescos bloqueada D/E, go run con relink corre, control viejo corre; fallo siempre en carga nunca en compilación; mismos bytes distinto resultado según padre; no-determinismo documentado; firma descartada como discriminador; diagrama + artefactos; repro-.exe limpiados) commit 3bf7f86; Linear con evidencia y Done.
 - L4 (T2 done): NOV-113 F14.2 implementado (repro fresco 15:35:02Z → 3077 Error + 3089 + 3118 Smart App Control Block, Policy VerifiedAndReputableDesktop {0283ac0f…}, SHA256 + firmante Unknown en XML exportado; Defender sin bloqueos; AppLocker solo 8001 policy-applied; discriminador = reputación del hash — govern.test.exe sin firma corre, t2-probe sin firma bloqueado; timeline.md + events/*.xml) commit b9c84c2; Linear con evidencia y Done.
