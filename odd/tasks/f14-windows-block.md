@@ -47,7 +47,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - S12 (NOV-119 F15.6 · Validación integral en Windows afectado — REESCRITO 16:15Z, Urgent): prereqs NOV-116, 117, 118, 125, 126; registrar commit/árbol/versiones/identidad; mismo contexto OpenCode; smoke→focused→full + journeys del ciclo autónomo; build/vet/unit/integration/E2E por separado; conteos completos sin omisiones silenciosas; repetir desde proceso nuevo y comparar; árbol/exit/timeouts/sin huérfanos; correlacionar eventos; comparar local vs CI; guardar logs/JSON/hashes/artefactos. Aceptación: 0 blocked injustificados, 0 falsos PASS, consistencia entre repeticiones; si política externa lo impide, F15 no se cierra resuelta.
 
-- S13 (NOV-120 F15.5 · Documentación operativa y prevención de regresiones, High): prereq F15.4; docs smoke/focused/full, diagnóstico no destructivo con eventos, recuperación/limpieza/escalamiento, test de regresión blocked/not-run≠passed, enlace con NOV-43/45/46/47/66 y brecha cerrada.
+- S13 (NOV-120 F15.7 · Documentación operativa y prevención de regresiones — REESCRITO 16:15Z, High): prereq F15.4; docs smoke/focused/full, diagnóstico no destructivo con eventos, recuperación/limpieza/escalamiento, test de regresión blocked/not-run≠passed, enlace con NOV-43/45/46/47/66 y brecha cerrada.
 
 ## Tasks
 
@@ -67,7 +67,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T12 | S14 | NOV-125 F15.4 runner verificación integral | T11 | inline | 98b7f34 |
 | T13 | S15 | NOV-126 F15.5 CI Windows con gates | T12 | inline | 3daeb72 |
 | T14 | S12 | NOV-119 F15.6 validación integral Windows | T5+T6+T11+T12+T13 | inline | 11b4770 |
-| T15 | S13 | NOV-120 F15.7 docs + prevención regresiones | T14 | bloqueado | — |
+| T15 | S13 | NOV-120 F15.7 docs + prevención regresiones | T14 | inline | 31a31b9 |
 
 - S14 (NOV-125 F15.4 · Runner de verificación integral y ejecución real de tests): prereq NOV-118; auditar/reutilizar scripts/runner existentes (test-windows.ps1); modos smoke/focused/full reproducibles; go test cuando la matriz lo confirme (no compilar+lanzar EXE directo salvo excepción validada); build/vet/unit/integration/E2E separados; prueba descubrimiento+ejecución real (conteos, exit, duración); JSON versionado; PASS/FAIL/BLOCKED/SKIPPED/NOT_RUN (full falla si incompleto); preserva logs; tests del runner (falsos PASS, cero tests, timeout, cancelación, bloqueo); invocable OpenCode + PS. Aceptación: contabiliza real, imposible PASS sin tests/ante faltantes/BLOCKED; reproducible.
 
@@ -77,6 +77,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L19 (T15 done): NOV-120 F15.7 implementado (docs/windows-runbook.md: comandos smoke/focused/full, diagnóstico no destructivo con eventos, recuperación/retención/redacción, escalamiento admin, límites, reconciliación NOV-43/45/46/47/66; link desde windows.md; test regresión roundtrip + guard_test + verdict tests; vet/build verdes, ejecución en CI/host-limpio) commit 31a31b9; Linear con evidencia y Done.
 - L18 (T14 done): NOV-119 F15.6 ejecutado (2 full runs desde procesos nuevos N=19/N=50 + focused; resultado 37 PASS/12 BLOCKED/1 FAIL-propio + bench Infra; FAIL propio = dispatch pin desactualizado (govern+testflow) corregido + SafeRefusal en test + refactor RunCase 7 fases + descubrimiento pipe-fix; bench Infra = fixtures SAC, 0 fallos funcionales; 40 eventos 3077 en ventana; local-vs-CI declarado; conclusión honesta: NO resuelta, BLOCKED documentado) commit 11b4770; Linear con evidencia en In Progress (aceptación 0-blocked no cumplida: 12 BLOCKED externos; per spec no se declara resuelta).
 - L17 (T13 done): NOV-126 F15.5 implementado (test-windows.ps1: -Strict hace rojo el BLOCKED, -JsonReport versionado sin BOM; ci.yml windows-native: -Strict + JSON + gate dedicado FAIL/BLOCKED/NOT_RUN/vacío + artefactos; probado strict exit 1 / no-strict exit 0, actionlint limpio; distinción CI vs host en gate + docs; permisos/SHAs intactos) commit 3daeb72; Linear con evidencia y Done.
 - L16 (T12 done): NOV-125 F15.4 implementado (internal/testflow: descubrimiento go list con tests, modos smoke/focused/full, checks build/vet separados, clasificación pura+testeable, veredicto estricto, JSON versionado; CLI testflow run exit 0 solo en verde; pxexec blockHint con LookPath; E2E real vía harness ×3: discovery ok, checks PASS, paquete BLOCKED con hint, verdict=false correcto sin falsos PASS; unit tests pendientes de host sin bloqueo) commit 98b7f34; Linear con evidencia y Done.
