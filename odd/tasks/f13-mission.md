@@ -11,15 +11,29 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
   - "## Pruebas requeridas — Unitarias de máquina de estados, persistencia, migración, concurrencia y validación; integración multi-proceso; crash/restart; cancelación y reanudación; compatibilidad de CLI/API."
   - "## Entregables — Código, documentación del modelo y transiciones, CLI/API, tests y evidencia de recuperación."
 
-(Se añaden S2-S8 con el cuerpo verbatim de NOV-105..111 al arrancar cada tarea.)
+- S2 (NOV-105 F13.2 · Autonomous Planning y descomposición de misiones):
+  - "## Objetivo — Transformar un objetivo de ingeniería en un plan ejecutable, verificable y con riesgo/presupuesto explícitos, usando F12.3 Context Engine, F12.8 Impact Analysis y F12.1 Orchestration."
+  - "## Implementación — * Crear un Mission Planner que recibe Mission y devuelve plan versionado con hipótesis, supuestos, riesgos, preguntas abiertas, entregables y criterios Given/When/Then. * Inspeccionar repositorio y estado de trabajo; consultar inventario, grafo de impacto, contratos, tests y documentación relevantes. * Generar DAG de tareas con dependencias, exclusiones, colisiones potenciales, orden topológico y condiciones de bloqueo. * Para cada tarea definir scope de archivos/componentes, agente/capability requerida, permisos mínimos, contexto, pruebas y presupuesto. * Estimar complejidad, riesgo, tiempo y coste como estimaciones etiquetadas; no presentarlas como mediciones. * Distinguir tareas autónomas, decisiones reversibles, acciones que requieren aprobación y ambigüedades que requieren al usuario. * Detectar ciclos, planes incompletos, criterios no verificables y alcance no cubierto. * Permitir dry-run, explicación de decisiones, versionado del plan y replanificación sin borrar el historial. * Comparar plan original con revisiones y conservar motivo de cada cambio."
+  - "## Criterios de aceptación — * Una solicitud compleja produce un plan estructurado y ejecutable con criterios verificables. * Cada tarea del plan tiene objetivo, entregable, dependencias, scope, riesgo, presupuesto y estrategia de verificación. * No se planifican capabilities no verificadas ni permisos superiores a los autorizados. * Dependencias cíclicas y criterios ambiguos se detectan antes de ejecutar. * Replanificación preserva trazabilidad y no pierde resultados ya confirmados. * El plan explica por qué se dividió el trabajo y por qué algunas tareas se serializan. * Si falta información crítica, el sistema solicita aclaración o aprobación; no inventa supuestos."
+  - "## Pruebas requeridas — Corpus de solicitudes simples, complejas, ambiguas y adversariales; DAG cíclico; conflictos de archivos; scopes insuficientes; impacto desconocido; plan reversionado; pruebas de no omisión de requisitos críticos."
+  - "## Entregables — Planner, schema del plan, CLI/API, documentación, corpus de evaluación y reportes de calidad del plan."
+
+- S3 (NOV-106 F13.3 · Autonomous Execution y coordinación de workers):
+  - "## Objetivo — Ejecutar los planes de F13.2 coordinando F12.1 Adaptive Orchestration y F12.2 Parallel Engineering, con control de estado, permisos y presupuesto a nivel de misión."
+  - "## Implementación — * Implementar Mission Executor que consume un plan aprobado y despacha tareas respetando el DAG. * Reutilizar el selector de agentes y scheduler/worktrees existentes; no implementar un segundo scheduler. * Mantener ledger de tareas por misión: pending, ready, dispatched, running, succeeded, failed, blocked, cancelled, integrated. * Coordinar concurrencia, backpressure, timeouts, cancelación y budgets globales y por tarea. * Compartir solo dependencias/artefactos explícitos entre workers; preservar aislamiento y scopes. * Capturar resultados estructurados, archivos, commits, logs, traces y receipts. * Propagar bloqueos y resultados a tareas dependientes; evitar deadlocks y ciclos de delegación. * Soportar modo dry-run y modo supervisado. * Al integrar workers, comprobar estado del worktree, conflictos, ownership de archivos y gates. * Manejar idempotencia: reintentos no deben despachar dos veces la misma operación confirmada."
+  - "## Criterios de aceptación — * Una misión con al menos dos tareas independientes ejecuta en paralelo y tareas dependientes esperan correctamente. * Conflictos de archivos se serializan o pasan a revisión, nunca se resuelven silenciosamente. * Fallo de un worker no corrompe ni cancela indebidamente los demás. * Los budgets agregados no se exceden por concurrencia. * Cancelación y pausa alcanzan workers y procesos descendientes. * Cada tarea y agente tiene trazabilidad y permisos verificables. * Reanudación desde F13.1 no duplica ejecución ni integración."
+  - "## Pruebas requeridas — E2E con workers reales/simulados según el host disponible; concurrencia; colisiones; timeout; worker offline; cancelación; límites de presupuesto; deadlock; reinicio del coordinador y limpieza de worktrees."
+  - "## Entregables — Executor integrado, comandos/API de misión, documentación de scheduling, tests y benchmark secuencial vs paralelo con calidad equivalente."
+
+(Se añaden S4-S8 con el cuerpo verbatim de NOV-107..111 al arrancar cada tarea.)
 
 ## Tasks
 
 | ID | Spec | NOV | Deps | Route | Commit |
 |----|------|-----|------|-------|--------|
 | T1 | S1 | NOV-104 F13.1 | F11.1,F12.2,F12.5 | worker | 160f0e1 |
-| T2 | S2 | NOV-105 F13.2 | T1 + F12.3,F12.8,F12.1 | worker | — |
-| T3 | S3 | NOV-106 F13.3 | T1 + F12.1,F12.2 | worker | — |
+| T2 | S2 | NOV-105 F13.2 | T1 + F12.3,F12.8,F12.1 | worker | fe14c5a |
+| T3 | S3 | NOV-106 F13.3 | T1 + F12.1,F12.2 | worker | 4e08f49 |
 | T4 | S4 | NOV-107 F13.4 | F11.1,F11.3 + F12.8,F12.4 | worker | — |
 | T5 | S5 | NOV-108 F13.5 | F12.5 + feeds F12.6 | worker | — |
 | T6 | S6 | NOV-109 F13.6 | F11.8 + policies | worker | — |
@@ -31,3 +45,5 @@ Header: milestone F13 (8 issues NOV-104..111, todas Backlog salvo las que se vay
 - L1 (usuario, verbatim): "ya se hizo push de forma manual. revisa detenidamente cada tarea y cumple con lo que se pide"
 - L2: F13 nueva en Linear (8 issues NOV-104..111, Urgent salvo NOV-110 High, sin estimates ni comentarios). Previo obligatorio cumplido: push verificado en origen, CI del árbol F11+F12 diagnosticado y reparado localmente (secret scan exit 0, 2 tests Windows PASS, size/vet/build verdes; commit 397a93f ahead 1 sin push) antes de arrancar F13.1 como exige la spec.
 - L3 (2026-11-17, T1 done): NOV-104 F13.1 implementado (motor 13 estados + store durable + migración + concurrencia optimista + ledger exactly-once + CLI mínima, tests incl. multi-proceso real) commit 160f0e1; pin de dispatch actualizado por parent; Linear con evidencia y Done.
+- L4 (2026-11-17, T2 done): NOV-105 F13.2 implementado (planner versionado + DAG + presupuestos etiquetados + dry-run/explicación/replan append-only + corpus, `go test ./...` todo ok) commit fe14c5a; Linear con evidencia y Done.
+- L5 (2026-11-17, T3 done): NOV-106 F13.3 implementado (executor por olas vía scheduler F12.2 + ledger 9 estados + idempotencia por claves + gates de integración + dry-run/supervisado, 17+5 tests) commit 4e08f49; Linear con evidencia y Done.
