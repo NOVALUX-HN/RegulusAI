@@ -22,4 +22,5 @@ Header: el gate `coverage-floor` (`regulus.json`, `go tool cover -func`, last-li
 ## Log
 
 - L1 (2026-11-17): gate coverage-floor en FAIL (69.90 vs 80.00, run 44195831777). unit-tests ya en PASS. Causa: código nuevo F11–F15 con cobertura parcial.
-- L2: unidad B integrada (mbench+govern, 25 tests; incl. fix real: Revoke rechazaba auto-revoke solo en Approve — ahora el executor tampoco puede revocar; validado estático, ejecución pendiente CI).
+- L2: unidad B integrada (mbench+govern, 25 tests; incl. fix real: Revoke aceptaba al executor — ahora lo rechaza; validado estático, ejecución pendiente CI).
+- L3: unidades A+C integradas (pxexec 16 tests, testflow 14, mission/report 14, cmdx assemble 11, recovery 7, context 4 — todo *_test.go nuevos, portables, vet/build verdes) + fix shellFlag con rutas absolutas (LookPath devolvía path absoluto que caía a `-c`) + test de paridad de rutas. Ejecución pendiente CI.

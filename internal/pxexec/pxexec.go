@@ -272,7 +272,15 @@ func (s Spec) Render() string {
 
 // shellFlag maps the justified shell to its command flag.
 func shellFlag(shell string) []string {
-	switch strings.ToLower(strings.TrimSpace(shell)) {
+	// Match on the base name so absolute paths (e.g. a LookPath
+	// result like C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe)
+	// classify like their bare names instead of falling to sh -c.
+	base := strings.ToLower(strings.TrimSpace(shell))
+	if i := strings.LastIndexAny(base, "/\\"); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.TrimSuffix(base, ".exe")
+	switch base {
 	case "pwsh", "powershell":
 		return []string{"-NoProfile", "-NonInteractive", "-Command"}
 	case "cmd":
