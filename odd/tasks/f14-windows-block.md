@@ -40,7 +40,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | ID | Spec | NOV | Deps | Route | Commit |
 |----|------|-----|------|-------|--------|
 | T1 | S1 | NOV-112 F14.1 | — | inline | 0d22201 |
-| T2 | S2 | NOV-113 F14.2 | T1 | inline | — |
+| T2 | S2 | NOV-113 F14.2 | T1 | inline | 9067d62 |
 | T3 | S3 | NOV-114 F14.3 | T1 (+NOV-43/45/46/47/66 leídos) | inline | — |
 | T4 | S4 | NOV-115 F14.4 | T1-T3 | inline | — |
 | T5 | S5 | NOV-116 F15.1 | T4 + revisión humana | bloqueado | — |
@@ -50,4 +50,5 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L4 (T2 done): NOV-113 F14.2 implementado (repro fresco 15:35:02Z → 3077 Error + 3089 + 3118 Smart App Control Block, Policy VerifiedAndReputableDesktop {0283ac0f…}, SHA256 + firmante Unknown en XML exportado; Defender sin bloqueos; AppLocker solo 8001 policy-applied; discriminador = reputación del hash — govern.test.exe sin firma corre, t2-probe sin firma bloqueado; timeline.md + events/*.xml) commit b9c84c2; Linear con evidencia y Done.
 - L3 (T1 done): NOV-112 F14.1 implementado (Win11 Pro 26300, go1.27.3, PS5.1, OpenCode v2.2.5, sesión consola nativa; identidad medium no-elevada; Defender on; execpolicy RemoteSigned solo CurrentUser; AppLocker vacía; clave CI presente sin inferir enforcement; SAC/SmartScreen/GPO unknown declarados; inventory.md + inventory.json + scripts/diag-windows.ps1 idempotente verificado exit 0) commit 0d22201; Linear con evidencia y Done.
