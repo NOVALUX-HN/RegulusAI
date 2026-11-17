@@ -68,6 +68,16 @@ func TestVerdictEmptySuiteFails(t *testing.T) {
 	}
 }
 
+func TestReportRoundTrip(t *testing.T) {
+	rep := Report{Version: ReportVersion, Mode: ModeFocused, Discovered: []string{"a"},
+		Results: []PackageResult{{Package: "a", Outcome: OutcomePass, Detail: "ok"}},
+		Checks:  []PackageResult{{Package: "(check) build", Outcome: OutcomePass}},
+		Skipped: []string{"b"}}
+	if !Verdict(rep, map[string]bool{"b": true}) {
+		t.Fatal("round-trip fixture must pass")
+	}
+}
+
 func TestVerdictChecksGate(t *testing.T) {
 	rep := Report{Mode: ModeSmoke, Discovered: SmokePackages,
 		Results: []PackageResult{{Package: SmokePackages[0], Outcome: OutcomePass}},
