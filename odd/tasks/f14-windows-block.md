@@ -62,7 +62,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 | T7 | S7 | NOV-121 F14.5 | T1-T4 | inline | 72e69f1 |
 | T8 | S8 | NOV-122 F14.6 | T7 | inline | 37d64e8 |
 | T9 | S9 | NOV-123 F14.7 | T7 | inline | b7a4b82 |
-| T10 | S10 | NOV-124 F14.8 | T7-T9 | inline | — |
+| T10 | S10 | NOV-124 F14.8 | T7-T9 | inline | 8ad9157 |
 | T11 | S11 | NOV-118 F15.3 | T10 + revisión humana + T6? (spec: NOV-115 rev + F15.2) | bloqueado | — |
 | T12 | S12 | NOV-119 F15.4 | T5+T6+T11 | bloqueado | — |
 | T13 | S13 | NOV-120 F15.5 | T12 | bloqueado | — |
@@ -71,6 +71,7 @@ Header: milestone F14 (4 issues NOV-112..115, todas Urgent/Backlog) + F15 (2 iss
 
 - L1 (usuario, verbatim): "en linear tengo una nueva fase 14. trae y revisa todos los issues y ejecutarlos por favor y siempre actualiza linear con la información detallada"
 - L2: F14 (NOV-112..115) + F15 (NOV-116..117) traídas de Linear con cuerpo completo. F15 gateada a revisión humana de F14 por spec (NOV-115: "F14 queda lista para revisión antes de iniciar F15"; NOV-116: prerrequisito NOV-115 completada y revisada).
+- L11 (T10 done): NOV-124 F14.8 implementado (revisión adversarial 10 afirmaciones con confianza; descartadas 6 hipótesis incl. per-file-first-seen; abiertas 4; falsos positivos revisados; experimento decisivo: copia 5B66 nueva identidad corre → reputación por contenido; recomendación NOV-115 SIN invalidación + matiz para F15.1) commit 8ad9157; Linear con evidencia y Done. F14 8/8 COMPLETA — pendiente revisión humana antes de F15.
 - L10 (T9 done): NOV-123 F14.7 implementado (rutas inventariadas; ciclo build→link→exec→limpieza por modo; mismos bytes 2CB3 en 3 rutas bloqueados igual; ACL/propietario idénticos, MOTW ausente; caché fría rehusada por spec; Defender consultado sin bloquear; ruta/caché/procedencia NO discriminan; recomendación sidecar+clasificar) commit b7a4b82; Linear con evidencia y Done.
 - L9 (T8 done): NOV-122 F14.6 implementado (política VerifiedAndReputableDesktop GUID {0283ac0f} en enforcement probado por denegación; .cip activa listada; criterio oficial firmado-o-predicho-seguro + reputación temporal con fuentes MS citadas; tabla 4 artefactos firma/origen/MOTW→evento→decisión; SAC única capa con evidencia; 5 incógnitas irresolubles incl. citool/DeviceGuard sin elevación) commit 37d64e8; Linear con evidencia y Done.
 - L8 (T7 done): NOV-121 F14.5 implementado (binario único 2CB3 × 5 caminos × 3 reps: A go test 3/3 corre, B PS-& 3/3 bloqueado, C bash 3/3 bloqueado con 3077 rec 9706/9711/9716, D go run 3/3 corre, E Start-Process 3/3 start-fail; CTRL Temp-path bloqueado elimina ruta; CTRL2 PS-creator bloqueado elimina creador; variable discriminante = camino de lanzamiento, confianza media-alta; process-launch-matrix.md + process-launch-log.jsonl; probes limpiados) commit 72e69f1; Linear con evidencia y Done.
