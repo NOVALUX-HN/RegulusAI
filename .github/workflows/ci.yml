@@ -170,10 +170,11 @@ jobs:
       - name: Vet
         run: go vet ./internal/gates ./internal/httpapi ./internal/doctor ./internal/contract ./internal/mcp
 
-      - name: Full suite via workspace runner (NOV-66)
+      - name: Full suite via workspace runner (NOV-66, F15.5 strict gates)
         shell: powershell
         run: |
-          powershell -NoProfile -File scripts/test-windows.ps1
+          New-Item -ItemType Directory -Force -Path .regulus/evidence | Out-Null
+          powershell -NoProfile -File scripts/test-windows.ps1 -Strict -JsonReport .regulus/evidence/test-windows-report.json
 
       - name: Validate artifacts + hashes
         shell: powershell
@@ -189,6 +190,18 @@ jobs:
           $sig = Get-AuthenticodeSignature bin/regulus.exe
           $sig | Format-List Status, SignerCertificate
           if ($sig.Status -ne 'NotSigned') { throw "se esperaba NotSigned mientras la firma es opcional, got $($sig.Status)" }
+
+      - name: Gate on suite report (F15.5 — partial never green)
+        shell: powershell
+        run: |
+          $rep = Get-Content .regulus/evidence/test-windows-report.json -Raw | ConvertFrom-Json
+          $verdicts = @($rep.results | ForEach-Object { $_.verdict })
+          "suite report v$($rep.version) strict=$($rep.strict): PASS=$($rep.passed) FAIL=$($rep.failed.Count) BLOCKED=$($rep.blocked.Count) SKIPPED=$($rep.skipped.Count)"
+          if ($rep.failed.Count -gt 0) { throw "gate rojo: $($rep.failed.Count) paquetes FAIL" }
+          if ($rep.blocked.Count -gt 0) { throw "gate rojo: $($rep.blocked.Count) paquetes BLOCKED (política, no es PASS)" }
+          if ($verdicts -contains "NOT_RUN") { throw "gate rojo: hay NOT_RUN sin justificar" }
+          if (-not $verdicts -or $verdicts.Count -eq 0) { throw "gate rojo: matriz vacía, no hay evidencia de ejecución" }
+          echo "CI limpia: suite ejecutada de verdad (este job NO valida el PC afectado; ver windows-protected-audit y F15.6)."
 
       - name: Upload evidence
         if: always()

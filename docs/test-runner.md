@@ -23,3 +23,17 @@ descubrimiento ok, checks build/vet PASS, paquete smoke clasificado BLOCKED con
 hint (binario fresco), veredicto false correcto — sin falsos PASS. Suite unitaria
 del núcleo (`classifyGoTest`, `Verdict`) + ejecución E2E completa pendientes de
 CI/F15.6 donde los binarios frescos no estén bloqueados.
+
+## CI Windows con gates (F15.5)
+
+El job `windows-native` corre `scripts/test-windows.ps1 -Strict -JsonReport`
++ valida el JSON en un paso gate dedicado: FAIL, BLOCKED, NOT_RUN, matriz vacía
+o artefacto ausente = job rojo. Una ejecución parcial nunca aparece verde.
+Los artefactos (JSON versionado + logs) quedan en `windows-native-evidence`.
+
+Distinción explícita: CI limpia valida el flujo en runner estándar, **no** el PC
+afectado por SAC (`windows-protected-audit` lo dice en voz alta y F15.6 valida el
+host real). Los binarios se compilan con `go test -c` a `.regulus-test/`
+(aislado del checkout, nunca `%TEMP%`), se ejecutan, se clasifican y se limpian
+salvo `-KeepBinaries`. Límites: el runner estándar no reproduce la política del
+host afectado; la paridad local↔CI es `gate run ci/push` + este script.
