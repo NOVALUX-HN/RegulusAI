@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"strings"
 
 	"regulus-ai/internal/testflow"
@@ -24,62 +25,83 @@ func testflowUsage() string {
 // incomplete coverage; 2 on usage errors. A partial run never
 // reports green.
 func (c CLI) testflowCmd(args []string) int {
+	req, asJSON, code, done := parseTestflowArgs(args, c.Stdout, c.Stderr, c.Version)
+	if done {
+		return code
+	}
+	rep, ok := testflow.Run(context.Background(), req)
+	if rc := printTestflowReport(c.Stdout, c.Stderr, rep, asJSON); rc != 0 {
+		return rc
+	}
+	if !ok {
+		return 1
+	}
+	return 0
+}
+
+// splitCSV splits a comma-separated flag value, trimming spaces.
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// parseTestflowArgs validates `testflow run` flags without executing.
+// Returns done=true when the caller must return code immediately
+// (help or usage error, message already printed).
+func parseTestflowArgs(args []string, stdout, stderr io.Writer, version string) (testflow.Request, bool, int, bool) {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, testflowUsage())
-		return 0
+		fmt.Fprintln(stdout, testflowUsage())
+		return testflow.Request{}, false, 0, true
 	}
 	if len(args) == 0 || args[0] != "run" {
-		fmt.Fprintln(c.Stderr, testflowUsage())
-		return 2
+		fmt.Fprintln(stderr, testflowUsage())
+		return testflow.Request{}, false, 2, true
 	}
 	fs := flag.NewFlagSet("testflow run", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
+	fs.SetOutput(stderr)
 	mode := fs.String("mode", "smoke", "smoke | focused | full")
 	pkgs := fs.String("packages", "", "comma-separated packages (focused mode)")
 	skip := fs.String("skip", "", "comma-separated allowed skips")
 	save := fs.String("save", "", "write versioned JSON report to this path")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
-	timeoutS := fs.Int("timeout-s", 0, "reserved: per-package budget override (not yet honored, must stay 0)")
+	timeoutS := fs.Int("timeout-s", 0, "reserved")
 	if err := fs.Parse(args[1:]); err != nil {
-		return 2
+		return testflow.Request{}, false, 2, true
 	}
 	if fs.NArg() != 0 || *timeoutS != 0 {
-		fmt.Fprintln(c.Stderr, testflowUsage())
-		return 2
+		fmt.Fprintln(stderr, testflowUsage())
+		return testflow.Request{}, false, 2, true
 	}
-	split := func(s string) []string {
-		var out []string
-		for _, p := range strings.Split(s, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
-			}
-		}
-		return out
-	}
-	req := testflow.Request{Mode: *mode, Packages: split(*pkgs), Skipped: split(*skip), Save: *save, Regulus: c.Version}
-	ctx := context.Background()
-	rep, ok := testflow.Run(ctx, req)
-	if *asJSON {
+	req := testflow.Request{Mode: *mode, Packages: splitCSV(*pkgs), Skipped: splitCSV(*skip), Save: *save, Regulus: version}
+	return req, *asJSON, 0, false
+}
+
+// printTestflowReport prints one report as JSON or text.
+// Returns 1 only on JSON marshal failure, never on verdict.
+func printTestflowReport(stdout, stderr io.Writer, rep testflow.Report, asJSON bool) int {
+	if asJSON {
 		raw, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
-			fmt.Fprintf(c.Stderr, "testflow: %v\n", err)
+			fmt.Fprintf(stderr, "testflow: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(c.Stdout, string(raw))
-	} else {
-		fmt.Fprintf(c.Stdout, "testflow %s N=%d\n", rep.Mode, len(rep.Discovered))
-		for _, r := range rep.Checks {
-			fmt.Fprintf(c.Stdout, "  %-28s %s %s\n", r.Package, r.Outcome, shortTestflowDetail(r.Detail))
-		}
-		for _, r := range rep.Results {
-			fmt.Fprintf(c.Stdout, "  %-28s %s %s\n", r.Package, r.Outcome, shortTestflowDetail(r.Detail))
-		}
-		if len(rep.Skipped) > 0 {
-			fmt.Fprintf(c.Stdout, "  skipped (allowed): %s\n", strings.Join(rep.Skipped, ", "))
-		}
+		fmt.Fprintln(stdout, string(raw))
+		return 0
 	}
-	if !ok {
-		return 1
+	fmt.Fprintf(stdout, "testflow %s N=%d\n", rep.Mode, len(rep.Discovered))
+	for _, r := range rep.Checks {
+		fmt.Fprintf(stdout, "  %-28s %s %s\n", r.Package, r.Outcome, shortTestflowDetail(r.Detail))
+	}
+	for _, r := range rep.Results {
+		fmt.Fprintf(stdout, "  %-28s %s %s\n", r.Package, r.Outcome, shortTestflowDetail(r.Detail))
+	}
+	if len(rep.Skipped) > 0 {
+		fmt.Fprintf(stdout, "  skipped (allowed): %s\n", strings.Join(rep.Skipped, ", "))
 	}
 	return 0
 }

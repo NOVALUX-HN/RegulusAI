@@ -350,17 +350,7 @@ func (io IO) BenchLabCompareCmd(args []string) int {
 		fmt.Fprintf(io.Stderr, "bench lab: %v\n", err)
 		return 1
 	}
-	probed := ""
-	for i := range cmp.Results {
-		if opts.hostVersion != "" {
-			cmp.Results[i].Outcome.HostVersion = opts.hostVersion
-		} else if cmp.Results[i].Outcome.Host == "opencode" {
-			if probed == "" {
-				probed = probeOpenCodeVersion()
-			}
-			cmp.Results[i].Outcome.HostVersion = probed
-		}
-	}
+	applyLabHostVersions(cmp.Results, opts.hostVersion, probeOpenCodeVersion)
 	if opts.export != "" {
 		if err := bench.ExportLabConfig(opts.export, cfg); err != nil {
 			fmt.Fprintf(io.Stderr, "bench lab: %v\n", err)
@@ -382,15 +372,37 @@ func (io IO) BenchLabCompareCmd(args []string) int {
 	for _, r := range cmp.Results {
 		fmt.Fprintf(io.Stdout, "trace %s: %s\n", r.AgentID, r.TraceHint)
 	}
+	if msg, code := labCompareExit(cmp.Results, cmp.Evaluable); code != 0 {
+		fmt.Fprintln(io.Stdout, msg)
+		return code
+	}
+	return 0
+}
+
+func applyLabHostVersions(results []bench.LabResult, hostVersion string, probe func() string) {
+	probed := ""
+	for i := range results {
+		if hostVersion != "" {
+			results[i].Outcome.HostVersion = hostVersion
+		} else if results[i].Outcome.Host == "opencode" {
+			if probed == "" {
+				probed = probe()
+			}
+			results[i].Outcome.HostVersion = probed
+		}
+	}
+}
+
+// labCompareExit maps results to the final message and exit code.
+// Preserves exact CLI contract: all NOT_RUN -> 3, nothing evaluable -> 1.
+func labCompareExit(results []bench.LabResult, evaluable int) (string, int) {
 	switch {
-	case allLabNotRun(cmp.Results):
-		fmt.Fprintln(io.Stdout, "lab NOT RUN: executions canceled or never started (nothing passed or failed)")
-		return 3
-	case cmp.Evaluable == 0:
-		fmt.Fprintln(io.Stdout, "lab INCONCLUSIVE: nothing evaluable (infra/timeout only)")
-		return 1
+	case allLabNotRun(results):
+		return "lab NOT RUN: executions canceled or never started (nothing passed or failed)", 3
+	case evaluable == 0:
+		return "lab INCONCLUSIVE: nothing evaluable (infra/timeout only)", 1
 	default:
-		return 0
+		return "", 0
 	}
 }
 

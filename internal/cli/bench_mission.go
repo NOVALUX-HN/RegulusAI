@@ -25,20 +25,23 @@ type benchMissionSaved struct {
 	Results []mbench.CaseResult `json:"results"`
 }
 
+// benchMissionArgs is the parsed `bench mission` flag contract.
+type benchMissionArgs struct {
+	split   string
+	holdout bool
+	save    string
+	asJSON  bool
+	dryRun  bool
+}
+
+func benchMissionUsage() string {
+	return "usage: regulus bench mission [--split exploration|holdout|all] [--holdout] [--save P] [--json] [--dry-run]"
+}
+
 func (c CLI) benchMissionCmd(args []string) int {
-	fs := flag.NewFlagSet("bench mission", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
-	split := fs.String("split", "exploration", "exploration | holdout | all")
-	holdout := fs.Bool("holdout", false, "allow sealed holdout cases (audited, hypotheses stay frozen)")
-	save := fs.String("save", "", "write verdict+results as JSON to this path")
-	asJSON := fs.Bool("json", false, "print verdict+results as JSON")
-	dryRun := fs.Bool("dry-run", false, "validate corpus+splits and list selected cases without executing")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench mission [--split exploration|holdout|all] [--holdout] [--save P] [--json] [--dry-run]")
-		return 2
+	opts, code, ok := parseBenchMissionArgs(args, c.Stderr)
+	if !ok {
+		return code
 	}
 	corpus := mbench.MissionCorpus()
 	sp, code, ok := c.loadBenchMissionSplits(corpus)
@@ -48,54 +51,87 @@ func (c CLI) benchMissionCmd(args []string) int {
 	// Holdout discipline (same seal as mbench.SelectSplits): exploration
 	// always, holdout/all only with the explicit flag. Without it the
 	// refusal is usage (exit 2), never a quiet partial run.
-	if (*split == "holdout" || *split == "all") && !*holdout {
-		fmt.Fprintf(c.Stderr, "bench mission: --split %q includes sealed holdout: re-run with --holdout (access is audited, hypotheses stay frozen)\n", *split)
+	if (opts.split == "holdout" || opts.split == "all") && !opts.holdout {
+		fmt.Fprintf(c.Stderr, "bench mission: --split %q includes sealed holdout: re-run with --holdout (access is audited, hypotheses stay frozen)\n", opts.split)
 		return 2
 	}
-	cases, err := mbench.SelectSplits(sp, corpus, *split, *holdout)
+	cases, err := mbench.SelectSplits(sp, corpus, opts.split, opts.holdout)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "bench mission: %v\n", err)
 		return 2
 	}
 	// Fast-loop: --dry-run validates corpus+splits and lists the
 	// selected cases without executing any journey. Zero engine cost.
-	if *dryRun {
-		printBenchMissionDryRun(c.Stdout, cases, *split)
+	if opts.dryRun {
+		printBenchMissionDryRun(c.Stdout, cases, opts.split)
 		return 0
 	}
 	results := mbench.RunSuite(cases)
 	v := mbench.Aggregate(results, corpus)
 	saved := benchMissionSaved{Verdict: v, Results: results}
-	if *save != "" {
-		raw, err := json.MarshalIndent(saved, "", "  ")
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "bench mission: %v\n", err)
-			return 1
-		}
-		if err := os.WriteFile(*save, raw, 0o644); err != nil {
-			fmt.Fprintf(c.Stderr, "bench mission: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(c.Stdout, "evidence: verdict+results saved to %s\n", *save)
-	}
-	if *asJSON {
-		raw, err := json.MarshalIndent(saved, "", "  ")
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "bench mission: %v\n", err)
-			return 1
-		}
-		fmt.Fprintln(c.Stdout, string(raw))
-	} else {
-		for _, r := range results {
-			fmt.Fprintf(c.Stdout, "  - %s [%s]: assisted=%t baseline=%t violations=%d evidence=%t %s\n",
-				r.CaseID, r.Class, r.AssistedOK, r.BaselineOK, r.Violations, r.EvidenceValid || r.SafeRefusal, shortMissionDetail(r.Detail))
-		}
-		fmt.Fprint(c.Stdout, v.Render())
+	if rc := printBenchMission(c.Stdout, c.Stderr, saved, results, v, opts.save, opts.asJSON); rc != 0 {
+		return rc
 	}
 	// Gate verdict: exit 0 only on PASS — FAIL and
 	// INSUFFICIENT_EVIDENCE both stop the close (exit 1).
 	if v.Decision != mbench.DecisionPass {
 		return 1
+	}
+	return 0
+}
+
+// parseBenchMissionArgs parses the `bench mission` flags and validates
+// the positional contract: no positional args. On failure it prints the
+// byte-identical usage to stderr and reports exit 2 with ok=false.
+// No I/O happens here beyond flag parsing.
+func parseBenchMissionArgs(args []string, stderr io.Writer) (benchMissionArgs, int, bool) {
+	fs := flag.NewFlagSet("bench mission", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	split := fs.String("split", "exploration", "exploration | holdout | all")
+	holdout := fs.Bool("holdout", false, "allow sealed holdout cases (audited, hypotheses stay frozen)")
+	save := fs.String("save", "", "write verdict+results as JSON to this path")
+	asJSON := fs.Bool("json", false, "print verdict+results as JSON")
+	dryRun := fs.Bool("dry-run", false, "validate corpus+splits and list selected cases without executing")
+	if err := fs.Parse(args); err != nil {
+		return benchMissionArgs{}, 2, false
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, benchMissionUsage())
+		return benchMissionArgs{}, 2, false
+	}
+	return benchMissionArgs{split: *split, holdout: *holdout, save: *save, asJSON: *asJSON, dryRun: *dryRun}, 0, true
+}
+
+// printBenchMission persists the verdict+results payload when --save is
+// set, then prints it as JSON or as one line per case plus the gate
+// quote. Returns 1 on marshal/write failure, 0 otherwise — never on
+// verdict (the caller maps non-PASS to exit 1).
+func printBenchMission(stdout, stderr io.Writer, saved benchMissionSaved, results []mbench.CaseResult, v mbench.Verdict, save string, asJSON bool) int {
+	if save != "" {
+		raw, err := json.MarshalIndent(saved, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "bench mission: %v\n", err)
+			return 1
+		}
+		if err := os.WriteFile(save, raw, 0o644); err != nil {
+			fmt.Fprintf(stderr, "bench mission: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "evidence: verdict+results saved to %s\n", save)
+	}
+	if asJSON {
+		raw, err := json.MarshalIndent(saved, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "bench mission: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, string(raw))
+	} else {
+		for _, r := range results {
+			fmt.Fprintf(stdout, "  - %s [%s]: assisted=%t baseline=%t violations=%d evidence=%t %s\n",
+				r.CaseID, r.Class, r.AssistedOK, r.BaselineOK, r.Violations, r.EvidenceValid || r.SafeRefusal, shortMissionDetail(r.Detail))
+		}
+		fmt.Fprint(stdout, v.Render())
 	}
 	return 0
 }
