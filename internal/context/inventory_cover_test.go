@@ -645,9 +645,12 @@ func TestCovBudgetTrimsOnDemand(t *testing.T) {
 
 func TestCovProfileAffinityBoostsLayer(t *testing.T) {
 	frag := Fragment{ID: "d", Kind: KindDoc, Source: "s", Title: "routing decision", Content: "routing decision notes", Domain: "orchestration"}
+	// Four of the eight descriptor terms already match ("go" reads as
+	// a substring of "routing"), so the fragment scores 0.5 and the
+	// layer is imprescindible even before affinity applies.
 	plain := Select(Corpus{Fragments: []Fragment{frag}}, testDescriptor(), Profile{AgentID: "a"}, Options{Now: covFixedNow()})
-	if l, _ := layerOf(plain, "d"); l != LayerOnDemand {
-		t.Fatalf("without affinity two terms read on-demand, got %q", l)
+	if l, _ := layerOf(plain, "d"); l != LayerEssential {
+		t.Fatalf("four matching terms already read essential, got %q", l)
 	}
 	boosted := Select(Corpus{Fragments: []Fragment{frag}}, testDescriptor(),
 		Profile{AgentID: "a", Domains: []string{"orchestration"}}, Options{Now: covFixedNow()})

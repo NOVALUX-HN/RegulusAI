@@ -61,6 +61,9 @@ func TestCovRenderShowFull(t *testing.T) {
 
 func TestCovRenderShowMinimal(t *testing.T) {
 	m := mustMission(t, "m-min")
+	// mustMission carries a description; the minimal shape is the
+	// same record without one.
+	m.Description = ""
 	out := RenderShow(m)
 	if !strings.Contains(out, "mission m-min: created") {
 		t.Fatalf("show must name the mission:\n%s", out)
@@ -79,7 +82,7 @@ func TestCovRenderStatusTrail(t *testing.T) {
 	if !strings.Contains(out, "mission m-st: analyzing generation=0") {
 		t.Fatalf("status headlines the mission:\n%s", out)
 	}
-	if !strings.Contains(out, "- m-st created -> analyzing by tester") {
+	if !strings.Contains(out, "- m-st analyzing -> analyzing by tester") {
 		t.Fatalf("status audits every event:\n%s", out)
 	}
 	m.PausedFrom = StateAnalyzing
@@ -279,8 +282,24 @@ func TestCovStoreRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].ID != "m-sv" {
-		t.Fatalf("healthy stores list: %v", entries)
+	// The refused ghost save still created its store dir (LockDir
+	// mkdirs before the generation check refuses), so the list
+	// reports it as a corrupt entry with its problem instead of
+	// skipping it silently.
+	if len(entries) != 2 {
+		t.Fatalf("healthy plus refused-ghost stores list: %v", entries)
+	}
+	byID := map[string]ListEntry{}
+	for _, e := range entries {
+		byID[e.ID] = e
+	}
+	good, ok := byID["m-sv"]
+	if !ok || good.Problem != "" || good.State != StateCreated {
+		t.Fatalf("healthy store must list clean: %v", entries)
+	}
+	ghostEntry, ok := byID["m-ghostsave"]
+	if !ok || ghostEntry.Problem == "" {
+		t.Fatalf("refused save must surface as a corrupt entry with its problem: %v", entries)
 	}
 	empty, err := ListMissions(t.TempDir())
 	if err != nil || len(empty) != 0 {

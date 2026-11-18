@@ -39,7 +39,11 @@ func TestMissionCreateShowListStatusJSON(t *testing.T) {
 	if code := io.MissionCreateCmd([]string{"--objective", "nope", "--risk", "cosmic"}); code != 1 {
 		t.Fatalf("invalid risk exit = %d, want 1", code)
 	}
-	missionCreate(t, io, "--id", "j2", "--objective", "second")
+	// j2 enters through the leaf command itself: missionCreate
+	// asserts exactly one mission exists, so it cannot follow j1.
+	if code := io.MissionCreateCmd([]string{"--id", "j2", "--objective", "second"}); code != 0 {
+		t.Fatalf("create j2 exit = %d stderr = %q", code, errb.String())
+	}
 	out.Reset()
 	if code := io.MissionListCmd([]string{"--json"}); code != 0 {
 		t.Fatalf("list --json exit = %d", code)
@@ -338,6 +342,11 @@ func TestFailureDecideJSONAndRefusals(t *testing.T) {
 func TestRecoveryCheckpointStatusRetryResumeCancel(t *testing.T) {
 	dir := t.TempDir()
 	io, out, errb := cmdIO(dir)
+	// New runs start at pending: pending -> checkpointed is illegal,
+	// so the first checkpoint parks running before sealing checkpointed.
+	if code := io.RecoveryCheckpointCmd([]string{"--run", "r1", "--task", "t1", "--agent", "a1", "--state", "running"}); code != 0 {
+		t.Fatalf("running checkpoint exit = %d stderr = %q", code, errb.String())
+	}
 	if code := io.RecoveryCheckpointCmd([]string{"--run", "r1", "--task", "t1", "--agent", "a1", "--state", "checkpointed"}); code != 0 {
 		t.Fatalf("checkpoint exit = %d stderr = %q", code, errb.String())
 	}
@@ -519,9 +528,11 @@ func TestLearnVerifyInvalidateResolve(t *testing.T) {
 	dir := t.TempDir()
 	io, out, errb := cmdIO(dir)
 	t.Setenv("REGULUS_DEFER_REINDEX", "1")
+	// Flags precede the positional content: encoding/json's flag set
+	// stops parsing at the first positional, so a trailing --evidence
+	// would silently become content and the save would carry none.
 	if code := io.LearnSaveCmd([]string{"--kind", "pattern", "--title", "retry with backoff", "--author", "tester",
-		"--scope", "shared", "patterns for retrying flaky calls",
-		"--evidence", "ci-green,reviewed"}); code != 0 {
+		"--scope", "shared", "--evidence", "ci-green,reviewed", "patterns for retrying flaky calls"}); code != 0 {
 		t.Fatalf("pattern save exit = %d stderr = %q", code, errb.String())
 	}
 	idLine := out.String()
@@ -657,13 +668,13 @@ func TestOrchestrateAgentsDecideEvaluate(t *testing.T) {
 func TestTraceEmitTimelinePrune(t *testing.T) {
 	dir := t.TempDir()
 	io, out, errb := cmdIO(dir)
-	if code := io.TraceEmitCmd([]string{"--run", "tr1", "--type", "task", "--task", "t1"}); code != 0 {
+	if code := io.TraceEmitCmd([]string{"--run", "tr1", "--type", "task.start", "--task", "t1"}); code != 0 {
 		t.Fatalf("emit exit = %d stderr = %q", code, errb.String())
 	}
 	if !strings.Contains(out.String(), "exec recorded") {
 		t.Fatalf("emit must confirm, got %q", out.String())
 	}
-	if code := io.TraceEmitCmd([]string{"--run", "tr1", "--type", "task", "--payload", "{oops"}); code != 1 {
+	if code := io.TraceEmitCmd([]string{"--run", "tr1", "--type", "task.start", "--payload", "{oops"}); code != 1 {
 		t.Fatalf("malformed payload exit = %d, want 1", code)
 	}
 	out.Reset()

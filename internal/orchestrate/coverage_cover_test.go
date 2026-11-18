@@ -35,7 +35,13 @@ type covOps struct {
 	pruned    int
 }
 
-func newCovOps() *covOps { return &covOps{branches: map[string]string{}} }
+func newCovOps() *covOps {
+	return &covOps{
+		branches:  map[string]string{},
+		conflicts: map[string][]string{},
+		mergeErr:  map[string]error{},
+	}
+}
 
 func (f *covOps) Create(ctx context.Context, repoRoot, base, branch, path string) error {
 	if err := ctx.Err(); err != nil {
@@ -557,8 +563,25 @@ func TestCovDecideRefusalAndContrast(t *testing.T) {
 		t.Fatalf("eligible non-primary fixed must contrast, got %q", live.FixedContrast)
 	}
 	excluded := decideOrFail(t, reg, m, nil, testDescriptor(), Budgets{}, 1, "anchored")
-	if !strings.Contains(excluded.FixedContrast, "no elegible aquí") {
-		t.Fatalf("excluded fixed agent must say so: %q", excluded.FixedContrast)
+	// Nobody is eligible, so there is no dynamic pick to contrast:
+	// the refusal names the anchored fixed agent and the exclusion count.
+	if !strings.Contains(excluded.FixedContrast, "sin decisión dinámica que contrastar") {
+		t.Fatalf("refused decision has no dynamic pick to contrast: %q", excluded.FixedContrast)
+	}
+	// The "no elegible aquí" contrast needs a routed decision the
+	// fixed agent missed: only anchored stays unavailable.
+	anchoredOut := testRegistry()
+	for i := range anchoredOut {
+		if anchoredOut[i].ID == "anchored" {
+			anchoredOut[i].Available = false
+		}
+	}
+	narrowed := decideOrFail(t, anchoredOut, m, nil, testDescriptor(), Budgets{}, 1, "anchored")
+	if narrowed.Primary == "" || narrowed.Primary == "anchored" {
+		t.Fatalf("anchored-only refusal must still route elsewhere, got %q (%v)", narrowed.Primary, narrowed.Excluded)
+	}
+	if !strings.Contains(narrowed.FixedContrast, "no elegible aquí") {
+		t.Fatalf("excluded fixed agent must say so: %q", narrowed.FixedContrast)
 	}
 }
 
@@ -811,7 +834,9 @@ func TestCovWorktreePure(t *testing.T) {
 	}
 	parent := testParent()
 	iso := IsolateParallelWorker(parent, ParallelTask{ID: "t", Title: "T", Scopes: []string{"memory:read", "bogus-scope"}}, "br", "/p")
-	if iso.Agent != "parallel-worker" {
+	// Delegate chains the parent agent (tester>parallel-worker):
+	// isolation never drops the caller from the attribution.
+	if iso.Agent != "tester>parallel-worker" {
 		t.Fatalf("empty agent defaults, got %q", iso.Agent)
 	}
 	for _, s := range iso.Scopes {
@@ -823,7 +848,7 @@ func TestCovWorktreePure(t *testing.T) {
 		t.Fatalf("workspace IS the worktree path, got %q", iso.Workspace)
 	}
 	named := IsolateParallelWorker(parent, ParallelTask{ID: "t", Title: "T", Agent: "w1"}, "br", "/p")
-	if named.Agent != "w1" {
+	if named.Agent != "tester>w1" {
 		t.Fatalf("named agent survives, got %q", named.Agent)
 	}
 	porcelain := "worktree /w/b\r\nHEAD abc\r\nbranch refs/heads/parallel/r/b\r\n\r\n" +

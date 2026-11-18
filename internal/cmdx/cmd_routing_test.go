@@ -225,8 +225,10 @@ func TestLeafValidationRefuses(t *testing.T) {
 func TestLeafStoreFailuresRefuse(t *testing.T) {
 	dir := t.TempDir()
 	io, _, errb := missionIO(dir)
-	if code := io.OrchestrateParallelCmd(nil); code != 1 {
-		t.Fatalf("parallel without tasks file exit = %d, want 1", code)
+	// Missing --tasks is a usage error (flag contract), not a store
+	// refusal: parseOrchestrateParallelFlags exits 2 before any IO.
+	if code := io.OrchestrateParallelCmd(nil); code != 2 {
+		t.Fatalf("parallel without tasks file exit = %d, want 2", code)
 	}
 	if code := io.BenchTierPlanCmd(nil); code != 1 {
 		t.Fatalf("tier-plan without splits exit = %d, want 1", code)

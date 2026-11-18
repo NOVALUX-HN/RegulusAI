@@ -22,6 +22,8 @@ Header: el gate `coverage-floor` (`regulus.json`, `go tool cover -func`, last-li
 ## Log
 
 - L1 (2026-11-17): gate coverage-floor en FAIL (69.90 vs 80.00, run 44195831777). unit-tests ya en PASS. Causa: código nuevo F11–F15 con cobertura parcial.
+- L4 (2026-11-18, run 44228921545 + 44241982213): unit-tests PASS (incl. todo F11–F15 en CI Linux). Fracasan 14 tests nuevos de cobertura con expectativas erradas del autor (no regresiones): veredicto a favor de 0 blocked en Windows, resto en CI verde salvo esos expects. Worker dedicado corrigiéndolos contra el código real.
+- L5 (2026-11-18): 14/14 corregidos (matrix REVOKED/deny-by-default, missionCreate directo, checkpoint desde running, evidencia antes del contenido posicional, event_type task.start, exit 2 en uso inválido, afinidad/imprescindible, RenderShow minimal sin description, trail From==To, store con entrada corrupta, routing anchored, agentes `a>b`, newCovOps inicializa mapas). Ninguna regresión de producto. Pendiente CI.
 - L2: unidad B integrada (mbench+govern, 25 tests; incl. fix real: Revoke aceptaba al executor — ahora lo rechaza; validado estático, ejecución pendiente CI).
 - L6: unidades D+E integradas (cmdx 45 tests incl. routers/lifecycles/handlers + testenv 6; context 26 + orchestrate 27 + execute 24 + mission 11; vet/build verdes, ejecución pendiente CI).
 - L3: unidades A+C integradas (pxexec 16 tests, testflow 14, mission/report 14, cmdx assemble 11, recovery 7, context 4 — todo *_test.go nuevos, portables, vet/build verdes) + fix shellFlag con rutas absolutas (LookPath devolvía path absoluto que caía a `-c`) + test de paridad de rutas. Ejecución pendiente CI.

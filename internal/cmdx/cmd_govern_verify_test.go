@@ -42,8 +42,8 @@ func TestGovernMatrix(t *testing.T) {
 	if code := io.GovernMatrixCmd(nil); code != 0 {
 		t.Fatalf("matrix exit = %d", code)
 	}
-	if !strings.Contains(out.String(), "standard") {
-		t.Fatalf("matrix must quote the standard profile, got %q", out.String())
+	if !strings.Contains(out.String(), "deny-by-default") {
+		t.Fatalf("matrix must quote the deny-by-default posture, got %q", out.String())
 	}
 	out.Reset()
 	if code := io.GovernMatrixCmd([]string{"--json"}); code != 0 {
@@ -196,7 +196,7 @@ func TestGovernLifecycleRoundTrip(t *testing.T) {
 		t.Fatalf("show must quote the revoked state, got %q", out.String())
 	}
 	out.Reset()
-	if code := io.GovernListCmd([]string{"--state", "revoked"}); code != 0 {
+	if code := io.GovernListCmd([]string{"--state", "REVOKED"}); code != 0 {
 		t.Fatalf("list --state exit = %d stderr = %q", code, errb.String())
 	}
 	if !strings.Contains(out.String(), id) {
