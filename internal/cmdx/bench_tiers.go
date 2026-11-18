@@ -178,6 +178,35 @@ func (io IO) BenchTierPlanCmd(args []string) int {
 	if !ok {
 		return code
 	}
+	// Fail-closed usage errors (exit 2) before any splits I/O so a bad
+	// flag is never masked by a missing splits file (exit 1). Mirrors
+	// resolveBenchTierPlan validation without needing corpus/splits.
+	if tier, capStr := opts.tier, opts.capability; true {
+		trimmed := strings.TrimSpace(tier)
+		isAuto := trimmed == "" || strings.EqualFold(trimmed, "auto")
+		parsedTier := ""
+		if !isAuto {
+			pt, err := bench.ParseTier(tier)
+			if err != nil {
+				fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
+				return 2
+			}
+			parsedTier = pt
+		}
+		parsedCap, err := bench.ParseTierCapability(capStr)
+		if err != nil {
+			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
+			return 2
+		}
+		if parsedTier == bench.TierL0 && parsedCap != "" {
+			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
+			return 2
+		}
+		if opts.jobs < 0 || opts.jobs > bench.TierMaxConcurrency() {
+			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
+			return 2
+		}
+	}
 	corpus := bench.AgentCorpus()
 	splits, code, ok := loadBenchAgentSplits(io, corpus)
 	if !ok {
