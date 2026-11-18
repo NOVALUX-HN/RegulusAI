@@ -565,7 +565,14 @@ func TestLearnVerifyInvalidateResolve(t *testing.T) {
 	if code := io.LearnResolveCmd([]string{"--winner", id, "--loser", hid}); code != 0 {
 		t.Fatalf("resolve exit = %d stderr = %q", code, errb.String())
 	}
-	if code := io.LearnInvalidateCmd([]string{hid, "--reason", "disproved by load test"}); code != 0 {
+	// Invalidate a fresh observation: the resolved loser is already
+	// SUPERSEDED (terminal), so invalidation needs a live record.
+	out.Reset()
+	if code := io.LearnSaveCmd([]string{"--kind", "pattern", "--title", "cache everything twice", "--author", "tester", "--scope", "shared", "more cache", "--evidence", "ci-green"}); code != 0 {
+		t.Fatalf("second pattern save exit = %d stderr = %q", code, errb.String())
+	}
+	dead := learnSavedID(t, out.String())
+	if code := io.LearnInvalidateCmd([]string{dead, "--reason", "disproved by load test"}); code != 0 {
 		t.Fatalf("invalidate exit = %d stderr = %q", code, errb.String())
 	}
 	out.Reset()
