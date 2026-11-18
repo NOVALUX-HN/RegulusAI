@@ -1,8 +1,8 @@
 // Cobertura T1 (coverage-80/S1-S4): caminos del executor que la suite
-// de contrato no pisa en todos los SO (shell ausente en Linux,
-// sh ausente en Windows). Todo portable: shells resueltos por
-// LookPath pwsh->powershell->sh con t.Skip justificado si faltan;
-// sleeps por runtime.GOOS (sleep Unix / ping Windows).
+// de contrato no pisa en todos los SO. Todo hermético y portable:
+// el hijo es el propio binario de test (TestHelperProcess), los
+// shells se resuelven por LookPath con t.Skip justificado si
+// faltan, y un BLOCKED del host salta con motivo (cubre CI).
 package pxexec
 
 import (
@@ -12,29 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
-
-// sleepHelper devuelve un bloqueo de ~5s presente en este SO:
-// ping -n en Windows, sleep en POSIX. Hace Skip si falta el
-// helper para que los tests de timeout nunca fallen por eso.
-func sleepHelper(t *testing.T) (string, []string) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		if _, err := exec.LookPath("ping"); err == nil {
-			return "ping", []string{"-n", "6", "127.0.0.1"}
-		}
-		t.Skip("sin helper ping en Windows")
-	}
-	if _, err := exec.LookPath("sleep"); err == nil {
-		return "sleep", []string{"5"}
-	}
-	t.Skip("sin helper sleep disponible")
-	return "", nil
-}
 
 // resolveShell resuelve un shell por nombre portátil (bare name para
 // que shellFlag lo clasifique): pwsh preferido, powershell fallback
@@ -276,8 +257,10 @@ func TestLimitedWriter(t *testing.T) {
 	if n, err := lw.Write([]byte("abcd")); err != nil || n != 4 {
 		t.Fatalf("write simple = %d,%v", n, err)
 	}
-	// Escritura parcial: solo cabe room, retorna lo escrito.
-	if n, err := lw.Write([]byte("0123456789")); err != nil || n != 6 {
+	// Escritura parcial: solo cabe room en el buffer, pero retorna
+	// len(p) con nil para que exec no lo lea como fallo de
+	// lanzamiento ("short write"). El truncado se reporta aparte.
+	if n, err := lw.Write([]byte("0123456789")); err != nil || n != 10 {
 		t.Fatalf("write parcial = %d,%v", n, err)
 	}
 	if w.Len() != 10 || w.String() != "abcd012345" {
@@ -373,7 +356,11 @@ func TestRunEnvModes(t *testing.T) {
 		{"minimal sobre DefaultEnv", "minimal", []string{probe + "=minimal-ok"}, "minimal-ok"},
 		{"exact solo Env", "exact", append(DefaultEnv(), probe+"=exact-ok"), "exact-ok"},
 	} {
-		r := Run(context.Background(), Spec{Name: "go", Args: []string{"env", probe}, EnvMode: c.mode, Env: c.env, Timeout: 30 * time.Second})
+		s := helperSpec(t, "env", c.env, func(s *Spec) { s.EnvMode = c.mode; s.Timeout = 30 * time.Second })
+		r := Run(context.Background(), s)
+		if r.Outcome == OutcomeBlocked {
+			t.Skip("host bloquea hijos; cubierto en CI")
+		}
 		if r.Outcome != OutcomePass {
 			t.Fatalf("%s: debe pasar: %+v", c.name, r)
 		}
@@ -389,19 +376,22 @@ func TestRunWithStdin(t *testing.T) {
 	if r.Outcome != OutcomePass {
 		t.Fatalf("stdin con go version debe pasar: %+v", r)
 	}
-	// Eco real solo si hay cat; si no, skip justificado.
-	if _, err := exec.LookPath("cat"); err != nil {
-		t.Skip("sin cat: eco stdin no verificable aquí")
+	r2 := Run(context.Background(), helperSpec(t, "echo", nil, func(s *Spec) { s.Stdin = []byte("hello-stdin"); s.Timeout = 30 * time.Second }))
+	if r2.Outcome == OutcomeBlocked {
+		t.Skip("host bloquea hijos; cubierto en CI")
 	}
-	r2 := Run(context.Background(), Spec{Name: "cat", Stdin: []byte("hello-stdin"), Timeout: 30 * time.Second})
 	if r2.Outcome != OutcomePass || !strings.Contains(r2.Stdout, "hello-stdin") {
-		t.Fatalf("cat debe ecoar stdin: %+v", r2)
+		t.Fatalf("eco debe devolver stdin: %+v", r2)
 	}
 }
 
 func TestRunTruncation(t *testing.T) {
-	// go env vuelca Kilobytes: con tope 64 hay truncado reportado.
-	r := Run(context.Background(), Spec{Name: "go", Args: []string{"env"}, MaxOutput: 64, Timeout: 60 * time.Second})
+	// El helper vuelca 32K: con tope 64 hay truncado reportado.
+	s := helperSpec(t, "big", nil, func(s *Spec) { s.MaxOutput = 64; s.Timeout = 60 * time.Second })
+	r := Run(context.Background(), s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host bloquea hijos; cubierto en CI")
+	}
 	if r.Outcome != OutcomePass || !r.Truncated {
 		t.Fatalf("salida grande debe truncarse: %+v", r)
 	}
@@ -411,8 +401,8 @@ func TestRunTruncation(t *testing.T) {
 }
 
 func TestRunTimeoutExpires(t *testing.T) {
-	bin, args := sleepHelper(t)
-	r := Run(context.Background(), Spec{Name: bin, Args: args, Timeout: 500 * time.Millisecond})
+	s := helperSpec(t, "sleep", nil, func(s *Spec) { s.Timeout = 500 * time.Millisecond })
+	r := Run(context.Background(), s)
 	if r.Outcome != OutcomeNotRun || r.ErrClass != ErrTimeout {
 		t.Fatalf("expirado debe ser NOT_RUN/timeout: %+v", r)
 	}

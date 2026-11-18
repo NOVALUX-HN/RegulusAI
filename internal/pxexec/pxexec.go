@@ -294,7 +294,7 @@ func shellFlag(shell string) []string {
 // (App Control / Device Guard denial). Kept narrow: only refusal
 // strings, never heuristic guessing.
 func blockText(out string) bool {
-	lower := strings.ToLower(out)
+	norm := strings.Join(strings.Fields(strings.ToLower(out)), " ")
 	for _, m := range []string{
 		"control de aplicaciones bloque",
 		"blocked this file",
@@ -302,7 +302,7 @@ func blockText(out string) bool {
 		"smart app control",
 		"0xc0e90002",
 	} {
-		if strings.Contains(lower, m) {
+		if strings.Contains(norm, m) {
 			return true
 		}
 	}
@@ -388,12 +388,16 @@ func (l *limitedWriter) Write(p []byte) (int, error) {
 			_, _ = l.tee.Write(q)
 		}
 	}
-	room := l.n - int64(l.w.Len())
-	if room <= 0 {
-		return len(p), nil
+	// Always report full consumption: exec turns a short write with
+	// nil error into a failed launch ("short write"), which would
+	// misclassify capped output as a launch failure. Truncation is
+	// reported separately via the Truncated flag, never as an error.
+	if room := l.n - int64(l.w.Len()); room > 0 {
+		q := p
+		if int64(len(q)) > room {
+			q = q[:room]
+		}
+		_, _ = l.w.Write(q)
 	}
-	if int64(len(p)) > room {
-		p = p[:room]
-	}
-	return l.w.Write(p)
+	return len(p), nil
 }

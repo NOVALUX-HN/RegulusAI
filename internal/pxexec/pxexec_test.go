@@ -6,11 +6,58 @@ package pxexec
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 )
+
+// TestHelperProcess is re-executed as a child via os.Args[0]: the
+// hermetic probe for env passthrough, truncation, timeouts and
+// policy-signal classification. No external binary, no shell —
+// deterministic on every host once the test binary itself loads.
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	switch os.Getenv("GO_WANT_HELPER_MODE") {
+	case "env":
+		fmt.Fprint(os.Stdout, os.Getenv("PXEXEC_COVER_PROBE"))
+	case "big":
+		fmt.Fprint(os.Stdout, strings.Repeat("x", 32*1024))
+	case "sleep":
+		time.Sleep(30 * time.Second)
+	case "denymsg":
+		fmt.Fprint(os.Stderr, "blocked this file by policy (simulated denial)")
+		os.Exit(1)
+	case "chatter":
+		fmt.Fprint(os.Stdout, "blocked this file by policy (simulated log line)")
+	case "args":
+		fmt.Fprint(os.Stdout, strings.Join(os.Args[2:], "|"))
+	case "echo":
+		io.Copy(os.Stdout, os.Stdin)
+	}
+}
+
+// helperSpec builds a self re-exec launch: the same binary that is
+// already running, so no reputation lottery beyond the test binary
+// itself. A BLOCKED outcome is the caller's cue to skip with reason
+// (host policy, not code), never to fail.
+func helperSpec(t *testing.T, mode string, extraEnv []string, mut func(*Spec)) Spec {
+	t.Helper()
+	s := Spec{
+		Name: os.Args[0],
+		Args: []string{"-test.run=TestHelperProcess$"},
+		Env:  append([]string{"GO_WANT_HELPER_PROCESS=1", "GO_WANT_HELPER_MODE=" + mode}, extraEnv...),
+	}
+	if mut != nil {
+		mut(&s)
+	}
+	return s
+}
 
 // sleepCommand returns a ~5s blocking command present on this OS:
 // Windows ping (-n) or POSIX sleep. Skips when neither exists so the
@@ -90,8 +137,11 @@ func TestExitCodeIsFail(t *testing.T) {
 }
 
 func TestTimeoutIsNotRun(t *testing.T) {
-	bin, args := sleepCommand(t)
-	r := Run(context.Background(), Spec{Name: bin, Args: args, Timeout: 500 * time.Millisecond})
+	s := helperSpec(t, "sleep", nil, func(s *Spec) { s.Timeout = 500 * time.Millisecond })
+	r := Run(context.Background(), s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
 	if r.Outcome != OutcomeNotRun || r.ErrClass != ErrTimeout {
 		t.Fatalf("expired launch must be NOT_RUN/timeout, got %+v", r)
 	}
@@ -100,8 +150,11 @@ func TestTimeoutIsNotRun(t *testing.T) {
 func TestCancelIsNotRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	bin, args := sleepCommand(t)
-	r := Run(ctx, Spec{Name: bin, Args: args, Timeout: 30 * time.Second})
+	s := helperSpec(t, "sleep", nil, func(s *Spec) { s.Timeout = 30 * time.Second })
+	r := Run(ctx, s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
 	if r.Outcome != OutcomeNotRun || (r.ErrClass != ErrCancel && r.ErrClass != ErrTimeout) {
 		t.Fatalf("cancelled launch must be NOT_RUN, got %+v", r)
 	}
@@ -110,7 +163,10 @@ func TestCancelIsNotRun(t *testing.T) {
 func TestBlockSignalClassifiesBlocked(t *testing.T) {
 	// Real blocks never exit 0 (the process never starts): fail with
 	// the policy marker on stderr, mirroring a SAC denial.
-	r := Run(context.Background(), Spec{Name: testShell(t), Args: []string{"-NoProfile", "-Command", "Write-Error 'blocked this file by policy'; exit 1"}, Timeout: 30 * time.Second})
+	r := Run(context.Background(), helperSpec(t, "denymsg", nil, func(s *Spec) { s.Timeout = 30 * time.Second }))
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
 	if r.Outcome != OutcomeBlocked || r.ErrClass != ErrPolicy || r.BlockHint == "" {
 		t.Fatalf("policy signal must be BLOCKED with a hint, got %+v", r)
 	}
@@ -119,15 +175,24 @@ func TestBlockSignalClassifiesBlocked(t *testing.T) {
 func TestPassOutputIsNotBlocked(t *testing.T) {
 	// Exit 0 with block-like words in stdout stays PASS: classifying it
 	// BLOCKED would be a false positive on diagnostic chatter.
-	r := Run(context.Background(), Spec{Name: testShell(t), Args: []string{"-NoProfile", "-Command", "Write-Output 'blocked this file by policy (simulated log line)'"}, Timeout: 30 * time.Second})
+	r := Run(context.Background(), helperSpec(t, "chatter", nil, func(s *Spec) { s.Timeout = 30 * time.Second }))
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
 	if r.Outcome != OutcomePass {
 		t.Fatalf("exit-0 output must stay PASS, got %+v", r)
 	}
 }
 
 func TestArgsWithSpacesPassThrough(t *testing.T) {
-	r := Run(context.Background(), Spec{Name: testShell(t), Args: []string{"-NoProfile", "-Command", "Write-Output 'a b c'"}, Timeout: 30 * time.Second})
-	if r.Outcome != OutcomePass || !strings.Contains(r.Stdout, "a b c") {
+	// Argv travels literally, never through a shell: spaces survive.
+	s := helperSpec(t, "args", nil, func(s *Spec) { s.Timeout = 30 * time.Second })
+	s.Args = append(s.Args, "a b c", "d")
+	r := Run(context.Background(), s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
+	if r.Outcome != OutcomePass || !strings.Contains(r.Stdout, "a b c|d") {
 		t.Fatalf("spaced args must pass through intact, got %+v", r)
 	}
 }

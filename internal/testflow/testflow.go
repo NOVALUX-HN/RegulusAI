@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -122,6 +123,9 @@ func Run(ctx context.Context, req Request) (Report, bool) {
 		pkgs, err = discover(ctx)
 		if err != nil {
 			rep.Results = append(rep.Results, PackageResult{Package: "(discovery)", Outcome: OutcomeNotRun, Detail: err.Error()})
+			// Los checks corren igual: el veredicto ya es falso, pero
+			// la evidencia de build/vet sigue siendo útil.
+			rep.Checks = runChecks(ctx)
 			return rep, false
 		}
 	default:
@@ -172,12 +176,33 @@ func Verdict(rep Report, allowed map[string]bool) bool {
 	return true
 }
 
+// moduleRoot returns the directory holding go.mod, walking up from the
+// current working directory. Tests run with cwd set to their package
+// dir, so the relative ./internal/... pattern needs an explicit root.
+func moduleRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "."
+		}
+		dir = parent
+	}
+}
+
 // discover lists test-bearing packages via `go list`.
 func discover(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, ListTimeout)
 	defer cancel()
 	res := pxexec.Run(ctx, pxexec.Spec{Name: "go",
 		Args:    []string{"list", "-f", "{{.ImportPath}}|{{if .TestGoFiles}}yes{{else}}no{{end}}", "./internal/..."},
+		Dir:     moduleRoot(),
 		Timeout: ListTimeout})
 	if res.Outcome != pxexec.OutcomePass {
 		return nil, fmt.Errorf("package discovery %s: %s", res.Outcome, res.Detail)
