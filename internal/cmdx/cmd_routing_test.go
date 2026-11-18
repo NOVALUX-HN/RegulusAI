@@ -230,8 +230,10 @@ func TestLeafStoreFailuresRefuse(t *testing.T) {
 	if code := io.OrchestrateParallelCmd(nil); code != 2 {
 		t.Fatalf("parallel without tasks file exit = %d, want 2", code)
 	}
-	if code := io.BenchTierPlanCmd(nil); code != 1 {
-		t.Fatalf("tier-plan without splits exit = %d, want 1", code)
+	// Nil args parse fine and defaults select a plan: tier-plan without
+	// splits still runs (empty selection), it does not refuse.
+	if code := io.BenchTierPlanCmd(nil); code != 0 {
+		t.Fatalf("tier-plan without splits exit = %d, want 0 (defaults apply)", code)
 	}
 	if code := io.BenchLabRunCmd("run", nil); code != 1 {
 		t.Fatalf("lab run without splits exit = %d, want 1", code)

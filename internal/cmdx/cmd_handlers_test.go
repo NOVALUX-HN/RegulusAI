@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"regulus-ai/internal/almanac"
 	"regulus-ai/internal/context"
 	"regulus-ai/internal/execute"
 	"regulus-ai/internal/failure"
@@ -556,6 +557,11 @@ func TestLearnVerifyInvalidateResolve(t *testing.T) {
 	if code := io.LearnVerifyCmd([]string{hid, "--receipt", receipt}); code != 1 {
 		t.Fatalf("hypothesis verify exit = %d, want 1 (never verified)", code)
 	}
+	// Resolve settles active conflicts_with only: relate the pair
+	// first so the contradiction is live, then it must settle.
+	if err := almanac.Relate(dir, id, almanac.RelationConflictsWith, hid, time.Now().UTC()); err != nil {
+		t.Fatalf("relate conflict: %v", err)
+	}
 	if code := io.LearnResolveCmd([]string{"--winner", id, "--loser", hid}); code != 0 {
 		t.Fatalf("resolve exit = %d stderr = %q", code, errb.String())
 	}
@@ -694,8 +700,14 @@ func TestTraceEmitTimelinePrune(t *testing.T) {
 	if code := io.TraceTimelineCmd([]string{"--rebuild"}); code != 2 {
 		t.Fatalf("rebuild without run exit = %d, want 2", code)
 	}
-	if code := io.TraceTimelineCmd([]string{"--run", "ghost", "--rebuild"}); code != 1 {
-		t.Fatalf("rebuild of a missing run exit = %d, want 1", code)
+	// A missing run has no events to rebuild: empty timeline, exit 0
+	// (nothing failed, there is simply nothing to replay).
+	out.Reset()
+	if code := io.TraceTimelineCmd([]string{"--run", "ghost", "--rebuild"}); code != 0 {
+		t.Fatalf("rebuild of a missing run exit = %d, want 0 (empty timeline)", code)
+	}
+	if !strings.Contains(out.String(), "no execution events match") {
+		t.Fatalf("missing run must report the empty timeline, got %q", out.String())
 	}
 	if code := io.TracePruneExecCmd(nil); code != 0 {
 		t.Fatalf("prune exit = %d stderr = %q", code, errb.String())

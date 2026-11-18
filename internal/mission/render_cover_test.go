@@ -61,9 +61,10 @@ func TestCovRenderShowFull(t *testing.T) {
 
 func TestCovRenderShowMinimal(t *testing.T) {
 	m := mustMission(t, "m-min")
-	// mustMission carries a description; the minimal shape is the
-	// same record without one.
-	m.Description = ""
+	// mustMission carries optional detail; the minimal shape is the
+	// same record with every optional section cleared (RenderShow
+	// guards each block on non-empty).
+	m.Description, m.Repo, m.Workspace, m.Constraints, m.Criteria = "", "", "", nil, nil
 	out := RenderShow(m)
 	if !strings.Contains(out, "mission m-min: created") {
 		t.Fatalf("show must name the mission:\n%s", out)
@@ -282,12 +283,13 @@ func TestCovStoreRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The refused ghost save still created its store dir (LockDir
-	// mkdirs before the generation check refuses), so the list
-	// reports it as a corrupt entry with its problem instead of
-	// skipping it silently.
-	if len(entries) != 2 {
-		t.Fatalf("healthy plus refused-ghost stores list: %v", entries)
+	// Refused and missing stores still created their store dirs
+	// (LockDir mkdirs before the generation check refuses; UpdateMission
+	// likewise materializes the dir before failing), so the list reports
+	// them as corrupt entries with their problems instead of skipping
+	// them silently: m-sv clean, m-ghostsave + msn_missing corrupt.
+	if len(entries) != 3 {
+		t.Fatalf("healthy plus two refused stores list: %v", entries)
 	}
 	byID := map[string]ListEntry{}
 	for _, e := range entries {
@@ -297,9 +299,11 @@ func TestCovStoreRefusals(t *testing.T) {
 	if !ok || good.Problem != "" || good.State != StateCreated {
 		t.Fatalf("healthy store must list clean: %v", entries)
 	}
-	ghostEntry, ok := byID["m-ghostsave"]
-	if !ok || ghostEntry.Problem == "" {
-		t.Fatalf("refused save must surface as a corrupt entry with its problem: %v", entries)
+	for _, bad := range []string{"m-ghostsave", "msn_missing"} {
+		corrupt, ok := byID[bad]
+		if !ok || corrupt.Problem == "" {
+			t.Fatalf("refused store %q must surface as a corrupt entry with its problem: %v", bad, entries)
+		}
 	}
 	empty, err := ListMissions(t.TempDir())
 	if err != nil || len(empty) != 0 {
