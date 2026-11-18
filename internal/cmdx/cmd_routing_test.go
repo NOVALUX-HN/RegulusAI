@@ -5,9 +5,30 @@
 package cmdx
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+// repoSplits points REGURUS_AGENT_SPLITS at the tracked splits file by
+// absolute path: the loader resolves CWD-relative first, which makes
+// bare `go test` (package dir) and the workspace runner (repo root)
+// disagree. An absolute path makes both deterministic.
+func repoSplits(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test file")
+	}
+	p := filepath.Join(filepath.Dir(file), "..", "..", "bench", "agent-splits-v3.json")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("tracked splits missing: %v", err)
+	}
+	t.Setenv("REGULUS_AGENT_SPLITS", p)
+	return p
+}
 
 func TestRoutersHelpEmptyUnknown(t *testing.T) {
 	routers := []struct {
@@ -232,19 +253,26 @@ func TestLeafStoreFailuresRefuse(t *testing.T) {
 	}
 	// Nil args parse fine and defaults select a plan: tier-plan without
 	// splits still runs (empty selection), it does not refuse.
+	// Splits resolve deterministically via env (see repoSplits): with
+	// tracked splits available, nil args just run the defaults.
+	repoSplits(t)
 	if code := io.BenchTierPlanCmd(nil); code != 0 {
-		t.Fatalf("tier-plan without splits exit = %d, want 0 (defaults apply)", code)
+		t.Fatalf("tier-plan with defaults exit = %d, want 0", code)
 	}
-	if code := io.BenchLabRunCmd("run", nil); code != 1 {
-		t.Fatalf("lab run without splits exit = %d, want 1", code)
+	// Missing required selection is a usage error, not a silent run.
+	if code := io.BenchLabRunCmd("single", nil); code != 2 {
+		t.Fatalf("lab run without task exit = %d, want 2 (task required)", code)
 	}
-	if code := io.BenchLabCompareCmd(nil); code != 1 {
-		t.Fatalf("lab compare without splits exit = %d, want 1", code)
+	if code := io.BenchLabCompareCmd(nil); code != 2 {
+		t.Fatalf("lab compare without agents exit = %d, want 2 (two agents required)", code)
 	}
 	if code := io.OrchestrateEvaluateCmd([]string{"--dynamic", "/nonexistent/d.json", "--fixed", "/nonexistent/f.json"}); code != 1 {
 		t.Fatalf("evaluate with missing arms exit = %d, want 1", code)
 	}
-	if code := io.BenchTierReportCmd([]string{"--dir", "/nonexistent/tier"}); code != 1 {
+	// NOTE: the flag is --evidence-dir; the legacy test used --dir,
+	// which never parsed (exit 2 usage) instead of testing the
+	// missing-dir refusal (exit 1).
+	if code := io.BenchTierReportCmd([]string{"--evidence-dir", "/nonexistent/tier"}); code != 1 {
 		t.Fatalf("tier-report on a missing dir exit = %d, want 1", code)
 	}
 	if code := io.BenchLabReportCmd([]string{"--evidence-dir", "/nonexistent/lab"}); code != 1 {
