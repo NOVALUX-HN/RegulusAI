@@ -583,7 +583,10 @@ func TestLearnVerifyInvalidateResolve(t *testing.T) {
 		t.Fatalf("invalidated knowledge must hide by default, got %q", out.String())
 	}
 	out.Reset()
-	if code := io.LearnSearchCmd([]string{"cache", "--include-stale"}); code != 0 {
+	// Flags precede the positional term: learn search parses argv
+	// directly (no learnSplitPositional reshuffle like verify does),
+	// so a trailing flag would be silently dropped.
+	if code := io.LearnSearchCmd([]string{"--include-stale", "cache"}); code != 0 {
 		t.Fatalf("stale search exit = %d", code)
 	}
 	if !strings.Contains(out.String(), "hit(s)") {
