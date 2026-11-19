@@ -32,6 +32,21 @@ func resolveShell(t *testing.T) string {
 	return ""
 }
 
+// isBrokenShell reporta si el resultado es un shell roto del runner
+// (pwsh que colapsa con FileLoadException, exit -1 sin ejecutar)
+// en vez de una regresión nuestra: firma distintiva, nunca un
+// fallo real de passthrough (exit del comando o señal policy).
+func isBrokenShell(r Result) bool {
+	if r.Outcome != OutcomeFail && r.Outcome != OutcomeNotRun {
+		return false
+	}
+	if r.Exit != -1 {
+		return false
+	}
+	return strings.Contains(r.Stderr, "FileLoadException") ||
+		strings.Contains(r.Stderr, "not properly handled")
+}
+
 func shellKind(shell string) string {
 	switch strings.ToLower(shell) {
 	case "pwsh", "powershell":
@@ -430,6 +445,18 @@ func TestRunShellMechanism(t *testing.T) {
 	}
 	rp := Run(context.Background(), Spec{Shell: shell, Justify: "cobertura: passthrough con causa", Name: chatter, Timeout: 60 * time.Second})
 	if rp.Outcome != OutcomePass {
-		t.Fatalf("exit 0 con palabras policy sigue PASS: %+v", rp)
+		// El pwsh del runner a veces se rompe solo (FileLoadException de
+		// .NET, exit -1 sin stdout): no es nuestro código, es el entorno.
+		// Reintenta una vez; si sigue la misma firma de shell roto,
+		// skip justificado en vez de un falso rojo.
+		if isBrokenShell(rp) {
+			rp = Run(context.Background(), Spec{Shell: shell, Justify: "cobertura: passthrough con causa", Name: chatter, Timeout: 60 * time.Second})
+			if isBrokenShell(rp) {
+				t.Skipf("shell %q roto en este runner (exit -1 sin ejecutar): passthrough no evaluable aquí", shell)
+			}
+		}
+		if rp.Outcome != OutcomePass {
+			t.Fatalf("exit 0 con palabras policy sigue PASS: %+v", rp)
+		}
 	}
 }
