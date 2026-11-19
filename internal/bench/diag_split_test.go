@@ -192,7 +192,7 @@ func TestDiagLabResidualCoversUntraced(t *testing.T) {
 	if out.ms != 1000 {
 		t.Fatalf("lab residual = %d, want 1000", out.ms)
 	}
-	if len(out.notes) != 1 || !strings.Contains(out.notes[0], "A9") || !strings.Contains(out.notes[0], "no agent.start/end pair") {
+	if len(out.notes) != 1 || !strings.Contains(out.notes[0], "anchored") || !strings.Contains(out.notes[0], "no agent.start/end pair") {
 		t.Fatalf("lab residual must note the fallback, got %v", out.notes)
 	}
 	if !paired["A9"] {
