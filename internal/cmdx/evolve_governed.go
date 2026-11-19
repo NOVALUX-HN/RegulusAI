@@ -248,42 +248,98 @@ func (io IO) EvolveCycleCanaryCmd(args []string) int {
 	return 0
 }
 
-// EvolveCycleMonitorCmd implements `cycle-monitor`.
-func (io IO) EvolveCycleMonitorCmd(args []string) int {
+// monitorRequest is the parsed `cycle-monitor` input: the trimmed
+// cycle, deployer and detail plus the parsed healthy flag.
+type monitorRequest struct {
+	cycle   string
+	by      string
+	detail  string
+	healthy bool
+}
+
+// parseHealthyFlag parses the required true|false flag (case and
+// space tolerant): it reports whether the value is usable.
+func parseHealthyFlag(raw string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// monitorFieldsComplete reports whether every required monitor field
+// is present with no stray positional args.
+func monitorFieldsComplete(cycle, by, healthy, detail string, nArg int) bool {
+	if strings.TrimSpace(cycle) == "" {
+		return false
+	}
+	if strings.TrimSpace(by) == "" {
+		return false
+	}
+	if strings.TrimSpace(healthy) == "" {
+		return false
+	}
+	if strings.TrimSpace(detail) == "" {
+		return false
+	}
+	return nArg == 0
+}
+
+// parseMonitorArgs parses the `cycle-monitor` flags without touching
+// disk. It prints the usage on missing or invalid input (byte
+// identical to the inline command) and reports whether the caller
+// may proceed.
+func parseMonitorArgs(args []string, stderr interface{ Write([]byte) (int, error) }) (monitorRequest, int, bool) {
 	fs := flag.NewFlagSet("evolve validation cycle-monitor", flag.ContinueOnError)
-	fs.SetOutput(io.Stderr)
+	fs.SetOutput(stderr)
 	cycle := fs.String("cycle", "", "governed cycle id (required)")
 	by := fs.String("by", "", "deployer (required, must equal the pinned deployer)")
 	healthy := fs.String("healthy", "", "true|false (required)")
 	detail := fs.String("detail", "", "what was observed (required)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return monitorRequest{}, 2, false
 	}
-	if strings.TrimSpace(*cycle) == "" || strings.TrimSpace(*by) == "" ||
-		strings.TrimSpace(*healthy) == "" || strings.TrimSpace(*detail) == "" || fs.NArg() != 0 {
-		fmt.Fprintln(io.Stderr, evolveValidationUsage)
-		return 2
+	if !monitorFieldsComplete(*cycle, *by, *healthy, *detail, fs.NArg()) {
+		fmt.Fprintln(stderr, evolveValidationUsage)
+		return monitorRequest{}, 2, false
 	}
-	var ok bool
-	switch strings.ToLower(strings.TrimSpace(*healthy)) {
-	case "true":
-		ok = true
-	case "false":
-		ok = false
-	default:
-		fmt.Fprintln(io.Stderr, evolveValidationUsage)
-		return 2
+	ok, valid := parseHealthyFlag(*healthy)
+	if !valid {
+		fmt.Fprintln(stderr, evolveValidationUsage)
+		return monitorRequest{}, 2, false
 	}
-	if err := evolve.RecordGovernedMonitor(io.Dir, strings.TrimSpace(*cycle), strings.TrimSpace(*by), ok, strings.TrimSpace(*detail)); err != nil {
+	return monitorRequest{
+		cycle:   strings.TrimSpace(*cycle),
+		by:      strings.TrimSpace(*by),
+		detail:  strings.TrimSpace(*detail),
+		healthy: ok,
+	}, 0, true
+}
+
+// monitorNextHint renders the exact next line for a recorded
+// observation: promotion on healthy, rollback otherwise.
+func monitorNextHint(cycle string, healthy bool) string {
+	if healthy {
+		return fmt.Sprintf("next: regulus evolve validation cycle-promote --cycle %s --by <deployer> --winner <cid>\n", cycle)
+	}
+	return fmt.Sprintf("next: regulus evolve validation cycle-rollback --cycle %s --by <deployer> --reason <text> --condition <preapproved>\n", cycle)
+}
+
+// EvolveCycleMonitorCmd implements `cycle-monitor`.
+func (io IO) EvolveCycleMonitorCmd(args []string) int {
+	req, code, ok := parseMonitorArgs(args, io.Stderr)
+	if !ok {
+		return code
+	}
+	if err := evolve.RecordGovernedMonitor(io.Dir, req.cycle, req.by, req.healthy, req.detail); err != nil {
 		fmt.Fprintf(io.Stderr, "evolve validation cycle-monitor: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(io.Stdout, "verdict: MONITOR_RECORDED %s healthy=%v\n", strings.TrimSpace(*cycle), ok)
-	if ok {
-		fmt.Fprintf(io.Stdout, "next: regulus evolve validation cycle-promote --cycle %s --by <deployer> --winner <cid>\n", strings.TrimSpace(*cycle))
-	} else {
-		fmt.Fprintf(io.Stdout, "next: regulus evolve validation cycle-rollback --cycle %s --by <deployer> --reason <text> --condition <preapproved>\n", strings.TrimSpace(*cycle))
-	}
+	fmt.Fprintf(io.Stdout, "verdict: MONITOR_RECORDED %s healthy=%v\n", req.cycle, req.healthy)
+	fmt.Fprint(io.Stdout, monitorNextHint(req.cycle, req.healthy))
 	return 0
 }
 

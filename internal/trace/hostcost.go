@@ -109,10 +109,10 @@ func ParseRateCard(data []byte) (RateCard, error) {
 	return r, nil
 }
 
-// ParseRateCards parses a JSON array of rate cards with the same
-// strict gate per card. A tariff file is an array; an empty array
-// parses to no tariffs (money stays unknown, never zero).
-func ParseRateCards(data []byte) ([]RateCard, error) {
+// decodeRateCardList decodes the JSON array envelope of a tariff
+// file: bounded size, strict fields, no trailing data. An empty array
+// decodes to no tariffs (money stays unknown, never zero).
+func decodeRateCardList(data []byte) ([]json.RawMessage, error) {
 	if len(data) > maxRateBytes {
 		return nil, fmt.Errorf("rate cards too large: %d bytes (max %d)", len(data), maxRateBytes)
 	}
@@ -125,6 +125,12 @@ func ParseRateCards(data []byte) ([]RateCard, error) {
 	if dec.More() {
 		return nil, fmt.Errorf("malformed rate cards: trailing data")
 	}
+	return raw, nil
+}
+
+// convertRateCards validates every card of a decoded tariff file in
+// order, naming the offending index on the first failure.
+func convertRateCards(raw []json.RawMessage) ([]RateCard, error) {
 	out := make([]RateCard, 0, len(raw))
 	for i, m := range raw {
 		r, err := ParseRateCard(m)
@@ -134,6 +140,17 @@ func ParseRateCards(data []byte) ([]RateCard, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// ParseRateCards parses a JSON array of rate cards with the same
+// strict gate per card. A tariff file is an array; an empty array
+// parses to no tariffs (money stays unknown, never zero).
+func ParseRateCards(data []byte) ([]RateCard, error) {
+	raw, err := decodeRateCardList(data)
+	if err != nil {
+		return nil, err
+	}
+	return convertRateCards(raw)
 }
 
 // MoneyCost is one priced usage: the total plus the exact tariff

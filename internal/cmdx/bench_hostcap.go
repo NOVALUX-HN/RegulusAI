@@ -292,34 +292,64 @@ func orderedHostIDs(only string) []string {
 	return ordered
 }
 
-// executeHostJourney runs the conformity journey for one usable host.
-// Duplicated from internal/cli (bench_host.go).
-func (io IO) executeHostJourney(ctx context.Context, host, version, model, now string) bench.HostJourneyOutcome {
-	r := bench.HostJourneyOutcome{Host: host, Version: version, Level: bench.LevelHost, RecordedAt: now, Windows: isWindows()}
-	work, err := os.MkdirTemp("", "host-journey-")
+// setupJourneyWork materializes the isolated workdir a conformity
+// journey runs against: a temp dir plus the offline fixture chart.
+// mkTemp and fixture are injectable so tests drive both infra
+// refusals without touching the real layout.
+func setupJourneyWork(mkTemp func(string, string) (string, error), fixture func(string) error) (string, error) {
+	work, err := mkTemp("", "host-journey-")
 	if err != nil {
-		r.Status, r.Reason = bench.AgentInfra, err.Error()
-		return r
+		return "", err
 	}
-	defer os.RemoveAll(work)
-	if err := bench.JourneyFixture(work); err != nil {
-		r.Status, r.Reason = bench.AgentInfra, err.Error()
-		return r
+	if err := fixture(work); err != nil {
+		os.RemoveAll(work)
+		return "", err
 	}
-	steps := hostJourneySteps(journeyBin(), work)
+	return work, nil
+}
+
+// runJourneySteps runs every journey step with a per-step timeout,
+// stopping at the first failure: it reports the failing step name,
+// its detail and the error.
+func runJourneySteps(ctx context.Context, work string, steps []bench.JourneyStep) (string, string, error) {
 	for _, s := range steps {
 		tctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		detail, err := s.Run(tctx, work)
 		cancel()
 		if err != nil {
-			status, reason := classifyJourneyErr(s.Name, err)
-			r.Status, r.Reason = status, reason
-			r.Evidence = detail
-			if status == bench.AgentNotRun {
-				r.Level = bench.LevelContract
-			}
-			return r
+			return s.Name, detail, err
 		}
+	}
+	return "", "", nil
+}
+
+// applyJourneyFailure folds a failed step into the outcome: the
+// classifier decides fail vs not-run, the evidence stays attached,
+// and a not-run downgrades the level to contract-probed (a host that
+// never ran never reads host-tested).
+func applyJourneyFailure(r *bench.HostJourneyOutcome, step, detail string, err error) {
+	status, reason := classifyJourneyErr(step, err)
+	r.Status, r.Reason = status, reason
+	r.Evidence = detail
+	if status == bench.AgentNotRun {
+		r.Level = bench.LevelContract
+	}
+}
+
+// executeHostJourney runs the conformity journey for one usable host.
+// Duplicated from internal/cli (bench_host.go).
+func (io IO) executeHostJourney(ctx context.Context, host, version, model, now string) bench.HostJourneyOutcome {
+	r := bench.HostJourneyOutcome{Host: host, Version: version, Level: bench.LevelHost, RecordedAt: now, Windows: isWindows()}
+	work, err := setupJourneyWork(os.MkdirTemp, bench.JourneyFixture)
+	if err != nil {
+		r.Status, r.Reason = bench.AgentInfra, err.Error()
+		return r
+	}
+	defer os.RemoveAll(work)
+	steps := hostJourneySteps(journeyBin(), work)
+	if step, detail, err := runJourneySteps(ctx, work, steps); err != nil {
+		applyJourneyFailure(&r, step, detail, err)
+		return r
 	}
 	r.Status, r.Reason = bench.AgentPass, "install, doctor, context, spec, gate, receipt and close green"
 	return r

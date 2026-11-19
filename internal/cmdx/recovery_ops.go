@@ -247,46 +247,78 @@ func (io IO) RecoveryStatusCmd(args []string) int {
 	return 0
 }
 
+// rollbackRequest is the parsed `recovery rollback` input: the run,
+// task and agent ids (all required, no positional args).
+type rollbackRequest struct {
+	run   string
+	task  string
+	agent string
+}
+
+// parseRollbackArgs parses the rollback flags without touching the
+// store. Missing input prints the usage (byte identical to the inline
+// command) and refuses with exit 2.
+func parseRollbackArgs(args []string, stderr interface{ Write([]byte) (int, error) }) (rollbackRequest, int, bool) {
+	fs := flag.NewFlagSet("recovery rollback", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	run := fs.String("run", "", "run id (required)")
+	task := fs.String("task", "", "task id (required)")
+	agent := fs.String("agent", "", "agent id (required)")
+	if err := fs.Parse(args); err != nil {
+		return rollbackRequest{}, 2, false
+	}
+	if fs.NArg() != 0 || *run == "" || *task == "" || *agent == "" {
+		fmt.Fprintln(stderr, recoveryUsage())
+		return rollbackRequest{}, 2, false
+	}
+	return rollbackRequest{run: *run, task: *task, agent: *agent}, 0, true
+}
+
+// rollbackState selects the audited state: a clean rollback when the
+// undo completes, rolled_back_partial when it stops early.
+func rollbackState(err error) string {
+	if err != nil {
+		return recovery.StateRolledBackPartial
+	}
+	return recovery.StateRolledBack
+}
+
+// rollbackAllWithOutput performs every undo step in reverse order,
+// narrating each compensation to stdout. The operator performs each
+// undo; this layer records it durably in the checkpoint.
+func rollbackAllWithOutput(rec *recovery.RunRecord, task, agent string, now time.Time, stdout interface{ Write([]byte) (int, error) }) ([]string, error) {
+	return rec.RollbackAll(task, agent, now, func(s recovery.Compensation) error {
+		fmt.Fprintf(stdout, "recovery: compensate %s: %s\n", s.Key, s.Desc)
+		return nil
+	})
+}
+
 // RecoveryRollbackCmd implements `regulus recovery rollback`: the
 // operator performs each undo, the command records every step
 // durably in reverse order. A failed undo stops the run on
 // rolled_back_partial naming what remains.
 func (io IO) RecoveryRollbackCmd(args []string) int {
-	fs := flag.NewFlagSet("recovery rollback", flag.ContinueOnError)
-	fs.SetOutput(io.Stderr)
-	run := fs.String("run", "", "run id (required)")
-	task := fs.String("task", "", "task id (required)")
-	agent := fs.String("agent", "", "agent id (required)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	req, code, ok := parseRollbackArgs(args, io.Stderr)
+	if !ok {
+		return code
 	}
-	if fs.NArg() != 0 || *run == "" || *task == "" || *agent == "" {
-		fmt.Fprintln(io.Stderr, recoveryUsage())
-		return 2
-	}
-	rec, code, ok := loadRecoveryRun(io.Dir, *run, io.Stderr)
+	rec, code, ok := loadRecoveryRun(io.Dir, req.run, io.Stderr)
 	if !ok {
 		return code
 	}
 	now := time.Now().UTC()
-	done, err := rec.RollbackAll(*task, *agent, now, func(s recovery.Compensation) error {
-		fmt.Fprintf(io.Stdout, "recovery: compensate %s: %s\n", s.Key, s.Desc)
-		return nil
-	})
+	done, err := rollbackAllWithOutput(rec, req.task, req.agent, now, io.Stdout)
 	if _, serr := recovery.SaveRun(io.Dir, rec, now); serr != nil {
 		fmt.Fprintf(io.Stderr, "recovery rollback: %v\n", serr)
 		return 1
 	}
-	state := recovery.StateRolledBack
-	if err != nil {
-		state = recovery.StateRolledBackPartial
-	}
-	io.emitRecoveryEvent(*run, *task, "recovery rollback", state, map[string]any{"agent": *agent})
+	state := rollbackState(err)
+	io.emitRecoveryEvent(req.run, req.task, "recovery rollback", state, map[string]any{"agent": req.agent})
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "recovery rollback: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(io.Stdout, "recovery: rollback %s/%s %d compensation(s) applied\n", *task, *agent, len(done))
+	fmt.Fprintf(io.Stdout, "recovery: rollback %s/%s %d compensation(s) applied\n", req.task, req.agent, len(done))
 	return 0
 }
 
