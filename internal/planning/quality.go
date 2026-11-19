@@ -35,10 +35,13 @@ func coverCriteria(p *Plan) {
 	}
 }
 
-// risksFor names the plan risks explicitly: mission risk,
-// critical packages, collisions, budget pressure and unknowns.
-func risksFor(m *mission.Mission, hit scopeHit, graphOK bool, tasks []PlanTask) []string {
-	r := []string{fmt.Sprintf("riesgo de misión %s: las tareas heredan el techo y las de riesgo alto/crítico exigen aprobación", m.Risk)}
+// missionRiskLine names the mission risk ceiling every task inherits.
+func missionRiskLine(m *mission.Mission) string {
+	return fmt.Sprintf("riesgo de misión %s: las tareas heredan el techo y las de riesgo alto/crítico exigen aprobación", m.Risk)
+}
+
+// criticalTaskIDs lists the tasks touching critical packages, sorted.
+func criticalTaskIDs(tasks []PlanTask) []string {
 	crit := map[string]bool{}
 	for _, t := range tasks {
 		for _, b := range t.Blockers {
@@ -50,14 +53,28 @@ func risksFor(m *mission.Mission, hit scopeHit, graphOK bool, tasks []PlanTask) 
 			crit[t.ID] = true
 		}
 	}
-	if len(crit) > 0 {
-		var ids []string
-		for id := range crit {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		r = append(r, fmt.Sprintf("paquetes críticos bajo el alcance (tareas %s): gates/evidence/receipts/manifest/verdict/contract nunca se degradan", strings.Join(ids, ", ")))
+	if len(crit) == 0 {
+		return nil
 	}
+	ids := make([]string, 0, len(crit))
+	for id := range crit {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// criticalRiskLine names the critical-package risk when any task touches one.
+func criticalRiskLine(tasks []PlanTask) (string, bool) {
+	ids := criticalTaskIDs(tasks)
+	if len(ids) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("paquetes críticos bajo el alcance (tareas %s): gates/evidence/receipts/manifest/verdict/contract nunca se degradan", strings.Join(ids, ", ")), true
+}
+
+// countCollisions counts the tasks serialized by file collisions.
+func countCollisions(tasks []PlanTask) int {
 	coll := 0
 	for _, t := range tasks {
 		for _, b := range t.Blockers {
@@ -67,21 +84,64 @@ func risksFor(m *mission.Mission, hit scopeHit, graphOK bool, tasks []PlanTask) 
 			}
 		}
 	}
-	if coll > 0 {
-		r = append(r, fmt.Sprintf("%d tarea(s) serializada(s) por colisión de ficheros: el orden es obligatorio, no optimizable en paralelo", coll))
+	return coll
+}
+
+// collisionRiskLine names the serialization risk when collisions exist.
+func collisionRiskLine(tasks []PlanTask) (string, bool) {
+	coll := countCollisions(tasks)
+	if coll == 0 {
+		return "", false
 	}
-	if !graphOK {
-		r = append(r, "grafo F12.8 no disponible: impacto tratado como desconocido (se pide aprobación donde el impacto no se verifica)")
+	return fmt.Sprintf("%d tarea(s) serializada(s) por colisión de ficheros: el orden es obligatorio, no optimizable en paralelo", coll), true
+}
+
+// graphRiskLine names the unknown-impact risk when the graph is missing.
+func graphRiskLine(graphOK bool) (string, bool) {
+	if graphOK {
+		return "", false
 	}
-	if len(hit.unknown) > 0 {
-		r = append(r, fmt.Sprintf("términos sin correspondencia en el corpus (%s): no se inventó alcance para ellos", strings.Join(headFiles(hit.unknown, 6), ", ")))
+	return "grafo F12.8 no disponible: impacto tratado como desconocido (se pide aprobación donde el impacto no se verifica)", true
+}
+
+// unknownRiskLine names the unmapped-terms risk when the corpus matched nothing.
+func unknownRiskLine(hit scopeHit) (string, bool) {
+	if len(hit.unknown) == 0 {
+		return "", false
 	}
-	if m.Budget.TimeMS != 0 || m.Budget.Tokens != 0 || m.Budget.Cost != 0 {
-		var total int64
-		for _, t := range tasks {
-			total += t.Estimate.Tokens
-		}
-		r = append(r, fmt.Sprintf("presupuesto estimado total %d tokens (estimación, no medición) frente al techo de misión tokens=%d", total, m.Budget.Tokens))
+	return fmt.Sprintf("términos sin correspondencia en el corpus (%s): no se inventó alcance para ellos", strings.Join(headFiles(hit.unknown, 6), ", ")), true
+}
+
+// budgetRiskLine names the budget-pressure risk when the mission sets a ceiling.
+func budgetRiskLine(m *mission.Mission, tasks []PlanTask) (string, bool) {
+	if m.Budget.TimeMS == 0 && m.Budget.Tokens == 0 && m.Budget.Cost == 0 {
+		return "", false
+	}
+	var total int64
+	for _, t := range tasks {
+		total += t.Estimate.Tokens
+	}
+	return fmt.Sprintf("presupuesto estimado total %d tokens (estimación, no medición) frente al techo de misión tokens=%d", total, m.Budget.Tokens), true
+}
+
+// risksFor names the plan risks explicitly: mission risk,
+// critical packages, collisions, budget pressure and unknowns.
+func risksFor(m *mission.Mission, hit scopeHit, graphOK bool, tasks []PlanTask) []string {
+	r := []string{missionRiskLine(m)}
+	if line, ok := criticalRiskLine(tasks); ok {
+		r = append(r, line)
+	}
+	if line, ok := collisionRiskLine(tasks); ok {
+		r = append(r, line)
+	}
+	if line, ok := graphRiskLine(graphOK); ok {
+		r = append(r, line)
+	}
+	if line, ok := unknownRiskLine(hit); ok {
+		r = append(r, line)
+	}
+	if line, ok := budgetRiskLine(m, tasks); ok {
+		r = append(r, line)
 	}
 	return r
 }
@@ -299,10 +359,8 @@ func deriveStatus(p *Plan) string {
 	return StatusReady
 }
 
-// ValidatePlan refuses a structurally unsound plan before anything
-// executes: unknown ids, dangling deps, duplicate tasks, cycles,
-// unverified capabilities and scopes beyond the agent's grant.
-func ValidatePlan(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) error {
+// validatePlanHeader refuses a nil or mis-versioned plan before any task runs.
+func validatePlanHeader(p *Plan) error {
 	if p == nil {
 		return fmt.Errorf("planning: plan nulo (nada que validar)")
 	}
@@ -315,18 +373,127 @@ func ValidatePlan(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]b
 	if !validStatus(p.Status) {
 		return fmt.Errorf("planning: status %q desconocido", p.Status)
 	}
-	if p.Kind == KindAdversarial {
-		if len(p.Tasks) != 0 {
-			return fmt.Errorf("planning: plan adversarial con %d tareas (rehusar = cero tareas)", len(p.Tasks))
-		}
-		return nil
+	return nil
+}
+
+// validateAdversarialPlan refuses any task on a refused plan.
+func validateAdversarialPlan(p *Plan) error {
+	if len(p.Tasks) != 0 {
+		return fmt.Errorf("planning: plan adversarial con %d tareas (rehusar = cero tareas)", len(p.Tasks))
 	}
+	return nil
+}
+
+// validatePlanSize refuses empty and oversized plans.
+func validatePlanSize(p *Plan) error {
 	if len(p.Tasks) == 0 {
 		return fmt.Errorf("planning: plan %s sin tareas (vacío no es ejecutable)", p.Kind)
 	}
 	if len(p.Tasks) > MaxTasks {
 		return fmt.Errorf("planning: %d tareas, máximo %d", len(p.Tasks), MaxTasks)
 	}
+	return nil
+}
+
+// validateTaskContent checks objective, deliverable and autonomy words.
+func validateTaskContent(t PlanTask) error {
+	if strings.TrimSpace(t.Objective) == "" {
+		return fmt.Errorf("planning: tarea %q sin objetivo", t.ID)
+	}
+	if strings.TrimSpace(t.Deliverable) == "" {
+		return fmt.Errorf("planning: tarea %q sin entregable", t.ID)
+	}
+	if !validAutonomy(t.Autonomy) {
+		return fmt.Errorf("planning: tarea %q autonomía %q desconocida", t.ID, t.Autonomy)
+	}
+	return nil
+}
+
+// validateTaskScope checks the declared file scope stays repo-relative.
+func validateTaskScope(t PlanTask) error {
+	if len(t.Scope.Files) == 0 && t.Autonomy != AutonomyNeedsUser {
+		return fmt.Errorf("planning: tarea %q sin scope de ficheros (el alcance se declara, no se adivina)", t.ID)
+	}
+	for _, f := range t.Scope.Files {
+		if strings.TrimSpace(f) == "" || strings.Contains(f, "..") {
+			return fmt.Errorf("planning: tarea %q fichero %q inválido (repo-relativo, sin ..)", t.ID, f)
+		}
+	}
+	return nil
+}
+
+// validateTaskDeps refuses self and dangling dependencies.
+func validateTaskDeps(t PlanTask, ids map[string]bool, all []PlanTask) error {
+	for _, d := range t.DependsOn {
+		if d == t.ID {
+			return fmt.Errorf("planning: tarea %q depende de sí misma", t.ID)
+		}
+		if !ids[d] && !depExists(all, d) {
+			return fmt.Errorf("planning: tarea %q depende de %q (desconocida)", t.ID, d)
+		}
+	}
+	return nil
+}
+
+// validateTaskCapabilities refuses capabilities without dated evidence.
+func validateTaskCapabilities(t PlanTask, manifests map[string]bench.HostManifest) error {
+	for _, c := range t.RequiredCapabilities {
+		if !verifiedCap(manifests, c) {
+			return fmt.Errorf("planning: tarea %q exige capability %q sin evidencia probada (nunca se planifica sin verificar)", t.ID, c)
+		}
+	}
+	return nil
+}
+
+// validateTaskAgent refuses unknown agents and scopes above the grant.
+func validateTaskAgent(t PlanTask, reg []orchestrate.RoutedAgent) error {
+	if t.Agent == "" {
+		return nil
+	}
+	agent, ok := orchestrate.FindRoutedAgent(reg, t.Agent)
+	if !ok {
+		return fmt.Errorf("planning: tarea %q agente %q fuera del registry", t.ID, t.Agent)
+	}
+	if !scopesHold(agent.Scopes, t.MinScopes) {
+		return fmt.Errorf("planning: tarea %q pide scopes [%s] superiores a los de %s [%s] (mínimos, nunca superiores)",
+			t.ID, strings.Join(t.MinScopes, ", "), t.Agent, strings.Join(agent.Scopes, ", "))
+	}
+	return nil
+}
+
+// validateTaskEstimate refuses figures missing the estimate label.
+func validateTaskEstimate(t PlanTask) error {
+	if !strings.Contains(t.Estimate.Note, "estimación") {
+		return fmt.Errorf("planning: tarea %q estimación sin etiqueta (toda cifra es estimación, no medición)", t.ID)
+	}
+	return nil
+}
+
+// validateTaskBody runs every per-task group in declaration order.
+func validateTaskBody(t PlanTask, ids map[string]bool, all []PlanTask, reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) error {
+	if err := validateTaskContent(t); err != nil {
+		return err
+	}
+	if err := validateTaskScope(t); err != nil {
+		return err
+	}
+	if err := validateTaskDeps(t, ids, all); err != nil {
+		return err
+	}
+	if err := validateTaskCapabilities(t, manifests); err != nil {
+		return err
+	}
+	if err := validateTaskAgent(t, reg); err != nil {
+		return err
+	}
+	if err := validateTaskEstimate(t); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validatePlanTasks walks the task list keeping duplicate detection order.
+func validatePlanTasks(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) error {
 	ids := map[string]bool{}
 	for _, t := range p.Tasks {
 		if strings.TrimSpace(t.ID) == "" {
@@ -336,50 +503,15 @@ func ValidatePlan(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]b
 			return fmt.Errorf("planning: tarea duplicada %q", t.ID)
 		}
 		ids[t.ID] = true
-		if strings.TrimSpace(t.Objective) == "" {
-			return fmt.Errorf("planning: tarea %q sin objetivo", t.ID)
-		}
-		if strings.TrimSpace(t.Deliverable) == "" {
-			return fmt.Errorf("planning: tarea %q sin entregable", t.ID)
-		}
-		if !validAutonomy(t.Autonomy) {
-			return fmt.Errorf("planning: tarea %q autonomía %q desconocida", t.ID, t.Autonomy)
-		}
-		if len(t.Scope.Files) == 0 && t.Autonomy != AutonomyNeedsUser {
-			return fmt.Errorf("planning: tarea %q sin scope de ficheros (el alcance se declara, no se adivina)", t.ID)
-		}
-		for _, f := range t.Scope.Files {
-			if strings.TrimSpace(f) == "" || strings.Contains(f, "..") {
-				return fmt.Errorf("planning: tarea %q fichero %q inválido (repo-relativo, sin ..)", t.ID, f)
-			}
-		}
-		for _, d := range t.DependsOn {
-			if d == t.ID {
-				return fmt.Errorf("planning: tarea %q depende de sí misma", t.ID)
-			}
-			if !ids[d] && !depExists(p.Tasks, d) {
-				return fmt.Errorf("planning: tarea %q depende de %q (desconocida)", t.ID, d)
-			}
-		}
-		for _, c := range t.RequiredCapabilities {
-			if !verifiedCap(manifests, c) {
-				return fmt.Errorf("planning: tarea %q exige capability %q sin evidencia probada (nunca se planifica sin verificar)", t.ID, c)
-			}
-		}
-		if t.Agent != "" {
-			agent, ok := orchestrate.FindRoutedAgent(reg, t.Agent)
-			if !ok {
-				return fmt.Errorf("planning: tarea %q agente %q fuera del registry", t.ID, t.Agent)
-			}
-			if !scopesHold(agent.Scopes, t.MinScopes) {
-				return fmt.Errorf("planning: tarea %q pide scopes [%s] superiores a los de %s [%s] (mínimos, nunca superiores)",
-					t.ID, strings.Join(t.MinScopes, ", "), t.Agent, strings.Join(agent.Scopes, ", "))
-			}
-		}
-		if !strings.Contains(t.Estimate.Note, "estimación") {
-			return fmt.Errorf("planning: tarea %q estimación sin etiqueta (toda cifra es estimación, no medición)", t.ID)
+		if err := validateTaskBody(t, ids, p.Tasks, reg, manifests); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// validatePlanDAG refuses a task order the F12.2 DAG cannot serialize.
+func validatePlanDAG(p *Plan) error {
 	pts := make([]orchestrate.ParallelTask, 0, len(p.Tasks))
 	for _, t := range p.Tasks {
 		pts = append(pts, orchestrate.ParallelTask{ID: t.ID, Title: t.Title, Files: t.Scope.Files, DependsOn: t.DependsOn})
@@ -388,6 +520,25 @@ func ValidatePlan(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]b
 		return fmt.Errorf("planning: %w", err)
 	}
 	return nil
+}
+
+// ValidatePlan refuses a structurally unsound plan before anything
+// executes: unknown ids, dangling deps, duplicate tasks, cycles,
+// unverified capabilities and scopes beyond the agent's grant.
+func ValidatePlan(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) error {
+	if err := validatePlanHeader(p); err != nil {
+		return err
+	}
+	if p.Kind == KindAdversarial {
+		return validateAdversarialPlan(p)
+	}
+	if err := validatePlanSize(p); err != nil {
+		return err
+	}
+	if err := validatePlanTasks(p, reg, manifests); err != nil {
+		return err
+	}
+	return validatePlanDAG(p)
 }
 
 // depExists reports whether id names any plan task.

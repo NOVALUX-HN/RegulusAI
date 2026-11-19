@@ -246,6 +246,154 @@ func verifiedLearnIDs(all []Observation, ends map[string]string) map[string]bool
 	return out
 }
 
+// validateLearnQuery rejects unknown kinds and scopes before any
+// disk read. Pure: no I/O, table-testable.
+func validateLearnQuery(q LearnQuery) error {
+	for _, k := range q.Kinds {
+		if !IsLearnKind(k) {
+			return fmt.Errorf("kind %q is not learn knowledge (verified-solution, pattern, decision, error, workaround, hypothesis)", k)
+		}
+	}
+	for _, s := range q.Scopes {
+		if !ValidScope(s) {
+			return fmt.Errorf("scope %q is not one of private, task, project, shared", s)
+		}
+	}
+	return nil
+}
+
+// learnSearchState is the loaded retrieval state: every observation
+// plus the pin, retirement and governance folds and the want-sets.
+// The expiry clock is captured after the loads, like the single
+// function was before the split.
+type learnSearchState struct {
+	all          []Observation
+	pins         map[string]bool
+	superseded   map[string]bool
+	stale        map[string]bool
+	ends         map[string]string
+	wantKind     map[string]bool
+	wantScope    map[string]bool
+	includeStale bool
+	now          time.Time
+}
+
+// loadLearnSearchState reads the Almanac substrate once: the log,
+// the pins, the retirement folds (skipped under the include flags)
+// and the governance ends, plus the kind/scope want-sets.
+func loadLearnSearchState(root string, q LearnQuery) (*learnSearchState, error) {
+	s := &learnSearchState{includeStale: q.IncludeStale}
+	var err error
+	if s.all, err = All(root); err != nil {
+		return nil, err
+	}
+	if s.pins, err = PinnedIDs(root); err != nil {
+		return nil, err
+	}
+	if !q.IncludeSuperseded {
+		if s.superseded, err = SupersededIDs(root); err != nil {
+			return nil, err
+		}
+	}
+	if !q.IncludeStale {
+		if s.stale, err = staleIDs(root); err != nil {
+			return nil, err
+		}
+	}
+	if s.ends, err = statusEnds(root); err != nil {
+		return nil, err
+	}
+	s.wantKind = map[string]bool{}
+	for _, k := range q.Kinds {
+		s.wantKind[k] = true
+	}
+	s.wantScope = map[string]bool{}
+	for _, sc := range q.Scopes {
+		s.wantScope[sc] = true
+	}
+	s.now = time.Now().UTC()
+	return s, nil
+}
+
+// kindScopeOK reports whether one observation passes the kind and
+// scope filters. Pure.
+func (s *learnSearchState) kindScopeOK(o Observation) bool {
+	if len(s.wantKind) > 0 && !s.wantKind[o.Type] {
+		return false
+	}
+	return len(s.wantScope) == 0 || s.wantScope[o.Scope]
+}
+
+// retirementHidden reports whether one observation hides under the
+// retirement folds: superseded targets, stale (invalidated/
+// rejected) ids and expired observations — the last only while the
+// caller does not include stale. Pure.
+func (s *learnSearchState) retirementHidden(o Observation) bool {
+	if s.superseded[o.ID] {
+		return true
+	}
+	if s.stale[o.ID] {
+		return true
+	}
+	return o.ExpiresAt != nil && !s.now.Before(*o.ExpiresAt) && !s.includeStale
+}
+
+// verifiedPass is the VerifiedOnly gate: hypotheses are excluded
+// unconditionally (imported status history restores verbatim, so
+// the exclusion never trusts the status alone) and unverified
+// knowledge never passes. Pure.
+func verifiedPass(o Observation, verified, verifiedOnly bool) bool {
+	return !verifiedOnly || (o.Type != KindHypothesis && verified)
+}
+
+// collectLearnMatches folds one pass over the log: kind and scope
+// filters, term match (AND over title+content), the VerifiedOnly
+// gate, retirement hiding and the ACL split. Observations that
+// match everything but the ACL count as denied.
+func collectLearnMatches(s *learnSearchState, q LearnQuery) (matched []Observation, denied int) {
+	for _, o := range s.all {
+		if !IsLearnKind(o.Type) {
+			continue
+		}
+		if !s.kindScopeOK(o) {
+			continue
+		}
+		if s.retirementHidden(o) {
+			continue
+		}
+		if !matchTerms(o, q.Terms, false) {
+			continue
+		}
+		st := s.ends[o.ID]
+		verified := st == StatusVerified || st == StatusAccepted
+		if !verifiedPass(o, verified, q.VerifiedOnly) {
+			continue
+		}
+		if !CanRead(o, q.Viewer) {
+			denied++
+			continue
+		}
+		matched = append(matched, o)
+	}
+	return matched, denied
+}
+
+// learnHitsFrom tags the ordered matches with their explicit label:
+// Verified (status VERIFIED/ACCEPTED against cited evidence) or
+// Hypothesis (never a fact, even when it matches). Pure.
+func learnHitsFrom(matched []Observation, ends map[string]string) []LearnHit {
+	var hits []LearnHit
+	for _, o := range matched {
+		st := ends[o.ID]
+		hits = append(hits, LearnHit{
+			Observation: o,
+			Verified:    st == StatusVerified || st == StatusAccepted,
+			Hypothesis:  o.Type == KindHypothesis,
+		})
+	}
+	return hits
+}
+
 // LearnSearch retrieves learn knowledge by relevance: kind and scope
 // filters, term match (AND over title+content), the VerifiedOnly
 // gate (hypotheses excluded unconditionally — imported status
@@ -256,98 +404,19 @@ func verifiedLearnIDs(all []Observation, ends map[string]string) map[string]bool
 // The denied count names observations that matched everything but
 // the ACL — retrieval respects permissions and says so.
 func LearnSearch(root string, q LearnQuery) (hits []LearnHit, denied int, err error) {
-	for _, k := range q.Kinds {
-		if !IsLearnKind(k) {
-			return nil, 0, fmt.Errorf("kind %q is not learn knowledge (verified-solution, pattern, decision, error, workaround, hypothesis)", k)
-		}
+	if err := validateLearnQuery(q); err != nil {
+		return nil, 0, err
 	}
-	for _, s := range q.Scopes {
-		if !ValidScope(s) {
-			return nil, 0, fmt.Errorf("scope %q is not one of private, task, project, shared", s)
-		}
-	}
-	all, err := All(root)
+	s, err := loadLearnSearchState(root, q)
 	if err != nil {
 		return nil, 0, err
 	}
-	pins, err := PinnedIDs(root)
-	if err != nil {
-		return nil, 0, err
-	}
-	superseded := map[string]bool{}
-	if !q.IncludeSuperseded {
-		superseded, err = SupersededIDs(root)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-	stale := map[string]bool{}
-	if !q.IncludeStale {
-		stale, err = staleIDs(root)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-	ends, err := statusEnds(root)
-	if err != nil {
-		return nil, 0, err
-	}
-	wantKind := map[string]bool{}
-	for _, k := range q.Kinds {
-		wantKind[k] = true
-	}
-	wantScope := map[string]bool{}
-	for _, s := range q.Scopes {
-		wantScope[s] = true
-	}
-	now := time.Now().UTC()
-	var matched []Observation
-	for _, o := range all {
-		if !IsLearnKind(o.Type) {
-			continue
-		}
-		if len(wantKind) > 0 && !wantKind[o.Type] {
-			continue
-		}
-		if len(wantScope) > 0 && !wantScope[o.Scope] {
-			continue
-		}
-		if superseded[o.ID] {
-			continue
-		}
-		if stale[o.ID] {
-			continue
-		}
-		if o.ExpiresAt != nil && !now.Before(*o.ExpiresAt) && !q.IncludeStale {
-			continue
-		}
-		if !matchTerms(o, q.Terms, false) {
-			continue
-		}
-		st := ends[o.ID]
-		verified := st == StatusVerified || st == StatusAccepted
-		if q.VerifiedOnly && (o.Type == KindHypothesis || !verified) {
-			continue
-		}
-		if !CanRead(o, q.Viewer) {
-			denied++
-			continue
-		}
-		matched = append(matched, o)
-	}
-	sortHits(pins, matched)
+	matched, denied := collectLearnMatches(s, q)
+	sortHits(s.pins, matched)
 	if q.Limit > 0 && len(matched) > q.Limit {
 		matched = matched[:q.Limit]
 	}
-	for _, o := range matched {
-		st := ends[o.ID]
-		hits = append(hits, LearnHit{
-			Observation: o,
-			Verified:    st == StatusVerified || st == StatusAccepted,
-			Hypothesis:  o.Type == KindHypothesis,
-		})
-	}
-	return hits, denied, nil
+	return learnHitsFrom(matched, s.ends), denied, nil
 }
 
 // InvalidateKnowledge retires knowledge with a recorded reason: the

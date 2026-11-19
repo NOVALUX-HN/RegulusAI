@@ -489,8 +489,22 @@ func (io IO) VerifyMatrixCmd(args []string) int {
 	return 0
 }
 
-// VerifyRerunCmd implements `regulus verify rerun`.
-func (io IO) VerifyRerunCmd(args []string) int {
+// rerunRequest carries the parsed `verify rerun` inputs: the prior
+// evidence dir, the new evidence dir and the recorded outcomes.
+type rerunRequest struct {
+	dir         string
+	out         string
+	fail        string
+	skip        string
+	block       string
+	na          string
+	results     string
+	noToolchain bool
+	asJSON      bool
+}
+
+// parseRerunRequest parses flags and refuses bad dir/out pairs first.
+func (io IO) parseRerunRequest(args []string) (rerunRequest, int, bool) {
 	var o verifyOutcomeFlags
 	fs := flag.NewFlagSet("verify rerun", flag.ContinueOnError)
 	fs.SetOutput(io.Stderr)
@@ -504,58 +518,85 @@ func (io IO) VerifyRerunCmd(args []string) int {
 	fs.BoolVar(&o.noToolchain, "no-toolchain", false, "simulate a host without toolchain (every gate BLOCKED)")
 	asJSON := fs.Bool("json", false, "print the new result as JSON")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return rerunRequest{}, 2, false
 	}
 	if fs.NArg() != 0 || strings.TrimSpace(*dir) == "" || strings.TrimSpace(*out) == "" {
 		fmt.Fprintln(io.Stderr, "usage: regulus verify rerun --dir <dir> --out <newdir> [--fail ...] [--json]")
-		return 2
+		return rerunRequest{}, 2, false
 	}
 	if *out == *dir {
 		fmt.Fprintln(io.Stderr, "verify rerun: --out must differ from --dir (reruns never overwrite prior evidence)")
-		return 2
+		return rerunRequest{}, 2, false
 	}
 	if _, err := os.Stat(*out + string(os.PathSeparator) + "manifest.json"); err == nil {
 		fmt.Fprintln(io.Stderr, "verify rerun: --out already holds evidence (reruns write to a new dir)")
-		return 2
+		return rerunRequest{}, 2, false
 	}
-	_, plan, oldRes, err := verify.ReadResultEvidence(*dir)
-	if err != nil {
-		fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
-		return 1
-	}
+	return rerunRequest{
+		dir: *dir, out: *out,
+		fail: o.fail, skip: o.skip, block: o.block, na: o.na,
+		results: o.results, noToolchain: o.noToolchain, asJSON: *asJSON,
+	}, 0, true
+}
+
+// rerunFlagOutcomes folds the --fail/--skip/--block/--na flags.
+func rerunFlagOutcomes(r rerunRequest) (map[string]verify.GateResult, error) {
 	recorded := map[string]verify.GateResult{}
 	for _, spec := range []struct {
 		val, verdict, cause string
 	}{
-		{o.fail, verify.VerdictFail, "fallo inyectado por --fail"},
-		{o.skip, verify.VerdictSkipped, "omitido con causa por --skip"},
-		{o.block, verify.VerdictBlocked, "bloqueado con causa por --block"},
-		{o.na, verify.VerdictNotApplicable, "no aplicable con causa por --na"},
+		{r.fail, verify.VerdictFail, "fallo inyectado por --fail"},
+		{r.skip, verify.VerdictSkipped, "omitido con causa por --skip"},
+		{r.block, verify.VerdictBlocked, "bloqueado con causa por --block"},
+		{r.na, verify.VerdictNotApplicable, "no aplicable con causa por --na"},
 	} {
 		if strings.TrimSpace(spec.val) == "" {
 			continue
 		}
 		m, err := parseOutcomeList(spec.val, spec.verdict, spec.cause)
 		if err != nil {
-			fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
-			return 2
+			return nil, err
 		}
 		for k, v := range m {
 			recorded[k] = v
 		}
 	}
-	if strings.TrimSpace(o.results) != "" {
-		m, err := loadOutcomeResults(o.results)
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
-			return 1
-		}
-		for k, v := range m {
-			if _, ok := recorded[k]; !ok {
-				recorded[k] = v
-			}
+	return recorded, nil
+}
+
+// mergeRerunFileOutcomes overlays the results file without clobbering flags.
+func mergeRerunFileOutcomes(recorded map[string]verify.GateResult, resultsPath string) error {
+	if strings.TrimSpace(resultsPath) == "" {
+		return nil
+	}
+	m, err := loadOutcomeResults(resultsPath)
+	if err != nil {
+		return err
+	}
+	for k, v := range m {
+		if _, ok := recorded[k]; !ok {
+			recorded[k] = v
 		}
 	}
+	return nil
+}
+
+// loadRerunRecorded merges flag outcomes under the results file.
+func (io IO) loadRerunRecorded(r rerunRequest) (map[string]verify.GateResult, int, bool) {
+	recorded, err := rerunFlagOutcomes(r)
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
+		return nil, 2, false
+	}
+	if err := mergeRerunFileOutcomes(recorded, r.results); err != nil {
+		fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
+		return nil, 1, false
+	}
+	return recorded, 0, true
+}
+
+// finishVerifyRerun replays the stored plan with fresh outcomes and seals it.
+func (io IO) finishVerifyRerun(r rerunRequest, plan verify.Plan, oldRes verify.Result, recorded map[string]verify.GateResult) int {
 	// El rerun conserva la configuración (misma config id) con un run
 	// id fresco: reproducible sin sobrescribir.
 	runID, err := observability.MintRunID()
@@ -564,7 +605,7 @@ func (io IO) VerifyRerunCmd(args []string) int {
 		return 1
 	}
 	plan.Provenance.RunID = runID
-	toolchainMissing := o.noToolchain || strings.HasPrefix(plan.Provenance.Toolchain, "missing-go")
+	toolchainMissing := r.noToolchain || strings.HasPrefix(plan.Provenance.Toolchain, "missing-go")
 	// La regresión viaja con el plan cuando el run original la traía.
 	newRes, err := verify.RunPlan(plan, verifyExecutor(recorded, toolchainMissing), oldRes.Regression, time.Now())
 	if err != nil {
@@ -575,12 +616,17 @@ func (io IO) VerifyRerunCmd(args []string) int {
 	if strings.TrimSpace(head) == "" {
 		head = "worktree"
 	}
-	if _, err := verify.WriteResultEvidence(*out, plan, newRes, head, time.Now()); err != nil {
+	if _, err := verify.WriteResultEvidence(r.out, plan, newRes, head, time.Now()); err != nil {
 		fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
 		return 1
 	}
+	return io.emitVerifyRerun(plan, oldRes, newRes, r)
+}
+
+// emitVerifyRerun prints the rerun comparison plus the new result.
+func (io IO) emitVerifyRerun(plan verify.Plan, oldRes verify.Result, newRes verify.Result, r rerunRequest) int {
 	fmt.Fprint(io.Stdout, verify.Comparison(verify.ResultManifest{}, oldRes, verify.ResultManifest{}, newRes))
-	if *asJSON {
+	if r.asJSON {
 		raw, err := json.MarshalIndent(newRes, "", "  ")
 		if err != nil {
 			fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
@@ -590,9 +636,27 @@ func (io IO) VerifyRerunCmd(args []string) int {
 	} else {
 		fmt.Fprint(io.Stdout, verify.RenderResult(plan, newRes))
 	}
-	io.recordImpactTrace("verify rerun", *dir)
+	io.recordImpactTrace("verify rerun", r.dir)
 	if !newRes.AllowsIntegration() {
 		return 1
 	}
 	return 0
+}
+
+// VerifyRerunCmd implements `regulus verify rerun`.
+func (io IO) VerifyRerunCmd(args []string) int {
+	req, code, ok := io.parseRerunRequest(args)
+	if !ok {
+		return code
+	}
+	_, plan, oldRes, err := verify.ReadResultEvidence(req.dir)
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "verify rerun: %v\n", err)
+		return 1
+	}
+	recorded, code, ok := io.loadRerunRecorded(req)
+	if !ok {
+		return code
+	}
+	return io.finishVerifyRerun(req, plan, oldRes, recorded)
 }

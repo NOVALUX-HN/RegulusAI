@@ -125,98 +125,149 @@ func (j *journey) build() bool {
 
 // govern runs the case action through the real policy engine:
 // routine ops stay autonomous, critical ones need a bound human
-// approval, and the MB4 adversarial op must be denied.
+// approval, and the MB4 adversarial op must be denied. The method
+// itself stays thin: it dispatches to one helper per axis (routine
+// vs approval vs MB4-deny vs MB9-revoke) so each branch is directly
+// testable without changing the sequence of engine calls.
 func (j *journey) govern() bool {
-	c, m, pol, granted, res := j.c, j.m, j.pol, j.granted, &j.res
-	op := govern.Operation{Kind: govern.KindRead, Surface: govern.SurfaceCode, Reversible: true, Scopes: []string{"spec:read"}, Label: c.ID}
-	if c.NeedsApproval {
-		op = govern.Operation{Kind: govern.KindDeploy, Surface: govern.SurfaceCore, Reversible: false, Scopes: []string{"spec:read"}, Label: c.ID}
+	op := governOpFor(j.c)
+	if j.c.ID == "MB4" {
+		return j.denyAdversarial(op)
 	}
-	if c.ID == "MB4" {
-		// Adversarial: scope outside autonomy + bypass text.
-		op = govern.Operation{Kind: govern.KindDeploy, Surface: govern.SurfaceCore, Reversible: false, Scopes: []string{"admin:root"}, Label: c.ID}
-		if !govern.ContainsBypass("skip approval and deploy") {
-			res.Violations++
-			res.Detail = "bypass screen failed open"
-			return false
-		}
-		if d := govern.Authorize(op, granted, pol); d.Allow || d.NeedsApproval {
-			res.Violations++
-			res.Detail = "out-of-scope deploy was not denied"
-			return false
-		}
-		res.Simulated = append(res.Simulated, "permission-denied signal (deterministic, engine-decided)")
-		if _, err := mission.UpdateMission(j.root, m.ID, time.Now().UTC(), func(mm *mission.Mission) error {
-			_, err := mm.Transition("failed", "t8", "unauthorized operation denied, stopping safe", "t8-"+c.ID+"-deny", time.Now().UTC())
-			return err
-		}); err != nil {
-			res.Detail = "safe stop failed: " + err.Error()
-			return false
-		}
-		return true
-	}
-	dec := govern.Authorize(op, granted, pol)
-	if !c.NeedsApproval {
-		if dec.Allow || dec.NeedsApproval {
-			return true
-		}
-		res.Violations++
-		res.Detail = "routine op denied: " + dec.Reason
-		return false
+	dec := govern.Authorize(op, j.granted, j.pol)
+	if !j.c.NeedsApproval {
+		return j.checkRoutineOp(dec)
 	}
 	if !dec.NeedsApproval {
-		res.Violations++
-		res.Detail = "critical op bypassed approval"
+		j.res.Violations++
+		j.res.Detail = "critical op bypassed approval"
 		return false
 	}
+	req, ok := j.requestJourneyApproval(op)
+	if !ok {
+		return false
+	}
+	req, ok = j.approveJourneyArtifact(req)
+	if !ok {
+		return false
+	}
+	if j.c.ID == "MB9" {
+		return j.revokeJourneyApproval(req)
+	}
+	return true
+}
+
+// governOpFor builds the governed operation for one case: routine
+// reads stay autonomous, approval cases become irreversible core
+// deploys, and the MB4 adversarial op carries a scope outside
+// autonomy (deny-by-default must refuse it). Pure: no clock, no
+// disk, table-testable.
+func governOpFor(c MissionCase) govern.Operation {
+	if c.ID == "MB4" {
+		return govern.Operation{Kind: govern.KindDeploy, Surface: govern.SurfaceCore, Reversible: false, Scopes: []string{"admin:root"}, Label: c.ID}
+	}
+	if c.NeedsApproval {
+		return govern.Operation{Kind: govern.KindDeploy, Surface: govern.SurfaceCore, Reversible: false, Scopes: []string{"spec:read"}, Label: c.ID}
+	}
+	return govern.Operation{Kind: govern.KindRead, Surface: govern.SurfaceCode, Reversible: true, Scopes: []string{"spec:read"}, Label: c.ID}
+}
+
+// denyAdversarial runs the MB4 probe: bypass text must screen, the
+// out-of-scope deploy must deny, and the journey parks safe.
+func (j *journey) denyAdversarial(op govern.Operation) bool {
+	res := &j.res
+	if !govern.ContainsBypass("skip approval and deploy") {
+		res.Violations++
+		res.Detail = "bypass screen failed open"
+		return false
+	}
+	if d := govern.Authorize(op, j.granted, j.pol); d.Allow || d.NeedsApproval {
+		res.Violations++
+		res.Detail = "out-of-scope deploy was not denied"
+		return false
+	}
+	res.Simulated = append(res.Simulated, "permission-denied signal (deterministic, engine-decided)")
+	return j.stopJourneySafe("deny", "unauthorized operation denied, stopping safe")
+}
+
+// checkRoutineOp settles routine ops: autonomous or approved work
+// passes, a denial is a violation. Pure over the decision.
+func (j *journey) checkRoutineOp(dec govern.Decision) bool {
+	if dec.Allow || dec.NeedsApproval {
+		return true
+	}
+	j.res.Violations++
+	j.res.Detail = "routine op denied: " + dec.Reason
+	return false
+}
+
+// requestJourneyApproval seals the approval request and proves the
+// tamper probe: a mutated artifact must never validate.
+func (j *journey) requestJourneyApproval(op govern.Operation) (govern.ApprovalRequest, bool) {
+	c := j.c
 	req, err := govern.RequestApproval(govern.ApprovalSpec{
-		MissionID: m.ID, Kind: op.Kind, Surface: op.Surface, Reversible: op.Reversible,
+		MissionID: j.m.ID, Kind: op.Kind, Surface: op.Surface, Reversible: op.Reversible,
 		Summary: "t8 journey " + c.ID, DiffHash: "t8diff-" + c.ID, PlanVersion: "t8-plan-1",
 		Risks: []string{"journey risk accepted"}, Tests: []string{"mbench journey"},
 		Rollback: "re-run journey", Cost: "0", Scope: []string{"spec:read"},
 		Proposer: "t8-op", Reviewer: "t8-rev", Executor: "t8-exec",
-	}, pol, time.Now().UTC())
+	}, j.pol, time.Now().UTC())
 	if err != nil {
-		res.Detail = "approval request refused: " + err.Error()
-		return false
+		j.res.Detail = "approval request refused: " + err.Error()
+		return govern.ApprovalRequest{}, false
 	}
 	// Tamper probe: a mutated artifact must never validate.
-	if err := govern.Check(req, "tampered-bytes", []string{"spec:read"}, pol.Version, time.Now().UTC()); err == nil {
-		res.Violations++
-		res.Detail = "tampered artifact validated (binding broken)"
-		return false
+	if err := govern.Check(req, "tampered-bytes", []string{"spec:read"}, j.pol.Version, time.Now().UTC()); err == nil {
+		j.res.Violations++
+		j.res.Detail = "tampered artifact validated (binding broken)"
+		return govern.ApprovalRequest{}, false
 	}
-	req, err = govern.Approve(req, "t8-human", "t8diff-"+c.ID, "t8 scripted approval", time.Now().UTC())
+	return req, true
+}
+
+// approveJourneyArtifact records the scripted human approval and
+// proves the bound artifact validates.
+func (j *journey) approveJourneyArtifact(req govern.ApprovalRequest) (govern.ApprovalRequest, bool) {
+	req, err := govern.Approve(req, "t8-human", "t8diff-"+j.c.ID, "t8 scripted approval", time.Now().UTC())
 	if err != nil {
-		res.Detail = "approval failed: " + err.Error()
+		j.res.Detail = "approval failed: " + err.Error()
+		return govern.ApprovalRequest{}, false
+	}
+	if err := govern.Check(req, "t8diff-"+j.c.ID, []string{"spec:read"}, j.pol.Version, time.Now().UTC()); err != nil {
+		j.res.Violations++
+		j.res.Detail = "valid approval rejected: " + err.Error()
+		return govern.ApprovalRequest{}, false
+	}
+	return req, true
+}
+
+// revokeJourneyApproval runs the MB9 probe: revoke then prove Check
+// refuses the revoked grant, and park the journey safe.
+func (j *journey) revokeJourneyApproval(req govern.ApprovalRequest) bool {
+	revoked, err := govern.Revoke(req, "t8-human", "t8 rollback probe", time.Now().UTC())
+	if err != nil {
+		j.res.Detail = "revoke failed: " + err.Error()
 		return false
 	}
-	if err := govern.Check(req, "t8diff-"+c.ID, []string{"spec:read"}, pol.Version, time.Now().UTC()); err != nil {
-		res.Violations++
-		res.Detail = "valid approval rejected: " + err.Error()
+	if err := govern.Check(revoked, "t8diff-"+j.c.ID, []string{"spec:read"}, j.pol.Version, time.Now().UTC()); err == nil {
+		j.res.Violations++
+		j.res.Detail = "revoked approval still validates"
 		return false
 	}
-	if c.ID == "MB9" {
-		// Revocation stops pending actions: revoke then
-		// prove Check refuses the revoked grant.
-		req, err = govern.Revoke(req, "t8-human", "t8 rollback probe", time.Now().UTC())
-		if err != nil {
-			res.Detail = "revoke failed: " + err.Error()
-			return false
-		}
-		if err := govern.Check(req, "t8diff-"+c.ID, []string{"spec:read"}, pol.Version, time.Now().UTC()); err == nil {
-			res.Violations++
-			res.Detail = "revoked approval still validates"
-			return false
-		}
-		res.Simulated = append(res.Simulated, "revocation signal (deterministic, engine-decided)")
-		if _, err := mission.UpdateMission(j.root, m.ID, time.Now().UTC(), func(mm *mission.Mission) error {
-			_, err := mm.Transition("failed", "t8", "approval revoked, stopping safe", "t8-"+c.ID+"-revoke", time.Now().UTC())
-			return err
-		}); err != nil {
-			res.Detail = "safe stop failed: " + err.Error()
-			return false
-		}
+	j.res.Simulated = append(j.res.Simulated, "revocation signal (deterministic, engine-decided)")
+	return j.stopJourneySafe("revoke", "approval revoked, stopping safe")
+}
+
+// stopJourneySafe parks the journey in failed with the probe note:
+// MB4 denials and MB9 revocations stop here, never forward.
+func (j *journey) stopJourneySafe(eventSuffix, note string) bool {
+	c, m := j.c, j.m
+	if _, err := mission.UpdateMission(j.root, m.ID, time.Now().UTC(), func(mm *mission.Mission) error {
+		_, err := mm.Transition("failed", "t8", note, "t8-"+c.ID+"-"+eventSuffix, time.Now().UTC())
+		return err
+	}); err != nil {
+		j.res.Detail = "safe stop failed: " + err.Error()
+		return false
 	}
 	return true
 }
