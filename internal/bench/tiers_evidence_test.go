@@ -103,7 +103,8 @@ func TestReadTierEvidenceManifestMismatch(t *testing.T) {
 func TestReadTierEvidenceMalformedPlan(t *testing.T) {
 	dir := t.TempDir()
 	bad := []byte("{not valid plan json\n")
-	sum := sha256.Sum256(bad)
+	trimmed := bad[:len(bad)-1]
+	sum := sha256.Sum256(trimmed)
 	if err := os.WriteFile(filepath.Join(dir, TierPlanFile), bad, 0o644); err != nil {
 		t.Fatal(err)
 	}
