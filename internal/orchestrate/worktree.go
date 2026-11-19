@@ -241,6 +241,84 @@ func (GitWorktreeOps) List(ctx context.Context, repoRoot string) ([]WorktreeEntr
 	return ParseWorktreeList(out), nil
 }
 
+// gitRunner executes one git command in dir and returns combined output.
+// It matches gitRun so tests inject fixed strings without a real repo.
+type gitRunner func(ctx context.Context, dir, name string, args ...string) (string, error)
+
+// mergeGitRun is the production git runner behind MergeBranch: real git
+// by default, swapped for fixed-string fakes only in tests.
+var mergeGitRun gitRunner = gitRun
+
+// ensureMergeBase checks out base when the tree sits on another branch.
+// A base of HEAD means "stay where we are" and skips the checkout.
+// Failures keep their byte-identical cannot-read / cannot-check-out messages.
+func ensureMergeBase(ctx context.Context, repoRoot, base string, run gitRunner) error {
+	out, err := run(ctx, repoRoot, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return fmt.Errorf("orchestrate parallel: cannot read current branch: %v (%s)", err, strings.TrimSpace(out))
+	}
+	if strings.TrimSpace(out) != base && base != "HEAD" {
+		if out2, err := run(ctx, repoRoot, "git", "checkout", base); err != nil {
+			return fmt.Errorf("orchestrate parallel: cannot check out base %s: %v (%s)", base, err, strings.TrimSpace(out2))
+		}
+	}
+	return nil
+}
+
+// ensureCleanMergeTree fails closed on an unreadable or dirty tree:
+// unrelated dirt never hides inside a parallel merge. The messages
+// match the historical refusing / cannot-verify forms.
+func ensureCleanMergeTree(ctx context.Context, repoRoot string, run gitRunner) error {
+	out, err := run(ctx, repoRoot, "git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("orchestrate parallel: cannot verify a clean tree: %v (%s)", err, strings.TrimSpace(out))
+	}
+	if strings.TrimSpace(out) != "" {
+		return fmt.Errorf("orchestrate parallel: refusing to merge onto a dirty tree (commit or stash first)")
+	}
+	return nil
+}
+
+// parseConflictFiles folds `diff --name-only --diff-filter=U` output
+// onto the sorted unmerged-file list: blank lines drop out, the rest
+// sorts so the review state is deterministic.
+func parseConflictFiles(confOut string) []string {
+	var conflicts []string
+	for _, line := range strings.Split(confOut, "\n") {
+		if f := strings.TrimSpace(line); f != "" {
+			conflicts = append(conflicts, f)
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts
+}
+
+// mergeBranchWithRunner runs the merge through an injected runner:
+// base checkout, clean-tree gate, `--no-ff` merge, then the conflict
+// review state (sorted unmerged files, nil error) or the byte-identical
+// merge-failed error when the diff explains nothing.
+func mergeBranchWithRunner(ctx context.Context, repoRoot, branch, base string, run gitRunner) ([]string, error) {
+	if err := ensureMergeBase(ctx, repoRoot, base, run); err != nil {
+		return nil, err
+	}
+	if err := ensureCleanMergeTree(ctx, repoRoot, run); err != nil {
+		return nil, err
+	}
+	out, err := run(ctx, repoRoot, "git", "merge", "--no-ff", "--no-edit", branch)
+	if err == nil {
+		return nil, nil
+	}
+	confOut, cerr := run(ctx, repoRoot, "git", "diff", "--name-only", "--diff-filter=U")
+	if cerr != nil {
+		return nil, fmt.Errorf("orchestrate parallel: merge of %s failed: %v (%s)", branch, err, strings.TrimSpace(out))
+	}
+	conflicts := parseConflictFiles(confOut)
+	if len(conflicts) == 0 {
+		return nil, fmt.Errorf("orchestrate parallel: merge of %s failed: %v (%s)", branch, err, strings.TrimSpace(out))
+	}
+	return conflicts, nil
+}
+
 // MergeBranch merges one worker branch into base with `--no-ff`.
 // Preconditions fail closed: base must be checked out and the tree
 // clean (unrelated dirt never hides inside a parallel merge). On a
@@ -249,37 +327,7 @@ func (GitWorktreeOps) List(ctx context.Context, repoRoot string) ([]WorktreeEntr
 // files (`diff --name-only --diff-filter=U`) and returns them with a
 // nil error — a conflict is a review state, not a git failure.
 func (GitWorktreeOps) MergeBranch(ctx context.Context, repoRoot, branch, base string) ([]string, error) {
-	if out, err := gitRun(ctx, repoRoot, "git", "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
-		return nil, fmt.Errorf("orchestrate parallel: cannot read current branch: %v (%s)", err, strings.TrimSpace(out))
-	} else if strings.TrimSpace(out) != base && base != "HEAD" {
-		if out2, err := gitRun(ctx, repoRoot, "git", "checkout", base); err != nil {
-			return nil, fmt.Errorf("orchestrate parallel: cannot check out base %s: %v (%s)", base, err, strings.TrimSpace(out2))
-		}
-	}
-	if out, err := gitRun(ctx, repoRoot, "git", "status", "--porcelain"); err != nil {
-		return nil, fmt.Errorf("orchestrate parallel: cannot verify a clean tree: %v (%s)", err, strings.TrimSpace(out))
-	} else if strings.TrimSpace(out) != "" {
-		return nil, fmt.Errorf("orchestrate parallel: refusing to merge onto a dirty tree (commit or stash first)")
-	}
-	out, err := gitRun(ctx, repoRoot, "git", "merge", "--no-ff", "--no-edit", branch)
-	if err == nil {
-		return nil, nil
-	}
-	confOut, cerr := gitRun(ctx, repoRoot, "git", "diff", "--name-only", "--diff-filter=U")
-	if cerr != nil {
-		return nil, fmt.Errorf("orchestrate parallel: merge of %s failed: %v (%s)", branch, err, strings.TrimSpace(out))
-	}
-	var conflicts []string
-	for _, line := range strings.Split(confOut, "\n") {
-		if f := strings.TrimSpace(line); f != "" {
-			conflicts = append(conflicts, f)
-		}
-	}
-	sort.Strings(conflicts)
-	if len(conflicts) == 0 {
-		return nil, fmt.Errorf("orchestrate parallel: merge of %s failed: %v (%s)", branch, err, strings.TrimSpace(out))
-	}
-	return conflicts, nil
+	return mergeBranchWithRunner(ctx, repoRoot, branch, base, mergeGitRun)
 }
 
 // Prune drops stale worktree metadata.

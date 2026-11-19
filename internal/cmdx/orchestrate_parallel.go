@@ -37,6 +37,27 @@ type orchestrateParallelOptions struct {
 	asJSON           bool
 }
 
+// parallelRunFunc runs the scheduler; stubbed in tests so wet runs
+// never touch git or shells.
+var parallelRunFunc = func(ctx context.Context, req orchestrate.ParallelRequest) (orchestrate.ParallelReport, error) {
+	return orchestrate.RunParallel(ctx, req)
+}
+
+// parallelMintRunID mints the wet-run id; stubbed in tests.
+var parallelMintRunID = observability.MintRunID
+
+// parallelNewOps builds the worktree backend; stubbed in tests.
+var parallelNewOps = func() orchestrate.WorktreeOps { return orchestrate.GitWorktreeOps{} }
+
+// parallelDiffCheckRun runs `git diff --check`; stubbed in tests.
+var parallelDiffCheckRun = func(ctx context.Context, repoRoot string) (string, string, int, error) {
+	return gates.ShRunner{Dir: repoRoot}.Run(ctx, "git diff --check")
+}
+
+// orphanOpsFunc builds the orphan backend; stubbed in tests so
+// listing and pruning never touch git.
+var orphanOpsFunc = func() orchestrate.WorktreeOps { return orchestrate.GitWorktreeOps{} }
+
 // parseOrchestrateParallelFlags parses the `parallel` flags.
 func parseOrchestrateParallelFlags(args []string, stderr io.Writer) (orchestrateParallelOptions, int, bool) {
 	var opts orchestrateParallelOptions
@@ -61,13 +82,21 @@ func parseOrchestrateParallelFlags(args []string, stderr io.Writer) (orchestrate
 		fmt.Fprintln(stderr, parallelUsage())
 		return orchestrateParallelOptions{}, 2, false
 	}
-	for _, f := range []string{opts.tasks, opts.out, opts.worktreeRoot} {
-		if strings.HasPrefix(f, "-") {
-			fmt.Fprintln(stderr, parallelUsage())
-			return orchestrateParallelOptions{}, 2, false
-		}
+	if parallelHasFlagValue(opts) {
+		fmt.Fprintln(stderr, parallelUsage())
+		return orchestrateParallelOptions{}, 2, false
 	}
 	return opts, 0, true
+}
+
+// parallelHasFlagValue refuses values that look like flags.
+func parallelHasFlagValue(opts orchestrateParallelOptions) bool {
+	for _, f := range []string{opts.tasks, opts.out, opts.worktreeRoot} {
+		if strings.HasPrefix(f, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 // loadParallelTasks reads one tasks file.
@@ -95,6 +124,85 @@ func loadParallelTasks(path string, stderr io.Writer) ([]orchestrate.ParallelTas
 	return tasks, 0, true
 }
 
+// resolveParallelWorktreeRoot defaults the worktree root.
+func resolveParallelWorktreeRoot(repoRoot, opt string) string {
+	if opt != "" {
+		return opt
+	}
+	return filepath.Join(repoRoot, ".regulus", "orchestrate", "worktrees")
+}
+
+// resolveParallelBudgets defaults the admission bound.
+func resolveParallelBudgets(opts orchestrateParallelOptions) orchestrate.ParallelBudgets {
+	budgets := orchestrate.ParallelBudgets{
+		MaxConcurrency: opts.maxConcurrency, PerTaskTimeoutMS: opts.perTaskTimeoutMS,
+		WallBudgetMS: opts.wallBudgetMS, MaxQueued: opts.maxQueued,
+	}
+	if opts.maxQueued == 0 {
+		budgets.MaxQueued = orchestrate.MaxParallelTasks
+	}
+	return budgets
+}
+
+// resolveParallelRunID names the run: dry runs plan only.
+func resolveParallelRunID(dryRun bool, mint func() (string, error)) (string, error) {
+	if dryRun {
+		return "dry-run", nil
+	}
+	return mint()
+}
+
+// buildParallelRequest wires one scheduler request.
+func buildParallelRequest(io IO, opts orchestrateParallelOptions, tasks []orchestrate.ParallelTask) (orchestrate.ParallelRequest, int, bool) {
+	runID, err := resolveParallelRunID(opts.dryRun, parallelMintRunID)
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "orchestrate parallel: %v\n", err)
+		return orchestrate.ParallelRequest{}, 1, false
+	}
+	req := orchestrate.ParallelRequest{
+		Tasks: tasks, Budgets: resolveParallelBudgets(opts), Base: opts.base, RunID: runID,
+		BranchPrefix: opts.branchPrefix, WorktreeRoot: resolveParallelWorktreeRoot(io.Dir, opts.worktreeRoot),
+		RepoRoot: io.Dir, Parent: mcp.PrincipalFor(io.Dir), DryRun: opts.dryRun,
+	}
+	if opts.dryRun {
+		return req, 0, true
+	}
+	req.Ops = parallelNewOps()
+	req.Work = parallelShellWork
+	req.Gate = io.parallelGate(opts.gateTask)
+	req.Record = io.parallelRecorder(io.Dir)
+	return req, 0, true
+}
+
+// shouldWriteParallelReport reports whether the report persists.
+func shouldWriteParallelReport(opts orchestrateParallelOptions) bool {
+	return !opts.dryRun && opts.out != ""
+}
+
+// finishParallelReport persists, prints and maps the exit.
+func (io IO) finishParallelReport(rep orchestrate.ParallelReport, opts orchestrateParallelOptions) int {
+	if shouldWriteParallelReport(opts) {
+		if code := writeParallelReport(opts.out, rep, io.Stderr); code != 0 {
+			return code
+		}
+		fmt.Fprintf(io.Stdout, "orchestrate: parallel report recorded in %s\n", opts.out)
+	}
+	printParallelReport(io, rep, opts.asJSON)
+	return parallelExitFor(io, rep)
+}
+
+// parallelExitFor maps a finished report to its exit code.
+func parallelExitFor(io IO, rep orchestrate.ParallelReport) int {
+	if len(rep.CleanupErrors) > 0 {
+		fmt.Fprintf(io.Stderr, "orchestrate parallel: %d worktree(s) left for `regulus orchestrate orphans --prune`\n", len(rep.CleanupErrors))
+	}
+	if rep.Failed {
+		fmt.Fprintln(io.Stderr, "orchestrate parallel: run failed (worktrees preserved for review)")
+		return 1
+	}
+	return 0
+}
+
 // OrchestrateParallelCmd implements `regulus orchestrate parallel`.
 func (io IO) OrchestrateParallelCmd(args []string) int {
 	opts, code, ok := parseOrchestrateParallelFlags(args, io.Stderr)
@@ -105,65 +213,16 @@ func (io IO) OrchestrateParallelCmd(args []string) int {
 	if !ok {
 		return code
 	}
-	repoRoot := io.Dir
-	worktreeRoot := opts.worktreeRoot
-	if worktreeRoot == "" {
-		worktreeRoot = filepath.Join(repoRoot, ".regulus", "orchestrate", "worktrees")
+	req, code, ok := buildParallelRequest(io, opts, tasks)
+	if !ok {
+		return code
 	}
-	runID := "dry-run"
-	if !opts.dryRun {
-		minted, merr := observability.MintRunID()
-		if merr != nil {
-			fmt.Fprintf(io.Stderr, "orchestrate parallel: %v\n", merr)
-			return 1
-		}
-		runID = minted
-	}
-	budgets := orchestrate.ParallelBudgets{
-		MaxConcurrency: opts.maxConcurrency, PerTaskTimeoutMS: opts.perTaskTimeoutMS,
-		WallBudgetMS: opts.wallBudgetMS, MaxQueued: opts.maxQueued,
-	}
-	if opts.maxQueued == 0 {
-		budgets.MaxQueued = orchestrate.MaxParallelTasks
-	}
-	req := orchestrate.ParallelRequest{
-		Tasks: tasks, Budgets: budgets, Base: opts.base, RunID: runID,
-		BranchPrefix: opts.branchPrefix, WorktreeRoot: worktreeRoot,
-		RepoRoot: repoRoot, Parent: mcp.PrincipalFor(repoRoot), DryRun: opts.dryRun,
-	}
-	if opts.dryRun {
-		rep, err := orchestrate.RunParallel(context.Background(), req)
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "orchestrate parallel: %v\n", err)
-			return 1
-		}
-		printParallelReport(io, rep, opts.asJSON)
-		return 0
-	}
-	req.Ops = orchestrate.GitWorktreeOps{}
-	req.Work = parallelShellWork
-	req.Gate = io.parallelGate(opts.gateTask)
-	req.Record = io.parallelRecorder(repoRoot)
-	rep, err := orchestrate.RunParallel(context.Background(), req)
+	rep, err := parallelRunFunc(context.Background(), req)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "orchestrate parallel: %v\n", err)
 		return 1
 	}
-	if opts.out != "" {
-		if code := writeParallelReport(opts.out, rep, io.Stderr); code != 0 {
-			return code
-		}
-		fmt.Fprintf(io.Stdout, "orchestrate: parallel report recorded in %s\n", opts.out)
-	}
-	printParallelReport(io, rep, opts.asJSON)
-	if len(rep.CleanupErrors) > 0 {
-		fmt.Fprintf(io.Stderr, "orchestrate parallel: %d worktree(s) left for `regulus orchestrate orphans --prune`\n", len(rep.CleanupErrors))
-	}
-	if rep.Failed {
-		fmt.Fprintln(io.Stderr, "orchestrate parallel: run failed (worktrees preserved for review)")
-		return 1
-	}
-	return 0
+	return io.finishParallelReport(rep, opts)
 }
 
 // parallelShellWork runs one worker command inside its worktree.
@@ -187,38 +246,53 @@ func (io IO) parallelGate(gateTask string) func(ctx context.Context, repoRoot st
 	runner := io.Runner
 	return func(ctx context.Context, repoRoot string) orchestrate.GateOutcome {
 		if strings.TrimSpace(gateTask) == "" {
-			out, errb, exit, err := gates.ShRunner{Dir: repoRoot}.Run(ctx, "git diff --check")
-			if err != nil {
-				return orchestrate.GateOutcome{Ran: true, Detail: fmt.Sprintf("diff-check could not run: %v", err)}
-			}
-			if exit != 0 {
-				detail := strings.TrimSpace(out + "\n" + errb)
-				if len(detail) > 500 {
-					detail = detail[:500]
-				}
-				return orchestrate.GateOutcome{Ran: true, Detail: "diff-check failed: " + detail}
-			}
-			return orchestrate.GateOutcome{Ran: true, Passed: true, Detail: "diff-check clean"}
+			return runParallelDiffCheck(ctx, repoRoot)
 		}
-		cfg, err := gates.Load(filepath.Join(repoRoot, "regulus.json"))
-		if err != nil {
-			return orchestrate.GateOutcome{Ran: true, Task: gateTask, Detail: fmt.Sprintf("gate load: %v", err)}
-		}
-		cfgBytes, err := os.ReadFile(filepath.Join(repoRoot, "regulus.json"))
-		if err != nil {
-			return orchestrate.GateOutcome{Ran: true, Task: gateTask, Detail: fmt.Sprintf("gate read: %v", err)}
-		}
-		res, _, err := gates.RunTask(ctx, cfg, cfgBytes, repoRoot, gateTask, version, "parallel", "", runner)
-		if err != nil {
-			return orchestrate.GateOutcome{Ran: true, Task: gateTask, Detail: fmt.Sprintf("gate run: %v", err)}
-		}
-		if res.Failed {
-			return orchestrate.GateOutcome{Ran: true, Task: gateTask,
-				Detail: fmt.Sprintf("gauntlet failed at %q (%d/%d passed)", res.FailedGate, res.Passed, res.Executed)}
-		}
-		return orchestrate.GateOutcome{Ran: true, Passed: true, Task: gateTask,
-			Detail: fmt.Sprintf("gauntlet %d/%d passed", res.Passed, res.Executed)}
+		return runParallelGauntlet(ctx, repoRoot, gateTask, version, runner)
 	}
+}
+
+// runParallelDiffCheck runs the lightweight merge gate.
+func runParallelDiffCheck(ctx context.Context, repoRoot string) orchestrate.GateOutcome {
+	out, errb, exit, err := parallelDiffCheckRun(ctx, repoRoot)
+	return diffCheckOutcome(out, errb, exit, err)
+}
+
+// diffCheckOutcome maps a diff-check run onto its verdict.
+func diffCheckOutcome(out, errb string, exit int, err error) orchestrate.GateOutcome {
+	if err != nil {
+		return orchestrate.GateOutcome{Ran: true, Detail: fmt.Sprintf("diff-check could not run: %v", err)}
+	}
+	if exit != 0 {
+		detail := strings.TrimSpace(out + "\n" + errb)
+		if len(detail) > 500 {
+			detail = detail[:500]
+		}
+		return orchestrate.GateOutcome{Ran: true, Detail: "diff-check failed: " + detail}
+	}
+	return orchestrate.GateOutcome{Ran: true, Passed: true, Detail: "diff-check clean"}
+}
+
+// runParallelGauntlet runs the named gauntlet task.
+func runParallelGauntlet(ctx context.Context, repoRoot, gateTask, version string, runner gates.CmdRunner) orchestrate.GateOutcome {
+	cfg, err := gates.Load(filepath.Join(repoRoot, "regulus.json"))
+	if err != nil {
+		return orchestrate.GateOutcome{Ran: true, Task: gateTask, Detail: fmt.Sprintf("gate load: %v", err)}
+	}
+	cfgBytes, err := os.ReadFile(filepath.Join(repoRoot, "regulus.json"))
+	if err != nil {
+		return orchestrate.GateOutcome{Ran: true, Task: gateTask, Detail: fmt.Sprintf("gate read: %v", err)}
+	}
+	res, _, err := gates.RunTask(ctx, cfg, cfgBytes, repoRoot, gateTask, version, "parallel", "", runner)
+	if err != nil {
+		return orchestrate.GateOutcome{Ran: true, Task: gateTask, Detail: fmt.Sprintf("gate run: %v", err)}
+	}
+	if res.Failed {
+		return orchestrate.GateOutcome{Ran: true, Task: gateTask,
+			Detail: fmt.Sprintf("gauntlet failed at %q (%d/%d passed)", res.FailedGate, res.Passed, res.Executed)}
+	}
+	return orchestrate.GateOutcome{Ran: true, Passed: true, Task: gateTask,
+		Detail: fmt.Sprintf("gauntlet %d/%d passed", res.Passed, res.Executed)}
 }
 
 // parallelRecorder links the run to its F11.1 timeline.
@@ -263,54 +337,83 @@ func writeParallelReport(dir string, rep orchestrate.ParallelReport, stderr io.W
 	return 0
 }
 
-// OrchestrateOrphansCmd implements `regulus orchestrate orphans`.
-func (io IO) OrchestrateOrphansCmd(args []string) int {
+// orphansOptions carries the parsed `orphans` flags.
+type orphansOptions struct {
+	prefix string
+	active string
+	prune  bool
+	asJSON bool
+}
+
+// parseOrphansFlags parses the `orphans` flags.
+func parseOrphansFlags(args []string, stderr io.Writer) (orphansOptions, int, bool) {
+	var opts orphansOptions
 	fs := flag.NewFlagSet("orchestrate orphans", flag.ContinueOnError)
-	fs.SetOutput(io.Stderr)
-	prefix := fs.String("branch-prefix", orchestrate.DefaultParallelBranchPrefix, "worker branch prefix to sweep")
-	active := fs.String("active", "", "comma-separated worker branches to protect (in-flight runs)")
-	prune := fs.Bool("prune", false, "remove orphans (list only by default)")
-	asJSON := fs.Bool("json", false, "print orphans as JSON")
+	fs.SetOutput(stderr)
+	fs.StringVar(&opts.prefix, "branch-prefix", orchestrate.DefaultParallelBranchPrefix, "worker branch prefix to sweep")
+	fs.StringVar(&opts.active, "active", "", "comma-separated worker branches to protect (in-flight runs)")
+	fs.BoolVar(&opts.prune, "prune", false, "remove orphans (list only by default)")
+	fs.BoolVar(&opts.asJSON, "json", false, "print orphans as JSON")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return orphansOptions{}, 2, false
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(io.Stderr, parallelUsage())
-		return 2
+		fmt.Fprintln(stderr, parallelUsage())
+		return orphansOptions{}, 2, false
 	}
+	return opts, 0, true
+}
+
+// activeBranchSet protects in-flight branches.
+func activeBranchSet(active string) map[string]bool {
 	keep := map[string]bool{}
-	for _, b := range splitList(*active) {
+	for _, b := range splitList(active) {
 		keep[b] = true
 	}
-	ops := orchestrate.GitWorktreeOps{}
+	return keep
+}
+
+// listParallelOrphans lists abandoned worker checkouts.
+func (io IO) listParallelOrphans(ops orchestrate.WorktreeOps, keep map[string]bool, prefix string) ([]orchestrate.WorktreeEntry, int, bool) {
 	entries, err := ops.List(context.Background(), io.Dir)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "orchestrate orphans: %v\n", err)
-		return 1
+		return nil, 1, false
 	}
-	orphans := orchestrate.FindParallelOrphans(entries, keep, *prefix)
-	if !*prune {
-		if *asJSON {
-			raw, merr := json.MarshalIndent(orphans, "", "  ")
-			if merr != nil {
-				fmt.Fprintf(io.Stderr, "orchestrate orphans: %v\n", merr)
-				return 1
-			}
-			fmt.Fprintln(io.Stdout, string(raw))
-			return 0
+	return orchestrate.FindParallelOrphans(entries, keep, prefix), 0, true
+}
+
+// printOrphanList prints the list-only report.
+func printOrphanList(io IO, orphans []orchestrate.WorktreeEntry, prefix string, asJSON bool) int {
+	if asJSON {
+		raw, merr := json.MarshalIndent(orphans, "", "  ")
+		if merr != nil {
+			fmt.Fprintf(io.Stderr, "orchestrate orphans: %v\n", merr)
+			return 1
 		}
-		fmt.Fprintf(io.Stdout, "orphans: %d worktree(s) under %q\n", len(orphans), *prefix+"/")
-		for _, o := range orphans {
-			fmt.Fprintf(io.Stdout, "- %s branch=%s\n", o.Path, o.Branch)
-		}
+		fmt.Fprintln(io.Stdout, string(raw))
 		return 0
 	}
-	removed, err := orchestrate.PruneParallelOrphans(context.Background(), ops, io.Dir, keep, *prefix)
+	fmt.Fprintf(io.Stdout, "orphans: %d worktree(s) under %q\n", len(orphans), prefix+"/")
+	for _, o := range orphans {
+		fmt.Fprintf(io.Stdout, "- %s branch=%s\n", o.Path, o.Branch)
+	}
+	return 0
+}
+
+// pruneParallelOrphans removes abandoned worker checkouts.
+func (io IO) pruneParallelOrphans(ops orchestrate.WorktreeOps, keep map[string]bool, prefix string) ([]string, int, bool) {
+	removed, err := orchestrate.PruneParallelOrphans(context.Background(), ops, io.Dir, keep, prefix)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "orchestrate orphans: %v\n", err)
-		return 1
+		return nil, 1, false
 	}
-	if *asJSON {
+	return removed, 0, true
+}
+
+// printPrunedOrphans prints the prune report.
+func printPrunedOrphans(io IO, removed []string, asJSON bool) int {
+	if asJSON {
 		raw, merr := json.MarshalIndent(removed, "", "  ")
 		if merr != nil {
 			fmt.Fprintf(io.Stderr, "orchestrate orphans: %v\n", merr)
@@ -324,4 +427,26 @@ func (io IO) OrchestrateOrphansCmd(args []string) int {
 		fmt.Fprintf(io.Stdout, "- %s\n", p)
 	}
 	return 0
+}
+
+// OrchestrateOrphansCmd implements `regulus orchestrate orphans`.
+func (io IO) OrchestrateOrphansCmd(args []string) int {
+	opts, code, ok := parseOrphansFlags(args, io.Stderr)
+	if !ok {
+		return code
+	}
+	ops := orphanOpsFunc()
+	keep := activeBranchSet(opts.active)
+	if !opts.prune {
+		orphans, code, ok := io.listParallelOrphans(ops, keep, opts.prefix)
+		if !ok {
+			return code
+		}
+		return printOrphanList(io, orphans, opts.prefix, opts.asJSON)
+	}
+	removed, code, ok := io.pruneParallelOrphans(ops, keep, opts.prefix)
+	if !ok {
+		return code
+	}
+	return printPrunedOrphans(io, removed, opts.asJSON)
 }
