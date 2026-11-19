@@ -36,40 +36,14 @@ func (io IO) BenchHostCapabilitiesCmd(args []string) int {
 	}
 	ctx := context.Background()
 	now := time.Now().UTC().Format(time.RFC3339)
-	execClass := bench.ClassProbe
-	if *run {
-		execClass = bench.ClassJourney
-	}
+	execClass := hostCapExecClass(*run)
 
 	manifests := bench.DefaultHostManifests(now)
 	outcomes := probeHostJourneys(ctx, io, false, "", *only, now)
 	if *run {
-		for _, p := range bench.DefaultHostProbes() {
-			if *only != "all" && p.ID != *only {
-				continue
-			}
-			m := manifests[p.ID]
-			if m.Class == bench.ClassStrategy {
-				continue // no CLI to run: strategy hosts never execute
-			}
-			ver, err := p.Version(ctx)
-			if err != nil {
-				continue // probe already recorded the reason
-			}
-			outcomes[p.ID] = io.executeHostJourney(ctx, p.ID, ver, *model, now)
-		}
+		io.runHostJourneyOutcomes(ctx, manifests, outcomes, *only, *model, now)
 	}
-	for host, m := range manifests {
-		if *only != "all" && host != *only {
-			delete(manifests, host)
-			continue
-		}
-		if o, ok := outcomes[host]; ok {
-			manifests[host] = bench.ApplyJourneyOutcome(m, o, now)
-		} else {
-			manifests[host] = m
-		}
-	}
+	applyHostJourneyOutcomes(manifests, outcomes, *only, now)
 	if err := bench.ValidateCapabilitiesAttributable(manifests); err != nil {
 		fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
 		return 1
@@ -80,17 +54,83 @@ func (io IO) BenchHostCapabilitiesCmd(args []string) int {
 	}
 
 	runID, traceHint := io.recordHostCapabilitiesTrace(manifests, outcomes, execClass)
+	stampHostTraceHints(manifests, traceHint)
+	io.printHostCapabilities(manifests, outcomes, *only, execClass, traceHint, runID)
+	if *out != "" {
+		if err := saveHostCapabilities(*out, manifests, execClass, traceHint, now); err != nil {
+			fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
+			return 1
+		}
+	}
+	fmt.Fprintf(io.Stdout, "host-capabilities OK: %d host(s) con capabilities atribuidas (clase %s)\n", len(manifests), execClass)
+	return 0
+}
+
+// hostCapExecClass names the execution class: journeys only run with
+// --run, the default probe costs no model. Pure.
+func hostCapExecClass(run bool) string {
+	if run {
+		return bench.ClassJourney
+	}
+	return bench.ClassProbe
+}
+
+// runHostJourneyOutcomes executes the fixture journey for every usable
+// host under --run, skipping strategy hosts (no CLI to run) and hosts
+// whose probe already failed. Outcomes land in the shared map.
+func (io IO) runHostJourneyOutcomes(ctx context.Context, manifests map[string]bench.HostManifest, outcomes map[string]bench.HostJourneyOutcome, only, model, now string) {
+	for _, p := range bench.DefaultHostProbes() {
+		if only != "all" && p.ID != only {
+			continue
+		}
+		m := manifests[p.ID]
+		if m.Class == bench.ClassStrategy {
+			continue // no CLI to run: strategy hosts never execute
+		}
+		ver, err := p.Version(ctx)
+		if err != nil {
+			continue // probe already recorded the reason
+		}
+		outcomes[p.ID] = io.executeHostJourney(ctx, p.ID, ver, model, now)
+	}
+}
+
+// applyHostJourneyOutcomes filters manifests to --host and folds fresh
+// outcomes in, so dated journey evidence survives probes that never
+// promote or demote. Deleting while ranging is safe in Go.
+func applyHostJourneyOutcomes(manifests map[string]bench.HostManifest, outcomes map[string]bench.HostJourneyOutcome, only, now string) {
+	for host, m := range manifests {
+		if only != "all" && host != only {
+			delete(manifests, host)
+			continue
+		}
+		if o, ok := outcomes[host]; ok {
+			manifests[host] = bench.ApplyJourneyOutcome(m, o, now)
+		} else {
+			manifests[host] = m
+		}
+	}
+}
+
+// stampHostTraceHints links every manifest to its F11.1 timeline hint.
+func stampHostTraceHints(manifests map[string]bench.HostManifest, traceHint string) {
 	for host, m := range manifests {
 		m.TraceHint = traceHint
 		manifests[host] = m
 	}
+}
 
+// printHostCapabilities renders the execution class banner, the
+// capability matrix, one summary per host and the trace line. The
+// final OK line stays with the caller: it prints only after --out
+// seals, so a failed save never reads success.
+func (io IO) printHostCapabilities(manifests map[string]bench.HostManifest, outcomes map[string]bench.HostJourneyOutcome, only, execClass, traceHint, runID string) {
 	if execClass == bench.ClassProbe {
 		fmt.Fprintln(io.Stdout, "host-capabilities: clase de ejecución probe (sin costo de modelo; esto no es un journey)")
 	} else {
 		fmt.Fprintln(io.Stdout, "host-capabilities: clase de ejecución journey (fixture E2E; el agent-leg con modelo sigue siendo agent-journey credencial-gated)")
 	}
-	hosts := orderedHostIDs(*only)
+	hosts := orderedHostIDs(only)
 	fmt.Fprint(io.Stdout, bench.RenderCapabilityMatrix(hosts, manifests))
 	for _, h := range hosts {
 		m := manifests[h]
@@ -104,14 +144,6 @@ func (io IO) BenchHostCapabilitiesCmd(args []string) int {
 	} else {
 		fmt.Fprintf(io.Stdout, "traza: sin vínculo F11.1 (run id no emitido: %s)\n", runID)
 	}
-	if *out != "" {
-		if err := saveHostCapabilities(*out, manifests, execClass, traceHint, now); err != nil {
-			fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
-			return 1
-		}
-	}
-	fmt.Fprintf(io.Stdout, "host-capabilities OK: %d host(s) con capabilities atribuidas (clase %s)\n", len(manifests), execClass)
-	return 0
 }
 
 // recordHostCapabilitiesTrace links the run to its F11.1 timeline.

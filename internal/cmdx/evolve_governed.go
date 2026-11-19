@@ -20,40 +20,34 @@ import (
 
 const evolveGovernedUsage = "regulus evolve validation cycle-declare --spec <cycle.json> | regulus evolve validation cycle-propose --cycle <id> --candidate <cid> --content <text> --by <proposer> | regulus evolve validation cycle-link --cycle <id> --plan <val_id> | regulus evolve validation cycle-compare --cycle <id> --by <evaluator> | regulus evolve validation cycle-review --cycle <id> --reviewer <r> --verdict <pass|reject> --reason <t> | regulus evolve validation cycle-approve --cycle <id> --by <human> --reason <t> [--commit <sha> --policy <ref> --manifest <m>] | regulus evolve validation cycle-canary --cycle <id> --by <deployer> --kind <k> --conditions <c1,c2> --reason <t> | regulus evolve validation cycle-monitor --cycle <id> --by <deployer> --healthy <true|false> --detail <t> | regulus evolve validation cycle-promote --cycle <id> --by <deployer> --winner <cid> | regulus evolve validation cycle-rollback --cycle <id> --by <deployer> --reason <t> --condition <c> | regulus evolve validation cycle-report --cycle <id>"
 
+// evolveCycleDispatch is the governed-cycle subverb table: pure router,
+// same targets and order as the original switch, behavior unchanged.
+var evolveCycleDispatch = map[string]func(IO, []string) int{
+	"cycle-declare":  IO.EvolveCycleDeclareCmd,
+	"cycle-propose":  IO.EvolveCycleProposeCmd,
+	"cycle-link":     IO.EvolveCycleLinkCmd,
+	"cycle-compare":  IO.EvolveCycleCompareCmd,
+	"cycle-review":   IO.EvolveCycleReviewCmd,
+	"cycle-approve":  IO.EvolveCycleApproveCmd,
+	"cycle-canary":   IO.EvolveCycleCanaryCmd,
+	"cycle-monitor":  IO.EvolveCycleMonitorCmd,
+	"cycle-promote":  IO.EvolveCyclePromoteCmd,
+	"cycle-rollback": IO.EvolveCycleRollbackCmd,
+	"cycle-report":   IO.EvolveCycleReportCmd,
+}
+
 // EvolveValidationCycleCmd routes the governed-cycle subverbs.
 func (io IO) EvolveValidationCycleCmd(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(io.Stderr, evolveValidationUsage)
 		return 2
 	}
-	switch args[0] {
-	case "cycle-declare":
-		return io.EvolveCycleDeclareCmd(args[1:])
-	case "cycle-propose":
-		return io.EvolveCycleProposeCmd(args[1:])
-	case "cycle-link":
-		return io.EvolveCycleLinkCmd(args[1:])
-	case "cycle-compare":
-		return io.EvolveCycleCompareCmd(args[1:])
-	case "cycle-review":
-		return io.EvolveCycleReviewCmd(args[1:])
-	case "cycle-approve":
-		return io.EvolveCycleApproveCmd(args[1:])
-	case "cycle-canary":
-		return io.EvolveCycleCanaryCmd(args[1:])
-	case "cycle-monitor":
-		return io.EvolveCycleMonitorCmd(args[1:])
-	case "cycle-promote":
-		return io.EvolveCyclePromoteCmd(args[1:])
-	case "cycle-rollback":
-		return io.EvolveCycleRollbackCmd(args[1:])
-	case "cycle-report":
-		return io.EvolveCycleReportCmd(args[1:])
-	default:
-		fmt.Fprintf(io.Stderr, "evolve validation: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(io.Stderr, evolveValidationUsage)
-		return 2
+	if fn, ok := evolveCycleDispatch[args[0]]; ok {
+		return fn(io, args[1:])
 	}
+	fmt.Fprintf(io.Stderr, "evolve validation: unknown subcommand %q\n", args[0])
+	fmt.Fprintln(io.Stderr, evolveValidationUsage)
+	return 2
 }
 
 // EvolveCycleDeclareCmd implements `cycle-declare --spec <cycle.json>`.

@@ -486,6 +486,167 @@ type LearnMetrics struct {
 	NoiseRate          float64 `json:"noise"`
 }
 
+// isVerifiedStatus reports whether a governance end state counts as
+// verified knowledge: VERIFIED or ACCEPTED against cited evidence.
+// Pure: shared by the metrics folds so the spec gate reads one way.
+func isVerifiedStatus(st string) bool {
+	return st == StatusVerified || st == StatusAccepted
+}
+
+// learnExpired reports whether an observation is past its expiry at
+// now. Pure: the clock is the caller's, like the metrics fold.
+func learnExpired(o Observation, now time.Time) bool {
+	return o.ExpiresAt != nil && !now.Before(*o.ExpiresAt)
+}
+
+// learnKindObservations filters the log to learn knowledge.
+// Pure: no disk, table-testable.
+func learnKindObservations(all []Observation) []Observation {
+	var learn []Observation
+	for _, o := range all {
+		if IsLearnKind(o.Type) {
+			learn = append(learn, o)
+		}
+	}
+	return learn
+}
+
+// verifiedEverIDs folds every status history to the observations that
+// were ever VERIFIED or ACCEPTED. Histories load in log order; the
+// first verified transition marks the id, like the inline loop did.
+func verifiedEverIDs(root string, learn []Observation) (map[string]bool, error) {
+	ever := map[string]bool{}
+	for _, o := range learn {
+		hist, err := StatusHistory(root, o.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, ev := range hist {
+			if isVerifiedStatus(ev.To) {
+				ever[o.ID] = true
+				break
+			}
+		}
+	}
+	return ever, nil
+}
+
+// learnContradictionSides counts the live contradiction pairs that
+// touch learn knowledge and names the distinct learn-kind sides, so
+// noise counts each contradicted observation once. Pure.
+func learnContradictionSides(live []Conflict, isLearn map[string]bool) (int, map[string]bool) {
+	sides := map[string]bool{}
+	count := 0
+	for _, c := range live {
+		if isLearn[c.A] || isLearn[c.B] {
+			count++
+			if isLearn[c.A] {
+				sides[c.A] = true
+			}
+			if isLearn[c.B] {
+				sides[c.B] = true
+			}
+		}
+	}
+	return count, sides
+}
+
+// learnFoldCounts is the per-observation tally the metrics fold
+// accumulates before the four spec rates divide it.
+type learnFoldCounts struct {
+	verifiedLatest     int
+	verifiedActive     int
+	hypotheses         int
+	hypothesesVerified int
+	active             int
+	obsolete           int
+	rejected           int
+	invalidated        int
+	superseded         int
+	expired            int
+}
+
+// foldLearnObservations tallies one pass over the learn-kind log:
+// hypothesis counts (plus the invariant watch), latest-verified,
+// still-useful verified, retirement (superseded/invalidated/
+// rejected/expired) and the rejected/invalidated/superseded split.
+// Pure: every store fold (ends, sup, inv, verifiedEver) loads above.
+func foldLearnObservations(learn []Observation, ends map[string]string, sup, inv map[string]bool, verifiedEver map[string]bool, now time.Time) learnFoldCounts {
+	var c learnFoldCounts
+	for _, o := range learn {
+		st := ends[o.ID]
+		latest := isVerifiedStatus(st)
+		expired := learnExpired(o, now)
+		retired := sup[o.ID] || inv[o.ID] || st == StatusRejected || expired
+		if o.Type == KindHypothesis {
+			c.hypotheses++
+			if verifiedEver[o.ID] {
+				c.hypothesesVerified++
+			}
+		}
+		if latest {
+			c.verifiedLatest++
+		}
+		if verifiedEver[o.ID] && !retired {
+			c.verifiedActive++
+		}
+		if retired {
+			c.obsolete++
+		} else {
+			c.active++
+		}
+		switch {
+		case st == StatusRejected:
+			c.rejected++
+		case inv[o.ID]:
+			c.invalidated++
+		case sup[o.ID]:
+			c.superseded++
+		}
+		if expired {
+			c.expired++
+		}
+	}
+	return c
+}
+
+// learnPrecisionRate is verified over decided (verified plus
+// rejected plus invalidated). Empty denominators read clean (1):
+// nothing wrong yet, never a divide by zero. Pure.
+func learnPrecisionRate(verifiedLatest, rejected, invalidated int) float64 {
+	decided := verifiedLatest + rejected + invalidated
+	if decided == 0 {
+		return 1
+	}
+	return float64(verifiedLatest) / float64(decided)
+}
+
+// learnRecallRate is verified-still-active over verified-ever.
+// Empty denominators read clean (1). Pure.
+func learnRecallRate(verifiedActive, verifiedEver int) float64 {
+	if verifiedEver == 0 {
+		return 1
+	}
+	return float64(verifiedActive) / float64(verifiedEver)
+}
+
+// learnObsoleteRate is retired over total. Pure.
+func learnObsoleteRate(obsolete, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(obsolete) / float64(total)
+}
+
+// learnNoiseRate is rejected plus invalidated plus distinct
+// contradicted sides over total. Pure.
+func learnNoiseRate(rejected, invalidated, contradicted, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(rejected+invalidated+contradicted) / float64(total)
+}
+
 // ComputeLearnMetrics computes the quality report over learn-kind
 // observations at now. Contradiction pairs count when at least one
 // endpoint is learn knowledge; noise counts distinct learn-kind
@@ -496,12 +657,7 @@ func ComputeLearnMetrics(root string, now time.Time) (LearnMetrics, error) {
 	if err != nil {
 		return m, err
 	}
-	var learn []Observation
-	for _, o := range all {
-		if IsLearnKind(o.Type) {
-			learn = append(learn, o)
-		}
-	}
+	learn := learnKindObservations(all)
 	m.Total = len(learn)
 	if m.Total == 0 {
 		m.Precision, m.UsefulRecall = 1, 1
@@ -519,22 +675,10 @@ func ComputeLearnMetrics(root string, now time.Time) (LearnMetrics, error) {
 	if err != nil {
 		return m, err
 	}
-	verifiedLatest := 0
-	verifiedEver := map[string]bool{}
-	for _, o := range learn {
-		hist, herr := StatusHistory(root, o.ID)
-		if herr != nil {
-			return m, herr
-		}
-		for _, ev := range hist {
-			if ev.To == StatusVerified || ev.To == StatusAccepted {
-				verifiedEver[o.ID] = true
-				break
-			}
-		}
+	verifiedEver, err := verifiedEverIDs(root, learn)
+	if err != nil {
+		return m, err
 	}
-	verifiedActive := 0
-	contrSides := map[string]bool{}
 	live, err := Contradictions(root, now)
 	if err != nil {
 		return m, err
@@ -543,63 +687,22 @@ func ComputeLearnMetrics(root string, now time.Time) (LearnMetrics, error) {
 	for _, o := range learn {
 		isLearn[o.ID] = true
 	}
-	for _, c := range live {
-		if isLearn[c.A] || isLearn[c.B] {
-			m.Contradictions++
-			if isLearn[c.A] {
-				contrSides[c.A] = true
-			}
-			if isLearn[c.B] {
-				contrSides[c.B] = true
-			}
-		}
-	}
-	for _, o := range learn {
-		st := ends[o.ID]
-		latest := st == StatusVerified || st == StatusAccepted
-		expired := o.ExpiresAt != nil && !now.Before(*o.ExpiresAt)
-		retired := sup[o.ID] || inv[o.ID] || st == StatusRejected || expired
-		if o.Type == KindHypothesis {
-			m.Hypotheses++
-			if verifiedEver[o.ID] {
-				m.HypothesesVerified++
-			}
-		}
-		if latest {
-			verifiedLatest++
-		}
-		if verifiedEver[o.ID] && !retired {
-			verifiedActive++
-		}
-		if retired {
-			m.Obsolete++
-		} else {
-			m.Active++
-		}
-		switch {
-		case st == StatusRejected:
-			m.Rejected++
-		case inv[o.ID]:
-			m.Invalidated++
-		case sup[o.ID]:
-			m.Superseded++
-		}
-		if expired {
-			m.Expired++
-		}
-	}
-	m.Verified = verifiedLatest
+	contradictions, contrSides := learnContradictionSides(live, isLearn)
+	fold := foldLearnObservations(learn, ends, sup, inv, verifiedEver, now)
+	m.Contradictions = contradictions
+	m.Verified = fold.verifiedLatest
 	m.VerifiedEver = len(verifiedEver)
-	decided := verifiedLatest + m.Rejected + m.Invalidated
-	m.Precision = 1
-	if decided > 0 {
-		m.Precision = float64(verifiedLatest) / float64(decided)
-	}
-	m.UsefulRecall = 1
-	if len(verifiedEver) > 0 {
-		m.UsefulRecall = float64(verifiedActive) / float64(len(verifiedEver))
-	}
-	m.ObsoleteRate = float64(m.Obsolete) / float64(m.Total)
-	m.NoiseRate = float64(m.Rejected+m.Invalidated+len(contrSides)) / float64(m.Total)
+	m.Hypotheses = fold.hypotheses
+	m.HypothesesVerified = fold.hypothesesVerified
+	m.Active = fold.active
+	m.Obsolete = fold.obsolete
+	m.Rejected = fold.rejected
+	m.Invalidated = fold.invalidated
+	m.Superseded = fold.superseded
+	m.Expired = fold.expired
+	m.Precision = learnPrecisionRate(fold.verifiedLatest, fold.rejected, fold.invalidated)
+	m.UsefulRecall = learnRecallRate(fold.verifiedActive, len(verifiedEver))
+	m.ObsoleteRate = learnObsoleteRate(fold.obsolete, m.Total)
+	m.NoiseRate = learnNoiseRate(fold.rejected, fold.invalidated, len(contrSides), m.Total)
 	return m, nil
 }

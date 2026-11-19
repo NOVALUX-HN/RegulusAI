@@ -309,8 +309,10 @@ func verifyRegression(baselineRef, windowRef, thresholdsPath, diffHash, runID st
 	return &rep, nil
 }
 
-// VerifyRunCmd implements `regulus verify run`.
-func (io IO) VerifyRunCmd(args []string) int {
+// parseVerifyRunArgs parses the shared plan flags plus the run-only
+// recorded-outcome flags, refusing bad flags, missing --changed and
+// out-of-range --severity before any store work.
+func (io IO) parseVerifyRunArgs(args []string) (verifyPlanFlags, verifyOutcomeFlags, int, bool) {
 	var f verifyPlanFlags
 	var o verifyOutcomeFlags
 	fs := flag.NewFlagSet("verify run", flag.ContinueOnError)
@@ -327,26 +329,23 @@ func (io IO) VerifyRunCmd(args []string) int {
 	fs.StringVar(&o.window, "window", "", "F12.4 window file for regression linkage (needs --baseline)")
 	fs.StringVar(&o.thresholds, "thresholds", "", "thresholds JSON overriding the stored baseline ones")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return f, o, 2, false
 	}
 	if fs.NArg() != 0 || strings.TrimSpace(f.changed) == "" {
 		fmt.Fprintln(io.Stderr, verifyUsage())
-		return 2
+		return f, o, 2, false
 	}
 	if f.severity < 0 || f.severity > 1 {
 		fmt.Fprintln(io.Stderr, "verify: --severity must be 0..1 (observed F12.4 rate)")
-		return 2
+		return f, o, 2, false
 	}
-	scope := verify.ScopeTask
-	if strings.TrimSpace(f.mission) != "" {
-		scope = verify.ScopeMission
-	}
+	return f, o, 0, true
+}
+
+// verifyRunFlagOutcomes folds the --fail/--skip/--block/--na flags
+// into recorded gate results, mirroring the rerun flag fold.
+func verifyRunFlagOutcomes(o verifyOutcomeFlags) (map[string]verify.GateResult, error) {
 	recorded := map[string]verify.GateResult{}
-	merge := func(m map[string]verify.GateResult) {
-		for k, v := range m {
-			recorded[k] = v
-		}
-	}
 	for _, spec := range []struct {
 		val, verdict, cause string
 	}{
@@ -360,30 +359,63 @@ func (io IO) VerifyRunCmd(args []string) int {
 		}
 		m, err := parseOutcomeList(spec.val, spec.verdict, spec.cause)
 		if err != nil {
-			fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
-			return 2
-		}
-		merge(m)
-	}
-	if strings.TrimSpace(o.results) != "" {
-		m, err := loadOutcomeResults(o.results)
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
-			return 1
+			return nil, err
 		}
 		for k, v := range m {
-			if _, ok := recorded[k]; !ok {
-				recorded[k] = v
-			}
+			recorded[k] = v
 		}
+	}
+	return recorded, nil
+}
+
+// mergeVerifyRunFileOutcomes overlays the results file without
+// clobbering flags, mirroring the rerun file merge.
+func mergeVerifyRunFileOutcomes(recorded map[string]verify.GateResult, resultsPath string) error {
+	if strings.TrimSpace(resultsPath) == "" {
+		return nil
+	}
+	m, err := loadOutcomeResults(resultsPath)
+	if err != nil {
+		return err
+	}
+	for k, v := range m {
+		if _, ok := recorded[k]; !ok {
+			recorded[k] = v
+		}
+	}
+	return nil
+}
+
+// loadVerifyRunRecorded merges flag outcomes under the results file:
+// explicit flags win, the file fills the gaps. Flag parse errors
+// refuse with 2, file errors with 1 — like the inline code did.
+func (io IO) loadVerifyRunRecorded(o verifyOutcomeFlags) (map[string]verify.GateResult, int, bool) {
+	recorded, err := verifyRunFlagOutcomes(o)
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
+		return nil, 2, false
+	}
+	if err := mergeVerifyRunFileOutcomes(recorded, o.results); err != nil {
+		fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
+		return nil, 1, false
+	}
+	return recorded, 0, true
+}
+
+// buildVerifyRunPlan derives the scope and provenance and builds the
+// plan over the impact graph, refusing graph and plan errors with 1.
+func (io IO) buildVerifyRunPlan(f verifyPlanFlags, agent string) (verify.Plan, verify.Provenance, int, bool) {
+	scope := verify.ScopeTask
+	if strings.TrimSpace(f.mission) != "" {
+		scope = verify.ScopeMission
 	}
 	g, err := impact.BuildGraph(io.Dir, nil, nil)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
-		return 1
+		return verify.Plan{}, verify.Provenance{}, 1, false
 	}
 	changed := splitList(f.changed)
-	prov := io.verifyProvenance(o.agent, verify.DiffHash(changed))
+	prov := io.verifyProvenance(agent, verify.DiffHash(changed))
 	plan, err := verify.BuildPlan(g, changed, verify.PlanOptions{
 		Scope: scope, TaskID: f.task, MissionID: f.mission,
 		Severity: f.severity, Contracts: splitList(f.contracts),
@@ -392,7 +424,46 @@ func (io IO) VerifyRunCmd(args []string) int {
 	}, prov.Commit)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
-		return 1
+		return verify.Plan{}, verify.Provenance{}, 1, false
+	}
+	return plan, prov, 0, true
+}
+
+// emitVerifyRun seals the result evidence dir (when --out) and prints
+// the result as JSON or human text, refusing seal/marshal errors.
+func (io IO) emitVerifyRun(f verifyPlanFlags, plan verify.Plan, res verify.Result, commit string) int {
+	if strings.TrimSpace(f.out) != "" {
+		if _, err := verify.WriteResultEvidence(f.out, plan, res, commit, time.Now()); err != nil {
+			fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
+			return 1
+		}
+	}
+	if f.asJSON {
+		raw, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(io.Stdout, string(raw))
+		return 0
+	}
+	fmt.Fprint(io.Stdout, verify.RenderReport(plan, res))
+	return 0
+}
+
+// VerifyRunCmd implements `regulus verify run`.
+func (io IO) VerifyRunCmd(args []string) int {
+	f, o, code, ok := io.parseVerifyRunArgs(args)
+	if !ok {
+		return code
+	}
+	recorded, code, ok := io.loadVerifyRunRecorded(o)
+	if !ok {
+		return code
+	}
+	plan, prov, code, ok := io.buildVerifyRunPlan(f, o.agent)
+	if !ok {
+		return code
 	}
 	toolchainMissing := o.noToolchain || strings.HasPrefix(prov.Toolchain, "missing-go")
 	rep, err := verifyRegression(o.baseline, o.window, o.thresholds, plan.DiffHash, prov.RunID)
@@ -405,21 +476,8 @@ func (io IO) VerifyRunCmd(args []string) int {
 		fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
 		return 1
 	}
-	if strings.TrimSpace(f.out) != "" {
-		if _, err := verify.WriteResultEvidence(f.out, plan, res, prov.Commit, time.Now()); err != nil {
-			fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
-			return 1
-		}
-	}
-	if f.asJSON {
-		raw, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "verify run: %v\n", err)
-			return 1
-		}
-		fmt.Fprintln(io.Stdout, string(raw))
-	} else {
-		fmt.Fprint(io.Stdout, verify.RenderReport(plan, res))
+	if code := io.emitVerifyRun(f, plan, res, prov.Commit); code != 0 {
+		return code
 	}
 	io.recordImpactTrace("verify run", f.changed)
 	if !res.AllowsIntegration() {
