@@ -258,26 +258,41 @@ func taskKindOf(t PlanTask) string {
 	return taskImpl
 }
 
-// routeTask assigns the agent, evidence, budget and autonomy of one
-// task through F12.1 Decide. Unverified capabilities or scopes
-// beyond the agent's grant escalate to needs-approval — never to a
-// silent overreach.
-func routeTask(t *PlanTask, m *mission.Mission, kind string, graph impact.Graph,
-	reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) {
-	critical := touchesCritical(graph, t.Scope.Files)
-	risk := strings.TrimSpace(m.Risk)
+// routeDecide is the F12.1 Decide seam: production routes through
+// orchestrate.Decide; tests replace it with a fake decision.
+var routeDecide = func(reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest, hist []orchestrate.AgentHistory, d orchestrate.TaskDescriptor, b orchestrate.Budgets, maxDeleg int, fixedAgent string, w orchestrate.ScoreWeights) (orchestrate.Decision, error) {
+	return orchestrate.Decide(reg, manifests, hist, d, b, maxDeleg, fixedAgent, w)
+}
+
+// routeRisk resolves the task risk: the mission risk by default
+// (medium when unset), escalated to high when the scope touches a
+// critical package.
+func routeRisk(missionRisk string, critical []string) string {
+	risk := strings.TrimSpace(missionRisk)
 	if risk == "" {
 		risk = orchestrate.RiskMedium
 	}
 	if len(critical) > 0 && riskLevel(risk) < riskLevel(orchestrate.RiskHigh) {
 		risk = orchestrate.RiskHigh
 	}
-	complexity := orchestrate.ComplexityLow
-	if len(t.Scope.Files) > 5 {
-		complexity = orchestrate.ComplexityHigh
-	} else if len(t.Scope.Files) > 2 || kind == taskImpl {
-		complexity = orchestrate.ComplexityMedium
+	return risk
+}
+
+// routeComplexity grades the task size: wide scopes are high,
+// medium scopes or implement work are medium, the rest is low.
+func routeComplexity(kind string, nfiles int) string {
+	if nfiles > 5 {
+		return orchestrate.ComplexityHigh
 	}
+	if nfiles > 2 || kind == taskImpl {
+		return orchestrate.ComplexityMedium
+	}
+	return orchestrate.ComplexityLow
+}
+
+// routeDescriptor builds the F12.1 routing input for one task: the
+// descriptor plus the mission budgets.
+func routeDescriptor(t PlanTask, m *mission.Mission, kind, risk, complexity string) (orchestrate.TaskDescriptor, orchestrate.Budgets) {
 	desc := orchestrate.TaskDescriptor{
 		Domain: "engineering", Language: "go",
 		Complexity: complexity, Risk: risk,
@@ -286,31 +301,69 @@ func routeTask(t *PlanTask, m *mission.Mission, kind string, graph impact.Graph,
 		RequiredCapabilities: t.RequiredCapabilities,
 	}
 	budgets := orchestrate.Budgets{TimeMS: m.Budget.TimeMS, Tokens: m.Budget.Tokens, Cost: m.Budget.Cost}
-	dec, err := orchestrate.Decide(reg, manifests, nil, desc, budgets, 1, "", orchestrate.DefaultScoreWeights())
+	return desc, budgets
+}
+
+// chooseRouteAgent picks the routing winner: the first ranked agent
+// holding every minimal scope; when none holds them, the primary
+// still takes the task behind an approval blocker. It returns the
+// chosen agent plus the optional approval note.
+func chooseRouteAgent(dec orchestrate.Decision, reg []orchestrate.RoutedAgent, minScopes []string) (string, string) {
+	for _, r := range dec.Ranking {
+		agent, ok := orchestrate.FindRoutedAgent(reg, r.AgentID)
+		if !ok {
+			continue
+		}
+		if scopesHold(agent.Scopes, minScopes) {
+			return agent.ID, ""
+		}
+	}
+	if dec.Primary != "" {
+		if agent, ok := orchestrate.FindRoutedAgent(reg, dec.Primary); ok {
+			note := fmt.Sprintf("aprobación: la tarea pide [%s] y %s solo otorga [%s] (sin permisos superiores a los autorizados)",
+				strings.Join(minScopes, ", "), agent.ID, strings.Join(agent.Scopes, ", "))
+			return agent.ID, note
+		}
+	}
+	return "", ""
+}
+
+// finalizeRouteAutonomy assigns the task autonomy and its approval
+// blockers: the kind/risk policy first, then the high-risk floor
+// (high/critical never runs autonomous), then the default approval
+// blocker when needs-approval names none yet.
+func finalizeRouteAutonomy(t *PlanTask, kind, risk string, critical []string) {
+	t.Autonomy = autonomyFor(kind, risk, critical, t.ImpactKnown, t.Autonomy)
+	if riskLevel(risk) >= riskLevel(orchestrate.RiskHigh) && t.Autonomy == AutonomyAutonomous {
+		t.Autonomy = AutonomyNeedsApproval
+		t.Blockers = append(t.Blockers, fmt.Sprintf("aprobación: riesgo %s (las tareas de riesgo alto/crítico no corren autónomas)", risk))
+	}
+	if t.Autonomy == AutonomyNeedsApproval && !hasApprovalBlocker(t.Blockers) {
+		t.Blockers = append(t.Blockers, fmt.Sprintf("aprobación: riesgo %s o paquete crítico %s", risk, strings.Join(critical, ", ")))
+	}
+}
+
+// routeTask assigns the agent, evidence, budget and autonomy of one
+// task through F12.1 Decide. Unverified capabilities or scopes
+// beyond the agent's grant escalate to needs-approval — never to a
+// silent overreach.
+func routeTask(t *PlanTask, m *mission.Mission, kind string, graph impact.Graph,
+	reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) {
+	critical := touchesCritical(graph, t.Scope.Files)
+	risk := routeRisk(m.Risk, critical)
+	complexity := routeComplexity(kind, len(t.Scope.Files))
+	desc, budgets := routeDescriptor(*t, m, kind, risk, complexity)
+	dec, err := routeDecide(reg, manifests, nil, desc, budgets, 1, "", orchestrate.DefaultScoreWeights())
 	if err != nil {
 		t.Blockers = append(t.Blockers, fmt.Sprintf("routing imposible: %v", err))
 		t.Autonomy = AutonomyNeedsApproval
 		t.Estimate = estimateFor(kind, complexity, risk, len(t.Scope.Files))
 		return
 	}
-	chosen := ""
-	for _, r := range dec.Ranking {
-		agent, ok := orchestrate.FindRoutedAgent(reg, r.AgentID)
-		if !ok {
-			continue
-		}
-		if scopesHold(agent.Scopes, t.MinScopes) {
-			chosen = agent.ID
-			break
-		}
-	}
-	if chosen == "" && dec.Primary != "" {
-		if agent, ok := orchestrate.FindRoutedAgent(reg, dec.Primary); ok {
-			chosen = agent.ID
-			t.Blockers = append(t.Blockers, fmt.Sprintf("aprobación: la tarea pide [%s] y %s solo otorga [%s] (sin permisos superiores a los autorizados)",
-				strings.Join(t.MinScopes, ", "), agent.ID, strings.Join(agent.Scopes, ", ")))
-			t.Autonomy = AutonomyNeedsApproval
-		}
+	chosen, approvalNote := chooseRouteAgent(dec, reg, t.MinScopes)
+	if approvalNote != "" {
+		t.Blockers = append(t.Blockers, approvalNote)
+		t.Autonomy = AutonomyNeedsApproval
 	}
 	if chosen == "" {
 		reasons := []string{}
@@ -330,14 +383,7 @@ func routeTask(t *PlanTask, m *mission.Mission, kind string, graph impact.Graph,
 		t.CapabilityEvidence = append(t.CapabilityEvidence, evidenceFor(manifests, chosen, c))
 	}
 	t.Estimate = estimateFor(kind, complexity, risk, len(t.Scope.Files))
-	t.Autonomy = autonomyFor(kind, risk, critical, t.ImpactKnown, t.Autonomy)
-	if riskLevel(risk) >= riskLevel(orchestrate.RiskHigh) && t.Autonomy == AutonomyAutonomous {
-		t.Autonomy = AutonomyNeedsApproval
-		t.Blockers = append(t.Blockers, fmt.Sprintf("aprobación: riesgo %s (las tareas de riesgo alto/crítico no corren autónomas)", risk))
-	}
-	if t.Autonomy == AutonomyNeedsApproval && !hasApprovalBlocker(t.Blockers) {
-		t.Blockers = append(t.Blockers, fmt.Sprintf("aprobación: riesgo %s o paquete crítico %s", risk, strings.Join(critical, ", ")))
-	}
+	finalizeRouteAutonomy(t, kind, risk, critical)
 }
 
 // riskLevel orders the F12.1 risk words.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -86,14 +87,35 @@ func shortValHash(h string) string {
 	return h
 }
 
-// EvolveValidationRunCmd implements `run` and `holdout-run`.
-func (io IO) EvolveValidationRunCmd(args []string, holdout bool) int {
+// validationRunRequest is the parsed `run`/`holdout-run` input: the
+// trimmed plan id, the trial to record and the holdout audit
+// reference (empty for exploration runs).
+type validationRunRequest struct {
+	plan  string
+	audit string
+	trial evolve.ValidationTrial
+}
+
+// validationRunOutcome is the recorded result: the exact stdout
+// lines to print and, on failure, the exact stderr line plus the
+// exit code.
+type validationRunOutcome struct {
+	stdout []string
+	stderr string
+	exit   int
+}
+
+// parseValidationRun parses the `run`/`holdout-run` flags without
+// touching disk. It prints the usage on missing input (byte
+// identical to the inline command) and reports whether the caller
+// may proceed.
+func parseValidationRun(args []string, holdout bool, stderr io.Writer) (validationRunRequest, int, bool) {
 	name := "evolve validation run"
 	if holdout {
 		name = "evolve validation holdout-run"
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(io.Stderr)
+	fs.SetOutput(stderr)
 	plan := fs.String("plan", "", "validation id (required)")
 	arm := fs.String("arm", "", "baseline|candidate (required)")
 	task := fs.String("task", "", "task id (required)")
@@ -108,45 +130,90 @@ func (io IO) EvolveValidationRunCmd(args []string, holdout bool) int {
 	traceID := fs.String("trace", "", "F11.1 run/execution id")
 	audit := fs.String("audit", "", "audit reference (required for holdout-run)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return validationRunRequest{}, 2, false
 	}
-	if strings.TrimSpace(*plan) == "" || strings.TrimSpace(*arm) == "" || strings.TrimSpace(*task) == "" ||
-		*seed == 0 || *rep < 0 || strings.TrimSpace(*model) == "" || strings.TrimSpace(*status) == "" ||
-		*latency < 0 || *tokens < 0 || strings.TrimSpace(*source) == "" || fs.NArg() != 0 {
-		fmt.Fprintln(io.Stderr, evolveValidationUsage)
-		return 2
+	req := validationRunRequest{
+		plan:  strings.TrimSpace(*plan),
+		audit: strings.TrimSpace(*audit),
+		trial: evolve.ValidationTrial{
+			Arm: strings.TrimSpace(*arm), TaskID: strings.TrimSpace(*task),
+			Seed: *seed, Repetition: *rep, Model: strings.TrimSpace(*model),
+			Split: evolve.ValidationSplitExploration, Status: strings.TrimSpace(*status),
+			LatencyMS: *latency, Tokens: *tokens, TokenSource: strings.TrimSpace(*source),
+			ReceiptID: strings.TrimSpace(*receipt), TraceID: strings.TrimSpace(*traceID),
+		},
 	}
-	if holdout && strings.TrimSpace(*audit) == "" {
-		fmt.Fprintln(io.Stderr, evolveValidationUsage)
-		return 2
-	}
-	split := evolve.ValidationSplitExploration
 	if holdout {
-		split = evolve.ValidationSplitHoldout
+		req.trial.Split = evolve.ValidationSplitHoldout
 	}
-	trial := evolve.ValidationTrial{
-		Arm: strings.TrimSpace(*arm), TaskID: strings.TrimSpace(*task),
-		Seed: *seed, Repetition: *rep, Model: strings.TrimSpace(*model),
-		Split: split, Status: strings.TrimSpace(*status),
-		LatencyMS: *latency, Tokens: *tokens, TokenSource: strings.TrimSpace(*source),
-		ReceiptID: strings.TrimSpace(*receipt), TraceID: strings.TrimSpace(*traceID),
+	if !validationRunComplete(req, fs.NArg(), holdout) {
+		fmt.Fprintln(stderr, evolveValidationUsage)
+		return validationRunRequest{}, 2, false
 	}
-	root := io.Dir
-	if holdout {
-		if _, err := evolve.RecordHoldoutTrial(root, strings.TrimSpace(*plan), strings.TrimSpace(*audit), trial); err != nil {
-			fmt.Fprintf(io.Stderr, "evolve validation holdout-run: %v\n", err)
-			return 1
+	return req, 0, true
+}
+
+// validationRunComplete reports whether every required field is
+// present: the string matrix, the numeric matrix and no stray
+// positional args (holdout additionally needs its audit ref).
+func validationRunComplete(req validationRunRequest, nArg int, holdout bool) bool {
+	for _, v := range []string{req.plan, req.trial.Arm, req.trial.TaskID, req.trial.Model, req.trial.Status, req.trial.TokenSource} {
+		if v == "" {
+			return false
 		}
-		fmt.Fprintf(io.Stdout, "verdict: HOLDOUT_RECORDED %s %s/%s seed=%d rep=%d\n", strings.TrimSpace(*plan), trial.Arm, trial.TaskID, trial.Seed, trial.Repetition)
-		fmt.Fprintf(io.Stdout, "next: regulus evolve validation finalize --plan %s --verdict <exploration-verdict> --approved-by <human> ...\n", strings.TrimSpace(*plan))
-		return 0
 	}
-	if _, err := evolve.RecordValidationTrial(root, strings.TrimSpace(*plan), trial); err != nil {
-		fmt.Fprintf(io.Stderr, "evolve validation run: %v\n", err)
-		return 1
+	if req.trial.Seed == 0 || req.trial.Repetition < 0 || req.trial.LatencyMS < 0 || req.trial.Tokens < 0 {
+		return false
 	}
-	fmt.Fprintf(io.Stdout, "verdict: TRIAL_RECORDED %s %s/%s seed=%d rep=%d\n", strings.TrimSpace(*plan), trial.Arm, trial.TaskID, trial.Seed, trial.Repetition)
-	fmt.Fprintf(io.Stdout, "next: regulus evolve validation compare --plan %s (after the exploration matrix is complete)\n", strings.TrimSpace(*plan))
+	if nArg != 0 {
+		return false
+	}
+	if holdout && req.audit == "" {
+		return false
+	}
+	return true
+}
+
+// runValidationTrial records one trial under root and renders the
+// exact command output (stdout lines on success, one stderr line
+// plus exit code on failure).
+func runValidationTrial(root string, req validationRunRequest, holdout bool) validationRunOutcome {
+	if holdout {
+		if _, err := evolve.RecordHoldoutTrial(root, req.plan, req.audit, req.trial); err != nil {
+			return validationRunOutcome{stderr: fmt.Sprintf("evolve validation holdout-run: %v\n", err), exit: 1}
+		}
+		return validationRunOutcome{
+			stdout: []string{
+				fmt.Sprintf("verdict: HOLDOUT_RECORDED %s %s/%s seed=%d rep=%d\n", req.plan, req.trial.Arm, req.trial.TaskID, req.trial.Seed, req.trial.Repetition),
+				fmt.Sprintf("next: regulus evolve validation finalize --plan %s --verdict <exploration-verdict> --approved-by <human> ...\n", req.plan),
+			},
+		}
+	}
+	if _, err := evolve.RecordValidationTrial(root, req.plan, req.trial); err != nil {
+		return validationRunOutcome{stderr: fmt.Sprintf("evolve validation run: %v\n", err), exit: 1}
+	}
+	return validationRunOutcome{
+		stdout: []string{
+			fmt.Sprintf("verdict: TRIAL_RECORDED %s %s/%s seed=%d rep=%d\n", req.plan, req.trial.Arm, req.trial.TaskID, req.trial.Seed, req.trial.Repetition),
+			fmt.Sprintf("next: regulus evolve validation compare --plan %s (after the exploration matrix is complete)\n", req.plan),
+		},
+	}
+}
+
+// EvolveValidationRunCmd implements `run` and `holdout-run`.
+func (io IO) EvolveValidationRunCmd(args []string, holdout bool) int {
+	req, code, ok := parseValidationRun(args, holdout, io.Stderr)
+	if !ok {
+		return code
+	}
+	out := runValidationTrial(io.Dir, req, holdout)
+	if out.stderr != "" {
+		fmt.Fprint(io.Stderr, out.stderr)
+		return out.exit
+	}
+	for _, line := range out.stdout {
+		fmt.Fprint(io.Stdout, line)
+	}
 	return 0
 }
 
