@@ -106,12 +106,12 @@ func TestScanRefLine(t *testing.T) {
 		cmds []string
 	}{
 		{"empty", ``, nil, nil},
-		{"internal pkg", `import "regulus-ai/internal/cli"`, []string{"internal/cli"}, nil},
-		{"trailing slash trimmed", `see internal/foo/ docs`, []string{"internal/foo"}, nil},
+		{"internal pkg", `import "regulus-ai/internal/cli"`, []string{"cli"}, nil},
+		{"trailing slash trimmed", `see internal/foo/ docs`, []string{"foo"}, nil},
 		{"regulus cmd", `run: regulus deploy --fast`, nil, []string{"deploy"}},
 		{"hyphen cmd", `run: regulus gate-run now`, nil, []string{"gate-run"}},
 		{"uppercase ignored", `run: regulus Deploy`, nil, nil},
-		{"both", `internal/gates plus regulus gate`, []string{"internal/gates"}, []string{"gate"}},
+		{"both", `internal/gates plus regulus gate`, []string{"gates"}, []string{"gate"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -175,7 +175,7 @@ func TestScanRefFileEdges(t *testing.T) {
 		scanRefFile(".github/workflows/ci.yml", SourceWorkflow, src, cmds, c.ensure, c.addEdge)
 		const rel = ".github/workflows/ci.yml"
 		from := "wf:" + rel
-		if !c.has(from, "pkg:internal/gates", SourceWorkflow, rel, 1) {
+		if !c.has(from, "pkg:gates", SourceWorkflow, rel, 1) {
 			t.Fatalf("missing pkg edge: %+v", c.calls)
 		}
 		if !c.has(from, "cmd:deploy", SourceWorkflow, rel, 2) {
@@ -184,15 +184,15 @@ func TestScanRefFileEdges(t *testing.T) {
 		if c.countTo("cmd:unknown") != 0 {
 			t.Fatalf("unknown cmd must be ignored: %+v", c.calls)
 		}
-		if !c.byID["pkg:internal/gates"] {
-			t.Fatalf("ensure not called for pkg:internal/gates: %+v", c.nodes)
+		if !c.byID["pkg:gates"] {
+			t.Fatalf("ensure not called for pkg:gates: %+v", c.nodes)
 		}
 	})
 	t.Run("config has no cmd edges", func(t *testing.T) {
 		c := &edgeCollector{}
 		src := "see internal/evidence\nrun: regulus deploy\n"
 		scanRefFile("regulus.json", SourceConfig, src, cmds, c.ensure, c.addEdge)
-		if !c.has("cfg:regulus.json", "pkg:internal/evidence", SourceConfig, "regulus.json", 1) {
+		if !c.has("cfg:regulus.json", "pkg:evidence", SourceConfig, "regulus.json", 1) {
 			t.Fatalf("missing cfg pkg edge: %+v", c.calls)
 		}
 		for _, e := range c.calls {
@@ -254,13 +254,13 @@ func TestWalkRefsFixture(t *testing.T) {
 		t.Fatalf("missing forwarder edge: %+v", c.calls)
 	}
 	const wfRel = ".github/workflows/ci.yml"
-	if !c.has("wf:"+wfRel, "pkg:internal/gates", SourceWorkflow, wfRel, 1) {
+	if !c.has("wf:"+wfRel, "pkg:gates", SourceWorkflow, wfRel, 1) {
 		t.Fatalf("missing workflow-ref pkg edge: %+v", c.calls)
 	}
 	if !c.has("wf:"+wfRel, "cmd:deploy", SourceWorkflow, wfRel, 2) {
 		t.Fatalf("missing workflow-ref cmd edge: %+v", c.calls)
 	}
-	if !c.has("cfg:regulus.json", "pkg:internal/evidence", SourceConfig, "regulus.json", 1) {
+	if !c.has("cfg:regulus.json", "pkg:evidence", SourceConfig, "regulus.json", 1) {
 		t.Fatalf("missing config-ref edge: %+v", c.calls)
 	}
 	for _, e := range c.calls {
@@ -297,7 +297,7 @@ func TestBuildGraphWalkRefs(t *testing.T) {
 	for _, want := range [][3]string{
 		{"cmd:deploy", "pkg:internal/cli", SourceCLIRoute},
 		{"pkg:internal/cli", "pkg:internal/cmdx", SourceCLIRoute},
-		{"wf:.github/workflows/ci.yml", "pkg:internal/gates", SourceWorkflow},
+		{"wf:.github/workflows/ci.yml", "pkg:gates", SourceWorkflow},
 		{"wf:.github/workflows/ci.yml", "cmd:deploy", SourceWorkflow},
 	} {
 		if !has(want[0], want[1], want[2]) {
