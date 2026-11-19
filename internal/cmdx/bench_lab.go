@@ -217,57 +217,89 @@ func labTaskSplit(corpus []bench.AgentTask, splits bench.AgentSplits, id string)
 	return bench.AgentTask{}, "", false
 }
 
-// BenchLabRunCmd implements `regulus bench lab run|flow`.
-func (io IO) BenchLabRunCmd(mode string, args []string) int {
-	started := time.Now().UTC()
+// Injectable seams for thin deterministic tests: production defaults call
+// the real bench/host probes; tests stub these vars (same package) so no
+// heavy lab, shell or network ever runs. Messages and exit codes stay in
+// the finish/complete helpers verbatim.
+var (
+	benchLabRunFunc       = bench.RunLab
+	benchLabCompareFunc   = bench.CompareLab
+	benchLabResolveRunner = resolveAgentRunner
+	benchLabProbeFunc     = probeOpenCodeVersion
+)
+
+// benchLabRunPrep carries a fully-resolved single/flow execution: the
+// setup helper below fills it or reports the refusal exit code.
+type benchLabRunPrep struct {
+	opts   labOptions
+	cfg    bench.LabConfig
+	task   bench.AgentTask
+	split  string
+	agent  bench.LabAgent
+	host   string
+	runner bench.HeadlessAgent
+}
+
+// prepareBenchLabRun resolves flags, splits, config, task, agent and
+// runner for run|flow. All refusals print the exact legacy message and
+// report (prep{}, code, false); success reports (prep, 0, true).
+func (io IO) prepareBenchLabRun(mode string, args []string) (benchLabRunPrep, int, bool) {
+	var prep benchLabRunPrep
 	opts, code, ok := parseBenchLabFlags(mode, args, io.Stderr)
 	if !ok {
-		return code
+		return prep, code, false
 	}
 	corpus := bench.AgentCorpus()
 	splits, code, ok := loadBenchAgentSplits(io, corpus)
 	if !ok {
-		return code
+		return prep, code, false
 	}
 	cfg, code, ok := resolveBenchLabConfig(opts, corpus, splits, io.Stderr)
 	if !ok {
-		return code
+		return prep, code, false
 	}
 	task, split, ok := labTaskSplit(corpus, splits, cfg.Task)
 	if !ok {
 		fmt.Fprintf(io.Stderr, "bench lab: unknown task %q\n", cfg.Task)
-		return 2
+		return prep, 2, false
 	}
 	agent, ok := bench.FindLabAgent(cfg.Agent)
 	if !ok {
 		fmt.Fprintf(io.Stderr, "bench lab: unknown agent %q (see `bench lab agents`)\n", cfg.Agent)
-		return 2
+		return prep, 2, false
 	}
 	host := agent.Host
 	if cfg.Host != "" {
 		host = cfg.Host
 	}
-	runner, notRunMsg, notRunCode, ok := resolveAgentRunner(host)
+	runner, notRunMsg, notRunCode, ok := benchLabResolveRunner(host)
 	if !ok {
 		fmt.Fprintln(io.Stdout, strings.Replace(notRunMsg, "agent-tasks NOT RUN", "lab NOT RUN", 1))
-		return notRunCode
+		return prep, notRunCode, false
 	}
 	cfg.Host = host
-	res := bench.RunLab(context.Background(), runner, agent, task, split, cfg, io.Dir)
-	if opts.hostVersion != "" {
-		res.Outcome.HostVersion = opts.hostVersion
-	} else if host == "opencode" {
-		res.Outcome.HostVersion = probeOpenCodeVersion()
+	prep = benchLabRunPrep{opts: opts, cfg: cfg, task: task, split: split, agent: agent, host: host, runner: runner}
+	return prep, 0, true
+}
+
+// finishBenchLabRun applies host versions, export, evidence, printing
+// and the flow timeline for one executed result. Messages and exit
+// codes are byte-identical to the legacy inline sequence.
+func (io IO) finishBenchLabRun(prep benchLabRunPrep, res bench.LabResult, started time.Time, mode string) int {
+	if prep.opts.hostVersion != "" {
+		res.Outcome.HostVersion = prep.opts.hostVersion
+	} else if prep.host == "opencode" {
+		res.Outcome.HostVersion = benchLabProbeFunc()
 	}
-	if opts.export != "" {
-		if err := bench.ExportLabConfig(opts.export, cfg); err != nil {
+	if prep.opts.export != "" {
+		if err := bench.ExportLabConfig(prep.opts.export, prep.cfg); err != nil {
 			fmt.Fprintf(io.Stderr, "bench lab: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(io.Stdout, "lab: config exported to %s\n", opts.export)
+		fmt.Fprintf(io.Stdout, "lab: config exported to %s\n", prep.opts.export)
 	}
-	if opts.evidenceDir != "" {
-		if code := io.writeBenchLabEvidence(opts.evidenceDir, cfg, []bench.LabResult{res}, started); code != 0 {
+	if prep.opts.evidenceDir != "" {
+		if code := io.writeBenchLabEvidence(prep.opts.evidenceDir, prep.cfg, []bench.LabResult{res}, started); code != 0 {
 			return code
 		}
 	}
@@ -277,6 +309,17 @@ func (io IO) BenchLabRunCmd(mode string, args []string) int {
 		io.TraceTimelineCmd([]string{"--run", res.RunID, "--rebuild"})
 	}
 	return benchLabExit(res.Verdict)
+}
+
+// BenchLabRunCmd implements `regulus bench lab run|flow`.
+func (io IO) BenchLabRunCmd(mode string, args []string) int {
+	started := time.Now().UTC()
+	prep, code, ok := io.prepareBenchLabRun(mode, args)
+	if !ok {
+		return code
+	}
+	res := benchLabRunFunc(context.Background(), prep.runner, prep.agent, prep.task, prep.split, prep.cfg, io.Dir)
+	return io.finishBenchLabRun(prep, res, started, mode)
 }
 
 // benchLabExit maps a single verdict to the process exit.
@@ -306,77 +349,113 @@ func printBenchLabResult(stdout io.Writer, res bench.LabResult) {
 	}
 }
 
-// BenchLabCompareCmd implements `regulus bench lab compare`.
-func (io IO) BenchLabCompareCmd(args []string) int {
-	started := time.Now().UTC()
+// benchLabComparePrep carries a fully-resolved comparison: the setup
+// helper fills it or reports the refusal exit code.
+type benchLabComparePrep struct {
+	opts        labOptions
+	cfg         bench.LabConfig
+	task        bench.AgentTask
+	split       string
+	contestants []bench.LabContestant
+}
+
+// prepareBenchLabCompare resolves flags, splits, config, task and one
+// runner per contestant. Refusals print the exact legacy message and
+// report (prep{}, code, false); success reports (prep, 0, true).
+func (io IO) prepareBenchLabCompare(args []string) (benchLabComparePrep, int, bool) {
+	var prep benchLabComparePrep
 	opts, code, ok := parseBenchLabFlags(bench.LabModeCompare, args, io.Stderr)
 	if !ok {
-		return code
+		return prep, code, false
 	}
 	corpus := bench.AgentCorpus()
 	splits, code, ok := loadBenchAgentSplits(io, corpus)
 	if !ok {
-		return code
+		return prep, code, false
 	}
 	cfg, code, ok := resolveBenchLabConfig(opts, corpus, splits, io.Stderr)
 	if !ok {
-		return code
+		return prep, code, false
 	}
 	task, split, ok := labTaskSplit(corpus, splits, cfg.Task)
 	if !ok {
 		fmt.Fprintf(io.Stderr, "bench lab: unknown task %q\n", cfg.Task)
-		return 2
+		return prep, 2, false
 	}
-	var cs []bench.LabContestant
+	cs := make([]bench.LabContestant, 0, len(cfg.Agents))
 	for _, id := range cfg.Agents {
 		agent, ok := bench.FindLabAgent(id)
 		if !ok {
 			fmt.Fprintf(io.Stderr, "bench lab: unknown agent %q (see `bench lab agents`)\n", id)
-			return 2
+			return prep, 2, false
 		}
 		host := agent.Host
 		if cfg.Host != "" {
 			host = cfg.Host
 		}
-		runner, notRunMsg, notRunCode, ok := resolveAgentRunner(host)
+		runner, notRunMsg, notRunCode, ok := benchLabResolveRunner(host)
 		if !ok {
 			fmt.Fprintln(io.Stdout, strings.Replace(notRunMsg, "agent-tasks NOT RUN", "lab NOT RUN", 1))
-			return notRunCode
+			return prep, notRunCode, false
 		}
 		cs = append(cs, bench.LabContestant{Agent: agent, Runner: runner})
 	}
-	cmp, err := bench.CompareLab(context.Background(), cs, task, split, cfg, io.Dir)
+	prep = benchLabComparePrep{opts: opts, cfg: cfg, task: task, split: split, contestants: cs}
+	return prep, 0, true
+}
+
+// printBenchLabComparison prints one comparison report. Extracted
+// verbatim so the compare command stays a thin orchestrator.
+func printBenchLabComparison(stdout io.Writer, cmp bench.LabComparison) {
+	fmt.Fprintf(stdout, "lab compare %s [%s]: %d agent(s), %d evaluable\n", cmp.TaskID, cmp.Split, len(cmp.Results), cmp.Evaluable)
+	for _, r := range cmp.Results {
+		fmt.Fprintf(stdout, "  - %s: %s (%dms, tokens %d+%d %s)\n",
+			r.AgentID, r.Verdict, r.DurationMS, r.TokensIn, r.TokensOut, r.TokenSource)
+	}
+	fmt.Fprintf(stdout, "comparison: winner %s (%s)\n", cmp.Winner, cmp.Reason)
+	for _, r := range cmp.Results {
+		fmt.Fprintf(stdout, "trace %s: %s\n", r.AgentID, r.TraceHint)
+	}
+}
+
+// completeBenchLabCompare runs the resolved comparison and handles
+// host versions, export, evidence, printing and the exit mapping.
+// Messages and exit codes are byte-identical to the legacy sequence.
+func (io IO) completeBenchLabCompare(prep benchLabComparePrep, started time.Time) int {
+	cmp, err := benchLabCompareFunc(context.Background(), prep.contestants, prep.task, prep.split, prep.cfg, io.Dir)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "bench lab: %v\n", err)
 		return 1
 	}
-	applyLabHostVersions(cmp.Results, opts.hostVersion, probeOpenCodeVersion)
-	if opts.export != "" {
-		if err := bench.ExportLabConfig(opts.export, cfg); err != nil {
+	applyLabHostVersions(cmp.Results, prep.opts.hostVersion, benchLabProbeFunc)
+	if prep.opts.export != "" {
+		if err := bench.ExportLabConfig(prep.opts.export, prep.cfg); err != nil {
 			fmt.Fprintf(io.Stderr, "bench lab: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(io.Stdout, "lab: config exported to %s\n", opts.export)
+		fmt.Fprintf(io.Stdout, "lab: config exported to %s\n", prep.opts.export)
 	}
-	if opts.evidenceDir != "" {
-		if code := io.writeBenchLabEvidence(opts.evidenceDir, cfg, cmp.Results, started); code != 0 {
+	if prep.opts.evidenceDir != "" {
+		if code := io.writeBenchLabEvidence(prep.opts.evidenceDir, prep.cfg, cmp.Results, started); code != 0 {
 			return code
 		}
 	}
-	fmt.Fprintf(io.Stdout, "lab compare %s [%s]: %d agent(s), %d evaluable\n", cmp.TaskID, cmp.Split, len(cmp.Results), cmp.Evaluable)
-	for _, r := range cmp.Results {
-		fmt.Fprintf(io.Stdout, "  - %s: %s (%dms, tokens %d+%d %s)\n",
-			r.AgentID, r.Verdict, r.DurationMS, r.TokensIn, r.TokensOut, r.TokenSource)
-	}
-	fmt.Fprintf(io.Stdout, "comparison: winner %s (%s)\n", cmp.Winner, cmp.Reason)
-	for _, r := range cmp.Results {
-		fmt.Fprintf(io.Stdout, "trace %s: %s\n", r.AgentID, r.TraceHint)
-	}
+	printBenchLabComparison(io.Stdout, cmp)
 	if msg, code := labCompareExit(cmp.Results, cmp.Evaluable); code != 0 {
 		fmt.Fprintln(io.Stdout, msg)
 		return code
 	}
 	return 0
+}
+
+// BenchLabCompareCmd implements `regulus bench lab compare`.
+func (io IO) BenchLabCompareCmd(args []string) int {
+	started := time.Now().UTC()
+	prep, code, ok := io.prepareBenchLabCompare(args)
+	if !ok {
+		return code
+	}
+	return io.completeBenchLabCompare(prep, started)
 }
 
 func applyLabHostVersions(results []bench.LabResult, hostVersion string, probe func() string) {
