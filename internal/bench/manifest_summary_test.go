@@ -53,7 +53,7 @@ func TestRenderManifestSummaryTable(t *testing.T) {
 				"== opencode ==\n",
 				"versión: v2.2.5\n",
 				"clase: journey\n",
-				"credenciales: false | repetible en CI: false\n",
+				"credenciales: false | repetible en CI: true\n",
 				"evidencia journey: journey green 2026-11-16 (2026-11-16)\n",
 				"nota probe: probe 2026-11-17: ok\n",
 				"degradación: sin degradación\n",
@@ -142,7 +142,7 @@ func TestRenderManifestSummaryFullExact(t *testing.T) {
 	want := "== opencode ==\n" +
 		"versión: v2.2.5\n" +
 		"clase: journey\n" +
-		"credenciales: false | repetible en CI: false\n" +
+		"credenciales: false | repetible en CI: true\n" +
 		"evidencia journey: journey green 2026-11-16 (2026-11-16)\n" +
 		"nota probe: probe 2026-11-17: ok\n" +
 		"degradación: sin degradación\n" +

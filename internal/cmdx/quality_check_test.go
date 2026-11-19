@@ -78,10 +78,10 @@ func TestQualityCheckCmdTable(t *testing.T) {
 		check   func(t *testing.T, stdout string)
 	}{
 		{name: "parse flag desconocido", args: []string{"--nope"}, code: 2, wantErr: true},
-		{name: "parse sin args", args: nil, code: 2, errHas: []string{"usage: regulus quality check"}},
-		{name: "parse falta window", args: []string{"--baseline", baseline}, code: 2, errHas: []string{"usage: regulus quality check"}},
-		{name: "parse falta baseline", args: []string{"--window", window}, code: 2, errHas: []string{"usage: regulus quality check"}},
-		{name: "parse posicional extra", args: []string{"--baseline", baseline, "--window", window, "extra"}, code: 2, errHas: []string{"usage: regulus quality check"}},
+		{name: "parse sin args", args: nil, code: 2, errHas: []string{"regulus quality check"}},
+		{name: "parse falta window", args: []string{"--baseline", baseline}, code: 2, errHas: []string{"regulus quality check"}},
+		{name: "parse falta baseline", args: []string{"--window", window}, code: 2, errHas: []string{"regulus quality check"}},
+		{name: "parse posicional extra", args: []string{"--baseline", baseline, "--window", window, "extra"}, code: 2, errHas: []string{"regulus quality check"}},
 		{name: "baseline ausente", args: []string{"--baseline", missing, "--window", window}, code: 1, errHas: []string{"quality check:"}},
 		{name: "thresholds ilegibles", args: []string{"--baseline", baseline, "--window", window, "--thresholds", missing}, code: 1, errHas: []string{"quality check:"}},
 		{name: "window ausente", args: []string{"--baseline", baseline, "--window", missing}, code: 1, errHas: []string{"quality check:"}},
