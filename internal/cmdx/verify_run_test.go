@@ -44,7 +44,6 @@ func TestVerifyRunOutSealsBlockedEvidence(t *testing.T) {
 
 func TestVerifyRunFlagRefusalsTable(t *testing.T) {
 	dir := t.TempDir()
-	io, _, _ := cmdIO(dir)
 	planRepo(t, dir)
 	badResults := filepath.Join(dir, "bad-results.json")
 	if err := os.WriteFile(badResults, []byte("{no json"), 0o644); err != nil {
