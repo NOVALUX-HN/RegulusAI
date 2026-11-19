@@ -53,8 +53,8 @@ func TestSelectTierTasksErrors(t *testing.T) {
 		t.Fatal("smoke holdout task must fail")
 	}
 
-	// L1 filter matches nothing.
-	if _, err := SelectTierTasks(TierL1, corpus, splits, []string{"unrelated/file.xyz"}, ""); err == nil {
+	// L1 filter matches nothing (docs-only diff maps to ["docs"], no task carries it).
+	if _, err := SelectTierTasks(TierL1, corpus, splits, []string{"README.md"}, ""); err == nil {
 		t.Fatal("L1 empty match must fail")
 	}
 
