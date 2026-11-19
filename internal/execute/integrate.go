@@ -307,7 +307,7 @@ var newReceiptRunner = func(dir string) gates.CmdRunner {
 // stageReceipt stages the receipt file in the isolated worktree.
 func stageReceipt(ctx context.Context, runner gates.CmdRunner, taskID string) error {
 	if _, _, _, err := runner.Run(ctx, "git add "+receiptFileName); err != nil {
-		return fmt.Errorf("task %s: cannot stage receipt: %v", task.ID, err)
+		return fmt.Errorf("task %s: cannot stage receipt: %v", taskID, err)
 	}
 	return nil
 }
@@ -316,7 +316,7 @@ func stageReceipt(ctx context.Context, runner gates.CmdRunner, taskID string) er
 func commitReceipt(ctx context.Context, runner gates.CmdRunner, missionID, taskID string) error {
 	msg := receiptCommitMessage(missionID, taskID)
 	if _, errb, exit, err := runner.Run(ctx, "git commit -m "+fmt.Sprintf("%q", msg)); err != nil || exit != 0 {
-		return fmt.Errorf("task %s: cannot commit receipt: %v (%s)", task.ID, err, strings.TrimSpace(errb))
+		return fmt.Errorf("task %s: cannot commit receipt: %v (%s)", taskID, err, strings.TrimSpace(errb))
 	}
 	return nil
 }
