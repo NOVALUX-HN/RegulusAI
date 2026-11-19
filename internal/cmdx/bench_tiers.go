@@ -171,60 +171,45 @@ func litmusL3Why(opts benchTierPlanOptions) string {
 	return reason
 }
 
-// BenchTierPlanCmd implements `regulus bench tier-plan`.
-func (io IO) BenchTierPlanCmd(args []string) int {
-	started := time.Now().UTC()
-	opts, code, ok := parseBenchTierPlanOptions(args, io.Stderr)
-	if !ok {
-		return code
-	}
-	// Fail-closed usage errors (exit 2) before any splits I/O so a bad
-	// flag is never masked by a missing splits file (exit 1). Mirrors
-	// resolveBenchTierPlan validation without needing corpus/splits.
-	if tier, capStr := opts.tier, opts.capability; true {
-		trimmed := strings.TrimSpace(tier)
-		isAuto := trimmed == "" || strings.EqualFold(trimmed, "auto")
-		parsedTier := ""
-		if !isAuto {
-			pt, err := bench.ParseTier(tier)
-			if err != nil {
-				fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
-				return 2
-			}
-			parsedTier = pt
-		}
-		parsedCap, err := bench.ParseTierCapability(capStr)
+// benchTierPlanUsage is the single usage line for `regulus bench tier-plan`.
+// Every usage refusal prints this byte-identical line.
+const benchTierPlanUsage = "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]"
+
+// validateBenchTierPlanEarly fails closed on usage errors before any
+// splits I/O so a bad flag is never masked by a missing splits file
+// (exit 1). Mirrors resolveBenchTierPlan validation without needing
+// corpus/splits.
+func validateBenchTierPlanEarly(stderr io.Writer, opts benchTierPlanOptions) int {
+	trimmed := strings.TrimSpace(opts.tier)
+	isAuto := trimmed == "" || strings.EqualFold(trimmed, "auto")
+	parsedTier := ""
+	if !isAuto {
+		pt, err := bench.ParseTier(opts.tier)
 		if err != nil {
-			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
+			fmt.Fprintln(stderr, benchTierPlanUsage)
 			return 2
 		}
-		if parsedTier == bench.TierL0 && parsedCap != "" {
-			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
-			return 2
-		}
-		if opts.jobs < 0 || opts.jobs > bench.TierMaxConcurrency() {
-			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
-			return 2
-		}
+		parsedTier = pt
 	}
-	corpus := bench.AgentCorpus()
-	splits, code, ok := loadBenchAgentSplits(io, corpus)
-	if !ok {
-		return code
+	parsedCap, err := bench.ParseTierCapability(opts.capability)
+	if err != nil {
+		fmt.Fprintln(stderr, benchTierPlanUsage)
+		return 2
 	}
-	sel, _, code, ok := resolveBenchTierPlan(opts, corpus, splits)
-	if !ok {
-		if code == 2 {
-			fmt.Fprintln(io.Stderr, "usage: regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--capability C] [--agent A] [--release] [--last-l3 RFC3339] [--jobs N] [--json] [--save P] [--evidence-dir D]")
-		} else {
-			fmt.Fprintf(io.Stderr, "bench tier-plan: selection failed\n")
-		}
-		return code
+	if parsedTier == bench.TierL0 && parsedCap != "" {
+		fmt.Fprintln(stderr, benchTierPlanUsage)
+		return 2
 	}
-	jobs := opts.jobs
-	if jobs <= 0 {
-		jobs = bench.TierDefaultConcurrency()
+	if opts.jobs < 0 || opts.jobs > bench.TierMaxConcurrency() {
+		fmt.Fprintln(stderr, benchTierPlanUsage)
+		return 2
 	}
+	return 0
+}
+
+// writeBenchTierPlanOutputs persists the optional --save and
+// --evidence-dir artifacts with their byte-identical confirmations.
+func writeBenchTierPlanOutputs(io IO, opts benchTierPlanOptions, sel bench.TierSelection, started time.Time) int {
 	if opts.save != "" {
 		if code := saveBenchTierPlan(io.Stderr, opts.save, sel); code != 0 {
 			return code
@@ -246,6 +231,11 @@ func (io IO) BenchTierPlanCmd(args []string) int {
 			fmt.Fprintf(io.Stdout, "tier: evidence recorded in %s\n", opts.evidenceDir)
 		}
 	}
+	return 0
+}
+
+// printBenchTierPlan prints the selection as JSON or human text.
+func printBenchTierPlan(io IO, opts benchTierPlanOptions, sel bench.TierSelection, corpus []bench.AgentTask, splits bench.AgentSplits, started time.Time) int {
 	if opts.asJSON {
 		raw, err := json.MarshalIndent(sel, "", "  ")
 		if err != nil {
@@ -257,8 +247,38 @@ func (io IO) BenchTierPlanCmd(args []string) int {
 	}
 	m := bench.TierEvidenceManifest{TierVersion: bench.TierVersion, Tier: sel.Tier, PlanFile: "(plan)"}
 	fmt.Fprint(io.Stdout, bench.RenderTierPlan(m, sel, corpus, splits, started))
-	_ = jobs
 	return 0
+}
+
+// BenchTierPlanCmd implements `regulus bench tier-plan`: thin
+// orchestrator over parse/validate/resolve plus finish helpers.
+func (io IO) BenchTierPlanCmd(args []string) int {
+	started := time.Now().UTC()
+	opts, code, ok := parseBenchTierPlanOptions(args, io.Stderr)
+	if !ok {
+		return code
+	}
+	if code := validateBenchTierPlanEarly(io.Stderr, opts); code != 0 {
+		return code
+	}
+	corpus := bench.AgentCorpus()
+	splits, code, ok := loadBenchAgentSplits(io, corpus)
+	if !ok {
+		return code
+	}
+	sel, _, code, ok := resolveBenchTierPlan(opts, corpus, splits)
+	if !ok {
+		if code == 2 {
+			fmt.Fprintln(io.Stderr, benchTierPlanUsage)
+		} else {
+			fmt.Fprintf(io.Stderr, "bench tier-plan: selection failed\n")
+		}
+		return code
+	}
+	if code := writeBenchTierPlanOutputs(io, opts, sel, started); code != 0 {
+		return code
+	}
+	return printBenchTierPlan(io, opts, sel, corpus, splits, started)
 }
 
 // saveBenchTierPlan writes the raw selection JSON.

@@ -257,6 +257,70 @@ func outOfScope(touched, scope []string) []string {
 // integration ownership check.
 const receiptFileName = ".regulus-task-receipt.json"
 
+// validateReceiptScope refuses empty scope entries (fail closed,
+// never guessed). Pure: no FS, no shell.
+func validateReceiptScope(task orchestrate.ParallelTask) error {
+	for _, f := range task.Files {
+		if strings.TrimSpace(f) == "" {
+			return fmt.Errorf("task %s: empty scope entry (fail closed, never guessed)", task.ID)
+		}
+	}
+	return nil
+}
+
+// sortedReceiptFiles copies and sorts the scope files so the receipt
+// is deterministic without mutating the task. Pure.
+func sortedReceiptFiles(files []string) []string {
+	out := append([]string(nil), files...)
+	sort.Strings(out)
+	return out
+}
+
+// buildReceiptDoc assembles the receipt payload the wrapper reads
+// back for the integration ownership check. Pure.
+func buildReceiptDoc(missionID string, planVersion int, task orchestrate.ParallelTask, files []string) map[string]any {
+	return map[string]any{
+		"mission_id": missionID, "plan_version": planVersion,
+		"task_id": task.ID, "agent": task.Agent,
+		"scopes": task.Scopes, "files": files,
+	}
+}
+
+// receiptCommitMessage seals one worker receipt: mission + task.
+// Pure: pin the exact committed message without running git.
+func receiptCommitMessage(missionID, taskID string) string {
+	return fmt.Sprintf("mission %s task %s receipt", missionID, taskID)
+}
+
+// receiptMarshal encodes the receipt payload. Variable (not a plain
+// json.Marshal call) so tests cover the marshal failure without
+// inventing an unencodable task.
+var receiptMarshal = json.Marshal
+
+// newReceiptRunner builds the shell runner sealing the receipt.
+// Variable so tests substitute a fake: no real git runs, portable
+// without git on PATH.
+var newReceiptRunner = func(dir string) gates.CmdRunner {
+	return gates.ShRunner{Dir: dir}
+}
+
+// stageReceipt stages the receipt file in the isolated worktree.
+func stageReceipt(ctx context.Context, runner gates.CmdRunner, taskID string) error {
+	if _, _, _, err := runner.Run(ctx, "git add "+receiptFileName); err != nil {
+		return fmt.Errorf("task %s: cannot stage receipt: %v", task.ID, err)
+	}
+	return nil
+}
+
+// commitReceipt commits the staged receipt, quoting the message.
+func commitReceipt(ctx context.Context, runner gates.CmdRunner, missionID, taskID string) error {
+	msg := receiptCommitMessage(missionID, taskID)
+	if _, errb, exit, err := runner.Run(ctx, "git commit -m "+fmt.Sprintf("%q", msg)); err != nil || exit != 0 {
+		return fmt.Errorf("task %s: cannot commit receipt: %v (%s)", task.ID, err, strings.TrimSpace(errb))
+	}
+	return nil
+}
+
 // ReceiptWork is the default worker: it refuses empty scope entries
 // (fail closed, never guessed), writes the structured receipt into
 // the isolated worktree and commits it, capturing files, commit,
@@ -264,31 +328,23 @@ const receiptFileName = ".regulus-task-receipt.json"
 // git (or a failing commit) fails the task with the reason.
 func ReceiptWork(root, missionID string, planVersion int) func(ctx context.Context, task orchestrate.ParallelTask, dir string) error {
 	return func(ctx context.Context, task orchestrate.ParallelTask, dir string) error {
-		for _, f := range task.Files {
-			if strings.TrimSpace(f) == "" {
-				return fmt.Errorf("task %s: empty scope entry (fail closed, never guessed)", task.ID)
-			}
+		if err := validateReceiptScope(task); err != nil {
+			return err
 		}
-		files := append([]string(nil), task.Files...)
-		sort.Strings(files)
-		raw, err := json.Marshal(map[string]any{
-			"mission_id": missionID, "plan_version": planVersion,
-			"task_id": task.ID, "agent": task.Agent,
-			"scopes": task.Scopes, "files": files,
-		})
+		files := sortedReceiptFiles(task.Files)
+		raw, err := receiptMarshal(buildReceiptDoc(missionID, planVersion, task, files))
 		if err != nil {
 			return fmt.Errorf("task %s: cannot encode receipt: %v", task.ID, err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, receiptFileName), append(raw, '\n'), 0o644); err != nil {
 			return fmt.Errorf("task %s: cannot write receipt: %v", task.ID, err)
 		}
-		runner := gates.ShRunner{Dir: dir}
-		if _, _, _, err := runner.Run(ctx, "git add "+receiptFileName); err != nil {
-			return fmt.Errorf("task %s: cannot stage receipt: %v", task.ID, err)
+		runner := newReceiptRunner(dir)
+		if err := stageReceipt(ctx, runner, task.ID); err != nil {
+			return err
 		}
-		msg := fmt.Sprintf("mission %s task %s receipt", missionID, task.ID)
-		if _, errb, exit, err := runner.Run(ctx, "git commit -m "+fmt.Sprintf("%q", msg)); err != nil || exit != 0 {
-			return fmt.Errorf("task %s: cannot commit receipt: %v (%s)", task.ID, err, strings.TrimSpace(errb))
+		if err := commitReceipt(ctx, runner, missionID, task.ID); err != nil {
+			return err
 		}
 		return nil
 	}

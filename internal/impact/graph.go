@@ -306,36 +306,64 @@ func importTarget(module, imp string) (string, bool) {
 //   - workflow-ref: wf -> pkg/cmd mentions in .github/workflows;
 //   - config-ref: cfg -> pkg/cmd mentions in root configs.
 func walkRefs(root string, g *Graph, byID map[string]bool, ensure func(Node), addEdge func(from, to, source, file string, line int), inv Inventory) {
+	walkCliRefs(root, addEdge)
+	walkWorkflowRefs(root, ensure, addEdge, inv, collectCmds(inv))
+}
+
+// collectCmds indexes the command names in the inventory. Pure (no
+// FS): the walkers consume the map, so unit tests pin it directly.
+func collectCmds(inv Inventory) map[string]bool {
 	cmds := map[string]bool{}
 	for _, n := range inv.Nodes {
 		if n.Kind == KindCommand {
 			cmds[strings.TrimPrefix(n.ID, "cmd:")] = true
 		}
 	}
-	cliDir := filepath.Join(root, "internal", "cli")
-	entries, _ := os.ReadDir(cliDir)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		rel := "internal/cli/" + e.Name()
-		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-		if err != nil {
-			continue
-		}
-		lines := strings.Split(string(raw), "\n")
-		for i, line := range lines {
-			for _, m := range dispatchRe.FindAllStringSubmatch(line, -1) {
-				addEdge("cmd:"+m[1], "pkg:internal/cli", SourceCLIRoute, rel, i+1)
-			}
-		}
-		for i, line := range lines {
-			if strings.Contains(line, "cmdx.New(") {
-				addEdge("pkg:internal/cli", "pkg:internal/cmdx", SourceCLIRoute, rel, i+1)
-				break
-			}
-		}
+	return cmds
+}
+
+// scanCliLine extracts one line's cli evidence without touching the
+// filesystem: the cliDispatch command names plus whether the line
+// forwards to cmdx. Pure: unit tests pin it line by line.
+func scanCliLine(line string) (cmds []string, forward bool) {
+	for _, m := range dispatchRe.FindAllStringSubmatch(line, -1) {
+		cmds = append(cmds, m[1])
 	}
+	return cmds, strings.Contains(line, "cmdx.New(")
+}
+
+// scanRefLine extracts one line's workflow/config evidence without
+// touching the filesystem: internal package mentions plus `regulus
+// <cmd>` invocations. Pure: unit tests pin it line by line (the
+// caller filters commands against the inventory).
+func scanRefLine(line string) (pkgs []string, cmds []string) {
+	for _, m := range internalRefRe.FindAllStringSubmatch(line, -1) {
+		pkgs = append(pkgs, strings.TrimSuffix(m[1], "/"))
+	}
+	for _, m := range regulusCmdRe.FindAllStringSubmatch(line, -1) {
+		cmds = append(cmds, m[1])
+	}
+	return pkgs, cmds
+}
+
+// isWorkflowFile reports whether a ref file carries `regulus <cmd>`
+// invocations (workflows do; root configs do not).
+func isWorkflowFile(rel string) bool {
+	return strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml")
+}
+
+// refFrom maps a ref file onto its graph node: workflows to wf:,
+// configs to cfg:.
+func refFrom(rel, source string) string {
+	if source == SourceConfig {
+		return "cfg:" + rel
+	}
+	return "wf:" + rel
+}
+
+// sortedRefSources lists the workflow/config evidence files in
+// stable order with their edge source.
+func sortedRefSources(inv Inventory) ([]string, map[string]string) {
 	refFiles := map[string]string{}
 	for _, n := range inv.Nodes {
 		switch n.Kind {
@@ -350,29 +378,80 @@ func walkRefs(root string, g *Graph, byID map[string]bool, ensure func(Node), ad
 		rels = append(rels, rel)
 	}
 	sort.Strings(rels)
+	return rels, refFiles
+}
+
+// scanCliFile folds one cli source's edges: one cli-route edge per
+// cliDispatch entry plus one forwarder edge on the first cmdx.New
+// line (one per file, first occurrence).
+func scanCliFile(rel, src string, addEdge func(from, to, source, file string, line int)) {
+	lines := strings.Split(src, "\n")
+	for i, line := range lines {
+		cmds, _ := scanCliLine(line)
+		for _, c := range cmds {
+			addEdge("cmd:"+c, "pkg:internal/cli", SourceCLIRoute, rel, i+1)
+		}
+	}
+	for i, line := range lines {
+		if _, forward := scanCliLine(line); forward {
+			addEdge("pkg:internal/cli", "pkg:internal/cmdx", SourceCLIRoute, rel, i+1)
+			break
+		}
+	}
+}
+
+// walkCliRefs scans internal/cli/*.go: every cliDispatch entry is a
+// cmd:X -> pkg:internal/cli edge and every forwarder file gains one
+// pkg:internal/cli -> pkg:internal/cmdx edge.
+func walkCliRefs(root string, addEdge func(from, to, source, file string, line int)) {
+	cliDir := filepath.Join(root, "internal", "cli")
+	entries, _ := os.ReadDir(cliDir)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		rel := "internal/cli/" + e.Name()
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		scanCliFile(rel, string(raw), addEdge)
+	}
+}
+
+// scanRefFile folds one workflow/config file's edges: one edge per
+// internal package mention plus, in workflows only, one edge per
+// known `regulus <cmd>` invocation.
+func scanRefFile(rel, source string, src string, cmds map[string]bool, ensure func(Node), addEdge func(from, to, source, file string, line int)) {
+	from := refFrom(rel, source)
+	workflow := isWorkflowFile(rel)
+	lines := strings.Split(src, "\n")
+	for i, line := range lines {
+		pkgs, refs := scanRefLine(line)
+		for _, pkg := range pkgs {
+			ensure(Node{ID: "pkg:" + pkg, Kind: KindPackage, Path: pkg, Critical: isCriticalPkg(pkg)})
+			addEdge(from, "pkg:"+pkg, source, rel, i+1)
+		}
+		if workflow {
+			for _, c := range refs {
+				if cmds[c] {
+					addEdge(from, "cmd:"+c, source, rel, i+1)
+				}
+			}
+		}
+	}
+}
+
+// walkWorkflowRefs scans the workflow/config evidence files:
+// wf/cfg -> pkg/cmd mentions with exact file:line evidence.
+// Missing files are skipped (the inventory warns, never fails).
+func walkWorkflowRefs(root string, ensure func(Node), addEdge func(from, to, source, file string, line int), inv Inventory, cmds map[string]bool) {
+	rels, refFiles := sortedRefSources(inv)
 	for _, rel := range rels {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			continue
 		}
-		from := "wf:" + rel
-		if refFiles[rel] == SourceConfig {
-			from = "cfg:" + rel
-		}
-		lines := strings.Split(string(raw), "\n")
-		for i, line := range lines {
-			for _, m := range internalRefRe.FindAllStringSubmatch(line, -1) {
-				pkg := strings.TrimSuffix(m[1], "/")
-				ensure(Node{ID: "pkg:" + pkg, Kind: KindPackage, Path: pkg, Critical: isCriticalPkg(pkg)})
-				addEdge(from, "pkg:"+pkg, refFiles[rel], rel, i+1)
-			}
-			if strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml") {
-				for _, m := range regulusCmdRe.FindAllStringSubmatch(line, -1) {
-					if cmds[m[1]] {
-						addEdge(from, "cmd:"+m[1], refFiles[rel], rel, i+1)
-					}
-				}
-			}
-		}
+		scanRefFile(rel, refFiles[rel], string(raw), cmds, ensure, addEdge)
 	}
 }
