@@ -137,31 +137,65 @@ func (c *TaskCost) fold(session string, e Entry) error {
 	if e.Status == StatusError {
 		c.Errors++
 	}
+	if err := c.foldSums(e); err != nil {
+		return fmt.Errorf("fold %q: %v", c.Task, err)
+	}
+	c.foldKnown(e)
+	c.foldHostTokens(e)
+	c.trackFoldSession(session)
+	return nil
+}
+
+// foldSums accumulates every overflow-safe total of one entry,
+// including the measured-local proxy. It returns the raw addCounts
+// error; the caller wraps it with the bucket name.
+func (c *TaskCost) foldSums(e Entry) error {
+	if err := c.foldProxySums(e); err != nil {
+		return err
+	}
+	return c.foldTokenSums(e)
+}
+
+// foldProxySums accumulates the proxy totals (wall time, bytes).
+func (c *TaskCost) foldProxySums(e Entry) error {
 	var err error
 	if c.TotalDurationMS, err = addCounts(c.TotalDurationMS, e.DurationMS); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
 	if c.TotalOutputBytes, err = addCounts(c.TotalOutputBytes, e.OutputBytes); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
+	return nil
+}
+
+// foldTokenSums accumulates host token totals plus the local proxy.
+func (c *TaskCost) foldTokenSums(e Entry) error {
+	var err error
 	if c.TotalInputTokens, err = addCounts(c.TotalInputTokens, e.InputTokens); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
 	if c.TotalOutputTokens, err = addCounts(c.TotalOutputTokens, e.OutputTokens); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
 	if c.TotalReasoning, err = addCounts(c.TotalReasoning, e.ReasoningTokens); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
 	if c.TotalCacheRead, err = addCounts(c.TotalCacheRead, e.CacheRead); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
 	if c.TotalCacheWrite, err = addCounts(c.TotalCacheWrite, e.CacheWrite); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
 	if c.TotalLocalTokens, err = addCounts(c.TotalLocalTokens, EstimateLocalTokens(e)); err != nil {
-		return fmt.Errorf("fold %q: %v", c.Task, err)
+		return err
 	}
+	return nil
+}
+
+// foldKnown marks which proxy dimensions were ever measured (> 0)
+// so unknown stays distinguishable from a measured total. The
+// local proxy measures on every folded entry.
+func (c *TaskCost) foldKnown(e Entry) {
 	c.LocalTokensKnown = true
 	if e.DurationMS > 0 {
 		c.DurationKnown = true
@@ -169,35 +203,53 @@ func (c *TaskCost) fold(session string, e Entry) error {
 	if e.OutputBytes > 0 {
 		c.BytesKnown = true
 	}
-	if e.InputTokens > 0 || e.OutputTokens > 0 || e.ReasoningTokens > 0 || e.CacheRead > 0 || e.CacheWrite > 0 {
+}
+
+// foldHasHostTokens reports whether one entry carries any
+// host-exposed token count.
+func foldHasHostTokens(e Entry) bool {
+	return e.InputTokens > 0 || e.OutputTokens > 0 || e.ReasoningTokens > 0 || e.CacheRead > 0 || e.CacheWrite > 0
+}
+
+// foldRateKey records one distinct model@version pair behind the
+// host token totals.
+func (c *TaskCost) foldRateKey(e Entry) {
+	if e.Model == "" {
+		return
+	}
+	key := e.Model + "@" + e.HostVersion
+	for _, k := range c.RateKeys {
+		if k == key {
+			return
+		}
+	}
+	c.RateKeys = append(c.RateKeys, key)
+}
+
+// foldHostTokens marks host-token measurement, records the rate key
+// behind it, and keeps an explicit usage source when no host count
+// named one yet.
+func (c *TaskCost) foldHostTokens(e Entry) {
+	if foldHasHostTokens(e) {
 		c.TokensKnown = true
 		if c.TokenSource == "" {
 			c.TokenSource = SourceMeasuredHost
 		}
-		if e.Model != "" {
-			key := e.Model + "@" + e.HostVersion
-			found := false
-			for _, k := range c.RateKeys {
-				if k == key {
-					found = true
-					break
-				}
-			}
-			if !found {
-				c.RateKeys = append(c.RateKeys, key)
-			}
-		}
+		c.foldRateKey(e)
 	}
 	if e.UsageSource != "" && c.TokenSource == "" {
 		c.TokenSource = e.UsageSource
 	}
+}
+
+// trackFoldSession records one distinct session behind the bucket.
+func (c *TaskCost) trackFoldSession(session string) {
 	for _, s := range c.Sessions {
 		if s == session {
-			return nil
+			return
 		}
 	}
 	c.Sessions = append(c.Sessions, session)
-	return nil
 }
 
 // CostByTask folds every session trace under root into per-task

@@ -276,82 +276,106 @@ func DetectParallelCollisions(tasks []ParallelTask) [][2]string {
 	return pairs
 }
 
-// PlanParallelLevels orders tasks into deterministic execution levels:
-// explicit DependsOn edges plus implicit collision edges (sorted id
-// order; explicit order wins when it already orders a colliding pair).
-// Every task appears exactly once; tasks in one level never depend on
-// each other and never collide, so a level may run concurrently while
-// levels run in order. Cycles fail closed naming the loop.
-func PlanParallelLevels(tasks []ParallelTask) (levels [][]string, serialized [][2]string, err error) {
-	if err := ValidateParallelTasks(tasks); err != nil {
-		return nil, nil, err
-	}
-	byID := map[string]ParallelTask{}
+// parallelByID indexes tasks by id.
+func parallelByID(tasks []ParallelTask) map[string]ParallelTask {
+	byID := make(map[string]ParallelTask, len(tasks))
 	for _, t := range tasks {
 		byID[t.ID] = t
 	}
-	// Explicit reachability: BFS per node over DependsOn edges
-	// (dep -> task direction) so implicit edges never contradict an
-	// explicit order.
+	return byID
+}
+
+// buildParallelSucc maps each dependency to its direct dependents
+// (dep -> task direction) for explicit reachability.
+func buildParallelSucc(tasks []ParallelTask) map[string][]string {
 	succ := map[string][]string{}
 	for _, t := range tasks {
 		for _, d := range t.DependsOn {
 			succ[d] = append(succ[d], t.ID)
 		}
 	}
-	reaches := func(from, to string) bool {
-		if from == to {
-			return true
-		}
-		seen := map[string]bool{from: true}
-		queue := []string{from}
-		for len(queue) > 0 {
-			cur := queue[0]
-			queue = queue[1:]
-			for _, nx := range succ[cur] {
-				if nx == to {
-					return true
-				}
-				if !seen[nx] {
-					seen[nx] = true
-					queue = append(queue, nx)
-				}
+	return succ
+}
+
+// parallelReaches reports whether to is reachable from from over
+// explicit DependsOn edges (dep -> task direction), so implicit
+// collision edges never contradict an explicit order.
+func parallelReaches(succ map[string][]string, from, to string) bool {
+	if from == to {
+		return true
+	}
+	seen := map[string]bool{from: true}
+	queue := []string{from}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, nx := range succ[cur] {
+			if nx == to {
+				return true
+			}
+			if !seen[nx] {
+				seen[nx] = true
+				queue = append(queue, nx)
 			}
 		}
-		return false
 	}
-	// Edge set: explicit dep -> task plus implicit collision order.
+	return false
+}
+
+// parallelAddEdge records one directed edge, ignoring self-edges.
+func parallelAddEdge(edges map[string]map[string]bool, from, to string) {
+	if from == to {
+		return
+	}
+	if edges[from] == nil {
+		edges[from] = map[string]bool{}
+	}
+	edges[from][to] = true
+}
+
+// buildParallelExplicitEdges collects explicit dep -> task edges.
+func buildParallelExplicitEdges(tasks []ParallelTask) map[string]map[string]bool {
 	edges := map[string]map[string]bool{}
-	addEdge := func(from, to string) {
-		if from == to {
-			return
-		}
-		if edges[from] == nil {
-			edges[from] = map[string]bool{}
-		}
-		edges[from][to] = true
-	}
 	for _, t := range tasks {
 		for _, d := range t.DependsOn {
-			addEdge(d, t.ID)
+			parallelAddEdge(edges, d, t.ID)
 		}
 	}
+	return edges
+}
+
+// appendParallelCollisionEdges adds implicit collision edges in sorted
+// id order, skipping pairs an explicit order already sequences.
+// It returns the serialized pairs it added.
+func appendParallelCollisionEdges(tasks []ParallelTask, succ map[string][]string, edges map[string]map[string]bool) [][2]string {
+	var serialized [][2]string
 	for _, p := range DetectParallelCollisions(tasks) {
 		a, b := p[0], p[1]
-		if reaches(a, b) || reaches(b, a) {
+		if parallelReaches(succ, a, b) || parallelReaches(succ, b, a) {
 			continue
 		}
-		addEdge(a, b)
+		parallelAddEdge(edges, a, b)
 		serialized = append(serialized, p)
 	}
-	sort.Slice(serialized, func(i, j int) bool {
-		if serialized[i][0] != serialized[j][0] {
-			return serialized[i][0] < serialized[j][0]
+	sortParallelPairs(serialized)
+	return serialized
+}
+
+// sortParallelPairs orders collision pairs deterministically.
+func sortParallelPairs(pairs [][2]string) {
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i][0] != pairs[j][0] {
+			return pairs[i][0] < pairs[j][0]
 		}
-		return serialized[i][1] < serialized[j][1]
+		return pairs[i][1] < pairs[j][1]
 	})
-	// Kahn in deterministic (sorted) order.
-	indeg := map[string]int{}
+}
+
+// kahnParallelOrder runs Kahn's algorithm in deterministic (sorted)
+// order, returning the topological order and the residual indegrees
+// (a non-empty residual names the cycle members).
+func kahnParallelOrder(tasks []ParallelTask, edges map[string]map[string]bool) ([]string, map[string]int) {
+	indeg := make(map[string]int, len(tasks))
 	for _, t := range tasks {
 		indeg[t.ID] = 0
 	}
@@ -382,34 +406,45 @@ func PlanParallelLevels(tasks []ParallelTask) (levels [][]string, serialized [][
 		ready = append(ready, next...)
 		sort.Strings(ready)
 	}
-	if len(order) != len(tasks) {
-		var loop []string
-		for id, n := range indeg {
-			if n > 0 {
-				loop = append(loop, id)
-			}
+	return order, indeg
+}
+
+// parallelCycleError names the tasks left with residual indegree.
+func parallelCycleError(indeg map[string]int) error {
+	var loop []string
+	for id, n := range indeg {
+		if n > 0 {
+			loop = append(loop, id)
 		}
-		sort.Strings(loop)
-		return nil, nil, fmt.Errorf("orchestrate parallel: dependency cycle involving %s", strings.Join(loop, ", "))
 	}
-	// Level assignment: level(task) = 1 + max(level(deps)); implicit
-	// edges are deps for this purpose, so colliding tasks land on
-	// strictly increasing levels.
-	levelOf := map[string]int{}
+	sort.Strings(loop)
+	return fmt.Errorf("orchestrate parallel: dependency cycle involving %s", strings.Join(loop, ", "))
+}
+
+// parallelPredecessors collects explicit deps plus any edge source
+// for one task.
+func parallelPredecessors(id string, byID map[string]ParallelTask, edges map[string]map[string]bool) map[string]bool {
+	preds := map[string]bool{}
+	for _, d := range byID[id].DependsOn {
+		preds[d] = true
+	}
+	for from, tos := range edges {
+		if tos[id] {
+			preds[from] = true
+		}
+	}
+	return preds
+}
+
+// assignParallelLevels maps the topological order to deterministic
+// levels: level(task) = 1 + max(level(deps)); implicit edges count
+// as deps, so colliding tasks land on strictly increasing levels.
+func assignParallelLevels(order []string, byID map[string]ParallelTask, edges map[string]map[string]bool) [][]string {
+	levelOf := make(map[string]int, len(order))
 	maxLevel := 0
 	for _, id := range order {
 		lv := 0
-		// Predecessors: explicit deps plus any edge source.
-		preds := map[string]bool{}
-		for _, d := range byID[id].DependsOn {
-			preds[d] = true
-		}
-		for from, tos := range edges {
-			if tos[id] {
-				preds[from] = true
-			}
-		}
-		for p := range preds {
+		for p := range parallelPredecessors(id, byID, edges) {
 			if levelOf[p]+1 > lv {
 				lv = levelOf[p] + 1
 			}
@@ -419,14 +454,35 @@ func PlanParallelLevels(tasks []ParallelTask) (levels [][]string, serialized [][
 			maxLevel = lv
 		}
 	}
-	levels = make([][]string, maxLevel+1)
+	levels := make([][]string, maxLevel+1)
 	for _, id := range order {
 		levels[levelOf[id]] = append(levels[levelOf[id]], id)
 	}
 	for i := range levels {
 		sort.Strings(levels[i])
 	}
-	return levels, serialized, nil
+	return levels
+}
+
+// PlanParallelLevels orders tasks into deterministic execution levels:
+// explicit DependsOn edges plus implicit collision edges (sorted id
+// order; explicit order wins when it already orders a colliding pair).
+// Every task appears exactly once; tasks in one level never depend on
+// each other and never collide, so a level may run concurrently while
+// levels run in order. Cycles fail closed naming the loop.
+func PlanParallelLevels(tasks []ParallelTask) (levels [][]string, serialized [][2]string, err error) {
+	if err := ValidateParallelTasks(tasks); err != nil {
+		return nil, nil, err
+	}
+	byID := parallelByID(tasks)
+	succ := buildParallelSucc(tasks)
+	edges := buildParallelExplicitEdges(tasks)
+	serialized = appendParallelCollisionEdges(tasks, succ, edges)
+	order, indeg := kahnParallelOrder(tasks, edges)
+	if len(order) != len(tasks) {
+		return nil, nil, parallelCycleError(indeg)
+	}
+	return assignParallelLevels(order, byID, edges), serialized, nil
 }
 
 // FlattenParallelLevels renders the merge order: levels concatenated,
