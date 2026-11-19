@@ -61,6 +61,27 @@ func addQualitySegmentFlags(fs *flag.FlagSet, s *qualitySegmentFlags) {
 	fs.StringVar(&s.version, "version", "", "segment version (empty = any)")
 }
 
+// resolveQualityThresholds loads explicit thresholds or the
+// documented defaults when no file is given.
+func resolveQualityThresholds(thPath string) (quality.Thresholds, error) {
+	if thPath == "" {
+		return quality.DefaultThresholds(), nil
+	}
+	return quality.LoadThresholds(thPath)
+}
+
+// buildQualityBaseline folds the window (plus optional Lab evidence)
+// into a baseline over seg. Pure except for the clock: the same
+// inputs always build the same baseline.
+func buildQualityBaseline(seg quality.Segment, window, labDir string, th quality.Thresholds, now time.Time) (quality.Baseline, error) {
+	obs, _, ev, err := qualityBaselineInputs(window, labDir)
+	if err != nil {
+		return quality.Baseline{}, err
+	}
+	matched, _ := quality.Select(seg, obs)
+	return quality.BuildBaseline(seg, matched, th, ev, now)
+}
+
 // QualityBaselineCmd implements `regulus quality baseline`.
 func (io IO) QualityBaselineCmd(args []string) int {
 	var seg qualitySegmentFlags
@@ -79,22 +100,12 @@ func (io IO) QualityBaselineCmd(args []string) int {
 		fmt.Fprintln(io.Stderr, qualityUsage())
 		return 2
 	}
-	th := quality.DefaultThresholds()
-	if *thPath != "" {
-		loaded, err := quality.LoadThresholds(*thPath)
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "quality baseline: %v\n", err)
-			return 1
-		}
-		th = loaded
-	}
-	obs, _, ev, err := qualityBaselineInputs(*window, *labDir)
+	th, err := resolveQualityThresholds(*thPath)
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "quality baseline: %v\n", err)
 		return 1
 	}
-	matched, _ := quality.Select(seg.segment(), obs)
-	b, err := quality.BuildBaseline(seg.segment(), matched, th, ev, time.Now())
+	b, err := buildQualityBaseline(seg.segment(), *window, *labDir, th, time.Now())
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "quality baseline: %v\n", err)
 		return 1

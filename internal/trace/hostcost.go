@@ -243,6 +243,75 @@ func CostMoneyByTask(root string, rates []RateCard) ([]TaskMoney, error) {
 // prices the bucket. A root with no traces yields no lines and no
 // error; a malformed line or a hostile total fails like the token
 // folds do.
+// moneyFilterKeeps reports whether one trace entry survives the
+// task/agent/run scope filters (empty means any).
+func moneyFilterKeeps(e Entry, task, agent, run string) bool {
+	if task != "" && taskKey(e) != task {
+		return false
+	}
+	if agent != "" && agentKey(e) != agent {
+		return false
+	}
+	if run != "" && e.ExecutionID != run {
+		return false
+	}
+	return true
+}
+
+// moneyBucketFor resolves the per-task/model/version bucket behind
+// one entry, creating it on first use. Entries without a task land
+// in the unattributed bucket, never in a measured zero.
+func moneyBucketFor(byKey map[string]*TaskMoney, e Entry) (*TaskMoney, string) {
+	t := e.Task
+	if t == "" {
+		t = UnattributedTask
+	}
+	k := t + "\x00" + e.Model + "\x00" + e.HostVersion
+	m, ok := byKey[k]
+	if !ok {
+		m = &TaskMoney{Task: t, Model: e.Model, Host: e.Host, HostVersion: e.HostVersion}
+		byKey[k] = m
+	}
+	return m, k
+}
+
+// moneyAddCounts folds one entry's token counts into its bucket.
+// A hostile total aborts with the bucket name, like the token
+// folds do.
+func moneyAddCounts(m *TaskMoney, e Entry, k string) error {
+	var aerr error
+	if m.InputTokens, aerr = addCounts(m.InputTokens, e.InputTokens); aerr != nil {
+		return fmt.Errorf("money fold %q: %v", k, aerr)
+	}
+	if m.OutputTokens, aerr = addCounts(m.OutputTokens, e.OutputTokens); aerr != nil {
+		return fmt.Errorf("money fold %q: %v", k, aerr)
+	}
+	if m.ReasoningTokens, aerr = addCounts(m.ReasoningTokens, e.ReasoningTokens); aerr != nil {
+		return fmt.Errorf("money fold %q: %v", k, aerr)
+	}
+	if m.CacheRead, aerr = addCounts(m.CacheRead, e.CacheRead); aerr != nil {
+		return fmt.Errorf("money fold %q: %v", k, aerr)
+	}
+	if m.CacheWrite, aerr = addCounts(m.CacheWrite, e.CacheWrite); aerr != nil {
+		return fmt.Errorf("money fold %q: %v", k, aerr)
+	}
+	return nil
+}
+
+// moneyTrackProvenance records the usage source once and one
+// distinct session behind the bucket.
+func moneyTrackProvenance(m *TaskMoney, e Entry, s string) {
+	if e.UsageSource != "" && m.Source == "" {
+		m.Source = e.UsageSource
+	}
+	for _, have := range m.Sessions {
+		if have == s {
+			return
+		}
+	}
+	m.Sessions = append(m.Sessions, s)
+}
+
 func CostMoneyByTaskFiltered(root string, rates []RateCard, task, agent, run string) ([]TaskMoney, error) {
 	sessions, err := Sessions(root)
 	if err != nil {
@@ -255,54 +324,14 @@ func CostMoneyByTaskFiltered(root string, rates []RateCard, task, agent, run str
 			return nil, err
 		}
 		for _, e := range entries {
-			if task != "" && taskKey(e) != task {
+			if !moneyFilterKeeps(e, task, agent, run) {
 				continue
 			}
-			if agent != "" && agentKey(e) != agent {
-				continue
+			m, k := moneyBucketFor(byKey, e)
+			if err := moneyAddCounts(m, e, k); err != nil {
+				return nil, err
 			}
-			if run != "" && e.ExecutionID != run {
-				continue
-			}
-			t := e.Task
-			if t == "" {
-				t = UnattributedTask
-			}
-			k := t + "\x00" + e.Model + "\x00" + e.HostVersion
-			m, ok := byKey[k]
-			if !ok {
-				m = &TaskMoney{Task: t, Model: e.Model, Host: e.Host, HostVersion: e.HostVersion}
-				byKey[k] = m
-			}
-			var aerr error
-			if m.InputTokens, aerr = addCounts(m.InputTokens, e.InputTokens); aerr != nil {
-				return nil, fmt.Errorf("money fold %q: %v", k, aerr)
-			}
-			if m.OutputTokens, aerr = addCounts(m.OutputTokens, e.OutputTokens); aerr != nil {
-				return nil, fmt.Errorf("money fold %q: %v", k, aerr)
-			}
-			if m.ReasoningTokens, aerr = addCounts(m.ReasoningTokens, e.ReasoningTokens); aerr != nil {
-				return nil, fmt.Errorf("money fold %q: %v", k, aerr)
-			}
-			if m.CacheRead, aerr = addCounts(m.CacheRead, e.CacheRead); aerr != nil {
-				return nil, fmt.Errorf("money fold %q: %v", k, aerr)
-			}
-			if m.CacheWrite, aerr = addCounts(m.CacheWrite, e.CacheWrite); aerr != nil {
-				return nil, fmt.Errorf("money fold %q: %v", k, aerr)
-			}
-			if e.UsageSource != "" && m.Source == "" {
-				m.Source = e.UsageSource
-			}
-			found := false
-			for _, have := range m.Sessions {
-				if have == s {
-					found = true
-					break
-				}
-			}
-			if !found {
-				m.Sessions = append(m.Sessions, s)
-			}
+			moneyTrackProvenance(m, e, s)
 		}
 	}
 	out := make([]TaskMoney, 0, len(byKey))

@@ -108,50 +108,163 @@ func isBreakingContract(c string) bool {
 	return strings.HasPrefix(n, "breaking:") || strings.Contains(n, "!")
 }
 
-// BuildPlan derives the verification plan over an already-built
-// impact graph. head is the git HEAD (or "worktree" without git —
-// the edge resolves it, the engine only records it).
-func BuildPlan(g impact.Graph, changed []string, opts PlanOptions, head string) (Plan, error) {
+// parsePlanScope validates the scope vocabulary and the mission id
+// required for mission scope.
+func parsePlanScope(opts PlanOptions) (string, error) {
 	scope, err := ParseScope(opts.Scope)
 	if err != nil {
-		return Plan{}, err
+		return "", err
 	}
+	if scope == ScopeMission && strings.TrimSpace(opts.MissionID) == "" {
+		return "", fmt.Errorf("verify: mission scope requires --mission")
+	}
+	return scope, nil
+}
+
+// validatePlanChangedSeverity refuses empty diffs and out-of-range
+// F12.4 severities.
+func validatePlanChangedSeverity(changed []string, severity float64) error {
 	if len(changed) == 0 {
-		return Plan{}, fmt.Errorf("verify: --changed must name at least one path")
+		return fmt.Errorf("verify: --changed must name at least one path")
 	}
-	if opts.Severity < 0 || opts.Severity > 1 {
-		return Plan{}, fmt.Errorf("verify: --severity must be 0..1 (observed F12.4 rate), got %v", opts.Severity)
+	if severity < 0 || severity > 1 {
+		return fmt.Errorf("verify: --severity must be 0..1 (observed F12.4 rate), got %v", severity)
 	}
+	return nil
+}
+
+// validatePlanIDs checks the task/mission identity lines.
+func validatePlanIDs(opts PlanOptions) error {
 	for _, v := range []struct{ name, val string }{
 		{"task", opts.TaskID}, {"mission", opts.MissionID},
 	} {
 		if err := singleLine(v.name, v.val, false); err != nil {
-			return Plan{}, err
+			return err
 		}
 	}
-	if scope == ScopeMission && strings.TrimSpace(opts.MissionID) == "" {
-		return Plan{}, fmt.Errorf("verify: mission scope requires --mission")
-	}
+	return nil
+}
+
+// validatePlanLists checks every contract and criterion line.
+func validatePlanLists(opts PlanOptions) error {
 	for i, c := range opts.Contracts {
 		if err := singleLine(fmt.Sprintf("contracts[%d]", i), c, true); err != nil {
-			return Plan{}, err
+			return err
 		}
 	}
 	for i, c := range opts.Criteria {
 		if err := singleLine(fmt.Sprintf("criteria[%d]", i), c, true); err != nil {
-			return Plan{}, err
+			return err
 		}
 	}
-	override := ""
-	if strings.TrimSpace(opts.TierOverride) != "" {
-		tier, err := bench.ParseTier(opts.TierOverride)
-		if err != nil {
-			return Plan{}, fmt.Errorf("verify: %v", err)
+	return nil
+}
+
+// resolvePlanTierOverride parses the optional tier override: empty
+// means no override, L3 never rides on focus.
+func resolvePlanTierOverride(tierOverride string) (string, error) {
+	if strings.TrimSpace(tierOverride) == "" {
+		return "", nil
+	}
+	tier, err := bench.ParseTier(tierOverride)
+	if err != nil {
+		return "", fmt.Errorf("verify: %v", err)
+	}
+	if tier == bench.TierL3 {
+		return "", fmt.Errorf("verify: tier L3 nunca por foco (solo periódica/pre-release, holdout sellado)")
+	}
+	return tier, nil
+}
+
+// collectPlanContracts sorts the contracts, reports whether any
+// contract moved and lists the breaking ones.
+func collectPlanContracts(contracts []string) ([]string, bool, []string) {
+	sorted := sortedUnique(contracts)
+	var breaking []string
+	for _, c := range sorted {
+		if isBreakingContract(c) {
+			breaking = append(breaking, c)
 		}
-		if tier == bench.TierL3 {
-			return Plan{}, fmt.Errorf("verify: tier L3 nunca por foco (solo periódica/pre-release, holdout sellado)")
-		}
-		override = tier
+	}
+	return sorted, len(sorted) > 0, breaking
+}
+
+// escalatePlanRisk folds uncertainty onto the impact level, copying
+// the reasons so callers own their slice.
+func escalatePlanRisk(level string, widened bool, severity float64, contractChanged, hasBreaking bool) (string, []string) {
+	effective, escalation := EscalateRisk(level, widened, severity, contractChanged, hasBreaking)
+	return effective, append([]string{}, escalation...)
+}
+
+// decidePlanTier applies the tier override over the needed tier: a
+// weak override under uncertainty is refused, otherwise the maximum
+// wins and the escalation names it.
+func decidePlanTier(override, needed, selTier, floor string, imp impact.Impact, hasBreaking bool, escalation []string) (string, []string, error) {
+	if override == "" {
+		return needed, escalation, nil
+	}
+	if riskTierRank(override) < riskTierRank(needed) && (imp.Widened || len(imp.Critical) > 0 || hasBreaking) {
+		return "", nil, fmt.Errorf("verify: override %s bajo el necesario %s con incertidumbre (widened/críticos/breaking): el foco débil nunca omite pruebas críticas", override, needed)
+	}
+	tier := higherTier(override, needed)
+	if override != needed {
+		escalation = append(escalation, fmt.Sprintf("tier override %s: rige %s (máximo entre override, impacto %s y piso %s)", override, tier, selTier, floor))
+	}
+	return tier, escalation, nil
+}
+
+// selectPlanFocused widens the focused suite to full when
+// criticals/breaking force it, keeping the contrast.
+func selectPlanFocused(focused, full, omitted []string, widen, impWidened bool) ([]string, []string) {
+	if widen && !impWidened {
+		// Impact already widened to full when the input maps to no
+		// node; this arm widens on criticals/breaking even when the
+		// diff maps cleanly: run everything, keep the contrast.
+		return append([]string(nil), full...), nil
+	}
+	return focused, omitted
+}
+
+// resolvePlanCriteria keeps explicit criteria or the documented
+// default contract.
+func resolvePlanCriteria(in []string) []string {
+	criteria := append([]string(nil), in...)
+	if len(criteria) == 0 {
+		criteria = append([]string(nil), DefaultCriteria...)
+	}
+	return criteria
+}
+
+// resolvePlanProvenance pins the diff hash and the resolved HEAD.
+func resolvePlanProvenance(prov Provenance, changed []string, head string) Provenance {
+	prov.DiffHash = DiffHash(changed)
+	if strings.TrimSpace(head) == "" {
+		head = "worktree"
+	}
+	prov.Commit = head
+	return prov
+}
+
+// BuildPlan derives the verification plan over an already-built
+// impact graph. head is the git HEAD (or "worktree" without git —
+// the edge resolves it, the engine only records it).
+func BuildPlan(g impact.Graph, changed []string, opts PlanOptions, head string) (Plan, error) {
+	scope, err := parsePlanScope(opts)
+	if err != nil {
+		return Plan{}, err
+	}
+	if err := validatePlanChangedSeverity(changed, opts.Severity); err != nil {
+		return Plan{}, err
+	}
+	if err := validatePlanIDs(opts); err != nil {
+		return Plan{}, err
+	}
+	if err := validatePlanLists(opts); err != nil {
+		return Plan{}, err
+	}
+	override, err := resolvePlanTierOverride(opts.TierOverride)
+	if err != nil {
+		return Plan{}, err
 	}
 	if err := opts.Provenance.validate(); err != nil {
 		return Plan{}, err
@@ -162,53 +275,24 @@ func BuildPlan(g impact.Graph, changed []string, opts PlanOptions, head string) 
 	sel := impact.SelectSuite(g, imp, nil)
 	sel.Metrics = impact.MeasureSelection(sel.Focused, nil, sel.Full)
 
-	contracts := sortedUnique(opts.Contracts)
-	contractChanged := len(contracts) > 0
-	var breaking []string
-	for _, c := range contracts {
-		if isBreakingContract(c) {
-			breaking = append(breaking, c)
-		}
-	}
+	contracts, contractChanged, breaking := collectPlanContracts(opts.Contracts)
 
-	effective, escalation := EscalateRisk(risk.Level, imp.Widened, opts.Severity, contractChanged, len(breaking) > 0)
-	escalation = append([]string{}, escalation...)
+	effective, escalation := escalatePlanRisk(risk.Level, imp.Widened, opts.Severity, contractChanged, len(breaking) > 0)
 	floor := RiskTierFloor(effective)
 	needed := higherTier(sel.Tier, bench.RecommendTier(changed), floor)
-	tier := needed
-	if override != "" {
-		if riskTierRank(override) < riskTierRank(needed) && (imp.Widened || len(imp.Critical) > 0 || len(breaking) > 0) {
-			return Plan{}, fmt.Errorf("verify: override %s bajo el necesario %s con incertidumbre (widened/críticos/breaking): el foco débil nunca omite pruebas críticas", override, needed)
-		}
-		tier = higherTier(override, needed)
-		if override != needed {
-			escalation = append(escalation, fmt.Sprintf("tier override %s: rige %s (máximo entre override, impacto %s y piso %s)", override, tier, sel.Tier, floor))
-		}
+	tier, escalation, err := decidePlanTier(override, needed, sel.Tier, floor, imp, len(breaking) > 0, escalation)
+	if err != nil {
+		return Plan{}, err
 	}
 	widen, widenReasons := ShouldWiden(imp.Widened, len(imp.Critical) > 0, len(breaking) > 0, override, needed)
-	focused, omitted := sel.Focused, sel.Omitted
-	if widen && !imp.Widened {
-		// Impact already widened to full when the input maps to no
-		// node; this arm widens on criticals/breaking even when the
-		// diff maps cleanly: run everything, keep the contrast.
-		focused = append([]string(nil), sel.Full...)
-		omitted = nil
-	}
+	focused, omitted := selectPlanFocused(sel.Focused, sel.Full, sel.Omitted, widen, imp.Widened)
 	spec, required, gateReasons := RequiredGates(effective, contractChanged, len(breaking) > 0, escalation)
 	_ = required
 	gateReasons = append(gateReasons, widenReasons...)
 	gateReasons = append(gateReasons, sel.Reasons...)
 
-	criteria := append([]string(nil), opts.Criteria...)
-	if len(criteria) == 0 {
-		criteria = append([]string(nil), DefaultCriteria...)
-	}
-	prov := opts.Provenance
-	prov.DiffHash = DiffHash(changed)
-	if strings.TrimSpace(head) == "" {
-		head = "worktree"
-	}
-	prov.Commit = head
+	criteria := resolvePlanCriteria(opts.Criteria)
+	prov := resolvePlanProvenance(opts.Provenance, changed, head)
 
 	p := Plan{
 		Version: VerifyVersion, Scope: scope,

@@ -148,31 +148,118 @@ func governedBlock(c *GovernedCycle, by, verdict, reason, detail string) Governe
 	return d
 }
 
+// loadVerifiedGovernedCycle loads the stored cycle and revalidates its
+// frozen pin and history continuity.
+func loadVerifiedGovernedCycle(root, cycleID string) (GovernedCycle, error) {
+	c, err := LoadGovernedCycle(root, cycleID)
+	if err != nil {
+		return GovernedCycle{}, err
+	}
+	if err := VerifyGovernedCycle(c); err != nil {
+		return GovernedCycle{}, err
+	}
+	return c, nil
+}
+
+// checkGovernedCompareReady refuses compares outside
+// DECLARED/CANDIDATES, by anyone but the pinned evaluator, without
+// a linked plan or without a versioned candidate.
+func checkGovernedCompareReady(c GovernedCycle, by string) error {
+	if c.State != GovernedDeclared && c.State != GovernedCandidates {
+		return fmt.Errorf("evolve: governed cycle %s compares from DECLARED/CANDIDATES, not %s", c.ID, c.State)
+	}
+	if strings.TrimSpace(by) != c.Roles.Evaluator {
+		return fmt.Errorf("evolve: only the pinned evaluator %q compares (got %q: proposer never scores its own change)",
+			c.Roles.Evaluator, strings.TrimSpace(by))
+	}
+	if strings.TrimSpace(c.PlanID) == "" {
+		return errors.New("evolve: governed cycle compares through its linked validation plan (link one first)")
+	}
+	if len(c.Candidates) == 0 {
+		return errors.New("evolve: governed cycle needs at least one versioned candidate before comparing")
+	}
+	return nil
+}
+
+// buildGovernedEval folds the five governed dimensions around the
+// frozen plan verdict. Candidates were injection-screened at propose
+// time; the review probes them again independently, so the security
+// line records the posture, not a second gate.
+func buildGovernedEval(c GovernedCycle, cmp ValidationComparison, p ValidationPlan, exp []ValidationTrial, holdTrials []ValidationTrial) GovernedEval {
+	latency, cost := foldGovernedDims(exp)
+	security := "no injection markers in candidate contents; domain holds (non-regression)"
+	hold := "holdout: not run (sealed; confirms only when present)"
+	if len(holdTrials) > 0 {
+		if holdoutContradicts(holdTrials) {
+			hold = "holdout CONTRADICTS the exploration verdict: adoption refused"
+		} else {
+			hold = "holdout does not contradict the exploration verdict (confirmation-only)"
+		}
+	}
+	regressions := "no regression: candidate gap >= 0 on the primary metric"
+	return GovernedEval{
+		PlanID: p.ID, PlanVerdict: cmp.Verdict,
+		GapPassRate: fmt.Sprintf("%.4f descriptive (%s)", cmp.GapPassRate, cmp.Honesty),
+		Quality:     fmt.Sprintf("baseline pass-rate %.4f (evaluable %d) vs candidate %.4f (evaluable %d)", cmp.Baseline.PassRate, cmp.Baseline.Evaluable, cmp.Candidate.PassRate, cmp.Candidate.Evaluable),
+		Latency:     latency, Cost: cost, Security: security,
+		Regressions: regressions, Holdout: hold,
+		ComparedAt: time.Now().UTC().Format(time.RFC3339), ExploredTrials: len(exp),
+	}
+}
+
+// blockGovernedCompareIfNeeded seals the cycle BLOCKED when the
+// verdict cannot promote: insufficient evidence, regression/stall
+// or a contradicting holdout. It reports handled=true with the
+// terminal error; otherwise handled=false.
+func blockGovernedCompareIfNeeded(root string, c *GovernedCycle, by string, cmp ValidationComparison, holdTrials []ValidationTrial, ev GovernedEval) (GovernedEval, bool, error) {
+	switch {
+	case cmp.Verdict == RobustInsufficient:
+		governedBlock(c, by, cmp.Verdict, "insufficient evaluable evidence: missing/infra outcomes are never scored as pass", ev.Quality)
+		if err := c.saveGovernedCycle(root); err != nil {
+			return GovernedEval{}, true, err
+		}
+		return ev, true, fmt.Errorf("evolve: governed cycle %s BLOCKED: %s", c.ID, "insufficient evaluable evidence")
+	case cmp.Verdict == RobustKeepBaseline:
+		governedBlock(c, by, cmp.Verdict, "candidate regresses or stalls below MinDelta: non-regression rule keeps the baseline", ev.GapPassRate)
+		if err := c.saveGovernedCycle(root); err != nil {
+			return GovernedEval{}, true, err
+		}
+		return ev, true, fmt.Errorf("evolve: governed cycle %s BLOCKED: %s", c.ID, cmp.Reason)
+	case holdoutContradicts(holdTrials) && cmp.Verdict == RobustAdoptCandidate:
+		governedBlock(c, by, cmp.Verdict, "holdout contradicts the exploration verdict: revisit in a new cycle, do not adopt", ev.Holdout)
+		if err := c.saveGovernedCycle(root); err != nil {
+			return GovernedEval{}, true, err
+		}
+		return ev, true, fmt.Errorf("evolve: governed cycle %s BLOCKED: holdout contradicts the exploration verdict", c.ID)
+	}
+	return ev, false, nil
+}
+
+// sealGovernedCompared records the successful comparison and moves
+// the cycle to COMPARED.
+func sealGovernedCompared(root string, c *GovernedCycle, by string, ev GovernedEval, cmpReason string, expN int) error {
+	c.Evaluation = &ev
+	from := c.State
+	c.State = GovernedCompared
+	c.History = append(c.History, ExpHistoryEvent{
+		At: ev.ComparedAt, Kind: "compared", From: from, To: GovernedCompared,
+		By: by, Note: fmt.Sprintf("plan verdict %s over %d exploration trials; %s", ev.PlanVerdict, expN, cmpReason),
+	})
+	return c.saveGovernedCycle(root)
+}
+
 // CompareGovernedCycle evaluates the cycle over its linked plan: the
 // plan verdict decides (frozen by CompareValidation when still
 // RUNNING), the five dimensions are folded around it, and anything
 // but a promotable verdict blocks with its evidence. Only the pinned
 // evaluator compares.
 func CompareGovernedCycle(root, cycleID, by string) (GovernedEval, error) {
-	c, err := LoadGovernedCycle(root, cycleID)
+	c, err := loadVerifiedGovernedCycle(root, cycleID)
 	if err != nil {
 		return GovernedEval{}, err
 	}
-	if err := VerifyGovernedCycle(c); err != nil {
+	if err := checkGovernedCompareReady(c, by); err != nil {
 		return GovernedEval{}, err
-	}
-	if c.State != GovernedDeclared && c.State != GovernedCandidates {
-		return GovernedEval{}, fmt.Errorf("evolve: governed cycle %s compares from DECLARED/CANDIDATES, not %s", c.ID, c.State)
-	}
-	if strings.TrimSpace(by) != c.Roles.Evaluator {
-		return GovernedEval{}, fmt.Errorf("evolve: only the pinned evaluator %q compares (got %q: proposer never scores its own change)",
-			c.Roles.Evaluator, strings.TrimSpace(by))
-	}
-	if strings.TrimSpace(c.PlanID) == "" {
-		return GovernedEval{}, errors.New("evolve: governed cycle compares through its linked validation plan (link one first)")
-	}
-	if len(c.Candidates) == 0 {
-		return GovernedEval{}, errors.New("evolve: governed cycle needs at least one versioned candidate before comparing")
 	}
 	cmp, err := CompareValidation(root, c.PlanID)
 	if err != nil {
@@ -183,57 +270,12 @@ func CompareGovernedCycle(root, cycleID, by string) (GovernedEval, error) {
 		return GovernedEval{}, err
 	}
 	exp := explorationTrials(p)
-	latency, cost := foldGovernedDims(exp)
-	// Candidates were injection-screened at propose time; the review
-	// probes them again independently. The check here is the recorded
-	// posture, not a second gate.
-	security := "no injection markers in candidate contents; domain holds (non-regression)"
-	hold := "holdout: not run (sealed; confirms only when present)"
 	holdTrials := holdoutTrials(p)
-	if len(holdTrials) > 0 {
-		if holdoutContradicts(holdTrials) {
-			hold = "holdout CONTRADICTS the exploration verdict: adoption refused"
-		} else {
-			hold = "holdout does not contradict the exploration verdict (confirmation-only)"
-		}
+	ev := buildGovernedEval(c, cmp, p, exp, holdTrials)
+	if blockedEv, blocked, err := blockGovernedCompareIfNeeded(root, &c, by, cmp, holdTrials, ev); blocked {
+		return blockedEv, err
 	}
-	regressions := "no regression: candidate gap >= 0 on the primary metric"
-	ev := GovernedEval{
-		PlanID: p.ID, PlanVerdict: cmp.Verdict,
-		GapPassRate: fmt.Sprintf("%.4f descriptive (%s)", cmp.GapPassRate, cmp.Honesty),
-		Quality:     fmt.Sprintf("baseline pass-rate %.4f (evaluable %d) vs candidate %.4f (evaluable %d)", cmp.Baseline.PassRate, cmp.Baseline.Evaluable, cmp.Candidate.PassRate, cmp.Candidate.Evaluable),
-		Latency:     latency, Cost: cost, Security: security,
-		Regressions: regressions, Holdout: hold,
-		ComparedAt: time.Now().UTC().Format(time.RFC3339), ExploredTrials: len(exp),
-	}
-	switch {
-	case cmp.Verdict == RobustInsufficient:
-		governedBlock(&c, by, cmp.Verdict, "insufficient evaluable evidence: missing/infra outcomes are never scored as pass", ev.Quality)
-		if err := c.saveGovernedCycle(root); err != nil {
-			return GovernedEval{}, err
-		}
-		return ev, fmt.Errorf("evolve: governed cycle %s BLOCKED: %s", c.ID, "insufficient evaluable evidence")
-	case cmp.Verdict == RobustKeepBaseline:
-		governedBlock(&c, by, cmp.Verdict, "candidate regresses or stalls below MinDelta: non-regression rule keeps the baseline", ev.GapPassRate)
-		if err := c.saveGovernedCycle(root); err != nil {
-			return GovernedEval{}, err
-		}
-		return ev, fmt.Errorf("evolve: governed cycle %s BLOCKED: %s", c.ID, cmp.Reason)
-	case holdoutContradicts(holdTrials) && cmp.Verdict == RobustAdoptCandidate:
-		governedBlock(&c, by, cmp.Verdict, "holdout contradicts the exploration verdict: revisit in a new cycle, do not adopt", hold)
-		if err := c.saveGovernedCycle(root); err != nil {
-			return GovernedEval{}, err
-		}
-		return ev, fmt.Errorf("evolve: governed cycle %s BLOCKED: holdout contradicts the exploration verdict", c.ID)
-	}
-	c.Evaluation = &ev
-	from := c.State
-	c.State = GovernedCompared
-	c.History = append(c.History, ExpHistoryEvent{
-		At: ev.ComparedAt, Kind: "compared", From: from, To: GovernedCompared,
-		By: by, Note: fmt.Sprintf("plan verdict %s over %d exploration trials; %s", cmp.Verdict, len(exp), cmp.Reason),
-	})
-	if err := c.saveGovernedCycle(root); err != nil {
+	if err := sealGovernedCompared(root, &c, by, ev, cmp.Reason, len(exp)); err != nil {
 		return GovernedEval{}, err
 	}
 	return ev, nil

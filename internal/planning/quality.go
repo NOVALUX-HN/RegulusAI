@@ -186,49 +186,50 @@ func coverSuffix(c Criterion) string {
 	return ""
 }
 
-// gradeQuality runs the named quality gates over the finished plan.
-func gradeQuality(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) Quality {
-	q := Quality{}
+// indexQualityAgents keys the routed registry by agent id.
+func indexQualityAgents(reg []orchestrate.RoutedAgent) map[string]orchestrate.RoutedAgent {
 	byAgent := map[string]orchestrate.RoutedAgent{}
 	for _, a := range reg {
 		byAgent[a.ID] = a
 	}
-	check := func(name string, pass bool, detail string) {
-		q.Checks = append(q.Checks, Check{Name: name, Pass: pass, Detail: detail})
-	}
-	if p.Kind == KindAdversarial {
-		check("plan-no-vacio", false, "rehusado a propósito: cero tareas sobre solicitud adversarial")
-		check("capabilities-verificadas", true, "nada asignado sin evidencia")
-		return q
-	}
-	check("plan-no-vacio", len(p.Tasks) > 0,
-		fmt.Sprintf("%d tarea(s) planificada(s)", len(p.Tasks)))
+	return byAgent
+}
+
+// checkQualityNonEmpty grades the non-empty plan.
+func checkQualityNonEmpty(p *Plan) (bool, string) {
+	return len(p.Tasks) > 0, fmt.Sprintf("%d tarea(s) planificada(s)", len(p.Tasks))
+}
+
+// checkQualityCovered grades criterion coverage.
+func checkQualityCovered(p *Plan) (bool, string) {
 	uncovered := []string{}
 	for _, c := range p.Criteria {
 		if c.CoveringTask == "" {
 			uncovered = append(uncovered, trimWords(c.Text, 8))
 		}
 	}
-	check("criterios-cubiertos", len(uncovered) == 0,
-		func() string {
-			if len(uncovered) == 0 {
-				return fmt.Sprintf("los %d criterio(s) tienen tarea covering (no-omisión)", len(p.Criteria))
-			}
-			return "sin covering: " + strings.Join(uncovered, "; ")
-		}())
+	if len(uncovered) == 0 {
+		return true, fmt.Sprintf("los %d criterio(s) tienen tarea covering (no-omisión)", len(p.Criteria))
+	}
+	return false, "sin covering: " + strings.Join(uncovered, "; ")
+}
+
+// checkQualityVerifiable grades criterion verifiability.
+func checkQualityVerifiable(p *Plan) (bool, string) {
 	badCrit := []string{}
 	for _, c := range p.Criteria {
 		if !c.Verifiable {
 			badCrit = append(badCrit, trimWords(c.Text, 8))
 		}
 	}
-	check("criterios-verificables", len(badCrit) == 0,
-		func() string {
-			if len(badCrit) == 0 {
-				return "todo criterio es Given/When/Then medible"
-			}
-			return "ambiguos (bloquean antes de ejecutar): " + strings.Join(badCrit, "; ")
-		}())
+	if len(badCrit) == 0 {
+		return true, "todo criterio es Given/When/Then medible"
+	}
+	return false, "ambiguos (bloquean antes de ejecutar): " + strings.Join(badCrit, "; ")
+}
+
+// checkQualityCaps grades verified capabilities.
+func checkQualityCaps(p *Plan, manifests map[string]bench.HostManifest) (bool, string) {
 	badCaps := []string{}
 	for _, t := range p.Tasks {
 		for _, c := range t.RequiredCapabilities {
@@ -237,13 +238,14 @@ func gradeQuality(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]b
 			}
 		}
 	}
-	check("capabilities-verificadas", len(badCaps) == 0,
-		func() string {
-			if len(badCaps) == 0 {
-				return "toda capability exigida está probada con evidencia fechada"
-			}
-			return "sin verificar: " + strings.Join(badCaps, ", ")
-		}())
+	if len(badCaps) == 0 {
+		return true, "toda capability exigida está probada con evidencia fechada"
+	}
+	return false, "sin verificar: " + strings.Join(badCaps, ", ")
+}
+
+// checkQualityScopes grades minimal scopes against the agent grant.
+func checkQualityScopes(p *Plan, byAgent map[string]orchestrate.RoutedAgent) (bool, string) {
 	badScopes := []string{}
 	for _, t := range p.Tasks {
 		a, ok := byAgent[t.Agent]
@@ -258,46 +260,50 @@ func gradeQuality(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]b
 			badScopes = append(badScopes, t.ID+":excede-"+t.Agent)
 		}
 	}
-	check("scopes-minimos", len(badScopes) == 0,
-		func() string {
-			if len(badScopes) == 0 {
-				return "toda tarea pide un subconjunto de los scopes de su agente"
-			}
-			return "excesos: " + strings.Join(badScopes, ", ")
-		}())
-	check("dag-aciclico", len(p.DAG.Cycles) == 0,
-		func() string {
-			if len(p.DAG.Cycles) == 0 {
-				return fmt.Sprintf("orden %s en %d nivel(es)", strings.Join(p.DAG.Order, ","), len(p.DAG.Levels))
-			}
-			return fmt.Sprintf("%d ciclo(s) detectado(s)", len(p.DAG.Cycles))
-		}())
+	if len(badScopes) == 0 {
+		return true, "toda tarea pide un subconjunto de los scopes de su agente"
+	}
+	return false, "excesos: " + strings.Join(badScopes, ", ")
+}
+
+// checkQualityDAG grades acyclicity.
+func checkQualityDAG(p *Plan) (bool, string) {
+	if len(p.DAG.Cycles) == 0 {
+		return true, fmt.Sprintf("orden %s en %d nivel(es)", strings.Join(p.DAG.Order, ","), len(p.DAG.Levels))
+	}
+	return false, fmt.Sprintf("%d ciclo(s) detectado(s)", len(p.DAG.Cycles))
+}
+
+// checkQualityImpact grades known impact.
+func checkQualityImpact(p *Plan) (bool, string) {
 	unknown := []string{}
 	for _, t := range p.Tasks {
 		if !t.ImpactKnown {
 			unknown = append(unknown, t.ID)
 		}
 	}
-	check("impacto-conocido", len(unknown) == 0,
-		func() string {
-			if len(unknown) == 0 {
-				return "todo el alcance se verifica contra corpus y grafo"
-			}
-			return "impacto sin verificar en: " + strings.Join(unknown, ", ") + " (pide aclaración/aprobación)"
-		}())
+	if len(unknown) == 0 {
+		return true, "todo el alcance se verifica contra corpus y grafo"
+	}
+	return false, "impacto sin verificar en: " + strings.Join(unknown, ", ") + " (pide aclaración/aprobación)"
+}
+
+// checkQualityEstimates grades estimate labelling.
+func checkQualityEstimates(p *Plan) (bool, string) {
 	unlabelled := []string{}
 	for _, t := range p.Tasks {
 		if !strings.Contains(t.Estimate.Note, "estimación") {
 			unlabelled = append(unlabelled, t.ID)
 		}
 	}
-	check("estimaciones-etiquetadas", len(unlabelled) == 0,
-		func() string {
-			if len(unlabelled) == 0 {
-				return "toda estimación lleva la etiqueta «estimación, no medición»"
-			}
-			return "sin etiqueta: " + strings.Join(unlabelled, ", ")
-		}())
+	if len(unlabelled) == 0 {
+		return true, "toda estimación lleva la etiqueta «estimación, no medición»"
+	}
+	return false, "sin etiqueta: " + strings.Join(unlabelled, ", ")
+}
+
+// foldQualityWarnings keeps only the two blocking warnings.
+func foldQualityWarnings(q *Quality) {
 	for _, c := range q.Checks {
 		if !c.Pass && c.Name != "impacto-conocido" && c.Name != "criterios-verificables" {
 			continue
@@ -306,6 +312,37 @@ func gradeQuality(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]b
 			q.Warnings = append(q.Warnings, c.Name+": "+c.Detail)
 		}
 	}
+}
+
+// gradeQuality runs the named quality gates over the finished plan.
+func gradeQuality(p *Plan, reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest) Quality {
+	q := Quality{}
+	byAgent := indexQualityAgents(reg)
+	check := func(name string, pass bool, detail string) {
+		q.Checks = append(q.Checks, Check{Name: name, Pass: pass, Detail: detail})
+	}
+	if p.Kind == KindAdversarial {
+		check("plan-no-vacio", false, "rehusado a propósito: cero tareas sobre solicitud adversarial")
+		check("capabilities-verificadas", true, "nada asignado sin evidencia")
+		return q
+	}
+	pass, detail := checkQualityNonEmpty(p)
+	check("plan-no-vacio", pass, detail)
+	pass, detail = checkQualityCovered(p)
+	check("criterios-cubiertos", pass, detail)
+	pass, detail = checkQualityVerifiable(p)
+	check("criterios-verificables", pass, detail)
+	pass, detail = checkQualityCaps(p, manifests)
+	check("capabilities-verificadas", pass, detail)
+	pass, detail = checkQualityScopes(p, byAgent)
+	check("scopes-minimos", pass, detail)
+	pass, detail = checkQualityDAG(p)
+	check("dag-aciclico", pass, detail)
+	pass, detail = checkQualityImpact(p)
+	check("impacto-conocido", pass, detail)
+	pass, detail = checkQualityEstimates(p)
+	check("estimaciones-etiquetadas", pass, detail)
+	foldQualityWarnings(&q)
 	return q
 }
 
