@@ -69,7 +69,7 @@ func TestSplitShortCircuitEmptyTable(t *testing.T) {
 	ledger := &Ledger{Tasks: map[string]TaskRecord{
 		"t1": {TaskID: "t1", State: TaskBlocked},
 	}}
-	wave := []orchestrate.ParallelTask{{ID: "t1", Title: "t1"}}
+	wave := []orchestrate.ParallelTask{{ID: "t1", Title: "t1", EstimateMS: 100}}
 	for _, tc := range []struct {
 		name      string
 		wave      []orchestrate.ParallelTask
