@@ -124,34 +124,68 @@ func (io IO) OrchestrateDecideCmd(args []string) int {
 	}
 	manifests := bench.DefaultHostManifests(bench.EvidenceStamp())
 	reg := orchestrate.RegistryFromManifests(manifests)
-	if opts.unavailable != "" {
-		down := map[string]bool{}
-		for _, id := range splitList(opts.unavailable) {
-			down[id] = true
-		}
-		for i := range reg {
-			if down[reg[i].ID] {
-				reg[i].Available = false
-			}
+	reg = applyUnavailable(reg, opts.unavailable)
+	desc := buildTaskDescriptor(opts)
+	dec, code, ok := runDecision(reg, manifests, hist, desc, opts, io.Stderr)
+	if !ok {
+		return code
+	}
+	return io.emitDecision(dec, opts)
+}
+
+// applyUnavailable marks the named agents unavailable without
+// touching the registry order. Empty input returns the registry
+// unchanged; unknown ids are ignored like the inline loop.
+func applyUnavailable(reg []orchestrate.RoutedAgent, unavailable string) []orchestrate.RoutedAgent {
+	if unavailable == "" {
+		return reg
+	}
+	down := map[string]bool{}
+	for _, id := range splitList(unavailable) {
+		down[id] = true
+	}
+	for i := range reg {
+		if down[reg[i].ID] {
+			reg[i].Available = false
 		}
 	}
-	desc := orchestrate.TaskDescriptor{
+	return reg
+}
+
+// buildTaskDescriptor renders the parsed decide flags as the pure
+// routing input. No validation here: Decide owns the gates so the
+// command keeps its byte-identical refusals.
+func buildTaskDescriptor(opts orchestrateDecideOptions) orchestrate.TaskDescriptor {
+	return orchestrate.TaskDescriptor{
 		Domain: opts.domain, Language: opts.lang,
 		Complexity: opts.complexity, Risk: opts.risk,
 		Constraints: splitList(opts.constraints), Outputs: splitList(opts.outputs),
 		Criteria:             splitList(opts.criteria),
 		RequiredCapabilities: splitList(opts.caps),
 	}
+}
+
+// runDecision runs the pure routing verdict. A refusal prints the
+// byte-identical prefix and reports exit 2 with ok=false.
+func runDecision(reg []orchestrate.RoutedAgent, manifests map[string]bench.HostManifest, hist []orchestrate.AgentHistory, desc orchestrate.TaskDescriptor, opts orchestrateDecideOptions, stderr io.Writer) (orchestrate.Decision, int, bool) {
 	dec, err := orchestrate.Decide(reg, manifests, hist, desc,
 		orchestrate.Budgets{TimeMS: opts.budgetTimeMS, Tokens: opts.budgetTokens, Cost: opts.budgetCost},
 		opts.maxDelegations, opts.fixed, orchestrate.DefaultScoreWeights())
 	if err != nil {
-		fmt.Fprintf(io.Stderr, "orchestrate decide: %v\n", err)
-		return 2
+		fmt.Fprintf(stderr, "orchestrate decide: %v\n", err)
+		return orchestrate.Decision{}, 2, false
 	}
+	return dec, 0, true
+}
+
+// emitDecision records (unless dry-run) and renders one verdict.
+// Dry-run skips the F11.1 trace and the out dir; --json prints the
+// raw decision, otherwise the human rendering. An empty primary is
+// the justified refusal (exit 1) after rendering.
+func (io IO) emitDecision(dec orchestrate.Decision, opts orchestrateDecideOptions) int {
 	dec.DryRun = opts.dryRun
 	if !opts.dryRun {
-		dec.TraceHint = io.recordOrchestrateTrace("orchestrate decide", desc.Domain+"/"+desc.Language)
+		dec.TraceHint = io.recordOrchestrateTrace("orchestrate decide", dec.Task.Domain+"/"+dec.Task.Language)
 		if opts.out != "" {
 			if code := writeOrchestrateDecision(opts.out, dec, io.Stderr); code != 0 {
 				return code
@@ -238,8 +272,10 @@ func loadOrchestrateRates(path string, stderr io.Writer) ([]trace.RateCard, int,
 	return rates, 0, true
 }
 
-// loadOrchestrateHistory reads observed Lab results.
-func loadOrchestrateHistory(path string, rates []trace.RateCard, stderr io.Writer) ([]orchestrate.AgentHistory, int, bool) {
+// readHistoryFile loads the raw history bytes. An empty path is the
+// closed vacia case (no history); a missing file and an oversized
+// file refuse with exit 1 like the inline command.
+func readHistoryFile(path string, stderr io.Writer) ([]byte, int, bool) {
 	if path == "" {
 		return nil, 0, true
 	}
@@ -252,6 +288,12 @@ func loadOrchestrateHistory(path string, rates []trace.RateCard, stderr io.Write
 		fmt.Fprintln(stderr, "orchestrate: history file too large")
 		return nil, 1, false
 	}
+	return raw, 0, true
+}
+
+// decodeLabResults parses raw Lab results with strict fields and the
+// 10000-result bound, then folds them into per-agent history.
+func decodeLabResults(raw []byte, rates []trace.RateCard, stderr io.Writer) ([]orchestrate.AgentHistory, int, bool) {
 	var results []bench.LabResult
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -264,6 +306,18 @@ func loadOrchestrateHistory(path string, rates []trace.RateCard, stderr io.Write
 		return nil, 1, false
 	}
 	return orchestrate.SummarizeHistory(orchestrate.SamplesFromLabResults(results, rates)), 0, true
+}
+
+// loadOrchestrateHistory reads observed Lab results.
+func loadOrchestrateHistory(path string, rates []trace.RateCard, stderr io.Writer) ([]orchestrate.AgentHistory, int, bool) {
+	if path == "" {
+		return nil, 0, true
+	}
+	raw, code, ok := readHistoryFile(path, stderr)
+	if !ok {
+		return nil, code, false
+	}
+	return decodeLabResults(raw, rates, stderr)
 }
 
 // recordOrchestrateTrace links the decision to its F11.1 timeline.

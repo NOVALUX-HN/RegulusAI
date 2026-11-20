@@ -125,6 +125,129 @@ func LoadApprovedPlan(root, missionID string, version int, approveAll bool) (*mi
 // wait stay, so the scheduler (and the ledger pre-check) holds the
 // dependents. Tasks already terminal in the ledger never map.
 
+// shortCircuitEmpty fills the report states and reports whether the
+// wave short-circuits without touching the scheduler. Empty waves
+// seal nothing and return the confirmed states; dry-runs estimate
+// cost, seal nothing and return the confirmed states.
+func shortCircuitEmpty(rep *WaveReport, wave []orchestrate.ParallelTask, ledger *Ledger, o RunOptions) bool {
+	if len(wave) == 0 {
+		// Nothing runnable: every task is sealed, blocked or waiting.
+		// Resume short-circuits without touching the scheduler, so a
+		// second run never re-dispatches sealed work.
+		for id, rec := range ledger.Tasks {
+			rep.States[id] = rec.State
+		}
+		return true
+	}
+	if o.DryRun {
+		wall, agg := orchestrate.EstimateParallelCost(wave, concurrencyOf(o))
+		rep.WallMS, rep.AggregateMS = wall, agg
+		for id, rec := range ledger.Tasks {
+			rep.States[id] = rec.State
+		}
+		// Dry-run seals nothing: not the ledger, not the mission,
+		// not a trace event.
+		return true
+	}
+	return false
+}
+
+// sealAdmission seals readiness: every admitted task moves
+// pending/ready -> dispatched with its idempotency key. A task
+// already carrying a sealed op key for this attempt is never
+// re-keyed: resume reuses the key instead of dispatching twice.
+func sealAdmission(root, missionID string, planVersion int, wave []orchestrate.ParallelTask, now time.Time) (*Ledger, error) {
+	return UpdateLedger(root, missionID, now, func(l *Ledger) error {
+		for _, t := range wave {
+			rec := l.Tasks[t.ID]
+			if rec.OpKey != "" && (rec.State == TaskDispatched || rec.State == TaskRunning) {
+				continue
+			}
+			rec.Attempt++
+			rec.OpKey = OpKeyFor(missionID, planVersion, t.ID, rec.Attempt)
+			rec.Agent = t.Agent
+			// Legal admission path: pending/failed/blocked reopen
+			// through ready, then dispatch. Anything else fails
+			// closed instead of jumping the ledger.
+			if rec.State == TaskPending || rec.State == TaskFailed || rec.State == TaskBlocked {
+				if err := moveTask(&rec, TaskReady, "admitted to wave", now); err != nil {
+					return err
+				}
+			}
+			if err := moveTask(&rec, TaskDispatched, "admitted to wave (op "+rec.OpKey+")", now); err != nil {
+				return err
+			}
+			l.Tasks[t.ID] = rec
+		}
+		return nil
+	})
+}
+
+// buildParallelRequest assembles one scheduler invocation: run id,
+// budgets, default work/gate, principal, latch and the parallel
+// request. Order matches the inlined version so fakes observe the
+// same sequence.
+func buildParallelRequest(o RunOptions, wave []orchestrate.ParallelTask, planVersion int) (string, orchestrate.ParallelRequest, map[string]TouchedFiles) {
+	runID, _ := observability.MintRunID()
+	budgets := orchestrate.ParallelBudgets{
+		MaxConcurrency: concurrencyOf(o), PerTaskTimeoutMS: o.PerTaskTimeoutMS,
+		WallBudgetMS: o.WallBudgetMS, MaxQueued: o.MaxQueued,
+	}
+	if budgets.MaxConcurrency == 0 && budgets.PerTaskTimeoutMS == 0 && budgets.WallBudgetMS == 0 && budgets.MaxQueued == 0 {
+		budgets = orchestrate.DefaultParallelBudgets()
+	}
+	work := o.Work
+	if work == nil {
+		work = ReceiptWork(o.Root, o.MissionID, planVersion)
+	}
+	gate := o.Gate
+	if gate == nil {
+		gate = DiffCheckGate()
+	}
+	parent := mcp.PrincipalFor(o.Root)
+	latch := map[string]TouchedFiles{}
+	preq := orchestrate.ParallelRequest{
+		Tasks: wave, Budgets: budgets, Base: baseOf(o), RunID: runID,
+		BranchPrefix: "mission-" + sanitizeSegment(o.MissionID),
+		WorktreeRoot: worktreeRootOf(o), RepoRoot: o.Root, Parent: parent,
+		Ops: o.Ops, Work: workWithLedger(o, work, latch), Gate: gate,
+		Record: o.Record, DryRun: false,
+	}
+	return runID, preq, latch
+}
+
+// sealAndIntegrate seals scheduler verdicts, integrates what verified
+// cleanly, reloads the confirmed ledger, folds report accounting and
+// advances the mission plus the trace link. It mirrors the inlined
+// tail of Run byte for byte.
+func sealAndIntegrate(ctx context.Context, o RunOptions, m *mission.Mission, p *planning.Plan, ledger *Ledger, parallel orchestrate.ParallelReport, latch map[string]TouchedFiles, rep *WaveReport, now, started time.Time) error {
+	rep.WallMS, rep.AggregateMS = parallel.WallMS, parallel.AggregateMS
+	rep.TraceHint = parallel.TraceHint
+	if ctx.Err() != nil {
+		parallel.Cancelled = true
+	}
+	sealed, err := sealWaveResults(o.Root, o.MissionID, p, parallel, latch, now)
+	if err != nil {
+		return err
+	}
+	ledger = sealed
+	integrated, blocked := integrateWave(o.Root, m, p, ledger, parallel, now)
+	rep.Integrated = integrated
+	rep.Blocked = blocked
+	// Reload: integration sealed states after the seal above.
+	if fresh, lerr := LoadLedger(o.Root, o.MissionID); lerr == nil {
+		ledger = fresh
+	}
+	for id, rec := range ledger.Tasks {
+		rep.States[id] = rec.State
+	}
+	rep.SpentTimeMS = nowOf(o)().Sub(started).Milliseconds()
+	rep.SpentTokens = spentTokens(ledger, p)
+	advanceMission(o.Root, o.MissionID, ledger, p, o.Actor, now)
+	emitWaveEvent(o, *rep, parallel.Cancelled)
+	return nil
+}
+
 // Run consumes the approved plan and dispatches one wave through
 // the F12.2 scheduler. Dry-run levels the DAG, checks budgets and
 // routing, prints the ceilings and seals nothing. A wet run seals
@@ -142,23 +265,7 @@ func Run(ctx context.Context, o RunOptions) (WaveReport, error) {
 	if err != nil {
 		return WaveReport{}, err
 	}
-	if len(wave) == 0 {
-		// Nothing runnable: every task is sealed, blocked or waiting.
-		// Resume short-circuits without touching the scheduler, so a
-		// second run never re-dispatches sealed work.
-		for id, rec := range ledger.Tasks {
-			rep.States[id] = rec.State
-		}
-		return rep, nil
-	}
-	if o.DryRun {
-		wall, agg := orchestrate.EstimateParallelCost(wave, concurrencyOf(o))
-		rep.WallMS, rep.AggregateMS = wall, agg
-		for id, rec := range ledger.Tasks {
-			rep.States[id] = rec.State
-		}
-		// Dry-run seals nothing: not the ledger, not the mission,
-		// not a trace event.
+	if shortCircuitEmpty(&rep, wave, ledger, o) {
 		return rep, nil
 	}
 	if o.Ops == nil {
@@ -167,94 +274,20 @@ func Run(ctx context.Context, o RunOptions) (WaveReport, error) {
 	if err := ensureExecuting(o.Root, o.MissionID, o.Actor, now); err != nil {
 		return WaveReport{}, err
 	}
-	// Seal readiness: every admitted task moves pending/ready ->
-	// dispatched with its idempotency key. A task already carrying
-	// a sealed op key for this attempt is never re-keyed: resume
-	// reuses the key instead of dispatching twice.
-	sealed, err := UpdateLedger(o.Root, o.MissionID, now, func(l *Ledger) error {
-		for _, t := range wave {
-			rec := l.Tasks[t.ID]
-			if rec.OpKey != "" && (rec.State == TaskDispatched || rec.State == TaskRunning) {
-				continue
-			}
-			rec.Attempt++
-			rec.OpKey = OpKeyFor(o.MissionID, p.PlanVersion, t.ID, rec.Attempt)
-			rec.Agent = t.Agent
-			// Legal admission path: pending/failed/blocked reopen
-			// through ready, then dispatch. Anything else fails
-			// closed instead of jumping the ledger.
-			if rec.State == TaskPending || rec.State == TaskFailed || rec.State == TaskBlocked {
-				if err := moveTask(&rec, TaskReady, "admitted to wave", now); err != nil {
-					return err
-				}
-			}
-			if err := moveTask(&rec, TaskDispatched, "admitted to wave (op "+rec.OpKey+")", now); err != nil {
-				return err
-			}
-			l.Tasks[t.ID] = rec
-		}
-		return nil
-	})
+	ledger, err = sealAdmission(o.Root, o.MissionID, p.PlanVersion, wave, now)
 	if err != nil {
 		return WaveReport{}, err
 	}
-	ledger = sealed
-
-	runID, _ := observability.MintRunID()
+	runID, preq, latch := buildParallelRequest(o, wave, p.PlanVersion)
 	rep.RunIDs = []string{runID}
-	budgets := orchestrate.ParallelBudgets{
-		MaxConcurrency: concurrencyOf(o), PerTaskTimeoutMS: o.PerTaskTimeoutMS,
-		WallBudgetMS: o.WallBudgetMS, MaxQueued: o.MaxQueued,
-	}
-	if budgets.MaxConcurrency == 0 && budgets.PerTaskTimeoutMS == 0 && budgets.WallBudgetMS == 0 && budgets.MaxQueued == 0 {
-		budgets = orchestrate.DefaultParallelBudgets()
-	}
-	work := o.Work
-	if work == nil {
-		work = ReceiptWork(o.Root, o.MissionID, p.PlanVersion)
-	}
-	gate := o.Gate
-	if gate == nil {
-		gate = DiffCheckGate()
-	}
-	parent := mcp.PrincipalFor(o.Root)
-	latch := map[string]TouchedFiles{}
-	preq := orchestrate.ParallelRequest{
-		Tasks: wave, Budgets: budgets, Base: baseOf(o), RunID: runID,
-		BranchPrefix: "mission-" + sanitizeSegment(o.MissionID),
-		WorktreeRoot: worktreeRootOf(o), RepoRoot: o.Root, Parent: parent,
-		Ops: o.Ops, Work: workWithLedger(o, work, latch), Gate: gate,
-		Record: o.Record, DryRun: false,
-	}
 	started := nowOf(o)()
 	parallel, err := orchestrate.RunParallel(ctx, preq)
 	if err != nil {
 		return WaveReport{}, err
 	}
-	rep.WallMS, rep.AggregateMS = parallel.WallMS, parallel.AggregateMS
-	rep.TraceHint = parallel.TraceHint
-	if ctx.Err() != nil {
-		parallel.Cancelled = true
-	}
-	sealed, err = sealWaveResults(o.Root, o.MissionID, p, parallel, latch, now)
-	if err != nil {
+	if err := sealAndIntegrate(ctx, o, m, p, ledger, parallel, latch, &rep, now, started); err != nil {
 		return WaveReport{}, err
 	}
-	ledger = sealed
-	integrated, blocked := integrateWave(o.Root, m, p, ledger, parallel, now)
-	rep.Integrated = integrated
-	rep.Blocked = blocked
-	// Reload: integration sealed states after the seal above.
-	if fresh, lerr := LoadLedger(o.Root, o.MissionID); lerr == nil {
-		ledger = fresh
-	}
-	for id, rec := range ledger.Tasks {
-		rep.States[id] = rec.State
-	}
-	rep.SpentTimeMS = nowOf(o)().Sub(started).Milliseconds()
-	rep.SpentTokens = spentTokens(ledger, p)
-	advanceMission(o.Root, o.MissionID, ledger, p, o.Actor, now)
-	emitWaveEvent(o, rep, parallel.Cancelled)
 	return rep, nil
 }
 

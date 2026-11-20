@@ -70,13 +70,20 @@ var skipDirs = map[string]bool{
 	".regulus": true, "bin": true, "dist": true, "target": true,
 }
 
-// Inventory walks root and folds the corpus: Go sources (one code
-// fragment plus symbol fragments per file), go.mod requirements,
-// docs and ADRs, the optional issues file and the Almanac memory.
-// It returns the corpus plus warnings (skips, truncations,
-// malformed lines) — never an error for a partially readable tree,
-// only for an unreadable root, issues file or memory store.
-func Inventory(root string, cfg InventoryConfig) (Corpus, []string, error) {
+// Inventory path classes: the closed file vocabulary the walk folds.
+// Empty means skip (test files, non-docs markdown, other files).
+const (
+	pathSkip = ""
+	pathGo   = "go"
+	pathDoc  = "doc"
+	pathMod  = "mod"
+)
+
+// normalizeConfig applies the bounded defaults and resolves the
+// reference instant and version: zero cfg means 500 files, 8KB per
+// body, 50 symbols per file and 1000 issues, version "worktree"
+// and now UTC. Pure: no disk, no clock beyond the default.
+func normalizeConfig(cfg InventoryConfig) (InventoryConfig, time.Time, string) {
 	if cfg.MaxFiles <= 0 {
 		cfg.MaxFiles = DefaultInventoryConfig().MaxFiles
 	}
@@ -97,82 +104,124 @@ func Inventory(root string, cfg InventoryConfig) (Corpus, []string, error) {
 	if version == "" {
 		version = "worktree"
 	}
-	var frags []Fragment
-	var warnings []string
-	files := 0
-	truncated := 0
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if path != root && skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, rerr := filepath.Rel(root, path)
-		if rerr != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		base := strings.ToLower(d.Name())
-		isGo := strings.HasSuffix(base, ".go") && !strings.HasSuffix(base, "_test.go")
-		isDoc := strings.HasSuffix(base, ".md") && (strings.HasPrefix(rel, "docs/") || strings.HasPrefix(rel, "charts/"))
-		isMod := base == "go.mod"
-		if !isGo && !isDoc && !isMod {
-			return nil
-		}
-		if files >= cfg.MaxFiles {
-			warnings = append(warnings, fmt.Sprintf("inventario acotado a %d ficheros: resto omitido (sube MaxFiles para ampliar)", cfg.MaxFiles))
-			return filepath.SkipAll
-		}
-		files++
-		info, ierr := d.Info()
-		if ierr != nil {
-			warnings = append(warnings, fmt.Sprintf("sin metadatos %s: omitido (%v)", rel, ierr))
-			return nil
-		}
-		raw, rerr := os.ReadFile(path)
-		if rerr != nil {
-			warnings = append(warnings, fmt.Sprintf("ilegible %s: omitido (%v)", rel, rerr))
-			return nil
-		}
-		body := string(raw)
-		if int64(len(body)) > cfg.MaxFileBytes {
-			body = body[:cfg.MaxFileBytes]
-			truncated++
-		}
-		date := info.ModTime().UTC()
-		switch {
-		case isMod:
-			frags = append(frags, dependencyFragments(rel, version, date, body)...)
-		case isGo:
-			frags = append(frags, Fragment{
-				ID: "code/" + rel, Kind: KindCode, Source: rel,
-				Version: version, Date: date,
-				Title:   "source " + rel,
-				Content: body,
-			})
-			frags = append(frags, symbolFragments(rel, version, date, body, cfg.MaxSymbolsPerFile, &warnings)...)
-		case isDoc:
-			kind := KindDoc
-			critical := false
-			if strings.HasPrefix(rel, "docs/adr/") {
-				kind, critical = KindADR, true
-			}
-			frags = append(frags, Fragment{
-				ID: kind + "/" + rel, Kind: kind, Source: rel,
-				Version: version, Date: date, Critical: critical,
-				Title:   docTitle(body, rel),
-				Content: body,
-			})
+	return cfg, now, version
+}
+
+// classifyPath maps one walked path onto the inventory vocabulary:
+// Go sources (excluding _test.go), go.mod and docs/charts markdown.
+// Anything else reads as skip. Pure: no disk, portable across
+// separators (rel is slashed before matching, like the walk does).
+func classifyPath(rel, name string) string {
+	rel = filepath.ToSlash(rel)
+	base := strings.ToLower(name)
+	if strings.HasSuffix(base, ".go") && !strings.HasSuffix(base, "_test.go") {
+		return pathGo
+	}
+	if base == "go.mod" {
+		return pathMod
+	}
+	if strings.HasSuffix(base, ".md") && (strings.HasPrefix(rel, "docs/") || strings.HasPrefix(rel, "charts/")) {
+		return pathDoc
+	}
+	return pathSkip
+}
+
+// inventoryWalker holds the mutable walk state so Inventory stays a
+// thin orchestrator: normalize, walk, finalize. Pointers keep the
+// WalkDir callback byte-identical to the inlined version (cap counts
+// classified files only, warnings keep walk order).
+type inventoryWalker struct {
+	root      string
+	cfg       InventoryConfig
+	version   string
+	frags     *[]Fragment
+	warnings  *[]string
+	files     *int
+	truncated *int
+}
+
+// visit folds one walked path: dirs prune vendored trees, files map
+// through classifyPath and append through appendFileFragment. The cap
+// warns once and stops the walk, like the inlined version.
+func (w *inventoryWalker) visit(path string, d os.DirEntry, err error) error {
+	if err != nil {
+		return nil
+	}
+	if d.IsDir() {
+		if path != w.root && skipDirs[d.Name()] {
+			return filepath.SkipDir
 		}
 		return nil
-	})
-	if err != nil {
-		return Corpus{}, warnings, fmt.Errorf("context: inventario de %s: %w", root, err)
 	}
+	rel, rerr := filepath.Rel(w.root, path)
+	if rerr != nil {
+		return nil
+	}
+	rel = filepath.ToSlash(rel)
+	kind := classifyPath(rel, d.Name())
+	if kind == pathSkip {
+		return nil
+	}
+	if *w.files >= w.cfg.MaxFiles {
+		*w.warnings = append(*w.warnings, fmt.Sprintf("inventario acotado a %d ficheros: resto omitido (sube MaxFiles para ampliar)", w.cfg.MaxFiles))
+		return filepath.SkipAll
+	}
+	(*w.files)++
+	appendFileFragment(w.cfg, w.version, rel, path, kind, d, w.frags, w.warnings, w.truncated)
+	return nil
+}
+
+// appendFileFragment folds one classified file: metadata/read misses
+// warn and skip (never fail the walk), bodies truncate at the cap,
+// then mod/go/doc fragments append exactly like the inlined switch.
+func appendFileFragment(cfg InventoryConfig, version, rel, fullPath, kind string, d os.DirEntry, frags *[]Fragment, warnings *[]string, truncated *int) {
+	info, ierr := d.Info()
+	if ierr != nil {
+		*warnings = append(*warnings, fmt.Sprintf("sin metadatos %s: omitido (%v)", rel, ierr))
+		return
+	}
+	raw, rerr := os.ReadFile(fullPath)
+	if rerr != nil {
+		*warnings = append(*warnings, fmt.Sprintf("ilegible %s: omitido (%v)", rel, rerr))
+		return
+	}
+	body := string(raw)
+	if int64(len(body)) > cfg.MaxFileBytes {
+		body = body[:cfg.MaxFileBytes]
+		(*truncated)++
+	}
+	date := info.ModTime().UTC()
+	switch kind {
+	case pathMod:
+		*frags = append(*frags, dependencyFragments(rel, version, date, body)...)
+	case pathGo:
+		*frags = append(*frags, Fragment{
+			ID: "code/" + rel, Kind: KindCode, Source: rel,
+			Version: version, Date: date,
+			Title:   "source " + rel,
+			Content: body,
+		})
+		*frags = append(*frags, symbolFragments(rel, version, date, body, cfg.MaxSymbolsPerFile, warnings)...)
+	case pathDoc:
+		docKind := KindDoc
+		critical := false
+		if strings.HasPrefix(rel, "docs/adr/") {
+			docKind, critical = KindADR, true
+		}
+		*frags = append(*frags, Fragment{
+			ID: docKind + "/" + rel, Kind: docKind, Source: rel,
+			Version: version, Date: date, Critical: critical,
+			Title:   docTitle(body, rel),
+			Content: body,
+		})
+	}
+}
+
+// finalizeCorpus seals one inventory pass: the truncation warning,
+// then the explicit issues file and the Almanac memory (strict and
+// bounded, like the inlined version), then the deterministic sort
+// plus token/trust measurement. Order and messages are unchanged.
+func finalizeCorpus(root string, cfg InventoryConfig, version string, now time.Time, frags []Fragment, warnings []string, truncated int) (Corpus, []string, error) {
 	if truncated > 0 {
 		warnings = append(warnings, fmt.Sprintf("%d fichero(s) truncado(s) a %d bytes (cuerpo acotado, no transcript completo)", truncated, cfg.MaxFileBytes))
 	}
@@ -200,6 +249,29 @@ func Inventory(root string, cfg InventoryConfig) (Corpus, []string, error) {
 		}
 	}
 	return Corpus{Fragments: frags}, warnings, nil
+}
+
+// Inventory walks root and folds the corpus: Go sources (one code
+// fragment plus symbol fragments per file), go.mod requirements,
+// docs and ADRs, the optional issues file and the Almanac memory.
+// It returns the corpus plus warnings (skips, truncations,
+// malformed lines) — never an error for a partially readable tree,
+// only for an unreadable root, issues file or memory store.
+func Inventory(root string, cfg InventoryConfig) (Corpus, []string, error) {
+	cfg, now, version := normalizeConfig(cfg)
+	var frags []Fragment
+	var warnings []string
+	files := 0
+	truncated := 0
+	w := &inventoryWalker{
+		root: root, cfg: cfg, version: version,
+		frags: &frags, warnings: &warnings,
+		files: &files, truncated: &truncated,
+	}
+	if err := filepath.WalkDir(root, w.visit); err != nil {
+		return Corpus{}, warnings, fmt.Errorf("context: inventario de %s: %w", root, err)
+	}
+	return finalizeCorpus(root, cfg, version, now, frags, warnings, truncated)
 }
 
 // symbolFragments extracts one fragment per top-level Go

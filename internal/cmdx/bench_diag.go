@@ -22,32 +22,17 @@ func (io IO) BenchDiagCmd(args []string) int {
 	if !ok {
 		return code
 	}
-	th := bench.DefaultDiagThresholds()
-	if opts.thresholds != "" {
-		loaded, err := bench.LoadDiagThresholds(opts.thresholds)
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "bench diag: %v\n", err)
-			return 1
-		}
-		th = loaded
+	th, code, ok := resolveDiagThresholds(opts, io.Stderr)
+	if !ok {
+		return code
 	}
-	var results []bench.LabResult
-	if opts.evidenceDir != "" {
-		_, _, _, rep, err := bench.ReadLabEvidence(opts.evidenceDir)
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "bench diag: %v\n", err)
-			return 1
-		}
-		results = rep
+	results, code, ok := resolveDiagResults(opts.evidenceDir, io.Stderr)
+	if !ok {
+		return code
 	}
-	ids := opts.runs
-	if len(ids) == 0 {
-		ids = diagResultRuns(results)
-	}
-	if len(ids) == 0 {
-		fmt.Fprintln(io.Stderr, diagUsage())
-		fmt.Fprintln(io.Stderr, "bench diag: --run or --evidence-dir with Lab results is required")
-		return 2
+	ids, code, ok := resolveDiagIDs(opts.runs, results, io.Stderr)
+	if !ok {
+		return code
 	}
 	inputs, notes := io.loadDiagInputs(ids, results)
 	if len(inputs) == 0 {
@@ -55,7 +40,60 @@ func (io IO) BenchDiagCmd(args []string) int {
 		return 1
 	}
 	rep := bench.Diagnose(bench.DiagInput{Runs: inputs, BaselineRunID: opts.baseline, Notes: notes}, th)
-	if opts.asJSON {
+	return io.renderDiagReport(rep, opts.asJSON)
+}
+
+// resolveDiagThresholds loads the optional thresholds file over the
+// documented defaults. A bad file refuses with exit 1 like the
+// inline command.
+func resolveDiagThresholds(opts benchDiagOptions, stderr io.Writer) (bench.DiagThresholds, int, bool) {
+	th := bench.DefaultDiagThresholds()
+	if opts.thresholds != "" {
+		loaded, err := bench.LoadDiagThresholds(opts.thresholds)
+		if err != nil {
+			fmt.Fprintf(stderr, "bench diag: %v\n", err)
+			return bench.DiagThresholds{}, 1, false
+		}
+		th = loaded
+	}
+	return th, 0, true
+}
+
+// resolveDiagResults loads the optional Lab evidence dir. Empty
+// means trace-only diagnosis; a bad dir refuses with exit 1.
+func resolveDiagResults(evidenceDir string, stderr io.Writer) ([]bench.LabResult, int, bool) {
+	if evidenceDir == "" {
+		return nil, 0, true
+	}
+	_, _, _, rep, err := bench.ReadLabEvidence(evidenceDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "bench diag: %v\n", err)
+		return nil, 1, false
+	}
+	return rep, 0, true
+}
+
+// resolveDiagIDs closes the run scope: explicit --run wins, Lab
+// results backfill it, and an empty scope refuses with the
+// byte-identical usage plus exit 2.
+func resolveDiagIDs(runs []string, results []bench.LabResult, stderr io.Writer) ([]string, int, bool) {
+	ids := runs
+	if len(ids) == 0 {
+		ids = diagResultRuns(results)
+	}
+	if len(ids) == 0 {
+		fmt.Fprintln(stderr, diagUsage())
+		fmt.Fprintln(stderr, "bench diag: --run or --evidence-dir with Lab results is required")
+		return nil, 2, false
+	}
+	return ids, 0, true
+}
+
+// renderDiagReport prints one diagnosis: --json marshals the raw
+// report, otherwise the human rendering. A marshal failure refuses
+// with exit 1 like the inline command.
+func (io IO) renderDiagReport(rep bench.DiagReport, asJSON bool) int {
+	if asJSON {
 		raw, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			fmt.Fprintf(io.Stderr, "bench diag: %v\n", err)
