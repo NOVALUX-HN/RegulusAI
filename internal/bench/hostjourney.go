@@ -82,10 +82,15 @@ func DefaultHostProbes() []HostProbe {
 	}
 }
 
+// toolVersionRun runs one version probe. A variable (not a direct
+// pxexec.Run call) so tables stub every outcome portably without
+// spawning binaries; production stays pxexec.Run.
+var toolVersionRun = pxexec.Run
+
 func toolVersion(ctx context.Context, bin string, args ...string) (string, error) {
 	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	res := pxexec.Run(tctx, pxexec.Spec{Name: bin, Args: args, Timeout: 30 * time.Second})
+	res := toolVersionRun(tctx, pxexec.Spec{Name: bin, Args: args, Timeout: 30 * time.Second})
 	if res.Outcome != pxexec.OutcomePass {
 		if res.ErrClass == pxexec.ErrFail {
 			return "", fmt.Errorf("%s probe failed: exit status %d", bin, res.Exit)

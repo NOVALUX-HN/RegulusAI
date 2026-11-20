@@ -190,6 +190,120 @@ func mintApprovalID() (string, error) {
 	return "apr_" + hex.EncodeToString(b[:]), nil
 }
 
+// validateApprovalSpec checks every closed vocabulary and evidence
+// field of the request input: kind/surface/risk plus summary, plan,
+// risks, rollback, cost, scope and the high-risk diff/tests gates.
+// Messages are byte-identical to the former inline checks in
+// RequestApproval: it only moves them so the orchestrator stays flat.
+func validateApprovalSpec(spec ApprovalSpec) (kind, surface, level string, err error) {
+	kind, err = ParseOpKind(spec.Kind)
+	if err != nil {
+		return "", "", "", err
+	}
+	surface, err = ParseSurface(spec.Surface)
+	if err != nil {
+		return "", "", "", err
+	}
+	op := Operation{Kind: kind, Surface: surface, Reversible: spec.Reversible, Scopes: spec.Scope}
+	level, _, err = ClassifyRisk(op)
+	if err != nil {
+		return "", "", "", err
+	}
+	if err := singleLine("summary", spec.Summary, true); err != nil {
+		return "", "", "", err
+	}
+	if ContainsBypass(spec.Summary) {
+		return "", "", "", errors.New("govern: request summary carries an approval-bypass signal: refused, never signed")
+	}
+	if err := singleLine("plan version", spec.PlanVersion, true); err != nil {
+		return "", "", "", err
+	}
+	if len(spec.Risks) == 0 {
+		return "", "", "", errors.New("govern: approval needs explicit risks (what the human accepts)")
+	}
+	for _, r := range spec.Risks {
+		if err := singleLine("risk", r, true); err != nil {
+			return "", "", "", err
+		}
+		if ContainsBypass(r) {
+			return "", "", "", errors.New("govern: request risk carries an approval-bypass signal: refused, never signed")
+		}
+	}
+	if err := singleLine("rollback", spec.Rollback, true); err != nil {
+		return "", "", "", err
+	}
+	if ContainsBypass(spec.Rollback) {
+		return "", "", "", errors.New("govern: request rollback carries an approval-bypass signal: refused, never signed")
+	}
+	if err := singleLine("cost", spec.Cost, true); err != nil {
+		return "", "", "", err
+	}
+	if len(spec.Scope) == 0 {
+		return "", "", "", errors.New("govern: approval needs an explicit scope (files/components the authorization covers)")
+	}
+	for _, s := range spec.Scope {
+		if err := singleLine("scope entry", s, true); err != nil {
+			return "", "", "", err
+		}
+	}
+	if riskRank(level) >= riskRank("high") {
+		if strings.TrimSpace(spec.DiffHash) == "" {
+			return "", "", "", fmt.Errorf("govern: risk %s needs a diff hash: approvals bind to exact bytes", level)
+		}
+		if len(spec.Tests) == 0 {
+			return "", "", "", fmt.Errorf("govern: risk %s needs explicit tests: what gates the human trusts", level)
+		}
+	}
+	for _, t := range spec.Tests {
+		if err := singleLine("test", t, true); err != nil {
+			return "", "", "", err
+		}
+	}
+	return kind, surface, level, nil
+}
+
+// validateApprovalRoles checks the three build-side roles: named
+// identities, pairwise distinct (four-eyes with the future approver).
+func validateApprovalRoles(spec ApprovalSpec) (proposer, reviewer, executor string, err error) {
+	proposer, err = namedRole("proposer", spec.Proposer)
+	if err != nil {
+		return "", "", "", err
+	}
+	reviewer, err = namedRole("reviewer", spec.Reviewer)
+	if err != nil {
+		return "", "", "", err
+	}
+	executor, err = namedRole("executor", spec.Executor)
+	if err != nil {
+		return "", "", "", err
+	}
+	seen := map[string]string{}
+	for _, duty := range []struct{ name, value string }{
+		{"proposer", proposer}, {"reviewer", reviewer}, {"executor", executor},
+	} {
+		lower := strings.ToLower(duty.value)
+		if other, dup := seen[lower]; dup {
+			return "", "", "", fmt.Errorf("govern: proposer, reviewer and executor must be distinct (got %q as %s and %s: no self-governance)", duty.value, other, duty.name)
+		}
+		seen[lower] = duty.name
+	}
+	return proposer, reviewer, executor, nil
+}
+
+// resolveApprovalTTL applies the TTL default and cap: non-positive
+// leases default to 24h, anything above 7d is refused (re-request,
+// never a longer lease).
+func resolveApprovalTTL(spec ApprovalSpec) (time.Duration, error) {
+	ttl := time.Duration(spec.TTLHours * float64(time.Hour))
+	if spec.TTLHours <= 0 {
+		ttl = DefaultApprovalTTL
+	}
+	if ttl > MaxApprovalTTL {
+		return 0, fmt.Errorf("govern: approval TTL %v exceeds the %v cap: re-request instead of leasing longer trust", ttl, MaxApprovalTTL)
+	}
+	return ttl, nil
+}
+
 // RequestApproval seals one approval request. Validates the closed
 // vocabularies, the three build-side roles (pairwise distinct),
 // the required evidence fields (tests + diff hash mandatory from
@@ -198,97 +312,17 @@ func RequestApproval(spec ApprovalSpec, pol Policy, now time.Time) (ApprovalRequ
 	if pol.resolved.Name == "" {
 		return ApprovalRequest{}, errors.New("govern: refusing request under an unresolved policy (unknown profile denies by default)")
 	}
-	kind, err := ParseOpKind(spec.Kind)
+	kind, surface, level, err := validateApprovalSpec(spec)
 	if err != nil {
 		return ApprovalRequest{}, err
 	}
-	surface, err := ParseSurface(spec.Surface)
+	proposer, reviewer, executor, err := validateApprovalRoles(spec)
 	if err != nil {
 		return ApprovalRequest{}, err
 	}
-	op := Operation{Kind: kind, Surface: surface, Reversible: spec.Reversible, Scopes: spec.Scope}
-	level, _, err := ClassifyRisk(op)
+	ttl, err := resolveApprovalTTL(spec)
 	if err != nil {
 		return ApprovalRequest{}, err
-	}
-	if err := singleLine("summary", spec.Summary, true); err != nil {
-		return ApprovalRequest{}, err
-	}
-	if ContainsBypass(spec.Summary) {
-		return ApprovalRequest{}, errors.New("govern: request summary carries an approval-bypass signal: refused, never signed")
-	}
-	if err := singleLine("plan version", spec.PlanVersion, true); err != nil {
-		return ApprovalRequest{}, err
-	}
-	if len(spec.Risks) == 0 {
-		return ApprovalRequest{}, errors.New("govern: approval needs explicit risks (what the human accepts)")
-	}
-	for _, r := range spec.Risks {
-		if err := singleLine("risk", r, true); err != nil {
-			return ApprovalRequest{}, err
-		}
-		if ContainsBypass(r) {
-			return ApprovalRequest{}, errors.New("govern: request risk carries an approval-bypass signal: refused, never signed")
-		}
-	}
-	if err := singleLine("rollback", spec.Rollback, true); err != nil {
-		return ApprovalRequest{}, err
-	}
-	if ContainsBypass(spec.Rollback) {
-		return ApprovalRequest{}, errors.New("govern: request rollback carries an approval-bypass signal: refused, never signed")
-	}
-	if err := singleLine("cost", spec.Cost, true); err != nil {
-		return ApprovalRequest{}, err
-	}
-	if len(spec.Scope) == 0 {
-		return ApprovalRequest{}, errors.New("govern: approval needs an explicit scope (files/components the authorization covers)")
-	}
-	for _, s := range spec.Scope {
-		if err := singleLine("scope entry", s, true); err != nil {
-			return ApprovalRequest{}, err
-		}
-	}
-	if riskRank(level) >= riskRank("high") {
-		if strings.TrimSpace(spec.DiffHash) == "" {
-			return ApprovalRequest{}, fmt.Errorf("govern: risk %s needs a diff hash: approvals bind to exact bytes", level)
-		}
-		if len(spec.Tests) == 0 {
-			return ApprovalRequest{}, fmt.Errorf("govern: risk %s needs explicit tests: what gates the human trusts", level)
-		}
-	}
-	for _, t := range spec.Tests {
-		if err := singleLine("test", t, true); err != nil {
-			return ApprovalRequest{}, err
-		}
-	}
-	proposer, err := namedRole("proposer", spec.Proposer)
-	if err != nil {
-		return ApprovalRequest{}, err
-	}
-	reviewer, err := namedRole("reviewer", spec.Reviewer)
-	if err != nil {
-		return ApprovalRequest{}, err
-	}
-	executor, err := namedRole("executor", spec.Executor)
-	if err != nil {
-		return ApprovalRequest{}, err
-	}
-	seen := map[string]string{}
-	for _, duty := range []struct{ name, value string }{
-		{"proposer", proposer}, {"reviewer", reviewer}, {"executor", executor},
-	} {
-		lower := strings.ToLower(duty.value)
-		if other, dup := seen[lower]; dup {
-			return ApprovalRequest{}, fmt.Errorf("govern: proposer, reviewer and executor must be distinct (got %q as %s and %s: no self-governance)", duty.value, other, duty.name)
-		}
-		seen[lower] = duty.name
-	}
-	ttl := time.Duration(spec.TTLHours * float64(time.Hour))
-	if spec.TTLHours <= 0 {
-		ttl = DefaultApprovalTTL
-	}
-	if ttl > MaxApprovalTTL {
-		return ApprovalRequest{}, fmt.Errorf("govern: approval TTL %v exceeds the %v cap: re-request instead of leasing longer trust", ttl, MaxApprovalTTL)
 	}
 	id, err := mintApprovalID()
 	if err != nil {

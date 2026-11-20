@@ -47,83 +47,149 @@ type ParallelTask struct {
 	EstimateTokens int64    `json:"estimate_tokens,omitempty"`
 }
 
-// ValidateParallelTasks refuses hostile or ambiguous plans before
-// anything runs: task count, id charset (same conservative rule as
-// gate task ids), single-line titles, repo-relative files (no
-// absolute, no "..", no NUL/newline), known dependency targets
-// without self-edges or duplicates, bounded commands/scopes and
-// non-negative estimates.
-func ValidateParallelTasks(tasks []ParallelTask) error {
+// validateParallelCount refuses an empty plan or one above the
+// scheduler bound before any per-task work.
+func validateParallelCount(tasks []ParallelTask) error {
 	if len(tasks) == 0 {
 		return fmt.Errorf("orchestrate parallel: at least one task is required")
 	}
 	if len(tasks) > MaxParallelTasks {
 		return fmt.Errorf("orchestrate parallel: at most %d tasks, got %d", MaxParallelTasks, len(tasks))
 	}
-	ids := map[string]bool{}
-	for i := range tasks {
-		t := &tasks[i]
-		if !validParallelID(t.ID) {
-			return fmt.Errorf("orchestrate parallel: invalid task id %q (letters, digits, '.', '_', '-', '/'; no '..')", t.ID)
-		}
-		if ids[t.ID] {
-			return fmt.Errorf("orchestrate parallel: duplicate task id %q", t.ID)
-		}
-		ids[t.ID] = true
-		if strings.TrimSpace(t.Title) == "" {
-			return fmt.Errorf("orchestrate parallel: task %q needs a title", t.ID)
-		}
-		if len(t.Title) > 256 || strings.ContainsAny(t.Title, "\n\r") {
-			return fmt.Errorf("orchestrate parallel: task %q title must be a single line under 256 chars", t.ID)
-		}
-		if len(t.Files) > 32 {
-			return fmt.Errorf("orchestrate parallel: task %q lists at most 32 files, got %d", t.ID, len(t.Files))
-		}
-		for _, f := range t.Files {
-			if err := checkParallelFile(t.ID, f); err != nil {
-				return err
-			}
-		}
-		if len(t.DependsOn) > 32 {
-			return fmt.Errorf("orchestrate parallel: task %q lists at most 32 dependencies, got %d", t.ID, len(t.DependsOn))
-		}
-		seenDep := map[string]bool{}
-		for _, d := range t.DependsOn {
-			if d == t.ID {
-				return fmt.Errorf("orchestrate parallel: task %q must not depend on itself", t.ID)
-			}
-			if !validParallelID(d) {
-				return fmt.Errorf("orchestrate parallel: task %q has invalid dependency %q", t.ID, d)
-			}
-			if seenDep[d] {
-				return fmt.Errorf("orchestrate parallel: task %q duplicates dependency %q", t.ID, d)
-			}
-			seenDep[d] = true
-		}
-		if len(t.Command) > 4000 {
-			return fmt.Errorf("orchestrate parallel: task %q command exceeds 4000 chars", t.ID)
-		}
-		if strings.IndexByte(t.Command, 0) >= 0 {
-			return fmt.Errorf("orchestrate parallel: task %q command must not contain NUL", t.ID)
-		}
-		if len(t.Scopes) > 16 {
-			return fmt.Errorf("orchestrate parallel: task %q requests at most 16 scopes, got %d", t.ID, len(t.Scopes))
-		}
-		for _, s := range t.Scopes {
-			if strings.TrimSpace(s) == "" || len(s) > 64 || strings.ContainsAny(s, "\n\r") {
-				return fmt.Errorf("orchestrate parallel: task %q has an invalid scope %q", t.ID, s)
-			}
-		}
-		if len(t.Agent) > 64 || strings.ContainsAny(t.Agent, "\n\r") {
-			return fmt.Errorf("orchestrate parallel: task %q agent must be a single line under 64 chars", t.ID)
-		}
-		if t.EstimateMS < 0 {
-			return fmt.Errorf("orchestrate parallel: task %q estimate_ms must not be negative, got %d", t.ID, t.EstimateMS)
-		}
-		if t.EstimateTokens < 0 {
-			return fmt.Errorf("orchestrate parallel: task %q estimate_tokens must not be negative, got %d", t.ID, t.EstimateTokens)
+	return nil
+}
+
+// validateParallelIDs checks one task id: charset plus duplicate.
+func validateParallelIDs(t ParallelTask, ids map[string]bool) error {
+	if !validParallelID(t.ID) {
+		return fmt.Errorf("orchestrate parallel: invalid task id %q (letters, digits, '.', '_', '-', '/'; no '..')", t.ID)
+	}
+	if ids[t.ID] {
+		return fmt.Errorf("orchestrate parallel: duplicate task id %q", t.ID)
+	}
+	return nil
+}
+
+// validateParallelTitle checks one single-line title.
+func validateParallelTitle(t ParallelTask) error {
+	if strings.TrimSpace(t.Title) == "" {
+		return fmt.Errorf("orchestrate parallel: task %q needs a title", t.ID)
+	}
+	if len(t.Title) > 256 || strings.ContainsAny(t.Title, "\n\r") {
+		return fmt.Errorf("orchestrate parallel: task %q title must be a single line under 256 chars", t.ID)
+	}
+	return nil
+}
+
+// validateParallelFiles bounds and checks the repo-relative files.
+func validateParallelFiles(t ParallelTask) error {
+	if len(t.Files) > 32 {
+		return fmt.Errorf("orchestrate parallel: task %q lists at most 32 files, got %d", t.ID, len(t.Files))
+	}
+	for _, f := range t.Files {
+		if err := checkParallelFile(t.ID, f); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// validateParallelDeps checks the per-task dependency edges: bound,
+// no self-edge, charset and no duplicates (unknown targets resolve
+// globally once every id is known).
+func validateParallelDeps(t ParallelTask) error {
+	if len(t.DependsOn) > 32 {
+		return fmt.Errorf("orchestrate parallel: task %q lists at most 32 dependencies, got %d", t.ID, len(t.DependsOn))
+	}
+	seenDep := map[string]bool{}
+	for _, d := range t.DependsOn {
+		if d == t.ID {
+			return fmt.Errorf("orchestrate parallel: task %q must not depend on itself", t.ID)
+		}
+		if !validParallelID(d) {
+			return fmt.Errorf("orchestrate parallel: task %q has invalid dependency %q", t.ID, d)
+		}
+		if seenDep[d] {
+			return fmt.Errorf("orchestrate parallel: task %q duplicates dependency %q", t.ID, d)
+		}
+		seenDep[d] = true
+	}
+	return nil
+}
+
+// validateParallelCommand bounds one worker command.
+func validateParallelCommand(t ParallelTask) error {
+	if len(t.Command) > 4000 {
+		return fmt.Errorf("orchestrate parallel: task %q command exceeds 4000 chars", t.ID)
+	}
+	if strings.IndexByte(t.Command, 0) >= 0 {
+		return fmt.Errorf("orchestrate parallel: task %q command must not contain NUL", t.ID)
+	}
+	return nil
+}
+
+// validateParallelScopes bounds one restricted scope request.
+func validateParallelScopes(t ParallelTask) error {
+	if len(t.Scopes) > 16 {
+		return fmt.Errorf("orchestrate parallel: task %q requests at most 16 scopes, got %d", t.ID, len(t.Scopes))
+	}
+	for _, s := range t.Scopes {
+		if strings.TrimSpace(s) == "" || len(s) > 64 || strings.ContainsAny(s, "\n\r") {
+			return fmt.Errorf("orchestrate parallel: task %q has an invalid scope %q", t.ID, s)
+		}
+	}
+	return nil
+}
+
+// validateParallelAgent checks the F12.1 routing hint.
+func validateParallelAgent(t ParallelTask) error {
+	if len(t.Agent) > 64 || strings.ContainsAny(t.Agent, "\n\r") {
+		return fmt.Errorf("orchestrate parallel: task %q agent must be a single line under 64 chars", t.ID)
+	}
+	return nil
+}
+
+// validateParallelEstimates refuses negative dry-run ceilings.
+func validateParallelEstimates(t ParallelTask) error {
+	if t.EstimateMS < 0 {
+		return fmt.Errorf("orchestrate parallel: task %q estimate_ms must not be negative, got %d", t.ID, t.EstimateMS)
+	}
+	if t.EstimateTokens < 0 {
+		return fmt.Errorf("orchestrate parallel: task %q estimate_tokens must not be negative, got %d", t.ID, t.EstimateTokens)
+	}
+	return nil
+}
+
+// validateParallelTask runs every per-task group validator in field
+// order: ids, titles, files, deps, command, scopes, agent, estimates.
+func validateParallelTask(t ParallelTask, ids map[string]bool) error {
+	if err := validateParallelIDs(t, ids); err != nil {
+		return err
+	}
+	if err := validateParallelTitle(t); err != nil {
+		return err
+	}
+	if err := validateParallelFiles(t); err != nil {
+		return err
+	}
+	if err := validateParallelDeps(t); err != nil {
+		return err
+	}
+	if err := validateParallelCommand(t); err != nil {
+		return err
+	}
+	if err := validateParallelScopes(t); err != nil {
+		return err
+	}
+	if err := validateParallelAgent(t); err != nil {
+		return err
+	}
+	return validateParallelEstimates(t)
+}
+
+// validateParallelUnknownDeps resolves every edge once every id is
+// known: unknown targets fail closed naming both ends.
+func validateParallelUnknownDeps(tasks []ParallelTask, ids map[string]bool) error {
 	for i := range tasks {
 		for _, d := range tasks[i].DependsOn {
 			if !ids[d] {
@@ -132,6 +198,27 @@ func ValidateParallelTasks(tasks []ParallelTask) error {
 		}
 	}
 	return nil
+}
+
+// ValidateParallelTasks refuses hostile or ambiguous plans before
+// anything runs: task count, id charset (same conservative rule as
+// gate task ids), single-line titles, repo-relative files (no
+// absolute, no "..", no NUL/newline), known dependency targets
+// without self-edges or duplicates, bounded commands/scopes and
+// non-negative estimates.
+func ValidateParallelTasks(tasks []ParallelTask) error {
+	if err := validateParallelCount(tasks); err != nil {
+		return err
+	}
+	ids := map[string]bool{}
+	for i := range tasks {
+		t := tasks[i]
+		if err := validateParallelTask(t, ids); err != nil {
+			return err
+		}
+		ids[t.ID] = true
+	}
+	return validateParallelUnknownDeps(tasks, ids)
 }
 
 // validParallelID mirrors the gate task-id rule: alphanumeric start,

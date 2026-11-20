@@ -74,27 +74,32 @@ func (io IO) ProbeContrastCmd(args []string) int {
 	return 0
 }
 
-// ProbeComposeCmd implements `regulus probe compose`.
-func (io IO) ProbeComposeCmd(args []string) int {
+// parseProbeComposeFlags parses `probe compose` flags: required task,
+// gate, base and both variants, no positional args. On failure it
+// prints the byte-identical usage to stderr and reports exit 2.
+func parseProbeComposeFlags(args []string, stderr io.Writer) (task, gate, base, cmdA, cmdB string, code int, ok bool) {
 	fs := flag.NewFlagSet("probe compose", flag.ContinueOnError)
-	fs.SetOutput(io.Stderr)
-	task := fs.String("task", "", "task id for the evidence receipts (required)")
-	gate := fs.String("gate", "", "configured gate to run three times (required)")
-	base := fs.String("base", "", "base command variant (required)")
-	cmdA := fs.String("a", "", "first command variant (required)")
-	cmdB := fs.String("b", "", "second command variant (required)")
+	fs.SetOutput(stderr)
+	taskOpt := fs.String("task", "", "task id for the evidence receipts (required)")
+	gateOpt := fs.String("gate", "", "configured gate to run three times (required)")
+	baseOpt := fs.String("base", "", "base command variant (required)")
+	cmdAOpt := fs.String("a", "", "first command variant (required)")
+	cmdBOpt := fs.String("b", "", "second command variant (required)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return "", "", "", "", "", 2, false
 	}
-	if *task == "" || *gate == "" || *base == "" || *cmdA == "" || *cmdB == "" || fs.NArg() != 0 {
-		fmt.Fprintln(io.Stderr, "usage: regulus probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>")
-		return 2
+	if *taskOpt == "" || *gateOpt == "" || *baseOpt == "" || *cmdAOpt == "" || *cmdBOpt == "" || fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: regulus probe compose --task <t> --gate <g> --base <cmd> --a <cmdA> --b <cmdB>")
+		return "", "", "", "", "", 2, false
 	}
-	if !validTaskID(*task) {
-		fmt.Fprintf(io.Stderr, "probe compose: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')\n", *task)
-		return 2
-	}
-	report, _, ran, err := probe.ComposeWithRunner(io.Dir, *task, *gate, *base, *cmdA, *cmdB, time.Now().UTC(), io.Runner)
+	return *taskOpt, *gateOpt, *baseOpt, *cmdAOpt, *cmdBOpt, 0, true
+}
+
+// finishProbeComposeCmd reports one compose outcome with the
+// historical messages and codes: run errors and the defensive
+// not-executed case fail with 1, the composed report succeeds with 0
+// (conflicts are evidence, never failure).
+func finishProbeComposeCmd(io IO, report string, ran bool, err error) int {
 	if err != nil {
 		fmt.Fprintf(io.Stderr, "probe compose: %v\n", err)
 		return 1
@@ -106,4 +111,18 @@ func (io IO) ProbeComposeCmd(args []string) int {
 	// Conflicts are evidence, not failure: exit 0 with the report.
 	fmt.Fprint(io.Stdout, report)
 	return 0
+}
+
+// ProbeComposeCmd implements `regulus probe compose`.
+func (io IO) ProbeComposeCmd(args []string) int {
+	task, gate, base, cmdA, cmdB, code, ok := parseProbeComposeFlags(args, io.Stderr)
+	if !ok {
+		return code
+	}
+	if !validTaskID(task) {
+		fmt.Fprintf(io.Stderr, "probe compose: invalid task id %q (allowed: letters, digits, '.', '_', '-', '/'; no '..')\n", task)
+		return 2
+	}
+	report, _, ran, err := probe.ComposeWithRunner(io.Dir, task, gate, base, cmdA, cmdB, time.Now().UTC(), io.Runner)
+	return finishProbeComposeCmd(io, report, ran, err)
 }
