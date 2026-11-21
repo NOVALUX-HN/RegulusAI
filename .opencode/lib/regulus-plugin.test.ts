@@ -14,7 +14,8 @@ function fakeBin(dir: string): string {
   const js = join(dir, "fake-regulus.mjs");
   writeFileSync(
     js,
-    `const args = process.argv.slice(2);\n` +
+    `#!/usr/bin/env node\n` +
+      `const args = process.argv.slice(2);\n` +
       `if (args[0] === "doctor") { console.log("doctor ok"); process.exit(0); }\n` +
       `if (args[0] === "contract") { console.log("regulus.contract/v1"); process.exit(0); }\n` +
       `console.log("unexpected: " + args.join(" ")); process.exit(1);\n`,

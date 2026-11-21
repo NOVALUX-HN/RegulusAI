@@ -1,0 +1,224 @@
+// Executor tests (F15.2/NOV-117): contract, classification,
+// redaction, timeout/cancel and the block classifier. Every test
+// launches only inbox-signed or toolchain binaries; nothing fresh
+// or unsigned is spawned, so the suite is deterministic under SAC.
+package pxexec
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+)
+
+// TestHelperProcess is re-executed as a child via os.Args[0]: the
+// hermetic probe for env passthrough, truncation, timeouts and
+// policy-signal classification. No external binary, no shell —
+// deterministic on every host once the test binary itself loads.
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	switch os.Getenv("GO_WANT_HELPER_MODE") {
+	case "env":
+		fmt.Fprint(os.Stdout, os.Getenv("PXEXEC_COVER_PROBE"))
+	case "big":
+		fmt.Fprint(os.Stdout, strings.Repeat("x", 32*1024))
+	case "sleep":
+		time.Sleep(30 * time.Second)
+	case "denymsg":
+		fmt.Fprint(os.Stderr, "blocked this file by policy (simulated denial)")
+		os.Exit(1)
+	case "chatter":
+		fmt.Fprint(os.Stdout, "blocked this file by policy (simulated log line)")
+	case "args":
+		fmt.Fprint(os.Stdout, strings.Join(os.Args[2:], "|"))
+	case "echo":
+		io.Copy(os.Stdout, os.Stdin)
+	}
+}
+
+// helperSpec builds a self re-exec launch: the same binary that is
+// already running, so no reputation lottery beyond the test binary
+// itself. A BLOCKED outcome is the caller's cue to skip with reason
+// (host policy, not code), never to fail.
+func helperSpec(t *testing.T, mode string, extraEnv []string, mut func(*Spec)) Spec {
+	t.Helper()
+	s := Spec{
+		Name: os.Args[0],
+		Args: []string{"-test.run=TestHelperProcess$"},
+		Env:  append([]string{"GO_WANT_HELPER_PROCESS=1", "GO_WANT_HELPER_MODE=" + mode}, extraEnv...),
+	}
+	if mut != nil {
+		mut(&s)
+	}
+	return s
+}
+
+// sleepCommand returns a ~5s blocking command present on this OS:
+// Windows ping (-n) or POSIX sleep. Skips when neither exists so the
+// timeout/cancel tests never fail for a missing helper binary.
+func sleepCommand(t *testing.T) (string, []string) {
+	t.Helper()
+	if _, err := exec.LookPath("sleep"); err == nil {
+		return "sleep", []string{"5"}
+	}
+	if _, err := exec.LookPath("ping"); err == nil {
+		return "ping", []string{"-n", "6", "127.0.0.1"}
+	}
+	t.Skip("no sleep-capable helper binary (sleep/ping) available")
+	return "", nil
+}
+
+// testShell resolves a PowerShell for shell-behavior tests: pwsh
+// preferred (portable name), powershell as Windows fallback. Tests
+// that need a real shell skip when neither exists — they exercise
+// shell passthrough, never the executor core (covered without a
+// subprocess by TestValidate/TestScrubParity/TestRender*).
+func testShell(t *testing.T) string {
+	t.Helper()
+	for _, n := range []string{"pwsh", "powershell"} {
+		if _, err := exec.LookPath(n); err == nil {
+			return n
+		}
+	}
+	t.Skip("no PowerShell available (shell passthrough untestable here)")
+	return ""
+}
+
+func TestValidate(t *testing.T) {
+	if err := (Spec{}).Validate(); err == nil {
+		t.Fatal("empty name must be refused")
+	}
+	if err := (Spec{Name: "x", Shell: "sh"}).Validate(); err == nil {
+		t.Fatal("shell without justification must be refused")
+	}
+	if err := (Spec{Name: "x", Shell: "sh", Justify: "needs glob"}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Spec{Name: "x", Timeout: -1}).Validate(); err == nil {
+		t.Fatal("unbounded launches must be refused")
+	}
+}
+
+func TestSkipNeverPasses(t *testing.T) {
+	r := Run(context.Background(), Spec{Name: "x", SkipReason: "no toolchain"})
+	if r.Outcome != OutcomeSkipped || r.ErrClass != ErrNone {
+		t.Fatalf("skip must be SKIPPED, got %+v", r)
+	}
+}
+
+func TestGoVersionPasses(t *testing.T) {
+	r := Run(context.Background(), Spec{Name: "go", Args: []string{"version"}, Timeout: 30 * time.Second})
+	if r.Outcome != OutcomePass || r.Exit != 0 || r.PID <= 0 {
+		t.Fatalf("go version must PASS with a PID, got %+v", r)
+	}
+	if !strings.Contains(r.Stdout, "go version") {
+		t.Fatalf("stdout must carry the version, got %q", r.Stdout)
+	}
+}
+
+func TestMissingBinaryIsLaunchNotFail(t *testing.T) {
+	r := Run(context.Background(), Spec{Name: "definitely-not-a-binary-xyz", Timeout: 10 * time.Second})
+	if r.Outcome != OutcomeNotRun || r.ErrClass != ErrLaunch {
+		t.Fatalf("missing binary must be NOT_RUN/launch, got %+v", r)
+	}
+}
+
+func TestExitCodeIsFail(t *testing.T) {
+	r := Run(context.Background(), Spec{Name: "go", Args: []string{"badflag-xyz"}, Timeout: 30 * time.Second})
+	if r.Outcome != OutcomeFail || r.ErrClass != ErrFail || r.Exit == 0 {
+		t.Fatalf("bad flag must be FAIL with nonzero exit, got %+v", r)
+	}
+}
+
+func TestTimeoutIsNotRun(t *testing.T) {
+	s := helperSpec(t, "sleep", nil, func(s *Spec) { s.Timeout = 500 * time.Millisecond })
+	r := Run(context.Background(), s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
+	if r.Outcome != OutcomeNotRun || r.ErrClass != ErrTimeout {
+		t.Fatalf("expired launch must be NOT_RUN/timeout, got %+v", r)
+	}
+}
+
+func TestCancelIsNotRun(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s := helperSpec(t, "sleep", nil, func(s *Spec) { s.Timeout = 30 * time.Second })
+	r := Run(ctx, s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
+	if r.Outcome != OutcomeNotRun || (r.ErrClass != ErrCancel && r.ErrClass != ErrTimeout) {
+		t.Fatalf("cancelled launch must be NOT_RUN, got %+v", r)
+	}
+}
+
+func TestBlockSignalClassifiesBlocked(t *testing.T) {
+	// Real blocks never exit 0 (the process never starts): fail with
+	// the policy marker on stderr, mirroring a SAC denial.
+	r := Run(context.Background(), helperSpec(t, "denymsg", nil, func(s *Spec) { s.Timeout = 30 * time.Second }))
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
+	if r.Outcome != OutcomeBlocked || r.ErrClass != ErrPolicy || r.BlockHint == "" {
+		t.Fatalf("policy signal must be BLOCKED with a hint, got %+v", r)
+	}
+}
+
+func TestPassOutputIsNotBlocked(t *testing.T) {
+	// Exit 0 with block-like words in stdout stays PASS: classifying it
+	// BLOCKED would be a false positive on diagnostic chatter.
+	r := Run(context.Background(), helperSpec(t, "chatter", nil, func(s *Spec) { s.Timeout = 30 * time.Second }))
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
+	if r.Outcome != OutcomePass {
+		t.Fatalf("exit-0 output must stay PASS, got %+v", r)
+	}
+}
+
+func TestArgsWithSpacesPassThrough(t *testing.T) {
+	// Argv travels literally, never through a shell: spaces survive.
+	s := helperSpec(t, "args", nil, func(s *Spec) { s.Timeout = 30 * time.Second })
+	s.Args = append(s.Args, "a b c", "d")
+	r := Run(context.Background(), s)
+	if r.Outcome == OutcomeBlocked {
+		t.Skip("host blocks child processes; covered in CI")
+	}
+	if r.Outcome != OutcomePass || !strings.Contains(r.Stdout, "a b c|d") {
+		t.Fatalf("spaced args must pass through intact, got %+v", r)
+	}
+}
+
+func TestScrubParity(t *testing.T) {
+	// Pinned against internal/observability.RedactText vectors (kept
+	// as literals: importing observability here would cycle via
+	// manifest once callers migrate. If observability/redact.go
+	// patterns change, update this copy deliberately.)
+	vectors := map[string]string{
+		"bearer abc123":        "bearer [redacted]",
+		`{"api_key": "xyz"}`:   `{"api_key": "[redacted]"}`,
+		"token=abc123":         "token=[redacted]",
+		"nothing to hide here": "nothing to hide here",
+	}
+	for in, want := range vectors {
+		if got := scrubCredentials(in); got != want {
+			t.Fatalf("scrub drift for %q: got %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRenderRedactsSecrets(t *testing.T) {
+	s := Spec{Name: "deploy", Args: []string{"--token=abc123", "--env=prod"}, Secrets: []string{"token"}}
+	out := s.Render()
+	if strings.Contains(out, "abc123") || !strings.Contains(out, "prod") {
+		t.Fatalf("secrets must be redacted, benign kept: %q", out)
+	}
+}

@@ -12,10 +12,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 	"runtime"
 	"strings"
 	"time"
@@ -142,16 +141,11 @@ func reportHostJourneys(c CLI, failed, ran int) int {
 func hostJourneySteps(selfBin, workdir string) []bench.JourneyStep {
 	sub := func(args ...string) func(context.Context, string) (string, error) {
 		return func(ctx context.Context, _ string) (string, error) {
-			cmd := exec.CommandContext(ctx, selfBin, args...)
-			cmd.Dir = workdir
-			executil.HideWindow(cmd)
-			var out, errb strings.Builder
-			cmd.Stdout = &out
-			cmd.Stderr = &errb
-			if err := cmd.Run(); err != nil {
-				return out.String(), fmt.Errorf("%s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+			res := pxexec.Run(ctx, pxexec.Spec{Name: selfBin, Args: args, Dir: workdir})
+			if res.Outcome != pxexec.OutcomePass {
+				return res.Stdout, fmt.Errorf("%s: exit status %d (%s)", strings.Join(args, " "), res.Exit, strings.TrimSpace(res.Stderr))
 			}
-			return out.String(), nil
+			return res.Stdout, nil
 		}
 	}
 	return []bench.JourneyStep{

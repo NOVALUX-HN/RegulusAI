@@ -14,10 +14,17 @@
 # raíz del repo en vez del fixture y los tests leerían el store real
 # (aislamiento roto).
 #
-# Uso: powershell -NoProfile -File scripts/test-windows.ps1 [-Packages "a b"] [-KeepBinaries]
+# Uso: powershell -NoProfile -File scripts/test-windows.ps1 [-Packages "a b"] [-KeepBinaries] [-Strict] [-JsonReport <path>]
+#
+# -Strict (F15.5): los bloqueos de App Control también fallan (exit 1).
+# Sin -Strict se reportan aparte con exit 0 salvo fallos reales (modo lab).
+# -JsonReport: escribe el resumen versionado (test-windows-report-v1)
+# con paquetes, veredictos y mecanismo para artefactos de CI.
 param(
   [string]$Packages = "./internal/...",
-  [switch]$KeepBinaries
+  [switch]$KeepBinaries,
+  [switch]$Strict,
+  [string]$JsonReport = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -46,6 +53,8 @@ if (-not $pkgs) { throw "go list devolvió vacío para $Packages" }
 $failed = @()
 $blocked = @()
 $passed = 0
+$skipped = @()
+$results = @()
 foreach ($pkg in $pkgs) {
   $name = ($pkg -replace "regulus-ai/internal/", "") -replace "/", "."
   if ([string]::IsNullOrEmpty($name)) { $name = "root" }
@@ -53,8 +62,9 @@ foreach ($pkg in $pkgs) {
   $build = & go test -c -o $exe $pkg 2>&1
   if ($LASTEXITCODE -ne 0) {
     # Sin tests compilables no hay nada que correr (p. ej. paquetes solo-biblioteca).
-    if ($build -match "no test files") { continue }
+    if ($build -match "no test files") { $skipped += $pkg; continue }
     $failed += "${pkg}: COMPILE FAIL :: ${build}"
+    $results += [pscustomobject]@{package=$pkg; verdict="FAIL"; detail="compile: $($build -join ' ')"}
     continue
   }
   # Nota: los args van por splatting (@(...)): PowerShell parte
@@ -67,6 +77,7 @@ foreach ($pkg in $pkgs) {
   # (0 del go build) — por eso el texto manda: un bloqueo nunca es PASS.
   if (($code -ne 0 -and (Test-IsAppControlBlock $text)) -or ($text -match "NativeCommandFailed")) {
     $blocked += $pkg
+    $results += [pscustomobject]@{package=$pkg; verdict="BLOCKED"; detail="App Control: ver CodeIntegrity Operational 3033/3077/3089/3118"}
     Write-Host "BLOCKED (App Control): $pkg"
     Write-Host "  Diagnóstico: CodeIntegrity Operational, eventos 3033/3077/3089/3118 con ruta, hash y firmante."
     Write-Host "  Ver docs/windows-diagnosis.md. Reintentar en ventana limpia o validar en WSL: wsl go test $pkg"
@@ -74,9 +85,11 @@ foreach ($pkg in $pkgs) {
   }
   if ($code -ne 0) {
     $failed += "${pkg}: FAIL :: ${text}"
+    $results += [pscustomobject]@{package=$pkg; verdict="FAIL"; detail=$text}
     continue
   }
   $passed++
+  $results += [pscustomobject]@{package=$pkg; verdict="PASS"; detail=""}
   Write-Host "PASS: $pkg"
 }
 
@@ -86,8 +99,24 @@ Write-Host ""
 Write-Host "windows-suite: ${passed} paquetes PASS, $($failed.Count) FAIL, $($blocked.Count) bloqueados por App Control"
 foreach ($f in $failed) { Write-Host "FAIL: $f" }
 foreach ($b in $blocked) { Write-Host "BLOCKED: $b" }
-# Los bloqueos de App Control no son rojos funcionales: se reportan
-# aparte para el laboratorio (paso 48 exige distinguirlos). El exit
-# solo falla por fallos reales.
+# Sin -Strict los bloqueos de App Control no son rojos funcionales: se
+# reportan aparte para el laboratorio (paso 48 exige distinguirlos) y el
+# exit solo falla por fallos reales. Con -Strict (F15.5, CI con gates)
+# todo bloqueo o fallo es rojo: una ejecución parcial nunca aparece verde.
+if ($JsonReport -ne "") {
+  $report = [pscustomobject]@{
+    version = "test-windows-report-v1"
+    strict  = [bool]$Strict
+    passed  = $passed
+    failed  = @($failed)
+    blocked = @($blocked)
+    skipped = @($skipped)
+    results = @($results)
+  }
+  # UTF-8 sin BOM: artefacto portable para CI y herramientas externas.
+  [System.IO.File]::WriteAllText($JsonReport, ($report | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding $false))
+  Write-Host "evidence: report saved to $JsonReport"
+}
 if ($failed.Count -gt 0) { exit 1 }
+if ($Strict -and $blocked.Count -gt 0) { exit 1 }
 exit 0

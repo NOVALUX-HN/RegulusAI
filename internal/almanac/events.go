@@ -89,16 +89,26 @@ const (
 	RelationVerifiedBy    = "verified_by"
 )
 
-// Relation is one recorded relation between two observations.
+// Relation is one recorded relation between two observations. By
+// names the resolving actor for governed resolutions (F12.6
+// ResolveContradiction); empty on legacy hand-written lines.
 type Relation struct {
 	From     string    `json:"from"`
 	Relation string    `json:"relation"`
 	To       string    `json:"to"`
+	By       string    `json:"by,omitempty"`
 	At       time.Time `json:"at"`
 }
 
 // Relate records a validated relation between two existing observations.
 func Relate(root, from, relation, to string, now time.Time) error {
+	return RelateAttributed(root, from, relation, to, "", now)
+}
+
+// RelateAttributed records a validated relation attributed to an
+// actor (governed resolutions name their resolver; empty means
+// hand-written, as before).
+func RelateAttributed(root, from, relation, to, by string, now time.Time) error {
 	switch relation {
 	case RelationSupersedes, RelationConflictsWith, RelationRelated,
 		RelationRelatedTo, RelationInvalidatedBy, RelationDerivedFrom, RelationVerifiedBy:
@@ -130,7 +140,7 @@ func Relate(root, from, relation, to string, now time.Time) error {
 		return err
 	}
 	defer f.Close()
-	line, err := json.Marshal(Relation{From: from, Relation: relation, To: to, At: now.UTC()})
+	line, err := json.Marshal(Relation{From: from, Relation: relation, To: to, By: by, At: now.UTC()})
 	if err != nil {
 		return err
 	}

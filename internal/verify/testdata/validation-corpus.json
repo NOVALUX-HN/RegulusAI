@@ -1,0 +1,98 @@
+{
+  "version": "verify-v1",
+  "note": "Corpus de validación F13.4: cada escenario fija el cambio, los contratos y la severidad F12.4, más la decisión esperada. Los tests (verify_test.go: TestValidationCorpus) ejecutan el motor sobre el fixture grafo y exigen la decisión exacta. Editar un escenario exige actualizar el test: el corpus no es decorativo.",
+  "scenarios": [
+    {
+      "name": "cambio-pequeno-sin-riesgo",
+      "changed": ["internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "expect_risk": "low",
+      "expect_gates": ["build", "static", "unit"],
+      "expect_decision": "allow"
+    },
+    {
+      "name": "fallo-inyectado-unit-bloquea",
+      "changed": ["internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "inject": {"unit": "FAIL:panic en TestShout"},
+      "expect_risk": "low",
+      "expect_decision": "block"
+    },
+    {
+      "name": "critico-siempre-high",
+      "changed": ["internal/gates/g.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "expect_risk": "high",
+      "expect_gates": ["build", "static", "unit", "integration", "e2e", "security"],
+      "expect_decision": "allow"
+    },
+    {
+      "name": "contrato-toca-escala-high",
+      "changed": ["internal/b/b.go"],
+      "contracts": ["api:demo/Shout"],
+      "severity": 0.0,
+      "expect_risk": "high",
+      "expect_gates": ["build", "static", "unit", "integration", "e2e", "security"],
+      "expect_decision": "allow"
+    },
+    {
+      "name": "breaking-es-critical-con-mutation",
+      "changed": ["internal/b/b.go"],
+      "contracts": ["breaking:api:demo/Shout"],
+      "severity": 0.0,
+      "expect_risk": "critical",
+      "expect_gates": ["build", "static", "unit", "integration", "e2e", "security", "mutation"],
+      "expect_decision": "allow"
+    },
+    {
+      "name": "desconocido-amplia-y-sube",
+      "changed": ["zzz/desconocido.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "expect_widened": true,
+      "expect_decision": "allow"
+    },
+    {
+      "name": "multi-paquete-medium",
+      "changed": ["internal/a/a.go", "internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "expect_decision": "allow"
+    },
+    {
+      "name": "blocked-nunca-pass",
+      "changed": ["internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "inject": {"unit": "BLOCKED:toolchain caído"},
+      "expect_decision": "block"
+    },
+    {
+      "name": "skipped-nunca-pass",
+      "changed": ["internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "inject": {"unit": "SKIPPED:flaky en cuarentena"},
+      "expect_decision": "block"
+    },
+    {
+      "name": "unknown-nunca-pass",
+      "changed": ["internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "inject": {"unit": "UNKNOWN:sin evidencia"},
+      "expect_decision": "block"
+    },
+    {
+      "name": "not-applicable-no-bloquea",
+      "changed": ["internal/b/b.go"],
+      "contracts": [],
+      "severity": 0.0,
+      "inject": {"mutation": "NOT_APPLICABLE:risk low no exige mutation"},
+      "expect_decision": "allow"
+    }
+  ]
+}

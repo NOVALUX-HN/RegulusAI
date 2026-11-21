@@ -11,13 +11,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"regulus-ai/internal/bench"
 	"regulus-ai/internal/evolve"
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 )
 
 // benchAgentTasksOptions carries the parsed `bench agent-tasks` flags:
@@ -330,12 +329,11 @@ func reportBenchAgentResults(stdout io.Writer, variant string, outcomes []bench.
 func probeOpenCodeVersion() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "opencode", "--version")
-	executil.HideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
+	res := pxexec.Run(ctx, pxexec.Spec{Name: "opencode", Args: []string{"--version"}})
+	if res.Outcome != pxexec.OutcomePass {
 		return ""
 	}
+	out := res.Stdout
 	fields := strings.Fields(strings.TrimSpace(string(out)))
 	if len(fields) == 2 && fields[0] == "opencode" {
 		return fields[1]

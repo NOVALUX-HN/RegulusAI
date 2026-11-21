@@ -76,6 +76,7 @@ var cliDispatch = map[string]func(c CLI, args []string) int{
 	"decide":   func(c CLI, args []string) int { return c.decideCmd(args) },
 	"manifest": func(c CLI, args []string) int { return c.manifestCmd(args) },
 	"bench":    func(c CLI, args []string) int { return c.benchCmd(args) },
+	"testflow": func(c CLI, args []string) int { return c.testflowCmd(args) },
 	"yolo":     func(c CLI, args []string) int { return c.yoloCmd(args) },
 	"crap":     func(c CLI, args []string) int { return c.crapCmd(args) },
 	"review":   func(c CLI, args []string) int { return c.reviewCmd(args) },
@@ -272,13 +273,15 @@ Commands:
   crap               score functions with the CRAP formula (regulus crap --help)
   doctor             probe OpenCode and verify V2 runtime support
   evidence list [--task <t>] | show <file> | verify [--task <t>] | prune --task <t> [--keep N] [--yes] [--force]   audit gauntlet receipts
-  evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>] | evolve baseline --set|--show | evolve evaluate --exp <id> | evolve adopt|reject|rollback --exp <id>   evidence pack; periodic proposer; lesson economics; deterministic verdicts; governed cycle (baseline->evaluate->adopt/reject->rollback)
+  evolve propose --task <t> --domain <d> | evolve tick [--every N] [--dry-run] | evolve report [--domain <d>] [--save <p>] [--compare <b>] | evolve validate [--domain <d>] [--lesson <id>] | evolve validation declare|run|holdout-run|control|discard|link|compare|finalize|report|cycle-declare|cycle-propose|cycle-link|cycle-compare|cycle-review|cycle-approve|cycle-canary|cycle-monitor|cycle-promote|cycle-rollback|cycle-report | evolve baseline --set|--show | evolve evaluate --exp <id> | evolve adopt|reject|rollback --exp <id>   evidence pack; periodic proposer; lesson economics; deterministic verdicts; governed cycle (baseline->evaluate->adopt/reject->rollback)
+  failure classify|decide|status|explain --mission <id> [--json]   mission failure intelligence (regulus failure --help)
   gate run [--profile NAME] [--dry-run] <task> | gate evaluate ... | gate verdict <task>   run the gauntlet, record guardian assessments, consolidate verdicts
   help               show this help
   library list|candidates|show|domains|forget|retain [--domain <name>]  lessons, pending candidates, domain index, snapshot pruning
   library admit --domain <d> --candidate <id> --guardian <name>  admit a validated lesson
   library forget --domain <d> --task <t>  drop one task snapshot
   library retain --domain <d> --task <t>  keep tasks strictly before <t>
+  learn save|search|verify|invalidate|resolve|metrics [--json]   cross-agent learning: verified knowledge with provenance (F12.6)
   mcp                serve the stdio MCP server (newline-delimited JSON-RPC 2.0)
   serve [--port N] [--bind ADDR]   serve the read-only dashboard (default 127.0.0.1:17817)
   size check         file/function/package size budgets with critical-kernel tiers (regulus size --help)
@@ -289,6 +292,7 @@ Commands:
   skills list        trigger registry: skills with their one-line triggers
   trace record|show|files|sessions|prune|cost|usage   capture and inspect per-session tool traces, report per-task proxy cost (regulus trace --help)
   task check|status|close|classify   the Sextant discipline: contracts, delegation, progress, verified completion
+  verify plan|run|report|matrix|rerun [--evidence-dir D]   continuous verification during missions (regulus verify --help)
   decide propose|assess|resolve|show|list   Decision Intelligence: structured decisions, assessed evidence, governed resolution
   review [--task <t>] [--lens NAME] | review start|approve|refute ...   proportional review: freeze the diff, apply 1 lens (informative, opt-in; never blocks); lineage transactions bind approval to frozen bytes
   spec check <file|dir>  validate the acceptance contract of feature documents

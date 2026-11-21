@@ -13,7 +13,7 @@ import (
 	"regulus-ai/internal/trace"
 )
 
-// traceCmd implements `regulus trace record|show|files|sessions|prune|cost|usage`:
+// traceCmd implements `regulus trace record|show|files|sessions|prune|cost|usage|emit|timeline|prune-exec`:
 // minimal agent-process capture (G2.6). `record` appends one tool
 // execution to the session trace; `show` prints the diffable
 // fingerprint (sequence, tool, status) for probe-with-contrast
@@ -25,11 +25,11 @@ import (
 // folded auditably from the trace logs on disk (F1).
 func (c CLI) traceCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stdout, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--reasoning-tokens N] [--agent <a>] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] [--agent <a>] [--run <r>] [--by task|agent|host] [--rate <f>] | regulus trace usage [--json] | regulus trace host-status [--json] | regulus trace emit --run <r> --type <t> [--status <s>] [...] | regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--rebuild] [--json] | regulus trace prune-exec [--keep N]")
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--reasoning-tokens N] [--agent <a>] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] [--agent <a>] [--run <r>] [--by task|agent|host] [--rate <f>] | regulus trace usage [--json] | regulus trace host-status [--json] | regulus trace emit --run <r> --type <t> [--status <s>] [...] | regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--rebuild] [--json] | regulus trace prune-exec [--keep N]")
 		return 2
 	}
 	switch args[0] {
@@ -49,9 +49,17 @@ func (c CLI) traceCmd(args []string) int {
 		return c.traceCostCmd(args[1:])
 	case "usage":
 		return c.traceUsageCmd(args[1:])
+	case "host-status":
+		return c.traceHostStatusCmd(args[1:])
+	case "emit":
+		return c.traceEmitCmd(args[1:])
+	case "timeline":
+		return c.traceTimelineCmd(args[1:])
+	case "prune-exec":
+		return c.tracePruneExecCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "trace: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] | regulus trace usage [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--reasoning-tokens N] [--agent <a>] [--usage-source S] | regulus trace record-batch --ndjson | regulus trace show --session <s> | regulus trace files --session <s> | regulus trace sessions | regulus trace prune --session <s> [--keep N] | regulus trace prune --all [--keep N] | regulus trace cost [--task <t>] [--agent <a>] [--run <r>] [--by task|agent|host] [--rate <f>] | regulus trace usage [--json] | regulus trace host-status [--json] | regulus trace emit --run <r> --type <t> [--status <s>] [...] | regulus trace timeline --run <r> [--task <t>] [--agent <a>] [--rebuild] [--json] | regulus trace prune-exec [--keep N]")
 		return 2
 	}
 }
@@ -83,23 +91,25 @@ func (c CLI) traceRecordCmd(args []string) int {
 	hostVersion := fs.String("host-version", "", "host version (host-exposed only)")
 	cacheRead := fs.Int64("cache-read-tokens", 0, "host-exposed cache-read tokens only (0 = unknown)")
 	cacheWrite := fs.Int64("cache-write-tokens", 0, "host-exposed cache-write tokens only (0 = unknown)")
-	usageSource := fs.String("usage-source", "", "measurement source: measured-host, measured-local, proxy, unknown (default: auto)")
+	reasoning := fs.Int64("reasoning-tokens", 0, "host-exposed reasoning tokens only (0 = unknown, preserved alongside output)")
+	agent := fs.String("agent", "", "the agent that served the call (per-agent cost attribution)")
+	usageSource := fs.String("usage-source", "", "measurement source: measured-host, measured-local, estimated, proxy, unknown (default: auto)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *session == "" || *message == "" || *call == "" || *tool == "" || *status == "" || fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--usage-source S]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace record --session <s> --message <m> --call <c> --tool <t> --status completed|error [--files <a,b>] [--task <t>] [--execution-id <e>] [--duration-ms N] [--output-bytes N] [--input-tokens N] [--output-tokens N] [--model M] [--host H] [--host-version V] [--cache-read-tokens N] [--cache-write-tokens N] [--reasoning-tokens N] [--agent <a>] [--usage-source S]")
 		return 2
 	}
 	src := *usageSource
-	if src == "" && (*inputTokens > 0 || *outputTokens > 0 || *cacheRead > 0 || *cacheWrite > 0 || *host != "" || *model != "") {
+	if src == "" && (*inputTokens > 0 || *outputTokens > 0 || *reasoning > 0 || *cacheRead > 0 || *cacheWrite > 0 || *host != "" || *model != "") {
 		src = trace.SourceMeasuredHost
 	}
 	if _, err := trace.Record(c.dir(), trace.Entry{
 		Session: *session, Message: *message, Call: *call, Tool: *tool, Status: *status,
-		Files: splitList(*files), Task: *task, ExecutionID: *execution,
+		Files: splitList(*files), Task: *task, Agent: *agent, ExecutionID: *execution,
 		DurationMS: *durationMS, OutputBytes: *outputBytes,
-		InputTokens: *inputTokens, OutputTokens: *outputTokens,
+		InputTokens: *inputTokens, OutputTokens: *outputTokens, ReasoningTokens: *reasoning,
 		Model: *model, Host: *host, HostVersion: *hostVersion,
 		CacheRead: *cacheRead, CacheWrite: *cacheWrite, UsageSource: src,
 	}, time.Now().UTC()); err != nil {
@@ -118,10 +128,10 @@ var traceStdin io.Reader = os.Stdin
 // traceRecordBatchCmd implements `regulus trace record-batch --ndjson`:
 // appends many tool executions to the session traces in one spawn (T7
 // speed-tokens: one hook flush = one spawn, same fields as `trace
-// record` including duration/output-bytes). Each entry is one NDJSON
+// record` including duration/output-bytes/reasoning/agent). Each entry is one NDJSON
 // object per line with the trace.Entry field names (session, message,
-// call, tool, status, files[], task, duration_ms, output_bytes,
-// input_tokens, output_tokens, model, host, host_version,
+// call, tool, status, files[], task, agent, duration_ms, output_bytes,
+// input_tokens, output_tokens, reasoning_tokens, model, host, host_version,
 // cache_read_tokens, cache_write_tokens, usage_source); blank lines are skipped.
 //
 // Entries arrive on stdin; when stdin carries no lines and positional
@@ -330,7 +340,7 @@ func (c CLI) traceShowCmd(args []string) int {
 	return 0
 }
 
-// traceCostCmd implements `regulus trace cost [--task <t>]`: reports
+// traceCostCmd implements `regulus trace cost [--task <t>] [--agent <a>] [--run <r>] [--by task|agent|host] [--rate <f>]`: reports
 // the per-task proxy cost (F1) folded auditably from the trace logs
 // on disk — calls, errors, wall time, output bytes, host-exposed
 // token counts when any entry carries them, plus the always-measured
@@ -342,43 +352,87 @@ func (c CLI) traceCostCmd(args []string) int {
 	fs := flag.NewFlagSet("trace cost", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	task := fs.String("task", "", "report only this task (default: every task)")
+	agent := fs.String("agent", "", "report only this agent (per-agent cost attribution)")
+	run := fs.String("run", "", "report only this execution id (F11.1 run correlation)")
+	by := fs.String("by", "task", "group costs by task | agent | host (default: task)")
+	rate := fs.String("rate", "", "price money costs from a JSON array rate-cards file (explicit tariff only)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus trace cost [--task <t>]")
+		fmt.Fprintln(c.Stderr, "usage: regulus trace cost [--task <t>] [--agent <a>] [--run <r>] [--by task|agent|host] [--rate <f>]")
 		return 2
 	}
-	costs, err := trace.CostByTask(c.dir())
+	costs, err := trace.CostScope(c.dir(), *by, *task, *agent, *run)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "trace cost: %v\n", err)
-		return 1
+		return 2
 	}
-	if *task != "" {
-		filtered := costs[:0]
-		for _, tc := range costs {
-			if tc.Task == *task {
-				filtered = append(filtered, tc)
-			}
-		}
-		costs = filtered
-		if len(costs) == 0 {
+	if len(costs) == 0 {
+		if *task != "" {
 			fmt.Fprintf(c.Stdout, "no trace cost for task %s (no entries attributed)\n", *task)
 			return 0
 		}
-	}
-	if len(costs) == 0 {
+		if *agent != "" {
+			fmt.Fprintf(c.Stdout, "no trace cost for agent %s (no entries attributed)\n", *agent)
+			return 0
+		}
+		if *run != "" {
+			fmt.Fprintf(c.Stdout, "no trace cost for run %s (no entries attributed)\n", *run)
+			return 0
+		}
 		fmt.Fprintln(c.Stdout, "(no trace costs: no sessions traced)")
 		return 0
 	}
+	label := "task"
+	if *by == "agent" {
+		label = "agent"
+	} else if *by == "host" {
+		label = "host"
+	}
 	for _, tc := range costs {
-		fmt.Fprintf(c.Stdout, "task %s: %d call(s), %d error(s), %s, %s, tokens %s, local %s across %d session(s), %d entr(y/ies)\n",
-			tc.Task, tc.Calls, tc.Errors,
+		fmt.Fprintf(c.Stdout, "%s %s: %d call(s), %d error(s), %s, %s, tokens %s, local %s across %d session(s), %d entr(y/ies)\n",
+			label, tc.Task, tc.Calls, tc.Errors,
 			costKnown(tc.TotalDurationMS, "ms", tc.DurationKnown),
 			costKnown(tc.TotalOutputBytes, "B", tc.BytesKnown),
 			tokensKnown(tc),
 			localTokensKnown(tc),
 			len(tc.Sessions), tc.Entries)
+	}
+	if *rate != "" {
+		return c.traceCostMoney(*rate, *task, *agent, *run)
+	}
+	return 0
+}
+
+// traceCostMoney prices the scoped entries against an explicit
+// tariff file (JSON array of rate cards). Every money line cites
+// the tariff (model@version, date, currency) or stays unknown with
+// the reason — never a guessed figure, never a priced zero for
+// unmeasured buckets.
+func (c CLI) traceCostMoney(ratePath, task, agent, run string) int {
+	raw, err := os.ReadFile(ratePath)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace cost: rate file: %v\n", err)
+		return 1
+	}
+	rates, err := trace.ParseRateCards(raw)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace cost: rate file: %v\n", err)
+		return 1
+	}
+	money, err := trace.CostMoneyByTaskFiltered(c.dir(), rates, task, agent, run)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "trace cost: %v\n", err)
+		return 1
+	}
+	for _, m := range money {
+		if m.Known {
+			fmt.Fprintf(c.Stdout, "money task %s (%s@%s, %s): %.4f %s (rate %s)\n",
+				m.Task, m.Model, m.HostVersion, m.Source, m.Total, m.Currency, m.RateDate)
+		} else {
+			fmt.Fprintf(c.Stdout, "money task %s: unknown (%s)\n", m.Task, m.Reason)
+		}
 	}
 	return 0
 }
@@ -405,6 +459,9 @@ func tokensKnown(tc trace.TaskCost) string {
 		src = trace.SourceMeasuredHost
 	}
 	s := fmt.Sprintf("%d in + %d out (%s)", tc.TotalInputTokens, tc.TotalOutputTokens, src)
+	if tc.TotalReasoning > 0 {
+		s += fmt.Sprintf(", reasoning %d (%s)", tc.TotalReasoning, src)
+	}
 	if tc.TotalCacheRead > 0 || tc.TotalCacheWrite > 0 {
 		s += fmt.Sprintf(", cache %d read + %d write (%s)", tc.TotalCacheRead, tc.TotalCacheWrite, src)
 	}

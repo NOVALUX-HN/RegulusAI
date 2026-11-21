@@ -6,8 +6,15 @@ package cli
 // paths (buffers in, buffers out) — never shell-outs — so MCP semantics
 // match CLI stderr semantics exactly.
 //
-// Trust boundary: the server enforces no OpenCode permission layer.
-// Clients (Devin project permissions) are the enforcement point.
+// Trust boundary: the server enforces the MCP capability policy
+// server-side (F11.8/NOV-94, docs/mcp-policy.md) before dispatch: every
+// tools/call is authorized against a server-derived principal (agent /
+// host / user / workspace + minimal scopes, deny-by-default) and the
+// decision is audited into the F11.1 execution log. Client tool
+// arguments are DATA, never authority — scope/role/admin-shaped keys
+// are ignored. OpenCode `permission` blocks do not apply over MCP and
+// were never the enforcement point; Devin project permissions remain a
+// complementary client-side layer, not the authority.
 // Provenance fields (memory_save paths/receipts) are stored metadata
 // only — never read or written — and must stay repo-relative.
 
@@ -149,8 +156,13 @@ func (c CLI) handleMCPLine(line string) []byte {
 	}
 }
 
-// mcpCallTool runs one named tool. Unknown names are -32601; usage-level
-// failures (exit 2, the CLI's bad-params signal) are -32602; every other
+// mcpCallTool runs one named tool. Unknown names are -32601; calls the
+// server-side policy refuses are -32602 with the stable "policy denied
+// for tool <name>:" prefix (authorization failure, distinct from usage
+// errors by prefix); the refusal happens before tool.run, so no denied
+// call has side effects. Every decision (allow or deny) is audited
+// best-effort into the F11.1 execution log. Usage-level failures
+// (exit 2, the CLI's bad-params signal) are -32602; every other
 // outcome — success or refusal — is a content reply carrying the combined
 // CLI output, matching CLI stderr semantics.
 func (c CLI) mcpCallTool(id json.RawMessage, name string, args map[string]any) []byte {
@@ -158,7 +170,18 @@ func (c CLI) mcpCallTool(id json.RawMessage, name string, args map[string]any) [
 	if tool == nil {
 		return mcpErr(id, -32601, fmt.Sprintf("unknown tool: %s", name))
 	}
+	// F11.8: server-side authorization before any side effect.
+	// The principal is server-derived (environment + resolved
+	// workspace); client arguments cannot grant, widen, or spoof it.
+	principal := c.mcpPrincipal()
+	dec := mcp.Evaluate(name, args, principal)
+	if !dec.Allow {
+		c.mcpAuditDecision(principal, name, args, dec, -1)
+		denied := mcp.PolicyDenied(name, dec.Reason)
+		return mcpErr(id, denied.Code, denied.Message)
+	}
 	stdout, stderr, code := tool.run(c, args)
+	c.mcpAuditDecision(principal, name, args, dec, code)
 	if code == 2 {
 		msg := strings.TrimSpace(stderr)
 		if msg == "" {

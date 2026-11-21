@@ -15,8 +15,8 @@ func TestRunDispatchTableCompleteness(t *testing.T) {
 		"doctor", "spec", "status", "chart", "init", "surface",
 		"evidence", "gate", "mcp", "memory", "budget", "library",
 		"reflect", "evolve", "skills", "probe", "trace", "task",
-		"decide", "yolo", "crap", "review", "bench", "audit",
-		"manifest", "size",
+		"decide", "yolo", "crap", "review", "bench", "audit", "govern", "testflow",
+		"manifest", "size", "orchestrate", "context", "quality", "recovery", "learn", "impact", "mission", "execute", "verify", "failure",
 	}
 	if len(cliDispatch) != len(want) {
 		t.Fatalf("dispatch table has %d entries, want %d (%v)", len(cliDispatch), len(want), cliDispatch)

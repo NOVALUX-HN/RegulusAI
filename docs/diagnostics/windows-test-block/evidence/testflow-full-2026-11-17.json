@@ -1,0 +1,378 @@
+{
+  "Version": "testflow-report-v1",
+  "Mode": "full",
+  "Commit": "dad7353",
+  "Host": "DESKTOP-R0IUAOR",
+  "GoVersion": "go version go1.27.3 windows/amd64",
+  "Regulus": "dev",
+  "At": "2026-11-17T17:54:42Z",
+  "Discovered": [
+    "regulus-ai/internal/adversarial",
+    "regulus-ai/internal/almanac",
+    "regulus-ai/internal/bench",
+    "regulus-ai/internal/budget",
+    "regulus-ai/internal/cli",
+    "regulus-ai/internal/cmdx",
+    "regulus-ai/internal/context",
+    "regulus-ai/internal/contract",
+    "regulus-ai/internal/crap",
+    "regulus-ai/internal/decisions",
+    "regulus-ai/internal/doctor",
+    "regulus-ai/internal/envfacts",
+    "regulus-ai/internal/evidence",
+    "regulus-ai/internal/evolve",
+    "regulus-ai/internal/execute",
+    "regulus-ai/internal/executil",
+    "regulus-ai/internal/failure",
+    "regulus-ai/internal/fsx",
+    "regulus-ai/internal/gates",
+    "regulus-ai/internal/govern",
+    "regulus-ai/internal/guardians",
+    "regulus-ai/internal/hostcfg",
+    "regulus-ai/internal/httpapi",
+    "regulus-ai/internal/impact",
+    "regulus-ai/internal/journey",
+    "regulus-ai/internal/library",
+    "regulus-ai/internal/manifest",
+    "regulus-ai/internal/mbench",
+    "regulus-ai/internal/mission",
+    "regulus-ai/internal/observability",
+    "regulus-ai/internal/orchestrate",
+    "regulus-ai/internal/planning",
+    "regulus-ai/internal/portability",
+    "regulus-ai/internal/probe",
+    "regulus-ai/internal/pxexec",
+    "regulus-ai/internal/quality",
+    "regulus-ai/internal/receipts",
+    "regulus-ai/internal/recovery",
+    "regulus-ai/internal/reflect",
+    "regulus-ai/internal/runtime",
+    "regulus-ai/internal/sextant",
+    "regulus-ai/internal/size",
+    "regulus-ai/internal/skills",
+    "regulus-ai/internal/spec",
+    "regulus-ai/internal/surface",
+    "regulus-ai/internal/testenv",
+    "regulus-ai/internal/testflow",
+    "regulus-ai/internal/trace",
+    "regulus-ai/internal/verdict",
+    "regulus-ai/internal/verify"
+  ],
+  "Skipped": null,
+  "Results": [
+    {
+      "Package": "regulus-ai/internal/adversarial",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/adversarial\t0.213s",
+      "DurationMS": 559
+    },
+    {
+      "Package": "regulus-ai/internal/almanac",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/almanac\t12.872s",
+      "DurationMS": 13657
+    },
+    {
+      "Package": "regulus-ai/internal/bench",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\n--- FAIL: TestAgentSuitePositiveFixPasses (2.95s)\n    agenttasks_test.go:121: fixing stub must pass 4/4 exploration, got {Variant:candidate Total:4 Evaluable:2 Pass:2 Fail:0 Timeout:0 Infra:2 NotRun:0 PassRate:1 RepMin:1 RepMax:1 TokensIn:40 TokensOut:20 LatencyMS:0}\n--- FAIL: TestAgentSuiteNoOpFixFails (2.50s)\n    agenttasks_test.go:156: no-op stub must fail 4/4, got {Variant:baseline Total:4 Evaluable:2 Pass:0 Fail:2 Timeout:0 Infra:2 NotRun:0 PassRate:0 RepMin:0 RepMax:0 TokensIn:0 TokensOut:0 LatencyMS:0}\n--- FAIL: TestAgentTrapsCatchHardcodedFix (2.82s)\n    agenttasks_test.go:394: task AT28 check output:\n        fork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build3453626774\\b001\\fixture.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\n        FAIL\tfixture\t1.168s\n        FAIL\n    agenttasks_test.go:394: task AT28 check output:\n        fork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build4163727028\\b001\\fixture.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\n        FAIL\tfixture\t0.886s\n        FAIL\n    agenttasks_test.go:402: trap AT28 must pass the real fix\nFAIL\nFAIL\tregulus-ai/internal/bench\t55.761s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 56488
+    },
+    {
+      "Package": "regulus-ai/internal/budget",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/budget\t0.197s",
+      "DurationMS": 510
+    },
+    {
+      "Package": "regulus-ai/internal/cli",
+      "Outcome": "FAIL",
+      "Detail": "--- FAIL: TestRunDispatchTableCompleteness (0.00s)\n[tail]\n--- FAIL: TestRunDispatchTableCompleteness (0.00s)\n    run_split_test.go:22: dispatch table has 38 entries, want 36 (map[audit:0x7ff6c16cf3a0 bench:0x7ff6c16cf080 budget:0x7ff6c16cea40 chart:0x7ff6c16ce540 context:0x7ff6c16db820 crap:0x7ff6c16cf260 decide:0x7ff6c16cef40 doctor:0x7ff6c16ce2e0 evidence:0x7ff6c16ce7c0 evolve:0x7ff6c16cec20 execute:0x7ff6c16db780 failure:0x7ff6c16db6e0 gate:0x7ff6c16ce860 govern:0x7ff6c16db640 impact:0x7ff6c16db5a0 init:0x7ff6c16ce5e0 learn:0x7ff6c16db500 library:0x7ff6c16ceae0 manifest:0x7ff6c16cefe0 mcp:0x7ff6c16ce900 memory:0x7ff6c16ce9a0 mission:0x7ff6c16d7fe0 orchestrate:0x7ff6c16d7f40 probe:0x7ff6c16ced60 quality:0x7ff6c16d7ea0 recovery:0x7ff6c16d7e00 reflect:0x7ff6c16ceb80 review:0x7ff6c16cf300 size:0x7ff6c16ce720 skills:0x7ff6c16cecc0 spec:0x7ff6c16ce400 status:0x7ff6c16ce4a0 surface:0x7ff6c16ce680 task:0x7ff6c16ceea0 testflow:0x7ff6c16cf120 trace:0x7ff6c16cee00 verify:0x7ff6c16d7d60 yolo:0x7ff6c16cf1c0])\n--- FAIL: TestSizeCheckPassesRepo (0.17s)\n    size_test.go:13: size check exit = 1, want 0 on this tree\nFAIL\nFAIL\tregulus-ai/internal/cli\t71.745s\nFAIL [process-fail]",
+      "DurationMS": 73410
+    },
+    {
+      "Package": "regulus-ai/internal/cmdx",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/cmdx\t2.488s",
+      "DurationMS": 3291
+    },
+    {
+      "Package": "regulus-ai/internal/context",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/context\t0.905s",
+      "DurationMS": 1260
+    },
+    {
+      "Package": "regulus-ai/internal/contract",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/contract\t0.151s",
+      "DurationMS": 445
+    },
+    {
+      "Package": "regulus-ai/internal/crap",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/crap\t0.178s",
+      "DurationMS": 481
+    },
+    {
+      "Package": "regulus-ai/internal/decisions",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/decisions\t1.867s",
+      "DurationMS": 2351
+    },
+    {
+      "Package": "regulus-ai/internal/doctor",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/doctor\t1.102s",
+      "DurationMS": 1489
+    },
+    {
+      "Package": "regulus-ai/internal/envfacts",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/envfacts\t1.293s",
+      "DurationMS": 1727
+    },
+    {
+      "Package": "regulus-ai/internal/evidence",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/evidence\t1.337s",
+      "DurationMS": 1811
+    },
+    {
+      "Package": "regulus-ai/internal/evolve",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build2617442970\\b001\\evolve.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/evolve\t0.879s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1588
+    },
+    {
+      "Package": "regulus-ai/internal/execute",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/execute\t1.282s",
+      "DurationMS": 1668
+    },
+    {
+      "Package": "regulus-ai/internal/executil",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/executil\t0.219s",
+      "DurationMS": 517
+    },
+    {
+      "Package": "regulus-ai/internal/failure",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/failure\t1.377s",
+      "DurationMS": 1827
+    },
+    {
+      "Package": "regulus-ai/internal/fsx",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/fsx\t0.824s",
+      "DurationMS": 1118
+    },
+    {
+      "Package": "regulus-ai/internal/gates",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build2661822899\\b001\\gates.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/gates\t0.843s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1438
+    },
+    {
+      "Package": "regulus-ai/internal/govern",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/govern\t0.884s",
+      "DurationMS": 1391
+    },
+    {
+      "Package": "regulus-ai/internal/guardians",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/guardians\t1.203s",
+      "DurationMS": 1629
+    },
+    {
+      "Package": "regulus-ai/internal/hostcfg",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/hostcfg\t0.870s",
+      "DurationMS": 1286
+    },
+    {
+      "Package": "regulus-ai/internal/httpapi",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/httpapi\t9.918s",
+      "DurationMS": 10718
+    },
+    {
+      "Package": "regulus-ai/internal/impact",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/impact\t1.210s",
+      "DurationMS": 1586
+    },
+    {
+      "Package": "regulus-ai/internal/journey",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/journey\t28.595s",
+      "DurationMS": 29191
+    },
+    {
+      "Package": "regulus-ai/internal/library",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/library\t1.425s",
+      "DurationMS": 1737
+    },
+    {
+      "Package": "regulus-ai/internal/manifest",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/manifest\t1.928s",
+      "DurationMS": 2361
+    },
+    {
+      "Package": "regulus-ai/internal/mbench",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/mbench\t0.600s",
+      "DurationMS": 969
+    },
+    {
+      "Package": "regulus-ai/internal/mission",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build1815420673\\b001\\mission.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/mission\t1.022s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1512
+    },
+    {
+      "Package": "regulus-ai/internal/observability",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build1902878639\\b001\\observability.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/observability\t1.315s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1867
+    },
+    {
+      "Package": "regulus-ai/internal/orchestrate",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/orchestrate\t1.125s",
+      "DurationMS": 1646
+    },
+    {
+      "Package": "regulus-ai/internal/planning",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/planning\t1.229s",
+      "DurationMS": 1610
+    },
+    {
+      "Package": "regulus-ai/internal/portability",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/portability\t0.514s",
+      "DurationMS": 819
+    },
+    {
+      "Package": "regulus-ai/internal/probe",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/probe\t1.446s",
+      "DurationMS": 1943
+    },
+    {
+      "Package": "regulus-ai/internal/pxexec",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build995458348\\b001\\pxexec.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/pxexec\t1.018s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1356
+    },
+    {
+      "Package": "regulus-ai/internal/quality",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/quality\t0.768s",
+      "DurationMS": 1249
+    },
+    {
+      "Package": "regulus-ai/internal/receipts",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build1935379084\\b001\\receipts.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/receipts\t1.096s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1413
+    },
+    {
+      "Package": "regulus-ai/internal/recovery",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/recovery\t0.823s",
+      "DurationMS": 1145
+    },
+    {
+      "Package": "regulus-ai/internal/reflect",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build4186802398\\b001\\reflect.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/reflect\t0.998s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1426
+    },
+    {
+      "Package": "regulus-ai/internal/runtime",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build1580812163\\b001\\runtime.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/runtime\t1.458s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 2093
+    },
+    {
+      "Package": "regulus-ai/internal/sextant",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/sextant\t3.318s",
+      "DurationMS": 3813
+    },
+    {
+      "Package": "regulus-ai/internal/size",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/size\t0.182s",
+      "DurationMS": 478
+    },
+    {
+      "Package": "regulus-ai/internal/skills",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/skills\t0.164s",
+      "DurationMS": 464
+    },
+    {
+      "Package": "regulus-ai/internal/spec",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build3796458288\\b001\\spec.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/spec\t1.085s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1387
+    },
+    {
+      "Package": "regulus-ai/internal/surface",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/surface\t0.270s",
+      "DurationMS": 604
+    },
+    {
+      "Package": "regulus-ai/internal/testenv",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/testenv\t0.153s",
+      "DurationMS": 441
+    },
+    {
+      "Package": "regulus-ai/internal/testflow",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build3764935454\\b001\\testflow.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/testflow\t0.821s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 1198
+    },
+    {
+      "Package": "regulus-ai/internal/trace",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/trace\t0.320s",
+      "DurationMS": 642
+    },
+    {
+      "Package": "regulus-ai/internal/verdict",
+      "Outcome": "PASS",
+      "Detail": "ok  \tregulus-ai/internal/verdict\t0.153s",
+      "DurationMS": 440
+    },
+    {
+      "Package": "regulus-ai/internal/verify",
+      "Outcome": "BLOCKED",
+      "Detail": "execution blocked by policy\n[tail]\nfork/exec C:\\Users\\Andragon\\AppData\\Local\\Temp\\gptrl20H\\go-build2141090765\\b001\\verify.test.exe: Una directiva de Control de aplicaciones bloqueó este archivo.\nFAIL\tregulus-ai/internal/verify\t4.940s\nFAIL: file: go (C:\\Program Files\\Go\\bin\\go.exe) | check: Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational | 3077=file+parent, 3089=signature, 3118=SAC detail",
+      "DurationMS": 5315
+    }
+  ],
+  "Checks": [
+    {
+      "Package": "(check) build ./...",
+      "Outcome": "PASS",
+      "Detail": "exit 0",
+      "DurationMS": 1172
+    },
+    {
+      "Package": "(check) vet ./internal/pxexec",
+      "Outcome": "PASS",
+      "Detail": "exit 0",
+      "DurationMS": 195
+    }
+  ]
+}

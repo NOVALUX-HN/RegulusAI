@@ -3,12 +3,11 @@ package cli
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 )
 
 // rootGitTimeout bounds the `git rev-parse --show-toplevel` probe used
@@ -70,13 +69,11 @@ func ResolveRoot(cwd string) string {
 func gitTopLevel(dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), rootGitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
-	cmd.Dir = dir
-	executil.HideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
+	res := pxexec.Run(ctx, pxexec.Spec{Name: "git", Args: []string{"rev-parse", "--show-toplevel"}, Dir: dir})
+	if res.Outcome != pxexec.OutcomePass {
 		return ""
 	}
+	out := res.Stdout
 	top := filepath.Clean(strings.TrimSpace(string(out)))
 	if top == "" {
 		return ""

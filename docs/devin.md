@@ -93,10 +93,7 @@ The `.devin/mcp_config.json` in this repo already points at
 
 ## MCP trust boundary (read this before exposing regulus mcp)
 
-`regulus mcp` has no permission layer: OpenCode `permission` blocks do not
-apply over MCP. Treat every MCP client as untrusted input — Devin project
-permissions (`allow: ["Exec(regulus)"]`, `ask: ["Write(**/.env*)"]`) are
-the enforcement point, not the server. Provenance fields (`memory_save
+`regulus mcp` enforces a server-side capability policy (F11.8, `docs/mcp-policy.md`): deny-by-default scopes per tool, enforced before any side effect, with delegation that only narrows. OpenCode `permission` blocks still do not apply over MCP, so treat every MCP client as untrusted input — Devin project permissions remain a useful outer layer, but the server is the enforcement point. Provenance fields (`memory_save
 --path/--receipt`) are metadata only: the server never reads or writes
 those paths, stores repo-relative values only, and refuses absolute paths
 and `..` traversal. Never point `regulus mcp` at a privileged shell or

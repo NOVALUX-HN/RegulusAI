@@ -11,10 +11,11 @@ import (
 // Prune selects the observations that fail keep (candidates for
 // removal) without touching disk — the dry-run half. Pinned
 // observations are always kept: pins protect intent. Active lessons
-// are evidence and stay immune; retired lessons (superseded,
-// invalidated, rejected or expired) prune like any other content when
-// unpinned — GC without touching live knowledge. The caller executes
-// with ApplyPrune.
+// and active verified learn knowledge (F12.6: VERIFIED/ACCEPTED) are
+// evidence and stay immune; retired lessons and retired learn
+// (superseded, invalidated, rejected or expired) prune like any other
+// content when unpinned — GC without touching live knowledge. The
+// caller executes with ApplyPrune.
 func Prune(root string, keep func(Observation) bool) ([]Observation, error) {
 	all, err := All(root)
 	if err != nil {
@@ -28,12 +29,17 @@ func Prune(root string, keep func(Observation) bool) ([]Observation, error) {
 	if err != nil {
 		return nil, err
 	}
+	ends, err := statusEnds(root)
+	if err != nil {
+		return nil, err
+	}
+	verified := verifiedLearnIDs(all, ends)
 	var out []Observation
 	for _, o := range all {
 		if pins[o.ID] {
 			continue
 		}
-		if o.Type == TypeLesson && !retired[o.ID] {
+		if !retired[o.ID] && (o.Type == TypeLesson || verified[o.ID]) {
 			continue
 		}
 		if !keep(o) {
@@ -43,9 +49,10 @@ func Prune(root string, keep func(Observation) bool) ([]Observation, error) {
 	return out, nil
 }
 
-// retiredIDs folds every retirement signal for lessons: superseded and
-// invalidated relations (endpoints must exist), REJECTED governance
-// state, and expired temporal validity. Active knowledge is absent.
+// retiredIDs folds every retirement signal for lessons and learn
+// knowledge (F12.6): superseded and invalidated relations (endpoints
+// must exist), REJECTED governance state, and expired temporal
+// validity. Active knowledge is absent.
 func retiredIDs(root string) (map[string]bool, error) {
 	out := map[string]bool{}
 	sup, err := SupersededIDs(root)
@@ -77,7 +84,7 @@ func retiredIDs(root string) (map[string]bool, error) {
 		return nil, err
 	}
 	for _, o := range all {
-		if o.Type == TypeLesson && IsExpired(&o, now) {
+		if (o.Type == TypeLesson || IsLearnKind(o.Type)) && IsExpired(&o, now) {
 			out[o.ID] = true
 		}
 	}

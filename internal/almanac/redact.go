@@ -80,8 +80,9 @@ func redactString(s string) string {
 
 // RedactObservation returns a copy of o with secret-bearing free-text
 // fields scrubbed: Title, Content, TopicKey, Domain, the lesson
-// Cue/Lesson/Evidence block and the provenance Paths. Structural and
-// identity fields (ID, type, confidence, dimension, task, git_head,
+// Cue/Lesson/Evidence block, the top-level learn Evidence (F12.6) and
+// the provenance Paths. Structural and identity fields (ID, type,
+// confidence, dimension, author, version, scope, task, git_head,
 // receipts, source, origin, timestamps) pass through untouched, as do
 // receipts and traces themselves, which keep exact bytes for evidence
 // integrity.
@@ -102,6 +103,13 @@ func RedactObservation(o Observation) Observation {
 			lesson.Evidence = evidence
 		}
 		o.Lesson = &lesson
+	}
+	if o.Evidence != nil {
+		evidence := make([]string, len(o.Evidence))
+		for i, e := range o.Evidence {
+			evidence[i] = redactString(e)
+		}
+		o.Evidence = evidence
 	}
 	if o.Provenance != nil {
 		prov := *o.Provenance

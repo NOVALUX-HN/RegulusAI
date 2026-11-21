@@ -63,9 +63,11 @@ const (
 //
 // Real host usage (NOV-62): Model, Host and HostVersion name the
 // model and host that served the call; CacheReadTokens and
-// CacheWriteTokens carry host-exposed cache counts; UsageSource names
-// the measurement (measured-host, measured-local, proxy, unknown).
-// All are optional (omitempty): lines written before these fields
+// CacheWriteTokens carry host-exposed cache counts; ReasoningTokens
+// carries the host-exposed reasoning breakdown (F11.5: preserved
+// alongside OutputTokens, which may already fold reasoning in — see
+// hostreaders); UsageSource names the measurement (measured-host,
+// measured-local, estimated, proxy, unknown). All are optional (omitempty): lines written before these fields
 // existed decode as empty/zero and read as unknown, never as measured
 // zero. Fingerprint ignores them like every other cost field.
 type Entry struct {
@@ -77,22 +79,23 @@ type Entry struct {
 	Status  string    `json:"status"` // completed | error
 	Files   []string  `json:"files,omitempty"`
 
-	Task          string `json:"task,omitempty"`
-	Phase         string `json:"phase,omitempty"`
-	Agent         string `json:"agent,omitempty"`
-	Hook          string `json:"hook,omitempty"`
-	ExecutionID   string `json:"execution_id,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	DurationMS    int64  `json:"duration_ms,omitempty"`
-	OutputBytes   int64  `json:"output_bytes,omitempty"`
-	InputTokens   int64  `json:"input_tokens,omitempty"`
-	OutputTokens  int64  `json:"output_tokens,omitempty"`
-	Model         string `json:"model,omitempty"`
-	Host          string `json:"host,omitempty"`
-	HostVersion   string `json:"host_version,omitempty"`
-	CacheRead     int64  `json:"cache_read_tokens,omitempty"`
-	CacheWrite    int64  `json:"cache_write_tokens,omitempty"`
-	UsageSource   string `json:"usage_source,omitempty"`
+	Task            string `json:"task,omitempty"`
+	Phase           string `json:"phase,omitempty"`
+	Agent           string `json:"agent,omitempty"`
+	Hook            string `json:"hook,omitempty"`
+	ExecutionID     string `json:"execution_id,omitempty"`
+	CorrelationID   string `json:"correlation_id,omitempty"`
+	DurationMS      int64  `json:"duration_ms,omitempty"`
+	OutputBytes     int64  `json:"output_bytes,omitempty"`
+	InputTokens     int64  `json:"input_tokens,omitempty"`
+	OutputTokens    int64  `json:"output_tokens,omitempty"`
+	ReasoningTokens int64  `json:"reasoning_tokens,omitempty"`
+	Model           string `json:"model,omitempty"`
+	Host            string `json:"host,omitempty"`
+	HostVersion     string `json:"host_version,omitempty"`
+	CacheRead       int64  `json:"cache_read_tokens,omitempty"`
+	CacheWrite      int64  `json:"cache_write_tokens,omitempty"`
+	UsageSource     string `json:"usage_source,omitempty"`
 }
 
 // maxFiles caps the touched-path hints per entry: relevance needs a
@@ -150,10 +153,14 @@ func validate(e Entry) error {
 	for field, v := range map[string]int64{
 		"duration_ms": e.DurationMS, "output_bytes": e.OutputBytes,
 		"input_tokens": e.InputTokens, "output_tokens": e.OutputTokens,
+		"reasoning_tokens":  e.ReasoningTokens,
 		"cache_read_tokens": e.CacheRead, "cache_write_tokens": e.CacheWrite,
 	} {
 		if v < 0 {
 			return fmt.Errorf("%s must not be negative, got %d", field, v)
+		}
+		if v > maxUsageCount {
+			return fmt.Errorf("%s absurd: %d (max %d)", field, v, maxUsageCount)
 		}
 	}
 	for _, dim := range [][2]string{{"model", e.Model}, {"host", e.Host}, {"host_version", e.HostVersion}} {
@@ -163,9 +170,9 @@ func validate(e Entry) error {
 	}
 	if e.UsageSource != "" {
 		switch e.UsageSource {
-		case SourceMeasuredHost, SourceMeasuredLocal, SourceProxy, SourceUnknown:
+		case SourceMeasuredHost, SourceMeasuredLocal, SourceEstimated, SourceProxy, SourceUnknown:
 		default:
-			return fmt.Errorf("usage_source must be measured-host, measured-local, proxy or unknown, got %q", e.UsageSource)
+			return fmt.Errorf("usage_source must be measured-host, measured-local, estimated, proxy or unknown, got %q", e.UsageSource)
 		}
 	}
 	return nil

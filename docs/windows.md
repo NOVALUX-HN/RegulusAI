@@ -9,6 +9,7 @@ Instalación:
 Diagnóstico (sin desactivar nada):
 - Smart App Control ≠ SmartScreen ≠ App Control for Business ≠ AppLocker. No son una sola tecnología.
 - CodeIntegrity Operational: eventos 3077/3089/3033/3118 con ruta/SHA256/firmante/proceso/hora (ver `docs/windows-diagnosis.md`, Policy `0283ac0f-...`).
+- Flujo operativo actual (F15): runbook en `docs/windows-runbook.md`, runner `regulus testflow run`, executor `docs/process-executor.md`, forense F14 en `docs/diagnostics/windows-test-block/`.
 - Runner: `StructuredRunner` para invocaciones simples; shell solo opt-in explícito.
 - Temporales `go test` bloqueados → `go test -c -o C:/Temp/` + ejecutar; WSL2 para unit, nativo para filesystem/procesos.
 - Recuperación: reinstalar desde `binaries/`, `Unblock-File` solo archivo propio descargado (MOTW), nunca exclusiones amplias ni desactivar Defender/firewall/SAC.

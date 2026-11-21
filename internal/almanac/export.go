@@ -1,14 +1,14 @@
 package almanac
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 )
 
 // NormalizeProjectName renders a git remote URL as owner/name, or the
@@ -34,13 +34,16 @@ func NormalizeProjectName(remoteURL, dirName string) string {
 // ProjectName resolves the project name from its git remote origin,
 // falling back to the directory name.
 func ProjectName(root string) string {
-	cmd := exec.Command("git", "-C", root, "config", "--get", "remote.origin.url")
-	executil.HideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
+	// Bounded where the original was not: a hung git config used to
+	// hang the caller forever; 30s fails closed the same way any
+	// other git probe does (documented delta, safe direction).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res := pxexec.Run(ctx, pxexec.Spec{Name: "git", Args: []string{"-C", root, "config", "--get", "remote.origin.url"}})
+	if res.Outcome != pxexec.OutcomePass {
 		return strings.ToLower(filepath.Base(root))
 	}
-	return NormalizeProjectName(strings.TrimSpace(string(out)), filepath.Base(root))
+	return NormalizeProjectName(strings.TrimSpace(res.Stdout), filepath.Base(root))
 }
 
 // Export writes the committed team bundle: .regulus-export/almanac.jsonl

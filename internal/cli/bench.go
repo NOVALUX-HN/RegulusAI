@@ -18,13 +18,21 @@ import (
 //	run [--surface N] [--save P] [--json]   run the suite, print the table
 //	baseline [--set] [--json]  show (or record) the tracked baseline
 //	compare --base A --candidate B [--json]  contrast table + ADOPT/REJECT
+//	tiers | tier-plan | tier-report  F11.3 escalonated L0-L3 selection over the agent corpus
+//
+// benchTopUsage is the top-level bench usage: every subcommand family
+// stays listed so --help documents tiers alongside the suite.
+func benchTopUsage() string {
+	return "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench mission [--split exploration|holdout|all] [--holdout] [--save P] [--json] [--dry-run] | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin] | regulus bench host-capabilities [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin] | regulus bench lab agents|run|compare|flow|report [...] | regulus bench tiers [--json] | regulus bench tier-plan [--tier auto|L0|L1|L2|L3] [--changed f1,f2] [--json] | regulus bench tier-report --evidence-dir <dir> | regulus bench diag --run <id> [--baseline <id>] [--evidence-dir <dir>] [--thresholds <file>] [--json]"
+}
+
 func (c CLI) benchCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		fmt.Fprintln(c.Stdout, benchTopUsage())
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		fmt.Fprintln(c.Stderr, benchTopUsage())
 		return 2
 	}
 	switch args[0] {
@@ -42,11 +50,25 @@ func (c CLI) benchCmd(args []string) int {
 		return c.benchAgentCompareCmd(args[1:])
 	case "agent-report":
 		return c.benchAgentReportCmd(args[1:])
+	case "mission":
+		return c.benchMissionCmd(args[1:])
+	case "lab":
+		return c.benchLabCmd(args[1:])
 	case "host-journeys":
 		return c.benchHostJourneysCmd(args[1:])
+	case "host-capabilities":
+		return c.benchHostCapabilitiesCmd(args[1:])
+	case "tiers":
+		return c.benchTiersCmd(args[1:])
+	case "tier-plan":
+		return c.benchTierPlanCmd(args[1:])
+	case "tier-report":
+		return c.benchTierReportCmd(args[1:])
+	case "diag":
+		return c.benchDiagCmd(args[1:])
 	default:
 		fmt.Fprintf(c.Stderr, "bench: unknown subcommand %q\n", args[0])
-		fmt.Fprintln(c.Stderr, "usage: regulus bench list [--json] | regulus bench run [--surface <name>] [--save <path>] [--json] | regulus bench baseline [--set] [--json] | regulus bench compare --base <path> --candidate <path> [--json] | regulus bench agent-tasks [--reps N] [--split exploration|holdout|all] [--model M] [--host opencode] [--host-version V] [--budget-s N] [--variant V] [--save P] [--evidence-dir D] | regulus bench agent-compare --base <json> --candidate <json> | regulus bench agent-report --evidence-dir <dir> | regulus bench host-journeys [--run] [--model M] [--out DIR] [--host all|opencode|claude|codex|devin]")
+		fmt.Fprintln(c.Stderr, benchTopUsage())
 		return 2
 	}
 }

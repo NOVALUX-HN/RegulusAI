@@ -403,11 +403,11 @@ func (c CLI) budgetCmd(args []string) int {
 // agent/guardian. Assembly is read-only and records nothing.
 func (c CLI) evolveCmd(args []string) int {
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintln(c.Stdout, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | "+evolveCycleUsage)
+		fmt.Fprintln(c.Stdout, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | regulus evolve validation declare|run|holdout-run|control|discard|link|compare|finalize|report|cycle-declare|cycle-propose|cycle-link|cycle-compare|cycle-review|cycle-approve|cycle-canary|cycle-monitor|cycle-promote|cycle-rollback|cycle-report | "+evolveCycleUsage)
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | "+evolveCycleUsage)
+		fmt.Fprintln(c.Stderr, "usage: regulus evolve propose --task <t> --domain <d> | regulus evolve tick [--every N] [--dry-run] | regulus evolve report [--domain <d>] [--save <p>] [--compare <base.json>] | regulus evolve validate [--domain <d>] [--lesson <id>] | regulus evolve validation declare|run|holdout-run|control|discard|link|compare|finalize|report|cycle-declare|cycle-propose|cycle-link|cycle-compare|cycle-review|cycle-approve|cycle-canary|cycle-monitor|cycle-promote|cycle-rollback|cycle-report | "+evolveCycleUsage)
 		return 2
 	}
 	switch args[0] {
@@ -419,6 +419,8 @@ func (c CLI) evolveCmd(args []string) int {
 		return c.evolveReportCmd(args[1:])
 	case "validate":
 		return c.evolveValidateCmd(args[1:])
+	case "validation":
+		return c.evolveValidationCmd(args[1:])
 	case "baseline":
 		return c.evolveBaselineCmd(args[1:])
 	case "evaluate":

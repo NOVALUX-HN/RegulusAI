@@ -36,6 +36,30 @@ func findGremlins(t *testing.T) string {
 	return ""
 }
 
+// exeBlockedByPolicy prueba si un binario recién compilado se puede
+// ejecutar en este host. Host afectado (F15.5/F15.6,
+// docs/diagnostics/windows-test-block): SAC/WDAC bloquea binarios sin
+// reputación con Permission denied aunque existan y sean +x (el bloqueo
+// es por hash: un binario idéntico más viejo puede pasar mientras el
+// fresco se bloquea). CI limpia es la fuente de verdad: acá se salta
+// con razón en vez de fallar.
+func exeBlockedByPolicy(bin string) bool {
+	if bin == "" {
+		return false
+	}
+	if out, err := exec.Command(bin, "--help").CombinedOutput(); err != nil {
+		_ = out
+		if os.IsPermission(err) {
+			return true
+		}
+		msg := strings.ToLower(err.Error())
+		return strings.Contains(msg, "blocked") || strings.Contains(msg, "bloque") ||
+			strings.Contains(msg, "permission denied") || strings.Contains(msg, "access is denied") ||
+			strings.Contains(msg, "control de aplicaciones")
+	}
+	return false
+}
+
 // TestF2SevenLayers walks a real Go fixture project through the complete
 // seven-layer gauntlet (F2 exit criterion): binary gates, the coverage
 // floor, mutation testing and CRAP — in-process, with real shell gates and
@@ -64,6 +88,11 @@ func TestF2SevenLayers(t *testing.T) {
 	if gremlinsBin == "" {
 		testenv.Require(t, "gremlins")
 	}
+	// Host afectado: si SAC/WDAC bloquea el binario, se salta con razón
+	// (CI limpia es la fuente de verdad) en vez de fallar.
+	if exeBlockedByPolicy(gremlinsBin) {
+		t.Skipf("gremlins bloqueado por política en este host (%s); ver docs/diagnostics/windows-test-block", gremlinsBin)
+	}
 
 	dir := t.TempDir()
 	regulusBin := filepath.ToSlash(filepath.Join(dir, "regulus.exe"))
@@ -71,6 +100,11 @@ func TestF2SevenLayers(t *testing.T) {
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building regulus: %v\n%s", err, out)
+	}
+	// El gate de crap ejecuta este binario fresco: si el host lo bloquea,
+	// todo el 7/7 es imposible acá. Skip con razón; CI lo corre completo.
+	if exeBlockedByPolicy(regulusBin) {
+		t.Skipf("regulus recién compilado bloqueado por política en este host; ver docs/diagnostics/windows-test-block")
 	}
 
 	write := func(rel, content string) {
@@ -161,7 +195,7 @@ func main() {
 		{Name: "build", Layer: 3, Command: "go build -o bin/fixture.exe ./cmd/fixture"},
 		{Name: "unit-tests", Layer: 4, Command: "go test ./... -coverprofile .regulus/coverage.out"},
 		{Name: "coverage-floor", Layer: 5, Command: "go tool cover -func .regulus/coverage.out", Metric: &gates.Metric{Extract: gates.ExtractLastLinePercent, Threshold: 80, Operator: gates.OpAtLeast}},
-		{Name: "mutation", Layer: 6, Command: "gremlins unleash ./pkg/calc --threshold-efficacy 70 --workers 4 --timeout-coefficient 10", TimeoutSec: 600},
+		{Name: "mutation", Layer: 6, Command: gremlinsBin + " unleash ./pkg/calc --threshold-efficacy 70 --workers 4 --timeout-coefficient 10", TimeoutSec: 600},
 		{Name: "crap", Layer: 7, Command: "./regulus.exe crap --profile .regulus/coverage.out --max 30 --top 5"},
 	}}
 	cfgData, err := json.Marshal(cfg)

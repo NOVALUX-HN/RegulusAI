@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"regulus-ai/internal/executil"
+	"regulus-ai/internal/pxexec"
 	"regulus-ai/internal/verdict"
 )
 
@@ -72,22 +71,17 @@ func exportCleanTree(ctx context.Context, srcDir string) (string, func(), error)
 	// seconds; a hung git must not eat the mutation timeout.
 	ectx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ectx, "git", "archive", "HEAD")
-	if srcDir != "" {
-		cmd.Dir = srcDir
-	}
-	executil.HideWindow(cmd)
-	var tarBuf bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &tarBuf
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		detail := strings.TrimSpace(errBuf.String())
+	// Streaming tar replaced by a 64MB capped capture: archives bigger
+	// than the cap fail closed (documented delta; previously unbounded).
+	res := pxexec.Run(ectx, pxexec.Spec{Name: "git", Args: []string{"archive", "HEAD"}, Dir: srcDir, MaxOutput: 64 << 20})
+	if res.Outcome != pxexec.OutcomePass {
+		detail := strings.TrimSpace(res.Stderr)
 		if detail != "" {
-			return "", noop, fmt.Errorf("git archive HEAD: %w: %s", err, detail)
+			return "", noop, fmt.Errorf("git archive HEAD: %s: %s", res.Detail, detail)
 		}
-		return "", noop, fmt.Errorf("git archive HEAD: %w", err)
+		return "", noop, fmt.Errorf("git archive HEAD: %s", res.Detail)
 	}
+	tarBuf := bytes.NewBufferString(res.Stdout)
 	if tarBuf.Len() == 0 {
 		return "", noop, fmt.Errorf("git archive HEAD: empty archive")
 	}

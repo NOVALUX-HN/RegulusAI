@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import plugin from "./regulus";
+import plugin from "../plugins/regulus";
 
 function mockCtx(dir: string) {
   const tools: any[] = [];
