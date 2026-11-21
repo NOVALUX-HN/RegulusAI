@@ -30,21 +30,14 @@ func (r *RunRecord) Lookup(taskID, agentID string) (*Checkpoint, error) {
 	return r.find(taskID, agentID)
 }
 
-// RotateStaleRunning marks a running checkpoint whose last
-// confirmation exceeds the attempt timeout as timed_out, so the
-// resume that follows classifies the stall instead of silently
-// restarting it. Fresh running checkpoints pass through.
-func RotateStaleRunning(r *RunRecord, taskID, agentID string, now time.Time, p RetryPolicy) error {
-	c, err := r.find(taskID, agentID)
-	if err != nil {
-		return err
-	}
-	if c.State != StateRunning {
-		return nil
-	}
-	if !p.TimedOut(c.LastConfirm, now) {
-		return nil
-	}
+// isStaleRunning reports whether a checkpoint is a running attempt
+// whose last confirmation exceeds the attempt timeout.
+func isStaleRunning(c *Checkpoint, now time.Time, p RetryPolicy) bool {
+	return c.State == StateRunning && p.TimedOut(c.LastConfirm, now)
+}
+
+// applyStaleRotation marks a stale running checkpoint timed out.
+func applyStaleRotation(c *Checkpoint, now time.Time) error {
 	if err := CheckTransition(c.State, StateTimedOut); err != nil {
 		return err
 	}
@@ -56,5 +49,23 @@ func RotateStaleRunning(r *RunRecord, taskID, agentID string, now time.Time, p R
 		Class: ClassTimeout, Detail: "stale running rotated by resume",
 		At: now.UTC(),
 	})
+	return nil
+}
+
+// RotateStaleRunning marks a running checkpoint whose last
+// confirmation exceeds the attempt timeout as timed_out, so the
+// resume that follows classifies the stall instead of silently
+// restarting it. Fresh running checkpoints pass through.
+func RotateStaleRunning(r *RunRecord, taskID, agentID string, now time.Time, p RetryPolicy) error {
+	c, err := r.find(taskID, agentID)
+	if err != nil {
+		return err
+	}
+	if !isStaleRunning(c, now, p) {
+		return nil
+	}
+	if err := applyStaleRotation(c, now); err != nil {
+		return err
+	}
 	return nil
 }

@@ -87,17 +87,19 @@ func FindTierSpec(tier string) (TierSpec, bool) {
 	return TierSpec{}, false
 }
 
+// tierByAlias maps every accepted tier spelling onto its canonical
+// level: the closed vocabulary plus digits and long names.
+var tierByAlias = map[string]string{
+	TierL0: TierL0, "0": TierL0, "SMOKE": TierL0,
+	TierL1: TierL1, "1": TierL1, "FOCUSED": TierL1,
+	TierL2: TierL2, "2": TierL2, "REGRESSION": TierL2,
+	TierL3: TierL3, "3": TierL3, "FULL": TierL3,
+}
+
 // ParseTier validates the closed level vocabulary.
 func ParseTier(s string) (string, error) {
-	switch strings.ToUpper(strings.TrimSpace(s)) {
-	case TierL0, "0", "SMOKE":
-		return TierL0, nil
-	case TierL1, "1", "FOCUSED":
-		return TierL1, nil
-	case TierL2, "2", "REGRESSION":
-		return TierL2, nil
-	case TierL3, "3", "FULL":
-		return TierL3, nil
+	if tier, ok := tierByAlias[strings.ToUpper(strings.TrimSpace(s))]; ok {
+		return tier, nil
 	}
 	return "", fmt.Errorf("unknown tier %q (want L0|L1|L2|L3)", s)
 }
@@ -508,13 +510,21 @@ func tierOmitReason(tier string, t AgentTask, capability string, changed []strin
 	}
 }
 
+// smokeIDMatchesLang reports whether one smoke id covers a language.
+func smokeIDMatchesLang(id, lang string) bool {
+	for _, t := range AgentCorpus() {
+		if t.ID == id && t.Lang == lang {
+			return true
+		}
+	}
+	return false
+}
+
 // smokeForLang names the smoke representative per language.
 func smokeForLang(lang string) string {
 	for _, id := range TierSmokeIDs {
-		for _, t := range AgentCorpus() {
-			if t.ID == id && t.Lang == lang {
-				return id
-			}
+		if smokeIDMatchesLang(id, lang) {
+			return id
 		}
 	}
 	return "smoke"

@@ -496,22 +496,32 @@ func hasApprovalBlocker(blockers []string) bool {
 // the smallest into their alphabetical neighbour.
 func mergeClusters(clusters [][]string, max int) [][]string {
 	for len(clusters) > max {
-		small := 0
-		for i := range clusters {
-			if len(clusters[i]) < len(clusters[small]) {
-				small = i
-			}
-		}
-		neighbour := 0
-		if small == 0 {
-			neighbour = 1
-		} else {
-			neighbour = small - 1
-		}
+		small := smallestClusterIndex(clusters)
+		neighbour := neighbourIndex(small, len(clusters))
 		clusters[neighbour] = append(clusters[neighbour], clusters[small]...)
 		clusters = append(clusters[:small], clusters[small+1:]...)
 	}
 	return clusters
+}
+
+// smallestClusterIndex names the shortest cluster.
+func smallestClusterIndex(clusters [][]string) int {
+	small := 0
+	for i := range clusters {
+		if len(clusters[i]) < len(clusters[small]) {
+			small = i
+		}
+	}
+	return small
+}
+
+// neighbourIndex names the merge neighbour of the smallest cluster:
+// the next one when the smallest is first, else the previous one.
+func neighbourIndex(small, n int) int {
+	if small == 0 {
+		return 1
+	}
+	return small - 1
 }
 
 // parentLabel names one cluster by its shared component.

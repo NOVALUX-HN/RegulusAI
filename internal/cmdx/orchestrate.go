@@ -368,43 +368,82 @@ func writeOrchestrateDecision(dir string, dec orchestrate.Decision, stderr io.Wr
 	return 0
 }
 
+// orchestrateEvaluateFlags carries the parsed `evaluate` flags.
+type orchestrateEvaluateFlags struct {
+	fs      *flag.FlagSet
+	dynamic *string
+	fixed   *string
+	rates   *string
+	asJSON  *bool
+}
+
+// newOrchestrateEvaluateFlags builds the evaluate flag set without
+// branching: parsing and validation live in the command body.
+func newOrchestrateEvaluateFlags(output io.Writer) orchestrateEvaluateFlags {
+	fs := flag.NewFlagSet("orchestrate evaluate", flag.ContinueOnError)
+	fs.SetOutput(output)
+	return orchestrateEvaluateFlags{
+		fs:      fs,
+		dynamic: fs.String("dynamic", "", "JSON file with dynamic-arm Lab results (required)"),
+		fixed:   fs.String("fixed", "", "JSON file with fixed-arm Lab results (required)"),
+		rates:   fs.String("rates", "", "JSON tariff file (array of trace.RateCard) for money pricing"),
+		asJSON:  fs.Bool("json", false, "print the evaluation as JSON"),
+	}
+}
+
+// hasEvaluateArgs reports whether both required arms are present and
+// no positional argument remains.
+func hasEvaluateArgs(dynamic, fixed string, nargs int) bool {
+	return dynamic != "" && fixed != "" && nargs == 0
+}
+
+// cleanEvaluateFlags reports whether the arm paths look like paths
+// instead of option-looking flags.
+func cleanEvaluateFlags(dynamic, fixed string) bool {
+	return !strings.HasPrefix(dynamic, "-") && !strings.HasPrefix(fixed, "-")
+}
+
+// printOrchestrateEvalJSON marshals and prints one evaluation
+// report as JSON: 1 on marshal error, 0 after printing.
+func (io IO) printOrchestrateEvalJSON(rep orchestrate.EvalReport) int {
+	raw, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		fmt.Fprintf(io.Stderr, "orchestrate evaluate: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(io.Stdout, string(raw))
+	return 0
+}
+
 // OrchestrateEvaluateCmd implements `regulus orchestrate evaluate`.
 func (io IO) OrchestrateEvaluateCmd(args []string) int {
-	fs := flag.NewFlagSet("orchestrate evaluate", flag.ContinueOnError)
-	fs.SetOutput(io.Stderr)
-	dynamic := fs.String("dynamic", "", "JSON file with dynamic-arm Lab results (required)")
-	fixed := fs.String("fixed", "", "JSON file with fixed-arm Lab results (required)")
-	rates := fs.String("rates", "", "JSON tariff file (array of trace.RateCard) for money pricing")
-	asJSON := fs.Bool("json", false, "print the evaluation as JSON")
-	if err := fs.Parse(args); err != nil {
+	flags := newOrchestrateEvaluateFlags(io.Stderr)
+	if err := flags.fs.Parse(args); err != nil {
 		return 2
 	}
-	if *dynamic == "" || *fixed == "" || fs.NArg() != 0 ||
-		strings.HasPrefix(*dynamic, "-") || strings.HasPrefix(*fixed, "-") {
+	if !hasEvaluateArgs(*flags.dynamic, *flags.fixed, flags.fs.NArg()) {
 		fmt.Fprintln(io.Stderr, orchestrateUsage())
 		return 2
 	}
-	tariffs, code, ok := loadOrchestrateRates(*rates, io.Stderr)
+	if !cleanEvaluateFlags(*flags.dynamic, *flags.fixed) {
+		fmt.Fprintln(io.Stderr, orchestrateUsage())
+		return 2
+	}
+	tariffs, code, ok := loadOrchestrateRates(*flags.rates, io.Stderr)
 	if !ok {
 		return code
 	}
-	dyn, code, ok := loadOrchestrateArm("dynamic", *dynamic, io.Stderr)
+	dyn, code, ok := loadOrchestrateArm("dynamic", *flags.dynamic, io.Stderr)
 	if !ok {
 		return code
 	}
-	fix, code, ok := loadOrchestrateArm("fixed", *fixed, io.Stderr)
+	fix, code, ok := loadOrchestrateArm("fixed", *flags.fixed, io.Stderr)
 	if !ok {
 		return code
 	}
 	rep := orchestrate.Evaluate(dyn, fix, tariffs, orchestrate.DefaultEvalThresholds())
-	if *asJSON {
-		raw, err := json.MarshalIndent(rep, "", "  ")
-		if err != nil {
-			fmt.Fprintf(io.Stderr, "orchestrate evaluate: %v\n", err)
-			return 1
-		}
-		fmt.Fprintln(io.Stdout, string(raw))
-		return 0
+	if *flags.asJSON {
+		return io.printOrchestrateEvalJSON(rep)
 	}
 	fmt.Fprint(io.Stdout, orchestrate.RenderEvalReport(rep))
 	return 0
