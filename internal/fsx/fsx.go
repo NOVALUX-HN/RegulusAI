@@ -105,6 +105,44 @@ func LockDir(dir string) (release func(), err error) {
 	}
 }
 
+// permissionWant returns the private mode for an entry: 0700 for dirs,
+// 0600 for files. Single decision point extracted from FixPermissions
+// to keep the orchestrator under the CRAP budget.
+func permissionWant(isDir bool) os.FileMode {
+	if isDir {
+		return os.FileMode(dirPerm)
+	}
+	return os.FileMode(filePerm)
+}
+
+// fixSingle stats one walked entry and fixes its mode when needed.
+// Returns the slash-rel path to record, or "" when nothing changed.
+// Never aborts the walk: every error is a skip, as before.
+func fixSingle(p string, d os.DirEntry, root string) string {
+	want := permissionWant(d.IsDir())
+	fi, err := d.Info()
+	if err != nil {
+		return ""
+	}
+	if fi.Mode().Perm() == want {
+		return ""
+	}
+	if err := os.Chmod(p, want); err != nil {
+		return ""
+	}
+	rel, _ := filepath.Rel(root, p)
+	return filepath.ToSlash(rel)
+}
+
+// slashTrim normalizes recorded rel paths (walk roots may prefix "./").
+// Split out so the FixPermissions orchestrator stays under CRAP budget.
+func slashTrim(paths []string) []string {
+	for i, s := range paths {
+		paths[i] = strings.TrimPrefix(s, "./")
+	}
+	return paths
+}
+
 // FixPermissions walks root/.regulus setting dirs to 0700 and files to
 // 0600, returning the paths it changed. On Windows it returns
 // ErrWindowsACL (callers print the guidance); locking still applies.
@@ -118,29 +156,13 @@ func FixPermissions(root string) ([]string, error) {
 		if err != nil {
 			return nil
 		}
-		want := os.FileMode(filePerm)
-		if d.IsDir() {
-			want = os.FileMode(dirPerm)
+		if rel := fixSingle(p, d, root); rel != "" {
+			fixed = append(fixed, rel)
 		}
-		fi, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		if fi.Mode().Perm() == want {
-			return nil
-		}
-		if err := os.Chmod(p, want); err != nil {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, p)
-		fixed = append(fixed, filepath.ToSlash(rel))
 		return nil
 	})
 	if err != nil {
 		return fixed, err
 	}
-	for i, s := range fixed {
-		fixed[i] = strings.TrimPrefix(s, "./")
-	}
-	return fixed, nil
+	return slashTrim(fixed), nil
 }
