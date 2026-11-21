@@ -22,6 +22,11 @@ func startTaskRun(root string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	// Los gates escriben artefactos bajo .regulus (coverprofile, receipts):
+	// garantizar el dir al inicio para configs de un solo gate en dirs
+	// frescos, donde ningún gate previo lo creó. Best-effort: el gate real
+	// reporta el error si la escritura falla.
+	_ = os.MkdirAll(filepath.Join(absRoot, ".regulus"), 0o755)
 	return absRoot, runID, nil
 }
 

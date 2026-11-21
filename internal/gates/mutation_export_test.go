@@ -162,14 +162,67 @@ func TestMutationReceiptInSituWarning(t *testing.T) {
 	}
 }
 
+// resolveGremlinsBin localiza gremlins con ruta absoluta (.exe primero en
+// Windows). Doctrina F15.3/F15.5: en Windows se invoca con .exe y ruta
+// absoluta; sh de Git-Bash no ejecuta un PE sin extensión (EACCES).
+func resolveGremlinsBin(t *testing.T) string {
+	t.Helper()
+	if path, err := exec.LookPath("gremlins"); err == nil {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+		return filepath.ToSlash(path)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	for _, name := range []string{"gremlins.exe", "gremlins"} {
+		p := filepath.Join(home, "go", "bin", name)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return filepath.ToSlash(p)
+		}
+	}
+	return ""
+}
+
+// gremlinsPolicyBlocked prueba si el binario se puede ejecutar en este
+// host. Host afectado (F15.5/F15.6): SAC/WDAC bloquea binarios sin
+// reputación con Permission denied aunque existan y sean +x. CI limpia
+// es la fuente de verdad: acá se salta con razón en vez de fallar.
+func gremlinsPolicyBlocked(bin string) bool {
+	if bin == "" {
+		return false
+	}
+	if out, err := exec.Command(bin, "--help").CombinedOutput(); err != nil {
+		_ = out
+		if os.IsPermission(err) {
+			return true
+		}
+		msg := strings.ToLower(err.Error())
+		return strings.Contains(msg, "blocked") || strings.Contains(msg, "bloque") ||
+			strings.Contains(msg, "permission denied") || strings.Contains(msg, "access is denied") ||
+			strings.Contains(msg, "control de aplicaciones")
+	}
+	return false
+}
+
 // TestMutationE2EGremlinsInExport runs the real gremlins binary (when on
 // PATH) through the hermetic path with a trivial fast subcommand. It skips
 // when gremlins or git is absent: then only the export+fallback units above
 // run.
 func TestMutationE2EGremlinsInExport(t *testing.T) {
-	testenv.Require(t, "gremlins")
+	gremlinsBin := resolveGremlinsBin(t)
+	if gremlinsBin == "" {
+		testenv.Require(t, "gremlins")
+	}
+	// Host afectado: si SAC/WDAC bloquea el binario, se salta con razón
+	// (CI limpia es la fuente de verdad) en vez de fallar.
+	if gremlinsPolicyBlocked(gremlinsBin) {
+		t.Skipf("gremlins bloqueado por política en este host (%s); ver docs/diagnostics/windows-test-block", gremlinsBin)
+	}
 	repo := initProbeRepo(t, map[string]string{"tracked.txt": "hi\n"})
-	cfg := Config{Gates: []Gate{{Name: "mutation", Layer: 1, Command: "gremlins --help"}}}
+	cfg := Config{Gates: []Gate{{Name: "mutation", Layer: 1, Command: gremlinsBin + " --help"}}}
 	res, err := Run(context.Background(), cfg, t.TempDir(), "probe/T1", "abc", ShRunner{Dir: repo})
 	if err != nil {
 		t.Fatal(err)
