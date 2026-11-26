@@ -61,3 +61,11 @@ L1: "procede papi"
 L2: Las cuatro hijas comparten el mismo bloque genérico de Acceptance criteria y las mismas Instrucciones de 6 pasos; el requisito real de cada una vive en su `## Objetivo`. Cuarta fase consecutiva con este patrón (F16–F19). Criterio: cada tarea se juzga contra su Objetivo + las specs de este documento.
 
 L3: F19.2 dice explícitamente "solo si gap demostrado". Eso habilita un cierre audit-only legítimo si el baseline de F19.1 no muestra un hueco real; se documentará en vez de inventar un perfil nuevo.
+
+L4: F19.1 entregó `docs/context-tool-baseline.md`. La revisión independiente refutó la conclusión central y con razón: no es que nada marque un tool como crítico — es que **los tools ya se eliminan por frecuencia**. `PRUNE_MIN_SESSIONS = 3` y `applyUsagePruning` recortan el set full por uso medido, aplicado automáticamente en `regulus.ts:242-249` salvo `TE_TOOLSET` explícito. La regla del padre estaba siendo violada, no ignorada.
+
+L5: F19.2 (`9a45696`). `NON_EXPENDABLE_TOOLS` con seis superficies y su categoría; el filtro de pruning las conserva antes de mirar el uso. El test existente **pineaba la violación** (`expect(...).not.toContain("gate_run")`) y fue flipeado con la razón al lado. Comentario obsoleto de "all 16" corregido.
+
+La mitad task-aware se cierra **audit-only**: no existe comparación Full-vs-Minimal en `internal/bench`, así que un tercer perfil sería inventado, no justificado.
+
+L6: El primer Gauntlet de F19.2 falló por **deriva documental**: la frase "(3 tools: …)" en el baseline fue leída por `docdrift` como una afirmación sobre la superficie total. Corregido en `0a657b9` nombrando los tres sin número. Tercera vez en el programa que un guard del repo frena un cambio: `TestNoRawProcessLaunch`, el pin del dispatch y ahora `docdrift`.
