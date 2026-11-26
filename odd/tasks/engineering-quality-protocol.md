@@ -72,6 +72,29 @@ Lo que deliberadamente **no** se hizo: siete gates nuevos para prácticas sin
 oráculo, tocar el contrato de receipts del reviewer, o exigir que los charts
 declaren sus prácticas. Los tres habrían roto invariantes para parecer completos.
 
+### Estado de T2 (NOV-151)
+
+Inventario: `crap`, `coverage-floor`, `size` y `lint` **ya son gates requeridos**
+(`regulus.json`), así que complejidad, CRAP y cobertura no tienen brecha y no se
+tocan. Lo que no existía era medición de **duplicación** ni de **dead code**.
+
+Decisión de tooling en `docs/quality-tooling-decisions.md`, con el dato que la
+condiciona: `go.mod` **no tiene ni un `require`**. Agregar cualquier analizador
+sería la primera dependencia externa del proyecto — una decisión de entrega, no de
+calidad.
+
+Adoptado: `internal/duplication`, nativo, report-only, `regulus duplication`.
+Dead code: evaluado y **diferido con el follow-up nombrado** (`deadcode` detrás de
+un gate no requerido cuando el proyecto acepte su primera dependencia de análisis);
+las versiones nativas baratas son máquinas de falsos positivos por satisfacción de
+interfaces, reflexión y build tags. Rechazados con motivo y licencia: `dupl`,
+`x/tools`, `jscpd`, `staticcheck`, y `golangci-lint` por **GPL-3.0**.
+
+Hallazgo real del detector sobre el repo: `generateServeToken` comparte estructura
+con `MintID`, `mintExpID`, `mintGovID`, `mintValID` y `mintLabSession` — la familia
+completa de acuñadores de tokens. Eso es lo que el report-only sirve: hacer visible
+el patrón para que un humano decida, sin convertirlo en un umbral arbitrario.
+
 T1 abre la fase porque condiciona a los otros tres: si REQP no está integrado en el
 flujo, medir tooling (T2), mutation (T3) o reviewer (T4) no tiene dónde engancharse.
 
@@ -129,3 +152,8 @@ un protocolo" sino "el protocolo está repartido y la mitad de sus prácticas no
 tiene diente". La integración ataca eso en el único punto honesto: la tabla de
 prácticas con su nivel de enforcement real, y un test que rompe si una cita deja de
 existir. Verificado: `go build ./...` 0, `go vet` 0, `gofmt` limpio.
+
+L5: T2 implementado tras inventario. Cuatro señales ya estaban gateadas y no se
+tocaron (subtract before you add). El módulo no tiene dependencias: eso decidió
+nativo para duplicación y diferido para dead code, en vez de agregar el primer
+`require` para una métrica.

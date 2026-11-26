@@ -32,6 +32,10 @@ func TestRunDispatchTableCompleteness(t *testing.T) {
 		// refuses to print a table whose citations no longer exist. Adding it is
 		// the F20.1 integration: the protocol is now executable, not prose.
 		"protocol",
+		// duplication reports structural clones with a normalised-token window.
+		// It is report-only: F20.2 rejected a duplication threshold as a vanity
+		// metric, so the command exits 0 whether or not it finds anything.
+		"duplication",
 	}
 	if len(cliDispatch) != len(want) {
 		t.Fatalf("dispatch table has %d entries, want %d (%v)", len(cliDispatch), len(want), cliDispatch)

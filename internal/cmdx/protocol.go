@@ -66,8 +66,15 @@ func (io IO) ProtocolCmd(args []string) int {
 	for _, p := range all {
 		counts[p.Enforcement]++
 	}
-	fmt.Fprintf(io.Stdout, "engineering protocol: %d enforced, %d advisory, %d judgement\n\n",
-		counts[protocol.Enforced], counts[protocol.Advisory], counts[protocol.Judgement])
+	if *only == "" {
+		fmt.Fprintf(io.Stdout, "engineering protocol: %d enforced, %d advisory, %d judgement\n\n",
+			counts[protocol.Enforced], counts[protocol.Advisory], counts[protocol.Judgement])
+	} else {
+		// A filtered view reports the filtered count. Printing the totals here
+		// made the header disagree with the rows underneath it.
+		fmt.Fprintf(io.Stdout, "engineering protocol: showing %d of %d held as %s\n\n",
+			len(selected), len(all), *only)
+	}
 
 	tw := tabwriter.NewWriter(io.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tHELD AS\tWHERE\tNOTE")

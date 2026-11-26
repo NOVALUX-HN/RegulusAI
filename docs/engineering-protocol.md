@@ -64,3 +64,12 @@ bash scripts/verify-wsl.sh ./internal/protocol/
 regulus protocol
 regulus protocol --json
 ```
+
+## Known limit of the pin
+
+The tripwire proves a citation still **exists**, not that it is still **called**. If
+somebody left `contentHash` defined and unreferenced, the idempotency marker would
+survive while the enforcement was gone. Markers that name a live condition
+(`len(m.Skipped) > 0`) or a gate definition (`"name": "size"`) do not have that
+weakness, because removing the behaviour removes the text. The rule when adding a
+practice here: prefer a marker that cannot outlive its behaviour.
