@@ -26,10 +26,37 @@ func TestValidateSplitIDCharset(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "id must match") {
 		t.Fatalf("want id-charset error, got %v", err)
 	}
-	for _, okID := range []string{"", "  ", "ok-1_A2", "ABC-xyz_123"} {
+
+	// The boundaries of every accepted range, on both sides.
+	//
+	// Mutation testing left four CONDITIONALS_BOUNDARY mutants alive on
+	// validate_helpers.go:91: nothing here used an id whose only characters were
+	// at the edge of [a-z], [A-Z] or [0-9], so widening '>=' to '>' or narrowing
+	// '<=' to '<' changed no observed result. These cases exist to kill that:
+	// the valid side pins the inclusive edges, the invalid side pins the
+	// characters immediately outside each range.
+	for _, okID := range []string{
+		"", "  ", "ok-1_A2", "ABC-xyz_123",
+		"a", "z", "A", "Z", "0", "9", "-", "_",
+		"azAZ09-_",
+	} {
 		cfg := Config{Gates: []Gate{{Name: "a", Layer: 1, Command: "x", ID: okID}}}
 		if err := validate(cfg); err != nil {
 			t.Fatalf("id %q must pass, got %v", okID, err)
+		}
+	}
+	for _, badID := range []string{
+		"`", // one below 'a'
+		"{", // one above 'z'
+		"@", // one below 'A'
+		"[", // one above 'Z'
+		"/", // one below '0'
+		":", // one above '9'
+		"a.b", "a b", "ñ",
+	} {
+		cfg := Config{Gates: []Gate{{Name: "a", Layer: 1, Command: "x", ID: badID}}}
+		if err := validate(cfg); err == nil || !strings.Contains(err.Error(), "id must match") {
+			t.Fatalf("id %q must be rejected, got %v", badID, err)
 		}
 	}
 }
