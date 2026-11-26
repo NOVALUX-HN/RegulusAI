@@ -11,7 +11,7 @@ by frequency alone, do not create a parallel selector or compactor, and
 
 | Surface | Location | What it does |
 |---|---|---|
-| Toolset profiles | `.opencode/lib/domain-toolset.ts:25` / `:52` | `TOOLSET_FULL` and `TOOLSET_MINIMAL` (3 tools: `doctor`, `memory_search`, `memory_context`) |
+| Toolset profiles | `.opencode/lib/domain-toolset.ts:25` / `:52` | `TOOLSET_FULL` holds every registered tool; `TOOLSET_MINIMAL` keeps three names — `doctor`, `memory_search`, `memory_context` |
 | Profile selection | `.opencode/lib/domain-toolset.ts:62`, run once at `.opencode/plugins/regulus.ts:227` | `TE_TOOLSET=full\|minimal\|auto`; auto serves full when `charts/` exists, minimal otherwise; fail-closed to full |
 | **Usage pruning** | `.opencode/lib/domain-usage.ts:20`, applied at `.opencode/plugins/regulus.ts:242-249` | `PRUNE_MIN_SESSIONS = 3`; when the mode is full and `TE_TOOLSET` is **not explicit**, tools are removed by measured use |
 | Context engine | `internal/context/context.go:573` | `Select`: ACL → rank → detect → layer → budget trim |
