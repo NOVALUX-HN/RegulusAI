@@ -95,6 +95,10 @@ Los cuatro puntos que la fase cerró como limitación están cerrados, en `1d9c7
 
 Ninguna función de F18 quedó sin consumidor.
 
-### Limitación que sigue abierta, a propósito
+### Aislamiento entre proyectos — ahora pineado
 
-**El aislamiento entre proyectos está documentado, no pineado.** La separación viene de la raíz por proyecto, así que el fixture no puede fallar si alguien hiciera que `Search` lea una ruta compartida. Un tripwire real necesita un test de raíz compartida; quedó fuera de alcance y está declarado en el propio test.
+La revisión de fase había marcado que el fixture de contaminación **documentaba conducta sin poder fallar**, porque la separación venía de la raíz del store y no había un guard que remover.
+
+`TestStorePathIsRooted` es el tripwire que faltaba: verifica que dos raíces distintas **no comparten** path de store, que el path vive **dentro** de su propia raíz, que escribir en A no crea nada en B, y que leer un proyecto vacío devuelve cero **sin materializar** un store. Si alguien hardcodea el path o lee uno global, falla ahí.
+
+`TestAllOnEmptyRootDoesNotInventAStore` cubre el mismo riesgo en el camino de lectura.

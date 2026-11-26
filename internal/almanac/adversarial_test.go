@@ -122,11 +122,10 @@ func TestAlmanacCannotExecuteAnything(t *testing.T) {
 	}
 }
 
-// TestKnowledgeDoesNotLeakAcrossProjects documents the isolation behaviour
-// rather than pinning a guard: separation comes from the per-project store root,
-// so there is no single call to remove and the fixture cannot fail that way. What
-// it does catch is a future change that makes Search read a shared path, or a
-// default that starts merging roots.
+// TestKnowledgeDoesNotLeakAcrossProjects documents the isolation behaviour;
+// TestStorePathIsRooted is the tripwire that actually fails if the root stops
+// being honoured. This one is deliberately kept as the end-to-end reading of the
+// contract: what a caller sees when it asks the wrong project.
 func TestKnowledgeDoesNotLeakAcrossProjects(t *testing.T) {
 	projectA, projectB := t.TempDir(), t.TempDir()
 	o := &Observation{Type: "discovery", Title: "only for A", Content: "A-only knowledge", Author: "a1"}
