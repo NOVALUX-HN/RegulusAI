@@ -11,7 +11,7 @@ decirlo con el estado exacto de cada fase.
 | F16 · Capability Fidelity | NOV-134..137 | **Done** | 4 Gauntlets 6/6, revisión independiente, `docs/capability-inventory.md` |
 | F17 · Recovery Outcome | NOV-138..141 | **Done** | 3 Gauntlets 6/6, `docs/progress-signals.md` |
 | F18 · Knowledge Utility | NOV-142..145 | **Done** | 3 Gauntlets 6/6, `docs/knowledge-model-audit.md` |
-| F19 · Context & Tool Opt. | NOV-146..149 | **Done** (gate de fase en curso) | `docs/context-tool-baseline.md` |
+| F19 · Context & Tool Opt. | NOV-146..149 | **Done** | 2 Gauntlets 6/6 incluido el de fase (`ee9726beadf644c6`), `docs/context-tool-baseline.md` |
 
 Deuda de cableado resuelta además: `execbackend`, `recovery.Classify`,
 `StrategyOutcome`, y las cuatro funciones de lifecycle de F18 tienen consumidor.
@@ -19,9 +19,10 @@ Deuda de cableado resuelta además: `execbackend`, `recovery.Classify`,
 ## Lo que NO está hecho
 
 **F20 · Engineering Quality Protocol & Verification Effectiveness** (NOV-132).
-Sin empezar. Cuatro hijas: NOV-150 (adoptar REQP en el workflow), NOV-151
-(métricas CRAP/Dry y tooling), NOV-152 (efectividad de mutation testing), NOV-153
-(efectividad de reviewer y gates).
+**Analizada, sin implementar.** El padre y las cuatro hijas fueron leídos completos
+y el análisis quedó en `odd/tasks/engineering-quality-protocol.md`: once specs que
+citan el padre verbatim, las cuatro tareas, y por qué NOV-150 va primero — integrar
+REQP condiciona a las otras tres (métricas, mutation, reviewer).
 
 **F21 · Quality-Adjusted Performance & Governed Evolution** (NOV-133).
 Solo el padre: **no tiene hijas**. Necesita descomposición antes de ejecutarse.
@@ -86,14 +87,13 @@ git log --oneline -5 && git status -sb
 
 ## Qué haría primero mañana
 
-1. Confirmar el Gauntlet de cierre de F19 (`f19/phase-close`) y cerrar NOV-148/149
-   y NOV-131 en Linear si pasó.
-2. Leer **NOV-132 completa** y las cuatro hijas completas.
-3. Escribir `odd/tasks/engineering-quality-protocol.md` con specs verbatim y las
-   cuatro tareas.
-4. Empezar por **NOV-150** (adoptar REQP), que es el que condiciona a los otros
-   tres.
-5. Para F21: primero **descomponer** NOV-133 en 3–4 hijas antes de tocar código.
+1. Confirmar el Gauntlet de cierre de F19 — **ya pasó, 6/6**, y NOV-146..149 y
+   NOV-131 están cerradas en Linear.
+2. Leer **NOV-132 completa** y sus cuatro hijas — **ya hecho**;
+   `odd/tasks/engineering-quality-protocol.md` contiene el análisis.
+3. Empezar por **NOV-150** (adoptar REQP), que condiciona a los otros tres. La
+   auditoría read-only va primero: sin brecha demostrada, cierre audit-only.
+4. Para F21: primero **descomponer** NOV-133 en 3–4 hijas antes de tocar código.
 
 ## Estado del repo al escribir esto
 
