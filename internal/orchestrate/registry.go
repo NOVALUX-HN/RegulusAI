@@ -110,13 +110,25 @@ func RegistryFromManifests(manifests map[string]bench.HostManifest) []RoutedAgen
 		var caps []RoutedCapability
 		for _, id := range bench.CapabilityIDs() {
 			c, found := m.Capability(id)
-			if !found || c.Status != bench.CapVerified || strings.TrimSpace(c.Evidence) == "" {
+			if !found {
 				continue
+			}
+			// Route by state, never by "is it probada": a capability the host
+			// can do with a restriction must still reach the router, or the
+			// core collapses as soon as one dimension is only partially
+			// available.
+			decision := bench.RouteFor(c)
+			if !decision.Routable {
+				continue
+			}
+			limit := bench.DegradationFor(lab.Host, c.ID)
+			if decision.Restriction != "" {
+				limit = decision.Restriction
 			}
 			caps = append(caps, RoutedCapability{
 				ID:       c.ID,
 				Evidence: c.Evidence,
-				Limit:    bench.DegradationFor(lab.Host, c.ID),
+				Limit:    limit,
 			})
 		}
 		if len(caps) == 0 {

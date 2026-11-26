@@ -337,6 +337,52 @@ func ApplyJourneyOutcome(m HostManifest, o HostJourneyOutcome, now string) HostM
 	return m
 }
 
+// RouteDecision classifies one capability for orchestration routing.
+//
+// The router used to accept probada and silently drop everything else, which
+// made the vocabulary look binary and collapsed an agent the moment a
+// capability was only partially available. A capability that the host can do
+// with a stated restriction must still route, carrying that restriction; only
+// the states that assert absence or ignorance are excluded.
+type RouteDecision struct {
+	Routable    bool
+	Restriction string
+}
+
+// RouteFor maps a capability state to a routing decision.
+//
+// probada routes clean. degradada and parcial route with their restriction —
+// the host can do the work, not without the limit. soportada and inferida also
+// route, but always with an explicit "no observation" restriction, so a
+// declared surface neither disappears nor masquerades as verified. Only
+// no-soportada, no-ejecutada and desconocida are unroutable: nothing is known
+// to be there.
+func RouteFor(c HostCapability) RouteDecision {
+	switch c.Status {
+	case CapVerified:
+		return RouteDecision{Routable: true}
+	case CapDegraded:
+		return RouteDecision{Routable: true, Restriction: restrictionOr(c.Detail, "degradación controlada declarada, sin observación")}
+	case CapPartial:
+		return RouteDecision{Routable: true, Restriction: restrictionOr(c.Detail, "observada con restricciones")}
+	case CapSupported:
+		return RouteDecision{Routable: true, Restriction: restrictionOr(c.Detail, "declarada por contrato, sin observación")}
+	case CapInferred:
+		return RouteDecision{Routable: true, Restriction: restrictionOr(c.Detail, "inferida de una señal, sin observación")}
+	default:
+		return RouteDecision{}
+	}
+}
+
+// restrictionOr keeps the restriction human-readable when a manifest carries
+// no detail for that dimension.
+func restrictionOr(detail, fallback string) string {
+	if trimmed := strings.TrimSpace(detail); trimmed != "" {
+		return trimmed
+	}
+	return fallback
+}
+
 // ValidateCapabilitiesAttributable enforces the evidence rule: every
 // probada capability cites its evidence, and only the closed state
 // vocabulary is allowed. Undated claims fail instead of printing.

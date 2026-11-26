@@ -155,5 +155,13 @@ pruebas, evidencia, limitaciones y gap real").
   `probada` whose evidence cites the journey for a dimension `JourneyCoveredCaps` does
   not cover, and it runs next to the other validators in `cmdx`, not only in tests.
 * **G2 closed.** README no longer calls the config/MCP surface a "native adapter".
-* **G3 open.** Devin's presentation still needs the vocabulary applied where a reader
-  can see it; that belongs to F16.3, together with the degraded-path journey.
+* **G3 closed.** The wider vocabulary now separates the cases a reader could not tell apart:
+  `no-soportada` (absent), `no-ejecutada` (declared, never attempted here) and
+  `desconocida` (no information), with the legend in `docs/conformity-matrix.md`
+  explaining each.
+* **Fallback (F16.3).** `orchestrate` classifies capabilities by state instead of
+  accepting `probada` alone. `degradada`, `parcial`, `soportada` and `inferida` route
+  carrying an explicit restriction; only `no-soportada`, `no-ejecutada` and `desconocida`
+  are excluded. Before this, the filter at `orchestrate/registry.go` dropped everything
+  that was not `probada`, so a capability turning partial silently removed the dimension
+  from the agent and the core lost the work instead of degrading it.

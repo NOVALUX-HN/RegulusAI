@@ -329,3 +329,38 @@ func TestDeclaredIsNotVerified(t *testing.T) {
 		}
 	}
 }
+
+// TestRouteForMapsEveryState pins the F16.3 routing contract: only the states
+// that assert absence or ignorance are unroutable, and every routable
+// restricted state carries an explicit restriction instead of being dropped.
+func TestRouteForMapsEveryState(t *testing.T) {
+	cases := []struct {
+		status     string
+		routable   bool
+		restricted bool
+	}{
+		{CapVerified, true, false},
+		{CapDegraded, true, true},
+		{CapPartial, true, true},
+		{CapSupported, true, true},
+		{CapInferred, true, true},
+		{CapUnsupported, false, false},
+		{CapNotExecuted, false, false},
+		{CapUnknown, false, false},
+	}
+	for _, tc := range cases {
+		d := RouteFor(HostCapability{ID: CapTools, Status: tc.status, Detail: "detalle", Evidence: "ev"})
+		if d.Routable != tc.routable {
+			t.Fatalf("%s routable = %v, want %v", tc.status, d.Routable, tc.routable)
+		}
+		if tc.restricted && d.Restriction == "" {
+			t.Fatalf("%s must carry a restriction", tc.status)
+		}
+		if !tc.restricted && d.Restriction != "" {
+			t.Fatalf("%s must not carry a restriction, got %q", tc.status, d.Restriction)
+		}
+	}
+	if d := RouteFor(HostCapability{ID: CapTools, Status: CapPartial}); d.Restriction == "" {
+		t.Fatal("a partial capability without detail must still describe its restriction")
+	}
+}

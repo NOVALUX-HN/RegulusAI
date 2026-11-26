@@ -298,3 +298,55 @@ func TestUnknownCostNeverGates(t *testing.T) {
 		t.Fatalf("unknown cost must not gate: %v", dec.Excluded)
 	}
 }
+
+// TestRegistryRoutesRestrictedCapabilities pins F16.3 at the router: a
+// capability the host can do with a restriction must reach the router instead
+// of being silently dropped, and only the states that assert absence are
+// excluded. Before this, the filter accepted probada alone, so the core lost
+// a dimension the moment it became partial.
+func TestRegistryRoutesRestrictedCapabilities(t *testing.T) {
+	m := bench.HostManifest{
+		Host: "opencode",
+		Capabilities: []bench.HostCapability{
+			{ID: bench.CapTools, Status: bench.CapVerified, Detail: "ok", Evidence: "ev"},
+			{ID: bench.CapHooks, Status: bench.CapDegraded, Detail: "hooks version-gated", Evidence: "contract tests"},
+			{ID: bench.CapLimits, Status: bench.CapPartial, Detail: "cotas parciales", Evidence: "contract tests"},
+			{ID: bench.CapSubagents, Status: bench.CapUnsupported, Detail: "sin superficie", Evidence: "probe"},
+		},
+	}
+	reg := RegistryFromManifests(map[string]bench.HostManifest{"opencode": m})
+	var got *RoutedAgent
+	for i := range reg {
+		if reg[i].Host == "opencode" {
+			got = &reg[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("opencode must still be routed when only some capabilities are restricted")
+	}
+	byID := map[string]RoutedCapability{}
+	for _, c := range got.Capabilities {
+		byID[c.ID] = c
+	}
+	if _, ok := byID[bench.CapTools]; !ok {
+		t.Fatal("verified capability must be routed")
+	}
+	hooks, ok := byID[bench.CapHooks]
+	if !ok {
+		t.Fatal("degraded capability must be routed, not dropped")
+	}
+	if hooks.Limit != "hooks version-gated" {
+		t.Fatalf("degraded capability must carry its own restriction, got %q", hooks.Limit)
+	}
+	limits, ok := byID[bench.CapLimits]
+	if !ok {
+		t.Fatal("partial capability must be routed, not dropped")
+	}
+	if limits.Limit != "cotas parciales" {
+		t.Fatalf("partial capability must carry its own restriction, got %q", limits.Limit)
+	}
+	if _, ok := byID[bench.CapSubagents]; ok {
+		t.Fatal("unsupported capability must not be routed")
+	}
+}
