@@ -178,3 +178,20 @@ Gates: cuatro, todos `required:false` y sólo `full`, con umbrales medidos como 
 anti-regresión (receipts/gates 70→95, evidence 82, recovery 76), no como meta.
 Coste medido total: ~9m40s. Las capas 24 y 25 porque 9 y 10 ya eran `crap` y
 `vulncheck`, y el validador rechaza duplicados.
+
+L7: T4 cerrado. La auditoría encontró que el reviewer y los gates **sí** detectan
+mucho (gates fallidos, receipts adulterados, gates salteados, manifests faltantes,
+allowlist, nueve semillas adversariales), pero había un hueco real: nadie probaba
+que `close` no se deje mentir. `close_false_claim_test.go` forja `done` + `CLOSED`
+sobre evidencia fallida, adulterada y ausente, y — el caso que importa — sobre
+evidencia real, que sí cierra. Sin ese cuarto caso, un fixture de rechazo puede
+pasar por la razón equivocada.
+
+Quedan dos gaps registrados, no arreglados: el roster de gates vive en cuatro
+copias que se sincronizan a mano (lo pagué: la fase agregó dos gates y hubo que
+editar `regulus.json`, `bench/gauntlet-shape.json`, `bench_shape.go` y
+`docs/gauntlet.md`), y el campo `expected` del catálogo adversarial no lo lee
+nadie porque la expectativa vive en un `switch`.
+
+F20 completa: cuatro tareas, cuatro Gauntlets 6/6. F21 descompuesta en
+NOV-154..157 con el orden que exige su dependencia real.
