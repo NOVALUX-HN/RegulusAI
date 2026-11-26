@@ -283,6 +283,12 @@ func DefaultHostManifests(now string) map[string]HostManifest {
 // leave a probe note, so dated journey evidence survives and a probe
 // can never promote — or demote — a journey claim.
 func ApplyJourneyOutcome(m HostManifest, o HostJourneyOutcome, now string) HostManifest {
+	// Copy the capabilities slice before touching it. The signature returns a
+	// new manifest, so callers may keep the one they passed in; without this
+	// copy, promoting a dimension also mutated the caller's manifest through
+	// the shared backing array, and a second fold started from the first
+	// fold's result.
+	m.Capabilities = append([]HostCapability(nil), m.Capabilities...)
 	if strings.TrimSpace(o.Version) != "" && o.Host == m.Host {
 		m.Version = o.Version
 	}

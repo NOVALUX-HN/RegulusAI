@@ -273,3 +273,42 @@ func TestOpenCodePluginPreserved(t *testing.T) {
 		t.Fatalf("contract drift: plugin speaks %q but core speaks %q", got, contract.Version)
 	}
 }
+
+// TestNegotiateNeverGrantsBeyondOffered pins the capability-mismatch boundary
+// the core relies on: a granted capability must always have been offered, every
+// requirement lands in exactly one bucket, and matching stays exact — case and
+// duplicates cannot manufacture a grant.
+func TestNegotiateNeverGrantsBeyondOffered(t *testing.T) {
+	offered := []string{"tools", "gate"}
+	offeredSet := map[string]bool{"tools": true, "gate": true}
+
+	for _, required := range [][]string{
+		{"tools"}, {"tools", "hooks"}, {"tools", "tools"}, {"Tools"}, {"tools", ""},
+	} {
+		granted, missing := Negotiate(required, offered)
+		for _, g := range granted {
+			if !offeredSet[g] {
+				t.Fatalf("granted %q was never offered (required %v)", g, required)
+			}
+		}
+		if len(granted)+len(missing) != len(required) {
+			t.Fatalf("required %v: %d granted + %d missing != %d requirements",
+				required, len(granted), len(missing), len(required))
+		}
+	}
+
+	granted, missing := Negotiate([]string{"Tools"}, offered)
+	if len(granted) != 0 || len(missing) != 1 {
+		t.Fatalf("matching must stay case-sensitive, got granted=%v missing=%v", granted, missing)
+	}
+
+	granted, missing = Negotiate([]string{"tools"}, nil)
+	if len(granted) != 0 || len(missing) != 1 {
+		t.Fatalf("an empty offer must grant nothing, got granted=%v missing=%v", granted, missing)
+	}
+
+	granted, _ = Negotiate([]string{"tools", "tools"}, offered)
+	if len(granted) != 2 {
+		t.Fatalf("a repeated requirement must be honoured per occurrence, got %v", granted)
+	}
+}
