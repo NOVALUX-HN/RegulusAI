@@ -456,6 +456,19 @@ func ResolveContradiction(root, winner, loser, by string, now time.Time) error {
 	if !joined {
 		return fmt.Errorf("no live contradiction between %q and %q (resolve settles active conflicts_with only)", winner, loser)
 	}
+	// Two claims established in different hosts or environments are not a
+	// contradiction to settle: both can be true, and forcing a winner destroys
+	// one of them. The caller keeps them coexisting instead.
+	claims, err := observationsByID(root, winner, loser)
+	if err != nil {
+		return err
+	}
+	if a, ok := claims[winner]; ok {
+		if b, ok2 := claims[loser]; ok2 && CompatibleContexts(a, b) {
+			return fmt.Errorf("almanac: %q (%s/%s) and %q (%s/%s) were established in different contexts: let them coexist instead of forcing a winner",
+				winner, a.Host, a.Environment, loser, b.Host, b.Environment)
+		}
+	}
 	return RelateAttributed(root, winner, RelationSupersedes, loser, by, now)
 }
 

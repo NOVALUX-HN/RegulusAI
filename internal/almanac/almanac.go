@@ -440,6 +440,8 @@ type Query struct {
 	Dimension         string // bucket: lesson dimension (inv | dom)
 	Path              string // bucket: provenance path (exact match)
 	System            string // bucket: memory system (episodic|semantic|decision|procedural|evolution)
+	Host              string // bucket: host the knowledge was established on (unscoped records stay eligible)
+	Environment       string // bucket: environment the knowledge was established in (unscoped records stay eligible)
 	Limit             int    // keep the first N results after sorting (<= 0: all)
 	Any               bool   // OR the terms instead of ANDing them
 	Latest            bool   // collapse each topic chain to its best hit (default: all coexist)
@@ -516,6 +518,15 @@ func (m queryMatcher) keepsBuckets(o Observation) bool {
 		return false
 	}
 	if m.q.Path != "" && !hasProvenancePath(o, m.q.Path) {
+		return false
+	}
+	// Host and environment narrow to knowledge established in that context. An
+	// unscoped record stays eligible: it was not tied to a context, so it makes
+	// no claim about a different one. Same rule ContextScope uses.
+	if m.q.Host != "" && o.Host != "" && !strings.EqualFold(o.Host, m.q.Host) {
+		return false
+	}
+	if m.q.Environment != "" && o.Environment != "" && !strings.EqualFold(o.Environment, m.q.Environment) {
 		return false
 	}
 	return true
@@ -688,10 +699,10 @@ func betterHit(pins map[string]bool, cur, cand Observation) bool {
 
 // confidenceRank orders lesson confidence for same-pinned hits.
 func confidenceRank(o Observation) int {
-	switch o.Lesson.Confidence {
-	case "high":
+	switch DerivedConfidence(o) {
+	case ConfidenceHigh:
 		return 0
-	case "medium":
+	case ConfidenceMedium:
 		return 1
 	default:
 		return 2

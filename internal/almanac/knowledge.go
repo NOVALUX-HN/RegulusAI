@@ -79,6 +79,18 @@ func independentCorroborations(o Observation) int {
 	return len(seen)
 }
 
+// assignedConfidence is the confidence the author claimed. For a lesson it is
+// the lesson's own field, which is where lesson confidence actually lives;
+// otherwise it is the observation's.
+func assignedConfidence(o Observation) string {
+	if o.Lesson != nil {
+		if v := strings.ToLower(strings.TrimSpace(o.Lesson.Confidence)); v != "" {
+			return v
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(o.Confidence))
+}
+
 // DerivedConfidence returns the confidence the evidence supports.
 //
 // It never returns less than the assigned value: an author may know something a
@@ -86,7 +98,7 @@ func independentCorroborations(o Observation) int {
 // promotes on a single source, which is what keeps one run from becoming a
 // universal rule.
 func DerivedConfidence(o Observation) string {
-	assigned := strings.ToLower(strings.TrimSpace(o.Confidence))
+	assigned := assignedConfidence(o)
 	if assigned != ConfidenceLow && assigned != ConfidenceMedium && assigned != ConfidenceHigh {
 		assigned = ConfidenceLow
 	}
@@ -124,6 +136,26 @@ func Revalidate(o *Observation, by string, now time.Time, ttl time.Duration) err
 	o.RevalidatedAt = &stamp
 	o.ExpiresAt = &expires
 	return nil
+}
+
+// observationsByID reads the requested records from the log. Missing ids are
+// simply absent from the map; the caller decides whether that is an error.
+func observationsByID(root string, ids ...string) (map[string]Observation, error) {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	all, err := All(root)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Observation, len(ids))
+	for _, o := range all {
+		if want[o.ID] {
+			out[o.ID] = o
+		}
+	}
+	return out, nil
 }
 
 // CompatibleContexts reports whether two claims can both be true.
