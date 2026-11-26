@@ -75,23 +75,27 @@ const (
 // their own block (Lesson.Cue/Lesson/Evidence/Confidence); learn
 // kinds carry the top-level fields.
 type Observation struct {
-	ID         string      `json:"id"`
-	Type       string      `json:"type"`
-	Title      string      `json:"title"`
-	Content    string      `json:"content"`
-	TopicKey   string      `json:"topic_key,omitempty"`
-	Domain     string      `json:"domain,omitempty"`
-	Lesson     *Lesson     `json:"lesson,omitempty"`
-	Provenance *Provenance `json:"provenance,omitempty"`
-	Source     string      `json:"source,omitempty"`
-	Origin     string      `json:"origin,omitempty"`
-	Author     string      `json:"author,omitempty"`
-	Version    string      `json:"version,omitempty"`
-	Scope      string      `json:"scope,omitempty"`
-	Confidence string      `json:"confidence,omitempty"`
-	Evidence   []string    `json:"evidence,omitempty"`
-	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
-	SavedAt    time.Time   `json:"saved_at"`
+	ID             string      `json:"id"`
+	Type           string      `json:"type"`
+	Title          string      `json:"title"`
+	Content        string      `json:"content"`
+	TopicKey       string      `json:"topic_key,omitempty"`
+	Domain         string      `json:"domain,omitempty"`
+	Lesson         *Lesson     `json:"lesson,omitempty"`
+	Provenance     *Provenance `json:"provenance,omitempty"`
+	Source         string      `json:"source,omitempty"`
+	Origin         string      `json:"origin,omitempty"`
+	Author         string      `json:"author,omitempty"`
+	Version        string      `json:"version,omitempty"`
+	Scope          string      `json:"scope,omitempty"`
+	Host           string      `json:"host,omitempty"`
+	Environment    string      `json:"environment,omitempty"`
+	Confidence     string      `json:"confidence,omitempty"`
+	Evidence       []string    `json:"evidence,omitempty"`
+	Corroborations []string    `json:"corroborations,omitempty"`
+	ExpiresAt      *time.Time  `json:"expires_at,omitempty"`
+	RevalidatedAt  *time.Time  `json:"revalidated_at,omitempty"`
+	SavedAt        time.Time   `json:"saved_at"`
 }
 
 // Memory systems, derived from the observation type so no second store is
