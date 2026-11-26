@@ -21,6 +21,10 @@ func TestRunDispatchTableCompleteness(t *testing.T) {
 		// answers where this host can run a freshly built binary. Adding it
 		// is a reviewed act, which is why this pin changes with it.
 		"exec-backend",
+		// usefulness exposes internal/almanac's reuse measurement: the batch is
+		// supplied by the caller, and the command refuses to claim a comparison
+		// when one group is empty.
+		"usefulness",
 	}
 	if len(cliDispatch) != len(want) {
 		t.Fatalf("dispatch table has %d entries, want %d (%v)", len(cliDispatch), len(want), cliDispatch)

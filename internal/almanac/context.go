@@ -70,14 +70,16 @@ func Context(root string, now time.Time) (string, error) {
 // provenance task, exact provenance path, memory system, and a per-list
 // item budget so one context never injects the whole store.
 type ContextScope struct {
-	Task   string
-	Path   string
-	System string
-	Budget int
+	Task        string
+	Path        string
+	System      string
+	Host        string
+	Environment string
+	Budget      int
 }
 
 func (s ContextScope) active() bool {
-	return s.Task != "" || s.Path != "" || s.System != "" || s.Budget > 0
+	return s.Task != "" || s.Path != "" || s.System != "" || s.Host != "" || s.Environment != "" || s.Budget > 0
 }
 
 func (s ContextScope) matches(o Observation) bool {
@@ -88,6 +90,15 @@ func (s ContextScope) matches(o Observation) bool {
 		return false
 	}
 	if s.System != "" && SystemOf(o.Type) != s.System {
+		return false
+	}
+	// Host and environment narrow to knowledge established in that context.
+	// An unscoped observation stays eligible: it was not tied to a context, so
+	// it is not a claim about a different one.
+	if s.Host != "" && o.Host != "" && !strings.EqualFold(o.Host, s.Host) {
+		return false
+	}
+	if s.Environment != "" && o.Environment != "" && !strings.EqualFold(o.Environment, s.Environment) {
 		return false
 	}
 	return true
@@ -103,6 +114,12 @@ func (s ContextScope) describe() string {
 	}
 	if s.System != "" {
 		parts = append(parts, "system="+s.System)
+	}
+	if s.Host != "" {
+		parts = append(parts, "host="+s.Host)
+	}
+	if s.Environment != "" {
+		parts = append(parts, "environment="+s.Environment)
 	}
 	if s.Budget > 0 {
 		parts = append(parts, fmt.Sprintf("budget=%d", s.Budget))
