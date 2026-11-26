@@ -138,6 +138,51 @@ func Revalidate(o *Observation, by string, now time.Time, ttl time.Duration) err
 	return nil
 }
 
+// Amend applies a change to an existing observation as a new revision.
+//
+// The log is append-only by design: rewriting a line would risk corrupting the
+// store and would destroy the audit trail. Amend therefore mints a new record,
+// relates it as superseding the old one, and lets the existing retirement rules
+// hide the previous revision. History stays readable with IncludeSuperseded.
+//
+// This is what gives Corroborate and Revalidate a durable surface: both mutate a
+// record, and both need the mutation to survive a restart without a second store.
+func Amend(root, id string, mutate func(*Observation) error, by string, now time.Time) (Observation, error) {
+	if mutate == nil {
+		return Observation{}, errors.New("almanac: amend needs a mutation")
+	}
+	by = strings.TrimSpace(by)
+	if by == "" {
+		return Observation{}, errors.New("almanac: amend needs an actor")
+	}
+	claims, err := observationsByID(root, id)
+	if err != nil {
+		return Observation{}, err
+	}
+	old, found := claims[id]
+	if !found {
+		return Observation{}, fmt.Errorf("almanac: observation %q not found", id)
+	}
+	updated := old
+	// Copy the slices the mutation may append to, so a refused amendment cannot
+	// leave the in-memory copy half-changed.
+	updated.Corroborations = append([]string(nil), old.Corroborations...)
+	updated.Evidence = append([]string(nil), old.Evidence...)
+	updated.ID = ""
+	if err := mutate(&updated); err != nil {
+		return Observation{}, err
+	}
+	updated.SavedAt = time.Time{} // Save stamps the revision
+	saved, err := Save(root, &updated, now)
+	if err != nil {
+		return Observation{}, err
+	}
+	if err := RelateAttributed(root, saved.ID, RelationSupersedes, id, by, now); err != nil {
+		return Observation{}, err
+	}
+	return saved, nil
+}
+
 // observationsByID reads the requested records from the log. Missing ids are
 // simply absent from the map; the caller decides whether that is an error.
 func observationsByID(root string, ids ...string) (map[string]Observation, error) {
