@@ -84,8 +84,17 @@ L7: La revisión de fase confirmó C1–C7 y calificó C8 como **MIXED**: los fi
 
 Gauntlet 6/6 PASS en cada tarea: `f18/T2` `1640165b99333819`, `f18/T3` `ee19b6e1fcb3741a`, `f18/T4` `7894cf19c3ea22a1`.
 
-### Limitaciones declaradas, no escondidas
+### Deuda de cableado — resuelta
 
-1. **Cuatro funciones de lifecycle sin llamador.** `Corroborate`, `DerivedConfidence`, `Revalidate` y `CompatibleContexts` tienen **cero call sites fuera de los tests**. `Summarize` sí está cableado. Es la tercera vez que aparece este patrón en el programa (antes: `execbackend` y el clasificador de F17), así que la deuda es estructural, no un descuido aislado: falta una superficie que registre corroboraciones y revalidaciones.
-2. **`Query` no filtra por host ni entorno.** La dimensión nueva es usable desde `ContextScope` (el bloque de contexto), no desde `Search`. Llevarla a `Query` es el paso siguiente natural junto al punto 1.
-3. **El aislamiento entre proyectos está documentado, no pineado.** Si alguien hiciera que `Search` lea una ruta compartida, ningún test fallaría todavía.
+Los cuatro puntos que la fase cerró como limitación están cerrados, en `1d9c7da` y `6ea9d38`:
+
+1. **`DerivedConfidence` gobierna el ranking.** `confidenceRank` lo consulta y `assignedConfidence` prioriza `Lesson.Confidence`, que es donde vive la confianza de una lección. Cuatro corroboraciones independientes ahora superan a un claim asertado.
+2. **`Query` filtra por `Host` y `Environment`**, case-insensitive, con la regla de que un record sin contexto sigue siendo elegible.
+3. **`CompatibleContexts` guarda `ResolveContradiction`**: dos claims de hosts distintos se rechazan con mensaje explícito en vez de que uno sea superseded.
+4. **`Corroborate` y `Revalidate` persisten** vía `Amend` (revisión append-only + `supersedes`, nunca reescritura del log) y se alcanzan como `regulus knowledge corroborate|revalidate`. Pin del dispatch 40 → 41.
+
+Ninguna función de F18 quedó sin consumidor.
+
+### Limitación que sigue abierta, a propósito
+
+**El aislamiento entre proyectos está documentado, no pineado.** La separación viene de la raíz por proyecto, así que el fixture no puede fallar si alguien hiciera que `Search` lea una ruta compartida. Un tripwire real necesita un test de raíz compartida; quedó fuera de alcance y está declarado en el propio test.
