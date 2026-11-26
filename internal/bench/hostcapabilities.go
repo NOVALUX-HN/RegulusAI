@@ -161,6 +161,19 @@ func inferred(id, detail, evidence string) HostCapability {
 	return HostCapability{ID: id, Status: CapInferred, Detail: detail, Evidence: evidence}
 }
 
+// partial records a capability that was observed with restrictions. It still
+// asserts an observation, so the caveat belongs in Detail rather than in a
+// weaker state.
+func partial(id, detail, evidence string) HostCapability {
+	return HostCapability{ID: id, Status: CapPartial, Detail: detail, Evidence: evidence}
+}
+
+// degraded records a capability that works under a named controlled
+// degradation.
+func degraded(id, detail, evidence string) HostCapability {
+	return HostCapability{ID: id, Status: CapDegraded, Detail: detail, Evidence: evidence}
+}
+
 // DefaultHostManifests returns the declared baseline per host: the
 // NOV-69/NOV-76 verified state with dated evidence. OpenCode, Claude
 // and Codex carry the green fixture journey; Devin carries the
@@ -188,7 +201,7 @@ func DefaultHostManifests(now string) map[string]HostManifest {
 		inferred(CapSubagents, "version-gated: inline si la versión no los soporta", "contract tests"),
 		verified(CapMCP, "MCP stdio vía .codex/config.toml", "contract tests + "+journeyGreen),
 		verified(CapSessions, "context/memoria vía journey context", journeyGreen),
-		verified(CapTokens, "receipts con tokens cuando el host los expone, unknown si no", "agent_evidence tests + "+journeyGreen),
+		partial(CapTokens, "receipts con tokens cuando el host los expone, unknown si no", "agent_evidence tests + "+journeyGreen),
 		verified(CapFilesystem, "fixture + preservación config ajena (hostcfg)", journeyGreen),
 		declared(CapPermissions, "respeta permisos, sin escalado silencioso", "contract tests"),
 		declared(CapLimits, "presupuestos y cotas como el resto de hosts", "contract tests"),
@@ -202,7 +215,7 @@ func DefaultHostManifests(now string) map[string]HostManifest {
 		declared(CapSubagents, "agents .claude/agents", "contract tests"),
 		verified(CapMCP, "MCP vía .mcp.json", "contract tests + "+journeyGreen),
 		verified(CapSessions, "context/memoria vía journey context", journeyGreen),
-		verified(CapTokens, "receipts con tokens cuando el host los expone, unknown si no", "agent_evidence tests + "+journeyGreen),
+		partial(CapTokens, "receipts con tokens cuando el host los expone, unknown si no", "agent_evidence tests + "+journeyGreen),
 		verified(CapFilesystem, "fixture + preservación config ajena (hostcfg)", journeyGreen),
 		declared(CapPermissions, "sin mutar permisos sin consentimiento", "contract tests"),
 		declared(CapLimits, "presupuestos y cotas como el resto de hosts", "contract tests"),

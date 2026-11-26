@@ -74,7 +74,7 @@ ejecutados y capabilities verificadas. Comando:
 | subagents | soportada | soportada | inferida | no-ejecutada |
 | mcp | probada | probada | probada | no-ejecutada |
 | sessions | probada | probada | probada | no-ejecutada |
-| tokens | probada | probada | probada | desconocida |
+| tokens | probada | parcial | parcial | desconocida |
 | filesystem | probada | probada | probada | no-soportada |
 | permissions | soportada | soportada | soportada | no-soportada |
 | limits | soportada | soportada | soportada | desconocida |
@@ -85,11 +85,13 @@ ejecutados y capabilities verificadas. Comando:
 Estados posibles: `probada` / `soportada` / `inferida` / `parcial` /
 `degradada` / `no-soportada` / `no-ejecutada` / `desconocida`
 (validados por `ValidateCapabilitiesAttributable`; palabra fuera del
-vocabulario = exit 1). `probada` es la única que afirma una
-observación: exige una corrida que ejercite la dimensión y una cita que
-la cubra (`ValidateEvidenceCoverage`). Lo que el contrato declara sin
-observación es `soportada`; lo derivado de una señal, como un gate de
-versión, es `inferida`. Host desconocido → `desconocida`, nunca
+vocabulario = exit 1). `probada` afirma una observación de recorrido
+completo y exige una corrida que ejercite la dimensión con una cita que
+la cubra (`ValidateEvidenceCoverage`); `parcial` y `degradada` también
+afirman observación, pero con restricciones declaradas. Lo que el
+contrato declara sin observación es `soportada`; lo derivado de una
+señal, como un gate de versión, es `inferida`. Host desconocido →
+`desconocida`, nunca
 pass. Versiones vivas 2026-11-16: OpenCode v2.2.5, Claude 2.1.325
 (Claude Code), Codex codex-cli 0.169.0, Devin desktop-only (sin CLI).
 

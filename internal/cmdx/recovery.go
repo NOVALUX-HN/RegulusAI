@@ -208,20 +208,29 @@ func (io IO) RecoveryResumeCmd(args []string) int {
 	return 0
 }
 
-// recoveryTargetCaps resolves a reassignment target: registry
-// agents contribute their verified (F11.7 probada) capabilities;
-// off-registry agents contribute only the advertised --agent-caps
+// recoveryTargetCaps resolves a reassignment target. A routed capability and a
+// verified one are different things since F16.2: the registry also carries
+// capabilities that are declared, inferred or degraded, and only a probada is
+// something the host has been observed to do. Passing the whole routed set as
+// `verified` would make a reassignment gate claim more than it knows, so
+// `verified` is filtered back to probada while `caps` keeps the full routed
+// surface. Off-registry agents contribute only the advertised --agent-caps
 // with an empty verified set, so required-cap work refuses them.
 func recoveryTargetCaps(agentID string, advertised []string) (caps, verified []string) {
-	reg := orchestrate.RegistryFromManifests(bench.DefaultHostManifests(bench.EvidenceStamp()))
+	manifests := bench.DefaultHostManifests(bench.EvidenceStamp())
+	reg := orchestrate.RegistryFromManifests(manifests)
 	for _, a := range reg {
 		if a.ID != agentID {
 			continue
 		}
+		m := manifests[a.Host]
 		for _, c := range a.Capabilities {
 			caps = append(caps, c.ID)
+			if proven, found := m.Capability(c.ID); found && proven.Status == bench.CapVerified {
+				verified = append(verified, c.ID)
+			}
 		}
-		return caps, append([]string(nil), caps...)
+		return caps, verified
 	}
 	return advertised, nil
 }

@@ -165,3 +165,21 @@ pruebas, evidencia, limitaciones y gap real").
   are excluded. Before this, the filter at `orchestrate/registry.go` dropped everything
   that was not `probada`, so a capability turning partial silently removed the dimension
   from the agent and the core lost the work instead of degrading it.
+
+### Known limits found by the phase review
+
+* **Validation is single-path.** The three manifest validators run inside `bench
+  host-capabilities` only. `orchestrate`, `execute/routing.go`, `planning/planner.go`,
+  `mission_plan.go` and `cmdx/recovery.go` build manifests from `DefaultHostManifests`
+  without validating them. The shipped defaults are clean and the journey fold promotes
+  only covered dimensions, so nothing wrong ships today, but a hand-built or future
+  manifest reaches the matrix and the router ungated.
+* **The coverage guard keys on the journey citation.** `ValidateEvidenceCoverage` rejects
+  a `probada` whose evidence contains the journey citation on an uncovered dimension. A
+  `probada` on an uncovered dimension citing something else still passes; only a
+  dedicated observation such as an agent journey should ever support that claim, and no
+  such evidence exists today.
+* **Assignment still needs `probada`.** `orchestrate` routes restricted states, but
+  `Decide`/`checkVerified` only assign probada-plus-evidence, and
+  `recoveryTargetCaps` filters its `verified` set back to probada. Routing a
+  non-observed capability never authorizes required-cap work.

@@ -85,3 +85,28 @@ func TestJourneyOutcomePromotesOnlyCoveredDimensions(t *testing.T) {
 		}
 	}
 }
+
+// TestTokensStateIsHonest pins the contradiction the F16.1 audit found: a
+// dimension whose own detail says "unknown if the host does not expose them"
+// cannot be probada. OpenCode measures tokens (scanOpenCodeUsage), so it stays
+// probada; Codex and Claude report parcial. Without this test the caveat can
+// silently drift back to the stronger word.
+func TestTokensStateIsHonest(t *testing.T) {
+	m := DefaultHostManifests("2026-11-16")
+	for host, want := range map[string]string{
+		"opencode": CapVerified,
+		"claude":   CapPartial,
+		"codex":    CapPartial,
+	} {
+		c, ok := m[host].Capability(CapTokens)
+		if !ok {
+			t.Fatalf("%s must declare %s", host, CapTokens)
+		}
+		if c.Status != want {
+			t.Fatalf("%s %s = %q, want %q", host, c.ID, c.Status, want)
+		}
+		if want == CapPartial && c.Detail == "" {
+			t.Fatalf("%s partial %s must keep its caveat in detail", host, c.ID)
+		}
+	}
+}

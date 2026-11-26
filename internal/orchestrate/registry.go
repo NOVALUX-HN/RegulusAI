@@ -4,9 +4,11 @@
 // No parallel agent shape: every entry references its bench.LabAgent
 // (F11.2: responsibility, tools, host, inputs) by id, and every
 // capability verdict reuses the F11.7 host matrix
-// (bench.DefaultHostManifests): only estado probada counts as
-// verified, and a probada claim without evidence is invalid — such
-// an agent can never be assigned that capability.
+// (bench.DefaultHostManifests). Since F16.2 the matrix carries eight states,
+// so the registry routes every observation-bearing one — degradada, parcial,
+// soportada and inferida arrive with their restriction attached — while
+// assignment still requires probada plus evidence. An entry is therefore
+// "what this agent can attempt, and under which limit", not "what it proved".
 package orchestrate
 
 import (
