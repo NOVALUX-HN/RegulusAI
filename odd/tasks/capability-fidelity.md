@@ -61,3 +61,30 @@ L1: "primero haz commit de lo que tenemos y luego comienza con F16 pero debes de
 L2: Las cuatro hijas comparten un bloque de Acceptance criteria genérico idéntico; el requisito real de cada una vive sólo en su Objetivo. Decisión: cada tarea se juzga contra su Objetivo + las specs de este documento, y el template se trata como checklist mínimo, no como alcance.
 
 L3: NOV-134 decía "auditar main" en una revisión anterior y ahora dice "auditar develop"; el protocolo del padre (develop-only) y el texto vigente coinciden. Sin contradicción pendiente.
+
+L4: F16.1 entregada como `docs/capability-inventory.md`. La revisión independiente refutó tres afirmaciones de la primera versión (el alcance de G1 era de 3 hosts × 4 dimensiones, no 2; el conteo de Devin era 7/3/2, no 9; el baseline se leía como HEAD actual). Corregidas contra el código en `b9a5e38`, con el hallazgo adicional de que G1 no tenía enforcement.
+
+L5: F16.2, decisión del usuario: vocabulario aditivo en español, 8 estados. Se agregaron `soportada`, `inferida`, `parcial` y `degradada`; las 12 afirmaciones pasaron a `soportada`, salvo hooks/subagents de Codex a `inferida`. Guard `ValidateEvidenceCoverage` cableado en `cmdx`, no sólo en tests. G2 cerrado en el README.
+
+L6: F16.3. El router sólo aceptaba `probada` y descartaba el resto, así que una capacidad parcial desaparecía en lugar de degradarse. `RouteFor` clasifica por estado y las restricciones viajan en la ruta.
+
+L7: F16.4. Cuatro fixtures adversariales nuevos; al escribirlos apareció que `ApplyJourneyOutcome` mutaba el slice del caller pese a devolver un manifest nuevo. Corregido con copia defensiva.
+
+L8: Revisión independiente de la fase encontró un **regreso introducido por F16.3**: `recoveryTargetCaps` metía los estados restringidos en un set llamado `verified`, y esa compuerta habría aceptado capacidades declaradas como si estuvieran observadas. Corregido en `bbc00c0` filtrando a `probada`. También se corrigieron tres afirmaciones de docs y la contradicción de `tokens`, pineada con test.
+
+## Estado final
+
+Tasks T1-T4 cerradas; NOV-134, NOV-135, NOV-136 y NOV-137 en `Done`.
+
+| Commit | Contenido |
+|---|---|
+| `45a0b8a` | inventario F16.1 |
+| `b9a5e38` | correcciones de la revisión del inventario |
+| `0b16092` | F16.2 vocabulario + guard |
+| `cc1ad35` | F16.3 routing por estado |
+| `077317c` | F16.4 fixtures + fold puro |
+| `bbc00c0` | corrección del regreso + docs |
+
+Gauntlet: 6/6 PASS en cada tarea (`f16/T2` `147887fbee87740c`, `f16/T3` `328708f2294d6cae`, `f16/T4` `19441c3a0286d8f7`, `f16/hardening` `b26151aa1146aac2`).
+
+Límites documentados, no resueltos: validación en un solo camino (`bench host-capabilities`), y el guard de evidencia se apoya en la cita del journey. Ambos en `docs/capability-inventory.md` § «Known limits».
