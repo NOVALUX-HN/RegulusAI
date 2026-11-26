@@ -227,11 +227,18 @@ func TestMutationGatesConfigDeclaresPerModuleThresholds(t *testing.T) {
 		byName[g.Name] = g
 	}
 	want := map[string]struct {
-		scope   string
-		timeout int
+		scope    string
+		timeout  int
+		efficacy string
 	}{
-		"mutation-receipts": {"./internal/receipts", 300},
-		"mutation-gates":    {"./internal/gates", 600},
+		// Thresholds are measured floors, not goals: F20.3 raised the two original
+		// gates from 70 to 95 after measuring 100% and 99.73%, and added the two
+		// packages that had no mutation gate at all, set just below their measured
+		// values. docs/mutation-effectiveness.md carries the numbers.
+		"mutation-receipts": {"./internal/receipts", 300, "95"},
+		"mutation-gates":    {"./internal/gates", 600, "95"},
+		"mutation-evidence": {"./internal/evidence", 300, "82"},
+		"mutation-recovery": {"./internal/recovery", 300, "76"},
 	}
 	for name, w := range want {
 		g, ok := byName[name]
@@ -239,8 +246,8 @@ func TestMutationGatesConfigDeclaresPerModuleThresholds(t *testing.T) {
 			t.Fatalf("regulus.json must declare gate %q", name)
 		}
 		if !strings.Contains(g.Command, "gremlins unleash "+w.scope) ||
-			!strings.Contains(g.Command, "--threshold-efficacy 70") {
-			t.Fatalf("gate %q must mutate %s at efficacy 70, got %q", name, w.scope, g.Command)
+			!strings.Contains(g.Command, "--threshold-efficacy "+w.efficacy) {
+			t.Fatalf("gate %q must mutate %s at efficacy %s, got %q", name, w.scope, w.efficacy, g.Command)
 		}
 		if g.IsRequired() {
 			t.Fatalf("gate %q must stay required:false", name)
