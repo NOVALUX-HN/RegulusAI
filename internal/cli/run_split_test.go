@@ -17,6 +17,10 @@ func TestRunDispatchTableCompleteness(t *testing.T) {
 		"reflect", "evolve", "skills", "probe", "trace", "task",
 		"decide", "yolo", "crap", "review", "bench", "audit", "govern", "testflow",
 		"manifest", "size", "orchestrate", "context", "quality", "recovery", "learn", "impact", "mission", "execute", "verify", "failure",
+		// exec-backend exposes internal/execbackend: the one command that
+		// answers where this host can run a freshly built binary. Adding it
+		// is a reviewed act, which is why this pin changes with it.
+		"exec-backend",
 	}
 	if len(cliDispatch) != len(want) {
 		t.Fatalf("dispatch table has %d entries, want %d (%v)", len(cliDispatch), len(want), cliDispatch)

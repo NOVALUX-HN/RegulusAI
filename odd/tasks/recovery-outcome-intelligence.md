@@ -86,8 +86,16 @@ L8: Revisión de fase: C1-C7 verificadas, y tres hallazgos corregidos — `Sampl
 
 Gauntlet 6/6 PASS en cada tarea: `f17/T2` `ca65aab09ae4b2d7`, `f17/T3` `ab6bdf20d2156c11`, `f17/T4` `1baea416d5455269`.
 
-### Limitación declarada, no escondida
+### Limitación: ahora resuelta
 
-**F17 no cableó nada.** `progress.go` y `outcome.go` son biblioteca lista y testeada, pero **sin llamador en producción**: ninguna ruta fuera de `internal/recovery` y sus tests usa `Classify` ni `StrategyOutcome`. La fase implementó la capacidad, no la integración; decir lo contrario sería inflar el resultado. El paso siguiente natural es consumirlos desde `cmdx` (un comando que clasifique un run y registre el outcome), igual que `internal/execbackend` espera a F16.2.
+**F17 sí cableó al cierre de la fase.** `progress.go` y `outcome.go` siguen siendo biblioteca, pero ya tienen consumidor en producción:
+
+* `regulus recovery progress --run <id>` clasifica el run desde su historial y muestra el último outcome medido;
+* `regulus recovery outcomes --run <id>` imprime la historia medida completa;
+* `regulus recovery retry` **registra** el outcome que produjo, con evidencia antes/después capturada alrededor de la llamada que muta el checkpoint.
+
+Los outcomes se persisten en `outcomes.json` junto al manifiesto del run, con escritura atómica y pin propio; un archivo ausente se lee como "sin historial", no como historial vacío.
+
+Verificado de punta a punta en un directorio temporal: checkpoint → retry (registra `running -> running, no advance`, veredicto honesto: un retry agendado no es un resultado) → progress (2/4 sin progreso, racha 1/3, clase `progress`) → outcomes.
 
 Residual anotado por la revisión: conviven cuatro vocabularios de clasificación en el repo (`recovery.ClassifyError`, `failure.Classify`, `gates`/`sextant.Classify`, y ahora el de progreso). Unificarlos es una decisión de contrato, no un refactor: quedó fuera de alcance a propósito.

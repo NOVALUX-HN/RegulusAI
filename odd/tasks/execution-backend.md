@@ -46,7 +46,7 @@ Cumulative: 6 commits, ~1035 authored lines. The slice rule was exceeded once, a
 
 T3's second half (routing `internal/gates/gates_exec.go` through the executor) stays open: it only matters on a host where the product binary is trusted but its children are not, which today is the signed-release scenario, not a local one.
 
-`internal/execbackend` has no caller today, on purpose. F16.2 (normalize capability states and evidence) consumes `HostProbe` as the "this host can execute freshly built binaries" capability, so the package is a prepared dependency of the next phase rather than dead code. If F16.2 ends up not needing it, delete it instead of leaving it unowned.
+`internal/execbackend` has a caller now. This document originally said F16.2 would consume `HostProbe`; F16.2 did not — it used the bench capability matrix instead. The real consumer arrived with the CLI wiring: `regulus exec-backend` resolves the backend, runs the empirical probe and prints the decision, exiting non-zero when the answer is `none`. The reserved capability is still the registered one: the probe answers "this host can execute freshly built binaries", which is exactly the capability F16.2's vocabulary had no state for.
 
 T1 — paquete `internal/execbackend`: enum cerrado de backends, probe que distingue bloqueo de política de un binario ausente, y ejecución de un comando dentro del distro con traducción de rutas. Sin efecto sobre el camino nativo.
 
