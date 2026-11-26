@@ -147,3 +147,13 @@ bash scripts/verify-wsl.sh ./internal/bench/ ./internal/runtime/ ./internal/mcp/
 Result recorded with the task evidence. This document changes no code: it is the
 deliverable F16.1 asks for ("inventario por host/capability con ubicación en código,
 pruebas, evidencia, limitaciones y gap real").
+
+## 10. Status after F16.2
+
+* **G1 closed.** The twelve claims are now `soportada`, except the version-gated Codex
+  hooks and subagents, which are `inferida`. `ValidateEvidenceCoverage` fails any
+  `probada` whose evidence cites the journey for a dimension `JourneyCoveredCaps` does
+  not cover, and it runs next to the other validators in `cmdx`, not only in tests.
+* **G2 closed.** README no longer calls the config/MCP surface a "native adapter".
+* **G3 open.** Devin's presentation still needs the vocabulary applied where a reader
+  can see it; that belongs to F16.3, together with the degraded-path journey.

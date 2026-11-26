@@ -161,14 +161,18 @@ func TestValidateAttributableCatches(t *testing.T) {
 	}
 }
 
-func TestRenderCapabilityMatrixFourStatesOnly(t *testing.T) {
+func TestRenderCapabilityMatrixClosedVocabulary(t *testing.T) {
 	hosts := []string{"opencode", "claude", "codex", "devin", "ghost"}
 	got := RenderCapabilityMatrix(hosts, testManifests())
 	lines := strings.Split(strings.TrimSpace(got), "\n")
 	if len(lines) != len(CapabilityIDs())+2 {
 		t.Fatalf("matrix has %d lines, want header + rule + %d caps", len(lines), len(CapabilityIDs()))
 	}
-	allowed := map[string]bool{CapVerified: true, CapUnsupported: true, CapNotExecuted: true, CapUnknown: true}
+	allowed := map[string]bool{
+		CapVerified: true, CapSupported: true, CapInferred: true,
+		CapPartial: true, CapDegraded: true,
+		CapUnsupported: true, CapNotExecuted: true, CapUnknown: true,
+	}
 	for _, ln := range lines[2:] {
 		cells := strings.Split(ln, "|")
 		if len(cells) != len(hosts)+3 {
@@ -176,7 +180,7 @@ func TestRenderCapabilityMatrixFourStatesOnly(t *testing.T) {
 		}
 		for _, cell := range cells[2 : 2+len(hosts)] {
 			if !allowed[strings.TrimSpace(cell)] {
-				t.Fatalf("cell outside the four states: %q in %q", cell, ln)
+				t.Fatalf("cell outside the closed vocabulary: %q in %q", cell, ln)
 			}
 		}
 	}
@@ -193,8 +197,8 @@ func TestRenderCapabilityMatrixFourStatesOnly(t *testing.T) {
 			t.Fatalf("matrix must never claim a pass: %q", ln)
 		}
 	}
-	// All four states appear somewhere in the full matrix.
-	for _, want := range []string{CapVerified, CapUnsupported, CapNotExecuted, CapUnknown} {
+	// Every state the manifests use appears somewhere in the full matrix.
+	for _, want := range []string{CapVerified, CapSupported, CapInferred, CapUnsupported, CapNotExecuted, CapUnknown} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("state %q missing from matrix:\n%s", want, got)
 		}
@@ -277,5 +281,51 @@ func TestJourneySpecsRepeatable(t *testing.T) {
 	}
 	if manifests["claude"].RepeatableInCI {
 		t.Fatal("claude agent leg needs login: must not claim CI repeatability")
+	}
+}
+
+// TestValidateEvidenceCoverageCatchesOverClaim pins the gap F16.1 audited: a
+// dimension cannot be probada on the journey citation when JourneyCoveredCaps
+// says the journey never exercises it. Before the wider vocabulary this passed
+// silently, which is how twelve claims (three hosts x four dimensions) ended up
+// citing evidence for work the fixture did not do.
+func TestValidateEvidenceCoverageCatchesOverClaim(t *testing.T) {
+	bad := HostManifest{Host: "codex", Capabilities: []HostCapability{
+		verified(CapHooks, "declarada, nunca journey-met", "contract tests + "+journeyGreen),
+	}}
+	if err := ValidateEvidenceCoverage(map[string]HostManifest{"codex": bad}); err == nil {
+		t.Fatal("probada on an uncovered dimension citing the journey must fail")
+	}
+
+	good := HostManifest{Host: "codex", Capabilities: []HostCapability{
+		declared(CapHooks, "declarada, nunca journey-met", "contract tests"),
+		inferred(CapLimits, "derivada de la versión", "contract tests"),
+		verified(CapTools, "cubierta por el journey", journeyGreen),
+	}}
+	if err := ValidateEvidenceCoverage(map[string]HostManifest{"codex": good}); err != nil {
+		t.Fatalf("soportada, inferida and a covered probada must pass: %v", err)
+	}
+
+	if err := ValidateEvidenceCoverage(DefaultHostManifests("2026-11-16")); err != nil {
+		t.Fatalf("default manifests must satisfy the coverage rule: %v", err)
+	}
+	if err := ValidateCapabilitiesAttributable(DefaultHostManifests("2026-11-16")); err != nil {
+		t.Fatalf("default manifests must satisfy the vocabulary rule: %v", err)
+	}
+}
+
+// TestDeclaredIsNotVerified keeps the new states honest: they must never be
+// aliases of probada, or the gap would reopen under a different word.
+func TestDeclaredIsNotVerified(t *testing.T) {
+	if got := declared(CapHooks, "d", "e").Status; got != CapSupported {
+		t.Fatalf("declared status = %q, want %q", got, CapSupported)
+	}
+	if got := inferred(CapHooks, "d", "e").Status; got != CapInferred {
+		t.Fatalf("inferred status = %q, want %q", got, CapInferred)
+	}
+	for _, s := range []string{CapSupported, CapInferred, CapPartial, CapDegraded} {
+		if s == CapVerified {
+			t.Fatalf("%q must not equal probada", s)
+		}
 	}
 }

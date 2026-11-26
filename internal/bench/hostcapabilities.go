@@ -56,9 +56,20 @@ func CapabilityIDs() []string {
 	}
 }
 
-// Capability states: the only four words the matrix may contain.
+// Capability states: the closed vocabulary the matrix may contain. It is
+// closed on purpose — adding a word is a contract change.
+//
+// probada is the strongest and most expensive claim: it asserts that a run
+// observed the dimension. soportada is what the host's contract and
+// configuration support with no observation behind it; inferida is derived
+// from a signal such as a version gate; parcial and degradada report observed
+// behaviour that carries restrictions.
 const (
 	CapVerified    = "probada"
+	CapSupported   = "soportada"
+	CapInferred    = "inferida"
+	CapPartial     = "parcial"
+	CapDegraded    = "degradada"
 	CapUnsupported = "no-soportada"
 	CapNotExecuted = "no-ejecutada"
 	CapUnknown     = "desconocida"
@@ -136,6 +147,20 @@ func verified(id, detail, evidence string) HostCapability {
 	return HostCapability{ID: id, Status: CapVerified, Detail: detail, Evidence: evidence}
 }
 
+// declared records a capability the host's contract and configuration support
+// with no run observing it. It must never cite a journey fixture: claiming an
+// observation that did not happen is exactly what ValidateEvidenceCoverage
+// rejects.
+func declared(id, detail, evidence string) HostCapability {
+	return HostCapability{ID: id, Status: CapSupported, Detail: detail, Evidence: evidence}
+}
+
+// inferred records a capability derived from a signal — a version gate, a
+// capability probe — rather than from configuring or observing the surface.
+func inferred(id, detail, evidence string) HostCapability {
+	return HostCapability{ID: id, Status: CapInferred, Detail: detail, Evidence: evidence}
+}
+
 // DefaultHostManifests returns the declared baseline per host: the
 // NOV-69/NOV-76 verified state with dated evidence. OpenCode, Claude
 // and Codex carry the green fixture journey; Devin carries the
@@ -145,42 +170,42 @@ func DefaultHostManifests(now string) map[string]HostManifest {
 	now = strings.TrimSpace(now)
 	opencodeCaps := []HostCapability{
 		verified(CapTools, "19 tools vía plugin TS (bun test ./lib/)", "contract tests + "+journeyGreen),
-		verified(CapHooks, "hooks OpenCode V2", "contract tests + "+journeyGreen),
-		verified(CapSubagents, "agents OpenCode V2", "contract tests + "+journeyGreen),
+		declared(CapHooks, "hooks OpenCode V2", "contract tests"),
+		declared(CapSubagents, "agents OpenCode V2", "contract tests"),
 		verified(CapMCP, "MCP stdio regulus mcp", "contract tests + "+journeyGreen),
 		verified(CapSessions, "context/memoria vía journey context", journeyGreen),
 		verified(CapTokens, "accounting medido del host (scanOpenCodeUsage)", "agent_evidence tests + "+journeyGreen),
 		verified(CapFilesystem, "fixture + backups hostcfg antes de escribir", journeyGreen),
-		verified(CapPermissions, "respeta permisos, sin escalado silencioso", "contract tests + "+journeyGreen),
-		verified(CapLimits, "presupuestos y cotas (30s probe, 5min/step, job 20min)", "contract tests + "+journeyGreen),
+		declared(CapPermissions, "respeta permisos, sin escalado silencioso", "contract tests"),
+		declared(CapLimits, "presupuestos y cotas (30s probe, 5min/step, job 20min)", "contract tests"),
 		verified(CapInstall, "install verde en fixture", journeyGreen),
 		verified(CapGate, "gate --yes verde en fixture", journeyGreen),
 		verified(CapClose, "close con receipts verde en fixture", journeyGreen),
 	}
 	codexCaps := []HostCapability{
 		verified(CapTools, "CLI + skills .agents/skills/regulus", "contract tests + "+journeyGreen),
-		verified(CapHooks, "version-gated: inline degradado explícito si la versión no los soporta", "contract tests + "+journeyGreen),
-		verified(CapSubagents, "version-gated: inline si la versión no los soporta", "contract tests + "+journeyGreen),
+		inferred(CapHooks, "version-gated: inline degradado explícito si la versión no los soporta", "contract tests"),
+		inferred(CapSubagents, "version-gated: inline si la versión no los soporta", "contract tests"),
 		verified(CapMCP, "MCP stdio vía .codex/config.toml", "contract tests + "+journeyGreen),
 		verified(CapSessions, "context/memoria vía journey context", journeyGreen),
 		verified(CapTokens, "receipts con tokens cuando el host los expone, unknown si no", "agent_evidence tests + "+journeyGreen),
 		verified(CapFilesystem, "fixture + preservación config ajena (hostcfg)", journeyGreen),
-		verified(CapPermissions, "respeta permisos, sin escalado silencioso", "contract tests + "+journeyGreen),
-		verified(CapLimits, "presupuestos y cotas como el resto de hosts", "contract tests + "+journeyGreen),
+		declared(CapPermissions, "respeta permisos, sin escalado silencioso", "contract tests"),
+		declared(CapLimits, "presupuestos y cotas como el resto de hosts", "contract tests"),
 		verified(CapInstall, "install verde en fixture", journeyGreen),
 		verified(CapGate, "gate --yes verde en fixture", journeyGreen),
 		verified(CapClose, "close con receipts verde en fixture", journeyGreen),
 	}
 	claudeCaps := []HostCapability{
 		verified(CapTools, "skills .claude/skills + CLI", "contract tests + "+journeyGreen),
-		verified(CapHooks, "opt-in: solo cuando el proyecto los habilita", "contract tests + "+journeyGreen),
-		verified(CapSubagents, "agents .claude/agents", "contract tests + "+journeyGreen),
+		declared(CapHooks, "opt-in: solo cuando el proyecto los habilita", "contract tests"),
+		declared(CapSubagents, "agents .claude/agents", "contract tests"),
 		verified(CapMCP, "MCP vía .mcp.json", "contract tests + "+journeyGreen),
 		verified(CapSessions, "context/memoria vía journey context", journeyGreen),
 		verified(CapTokens, "receipts con tokens cuando el host los expone, unknown si no", "agent_evidence tests + "+journeyGreen),
 		verified(CapFilesystem, "fixture + preservación config ajena (hostcfg)", journeyGreen),
-		verified(CapPermissions, "sin mutar permisos sin consentimiento", "contract tests + "+journeyGreen),
-		verified(CapLimits, "presupuestos y cotas como el resto de hosts", "contract tests + "+journeyGreen),
+		declared(CapPermissions, "sin mutar permisos sin consentimiento", "contract tests"),
+		declared(CapLimits, "presupuestos y cotas como el resto de hosts", "contract tests"),
 		verified(CapInstall, "install verde en fixture", journeyGreen),
 		verified(CapGate, "gate --yes verde en fixture", journeyGreen),
 		verified(CapClose, "close con receipts verde en fixture", journeyGreen),
@@ -313,12 +338,13 @@ func ApplyJourneyOutcome(m HostManifest, o HostJourneyOutcome, now string) HostM
 }
 
 // ValidateCapabilitiesAttributable enforces the evidence rule: every
-// probada capability cites its evidence, and the four state words are
-// the only ones allowed. Undated claims fail instead of printing.
+// probada capability cites its evidence, and only the closed state
+// vocabulary is allowed. Undated claims fail instead of printing.
 func ValidateCapabilitiesAttributable(manifests map[string]HostManifest) error {
 	allowed := map[string]bool{
-		CapVerified: true, CapUnsupported: true,
-		CapNotExecuted: true, CapUnknown: true,
+		CapVerified: true, CapSupported: true, CapInferred: true,
+		CapPartial: true, CapDegraded: true,
+		CapUnsupported: true, CapNotExecuted: true, CapUnknown: true,
 	}
 	hosts := make([]string, 0, len(manifests))
 	for h := range manifests {
@@ -329,10 +355,47 @@ func ValidateCapabilitiesAttributable(manifests map[string]HostManifest) error {
 		m := manifests[h]
 		for _, c := range m.Capabilities {
 			if !allowed[c.Status] {
-				return fmt.Errorf("host %s capacidad %s: estado %q fuera del vocabulario (probada/no-soportada/no-ejecutada/desconocida)", h, c.ID, c.Status)
+				return fmt.Errorf("host %s capacidad %s: estado %q fuera del vocabulario (probada/soportada/inferida/parcial/degradada/no-soportada/no-ejecutada/desconocida)", h, c.ID, c.Status)
 			}
 			if c.Status == CapVerified && strings.TrimSpace(c.Evidence) == "" {
 				return fmt.Errorf("host %s capacidad %s: probada sin evidencia enlazada", h, c.ID)
+			}
+		}
+	}
+	return nil
+}
+
+// journeyCitation is the marker every journey-green evidence string carries.
+// Matching on it is what lets this validator find the over-claim F16.1
+// audited: a dimension reported as probada while its citation points at a
+// run that never covered it.
+const journeyCitation = "journey green"
+
+// ValidateEvidenceCoverage rejects a citation that cannot support its claim.
+//
+// ValidateNoProbeAsJourney guards the probe class only, so the journey-class
+// manifests — the ones that actually carry the twelve over-claims — were never
+// checked. This validator closes that hole for every manifest: a dimension may
+// be probada on the strength of the journey fixture only when
+// JourneyCoveredCaps() says the journey covers it. Everything else is
+// soportada or inferida, which is what the wider vocabulary is for.
+func ValidateEvidenceCoverage(manifests map[string]HostManifest) error {
+	covered := map[string]bool{}
+	for _, id := range JourneyCoveredCaps() {
+		covered[id] = true
+	}
+	hosts := make([]string, 0, len(manifests))
+	for h := range manifests {
+		hosts = append(hosts, h)
+	}
+	sort.Strings(hosts)
+	for _, h := range hosts {
+		for _, c := range manifests[h].Capabilities {
+			if c.Status != CapVerified || !strings.Contains(c.Evidence, journeyCitation) {
+				continue
+			}
+			if !covered[c.ID] {
+				return fmt.Errorf("host %s capacidad %s: probada citando el journey, pero JourneyCoveredCaps no cubre esa dimensión (usar soportada o inferida)", h, c.ID)
 			}
 		}
 	}

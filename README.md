@@ -17,7 +17,7 @@ Regulus AI fuses four proven ideas into one harness for [OpenCode](https://openc
 
 ## Quickstart
 
-**Prerequisites**: [OpenCode V2](https://opencode.ai) (primary host — the doctor refuses V1), Node.js 18+ and Go (the core build). Codex, Claude Code and Devin work through their native adapters (AGENTS.md, CLAUDE.md, `.devin/`); see [docs/conformity-matrix.md](docs/conformity-matrix.md) for the verified capability matrix per host.
+**Prerequisites**: [OpenCode V2](https://opencode.ai) (primary host — the doctor refuses V1), Node.js 18+ and Go (the core build). Codex, Claude Code and Devin work through their own integration surface — MCP stdio plus config and skill packs (`AGENTS.md`, `CLAUDE.md`, `.devin/`) — not through a Go adapter; only OpenCode has a runtime adapter. See [docs/conformity-matrix.md](docs/conformity-matrix.md) for the verified capability matrix per host.
 
 ```bash
 # 1. Build the core from source (or grab a verified release tarball

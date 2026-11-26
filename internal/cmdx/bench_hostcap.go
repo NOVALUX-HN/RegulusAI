@@ -52,6 +52,10 @@ func (io IO) BenchHostCapabilitiesCmd(args []string) int {
 		fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
 		return 1
 	}
+	if err := bench.ValidateEvidenceCoverage(manifests); err != nil {
+		fmt.Fprintf(io.Stderr, "host-capabilities: %v\n", err)
+		return 1
+	}
 
 	runID, traceHint := io.recordHostCapabilitiesTrace(manifests, outcomes, execClass)
 	stampHostTraceHints(manifests, traceHint)

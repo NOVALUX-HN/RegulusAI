@@ -63,28 +63,33 @@ ejecutados y capabilities verificadas. Comando:
 | 3 hosts host-probado con evidencia enlazada (2026-11-16) | NOV-76 | Reutilizado como evidencia fechada (`JourneyEvidence`/`JourneyDate`); un probe posterior no la degrada, solo añade `ProbeNote` |
 | `hostcfg` ownership (marker, backup, foreign intacto) | NOV-69 S4 | Reutilizado + extendido con snapshots redactados read-only (`SnapshotForEvidence`, `ConfigRefs`) |
 | Exec log + `trace timeline` | F11.1 | Reutilizado: cada corrida emite `run.start` + `task.end` por host + `run.end` y enlaza `regulus trace timeline --run <id> --rebuild` |
-| Capability manifest 12 dimensiones + matriz 4 estados + degradación + distinción probe/journey | F11.7 | Nuevo (`hostcapabilities.go`, `bench_hostcap.go`, `hostcfg/evidence.go`) |
+| Capability manifest 12 dimensiones + matriz de estados + degradación + distinción probe/journey | F11.7 | Nuevo (`hostcapabilities.go`, `bench_hostcap.go`, `hostcfg/evidence.go`); F16.2 amplió el vocabulario a ocho estados y agregó `ValidateEvidenceCoverage` |
 
 ### Matriz resultante (2026-11-16, `bench host-capabilities --host all`, clase probe)
 
 | Capacidad | opencode | claude | codex | devin |
 | --- | --- | --- | --- | --- |
 | tools | probada | probada | probada | no-ejecutada |
-| hooks | probada | probada | probada | no-soportada |
-| subagents | probada | probada | probada | no-ejecutada |
+| hooks | soportada | soportada | inferida | no-soportada |
+| subagents | soportada | soportada | inferida | no-ejecutada |
 | mcp | probada | probada | probada | no-ejecutada |
 | sessions | probada | probada | probada | no-ejecutada |
 | tokens | probada | probada | probada | desconocida |
 | filesystem | probada | probada | probada | no-soportada |
-| permissions | probada | probada | probada | no-soportada |
-| limits | probada | probada | probada | desconocida |
+| permissions | soportada | soportada | soportada | no-soportada |
+| limits | soportada | soportada | soportada | desconocida |
 | install | probada | probada | probada | no-ejecutada |
 | gate | probada | probada | probada | no-ejecutada |
 | close | probada | probada | probada | no-ejecutada |
 
-Estados posibles: `probada` / `no-soportada` / `no-ejecutada` /
-`desconocida` (validados por `ValidateCapabilitiesAttributable`;
-quinta palabra = exit 1). Host desconocido → `desconocida`, nunca
+Estados posibles: `probada` / `soportada` / `inferida` / `parcial` /
+`degradada` / `no-soportada` / `no-ejecutada` / `desconocida`
+(validados por `ValidateCapabilitiesAttributable`; palabra fuera del
+vocabulario = exit 1). `probada` es la única que afirma una
+observación: exige una corrida que ejercite la dimensión y una cita que
+la cubra (`ValidateEvidenceCoverage`). Lo que el contrato declara sin
+observación es `soportada`; lo derivado de una señal, como un gate de
+versión, es `inferida`. Host desconocido → `desconocida`, nunca
 pass. Versiones vivas 2026-11-16: OpenCode v2.2.5, Claude 2.1.325
 (Claude Code), Codex codex-cli 0.169.0, Devin desktop-only (sin CLI).
 
@@ -106,7 +111,9 @@ capabilities: `host-capabilities` = probe (sin costo), con `--run` =
 journey, agent-leg = `agent-journey` credencial-gated
 (`HOST_API_KEY`), Devin = `strategy`. `ValidateNoProbeAsJourney`
 falla el comando si un manifest clase probe reclama capabilities
-cubiertas como probadas. Workflow `.github/workflows/host-conformity.yml`
+cubiertas como probadas, y `ValidateEvidenceCoverage` falla el comando
+si cualquier manifest — probe o journey — cita el journey para una
+dimensión que `JourneyCoveredCaps` no cubre. Workflow `.github/workflows/host-conformity.yml`
 sin cambios: pata probe siempre verde + pata `--run` solo con
 `HOST_API_KEY` (hoy la pata de agente se registra, no se ejecuta
 contra el host, como en NOV-72).
