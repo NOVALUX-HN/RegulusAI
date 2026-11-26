@@ -5,7 +5,7 @@ import (
 )
 
 func TestQualityCostSeparate(t *testing.T) {
-	rep := Run("test", "abc123")
+	rep := controlled(Run("test", "abc123"))
 	if len(rep.Tasks) != 14 {
 		t.Fatalf("tasks = %d, want 14", len(rep.Tasks))
 	}
@@ -31,7 +31,7 @@ func TestQualityCostSeparate(t *testing.T) {
 }
 
 func TestCompareReportsProxyDeltaWithoutJudging(t *testing.T) {
-	base := Run("base", "abc")
+	base := controlled(Run("base", "abc"))
 	cand := base
 	cmp := Compare(base, cand)
 	if cmp.DeltaProxy != 0 {

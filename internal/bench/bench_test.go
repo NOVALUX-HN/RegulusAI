@@ -185,7 +185,7 @@ func TestB14MissRateGolden(t *testing.T) {
 }
 
 func TestRunAllPassOffline(t *testing.T) {
-	rep := Run("tree", "abc123")
+	rep := controlled(Run("tree", "abc123"))
 	if rep.Suite != SuiteVersion {
 		t.Fatalf("suite = %q, want %q", rep.Suite, SuiteVersion)
 	}
@@ -198,7 +198,7 @@ func TestRunAllPassOffline(t *testing.T) {
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
-	rep := Run("tree", "abc")
+	rep := controlled(Run("tree", "abc"))
 	path := filepath.Join(t.TempDir(), "sub", "rep.json")
 	if err := Save(path, rep); err != nil {
 		t.Fatal(err)
@@ -231,8 +231,8 @@ func TestLoadErrors(t *testing.T) {
 }
 
 func TestCompareAdopt(t *testing.T) {
-	base := Run("tree", "a")
-	cand := Run("candidate", "b")
+	base := controlled(Run("tree", "a"))
+	cand := controlled(Run("candidate", "b"))
 	cmp := Compare(base, cand)
 	if cmp.Verdict != "ADOPT" {
 		t.Fatalf("identical green runs: verdict = %s (%s)", cmp.Verdict, cmp.Reason)
@@ -243,8 +243,8 @@ func TestCompareAdopt(t *testing.T) {
 }
 
 func TestCompareRejectOnRegression(t *testing.T) {
-	base := Run("tree", "a")
-	cand := Run("candidate", "b")
+	base := controlled(Run("tree", "a"))
+	cand := controlled(Run("candidate", "b"))
 	cand.Tasks[0].Pass = false
 	cand.Passed--
 	cmp := Compare(base, cand)
@@ -257,7 +257,7 @@ func TestCompareRejectOnRegression(t *testing.T) {
 }
 
 func TestCompareCountsDroppedOnly(t *testing.T) {
-	base := Run("tree", "a")
+	base := controlled(Run("tree", "a"))
 	cand := base
 	cand.Passed = base.Passed - 1
 	cmp := Compare(base, cand)
@@ -267,10 +267,10 @@ func TestCompareCountsDroppedOnly(t *testing.T) {
 }
 
 func TestCompareImprovementKept(t *testing.T) {
-	base := Run("tree", "a")
+	base := controlled(Run("tree", "a"))
 	base.Tasks[0].Pass = false
 	base.Passed--
-	cand := Run("candidate", "b")
+	cand := controlled(Run("candidate", "b"))
 	cmp := Compare(base, cand)
 	if cmp.Verdict != "ADOPT" {
 		t.Fatalf("fixed task: verdict = %s, want ADOPT", cmp.Verdict)
@@ -392,8 +392,8 @@ func TestB3RefusesHardenedShapes(t *testing.T) {
 // P1: the v3 suite keeps Compare ADOPT semantics — zero regressions and
 // no pass-count drop across green runs, now 14 tasks.
 func TestCompareAdoptV2(t *testing.T) {
-	base := Run("tree", "a")
-	cand := Run("candidate", "b")
+	base := controlled(Run("tree", "a"))
+	cand := controlled(Run("candidate", "b"))
 	if len(base.Tasks) != 14 || base.Passed != 14 {
 		t.Fatalf("v3 suite = %d tasks %d passed, want 14/14", len(base.Tasks), base.Passed)
 	}
@@ -626,4 +626,73 @@ func parseDocGateTable(doc string) ([]gauntletShapeGate, error) {
 		return nil, fmt.Errorf("no | gate | roster found")
 	}
 	return rows, nil
+}
+
+// controlled marks a report as coming from a controlled baseline.
+//
+// The fixtures above test verdict logic (regression, improvement, cost), not
+// reproducibility. Since F21.1 Compare refuses to decide on a single run, a fixture
+// that means to test the verdict has to say its reports were repeated.
+func controlled(r Report) Report {
+	r.Reps = MinReps
+	return r
+}
+
+// TestCompareRefusesSingleRun is the gap F21.1 found: the shipped baseline is one
+// capture, and a single capture against a single candidate is not a comparison.
+func TestCompareRefusesSingleRun(t *testing.T) {
+	base := Run("tree", "a")
+	cand := Run("candidate", "b")
+	cmp := Compare(base, cand)
+	if cmp.Verdict != "INCONCLUSIVE" {
+		t.Fatalf("single runs: verdict = %s (%s), want INCONCLUSIVE", cmp.Verdict, cmp.Reason)
+	}
+	if !strings.Contains(cmp.Reason, "repetitions") {
+		t.Fatalf("reason must name the shortfall, got %q", cmp.Reason)
+	}
+}
+
+// A single-run baseline must not become adoptable because the candidate repeated.
+func TestCompareRefusesMixedRepetition(t *testing.T) {
+	base := Run("tree", "a")
+	cand := controlled(Run("candidate", "b"))
+	if cmp := Compare(base, cand); cmp.Verdict != "INCONCLUSIVE" {
+		t.Fatalf("mixed reps: verdict = %s, want INCONCLUSIVE", cmp.Verdict)
+	}
+	if cmp := Compare(cand, base); cmp.Verdict != "INCONCLUSIVE" {
+		t.Fatalf("mixed reps reversed: verdict = %s, want INCONCLUSIVE", cmp.Verdict)
+	}
+}
+
+// RunN folds repetitions: every repetition must pass, and the report carries the
+// environment it was taken in.
+func TestRunNFoldsRepetitions(t *testing.T) {
+	rep := RunN("tree", "abc", 3, 42)
+	if rep.Reps != 3 || rep.Seed != 42 {
+		t.Fatalf("reps=%d seed=%d, want 3/42", rep.Reps, rep.Seed)
+	}
+	if len(rep.Tasks) != len(Suite()) {
+		t.Fatalf("tasks = %d, want %d", len(rep.Tasks), len(Suite()))
+	}
+	if rep.Passed != len(rep.Tasks) {
+		t.Fatalf("passed = %d/%d on deterministic checks, want all", rep.Passed, len(rep.Tasks))
+	}
+	if rep.Env.OS == "" || rep.Env.Arch == "" {
+		t.Fatalf("env not captured: %+v", rep.Env)
+	}
+	if rep.FinishedAt.IsZero() {
+		t.Fatal("FinishedAt not set: an unfinished baseline cannot be told from a finished one")
+	}
+	want := float64(rep.Passed) / (float64(rep.TotalProxyTokens) / 1000.0)
+	if rep.QualityPerKProxy != want {
+		t.Fatalf("quality per kproxy = %f, want %f after folding", rep.QualityPerKProxy, want)
+	}
+}
+
+// The floor is a floor, not a wall: two controlled reports still adopt on merit.
+func TestCompareAcceptsControlledBaseline(t *testing.T) {
+	cmp := Compare(RunN("tree", "a", MinReps, 1), RunN("candidate", "b", MinReps, 1))
+	if cmp.Verdict != "ADOPT" {
+		t.Fatalf("controlled identical runs: verdict = %s (%s)", cmp.Verdict, cmp.Reason)
+	}
 }

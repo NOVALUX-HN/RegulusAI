@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -59,6 +60,10 @@ type Report struct {
 	Surface          string       `json:"surface"`
 	GitHead          string       `json:"git_head"`
 	StartedAt        time.Time    `json:"started_at"`
+	FinishedAt       time.Time    `json:"finished_at"`
+	Reps             int          `json:"reps"`
+	Seed             int64        `json:"seed"`
+	Env              Env          `json:"env"`
 	Tasks            []TaskResult `json:"tasks"`
 	Passed           int          `json:"passed"`
 	Failed           int          `json:"failed"`
@@ -68,6 +73,29 @@ type Report struct {
 	ProxyKnown       bool         `json:"proxy_known"`
 	QualityPerKProxy float64      `json:"quality_per_kproxy"`
 }
+
+// Env is the environment a baseline was captured in.
+//
+// Without it a saved report cannot be told apart from one taken on another host,
+// which is the difference between a baseline and an anecdote. It is captured without
+// shelling out: a process launch here would need pxexec and would make an offline
+// suite depend on the OS.
+type Env struct {
+	OS   string `json:"os"`
+	Arch string `json:"arch"`
+	Host string `json:"host,omitempty"`
+}
+
+// MinReps is how many independent runs each side needs before Compare may call a
+// result ADOPT (F21.1 / NOV-154).
+//
+// Three is deliberately modest: the checks are deterministic and offline, so this is
+// not a statistical floor, it is a floor against the failure that actually happened -
+// a committed baseline captured once (bench/baseline.json) being compared against a
+// single candidate run and reported as an adoption. Below it Compare reports
+// INCONCLUSIVE and names the shortfall, the same discipline internal/quality already
+// applies to its own sample minima.
+const MinReps = 3
 
 // Row is one contrast line: the same task on both surfaces.
 type Row struct {
@@ -153,6 +181,9 @@ func Suite() []Task {
 // Run executes the suite against one surface, timing each check. It
 // never touches the network: every check is a local pure-or-tempdir
 // predicate.
+//
+// One Run is one repetition. A result that will be compared should come from RunN,
+// because Compare refuses to decide on a single run.
 func Run(surface, gitHead string) Report {
 	tasks := Suite()
 	rep := Report{
@@ -160,6 +191,8 @@ func Run(surface, gitHead string) Report {
 		Surface:   surface,
 		GitHead:   gitHead,
 		StartedAt: time.Now().UTC(),
+		Reps:      1,
+		Env:       CurrentEnv(),
 	}
 	for _, t := range tasks {
 		start := time.Now()
@@ -188,7 +221,72 @@ func Run(surface, gitHead string) Report {
 	if rep.TotalProxyTokens > 0 {
 		rep.QualityPerKProxy = float64(rep.Passed) / (float64(rep.TotalProxyTokens) / 1000.0)
 	}
+	rep.FinishedAt = time.Now().UTC()
 	return rep
+}
+
+// CurrentEnv captures where a report was taken, without launching anything.
+func CurrentEnv() Env {
+	host, _ := os.Hostname()
+	return Env{OS: runtime.GOOS, Arch: runtime.GOARCH, Host: host}
+}
+
+// RunN runs the suite reps times and folds the repetitions into one report.
+//
+// A task counts as passing only if it passed in EVERY repetition: a check that flips
+// under repetition is not a check, and averaging it away is how an unstable baseline
+// gets adopted. Duration is the mean, because one slow run says nothing about the next.
+//
+// This is the capability F21.1 found missing: before it, the shipped baseline was a
+// single capture, so "baseline vs candidate" compared two anecdotes.
+func RunN(surface, gitHead string, reps int, seed int64) Report {
+	if reps < 1 {
+		reps = 1
+	}
+	var first Report
+	passed := map[string]int{}
+	ms := map[string]int64{}
+	for i := 0; i < reps; i++ {
+		r := Run(surface, gitHead)
+		if i == 0 {
+			first = r
+		}
+		for _, t := range r.Tasks {
+			if t.Pass {
+				passed[t.ID]++
+			}
+			ms[t.ID] += t.DurationMS
+		}
+	}
+
+	out := first
+	out.Reps = reps
+	out.Seed = seed
+	out.FinishedAt = time.Now().UTC()
+	out.Tasks = nil
+	out.Passed, out.Failed, out.TotalMS, out.OutputBytes, out.TotalProxyTokens = 0, 0, 0, 0, 0
+	for _, t := range first.Tasks {
+		res := t
+		res.Pass = passed[t.ID] == reps
+		res.DurationMS = ms[t.ID] / int64(reps)
+		if !res.Pass {
+			res.Detail = fmt.Sprintf("%d/%d repetitions passed; last: %s", passed[t.ID], reps, t.Detail)
+		}
+		if res.Pass {
+			out.Passed++
+		} else {
+			out.Failed++
+		}
+		out.TotalMS += res.DurationMS
+		out.OutputBytes += int64(len(res.Detail))
+		out.TotalProxyTokens += res.ProxyTokens
+		out.Tasks = append(out.Tasks, res)
+	}
+	out.ProxyKnown = true
+	if out.TotalProxyTokens > 0 {
+		out.QualityPerKProxy = float64(out.Passed) / (float64(out.TotalProxyTokens) / 1000.0)
+	}
+	return out
 }
 
 // Save writes one report as indented JSON (temp+rename: a torn
@@ -259,6 +357,11 @@ func Compare(base, cand Report) Comparison {
 		}
 	}
 	switch {
+	case base.Reps < MinReps || cand.Reps < MinReps:
+		// A single run on each side is not a comparison. Reporting ADOPT here is what
+		// made the shipped baseline an anecdote.
+		c.Verdict = "INCONCLUSIVE"
+		c.Reason = fmt.Sprintf("needs %d repetitions per side; baseline has %d, candidate has %d", MinReps, base.Reps, cand.Reps)
 	case c.Regressions > 0:
 		c.Verdict = "REJECT"
 		c.Reason = fmt.Sprintf("%d regressed task(s): candidate drops baseline PASS", c.Regressions)

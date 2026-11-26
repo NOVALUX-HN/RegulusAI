@@ -195,20 +195,25 @@ func (c CLI) benchBaselineCmd(args []string) int {
 	fs.SetOutput(c.Stderr)
 	set := fs.Bool("set", false, "record the current tree as the baseline")
 	asJSON := fs.Bool("json", false, "print the baseline report as JSON")
+	reps := fs.Int("reps", bench.MinReps, "repetitions the recorded baseline takes (F21.1: a single capture is not a baseline)")
+	seed := fs.Int64("seed", 0, "seed recorded with the baseline")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(c.Stderr, "usage: regulus bench baseline [--set] [--json]")
+		fmt.Fprintln(c.Stderr, "usage: regulus bench baseline [--set [--reps N] [--seed S]] [--json]")
 		return 2
 	}
 	if *set {
-		rep := bench.Run("tree", gitHeadBounded(c.runner()))
+		// A baseline recorded once cannot be compared against: Compare refuses to
+		// decide below MinReps. Recording defaults to the floor so a fresh baseline is
+		// immediately usable, and --reps lets a caller go above it.
+		rep := bench.RunN("tree", gitHeadBounded(c.runner()), *reps, *seed)
 		if err := bench.Save(bench.BaselinePath, rep); err != nil {
 			fmt.Fprintf(c.Stderr, "bench baseline: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(c.Stdout, "bench: baseline recorded to %s (%d/%d passed, proxy=%d, q/kproxy=%.2f)\n", bench.BaselinePath, rep.Passed, len(rep.Tasks), rep.TotalProxyTokens, rep.QualityPerKProxy)
+		fmt.Fprintf(c.Stdout, "bench: baseline recorded to %s (%d/%d passed over %d reps, proxy=%d, q/kproxy=%.2f)\n", bench.BaselinePath, rep.Passed, len(rep.Tasks), rep.Reps, rep.TotalProxyTokens, rep.QualityPerKProxy)
 		return 0
 	}
 	rep, err := bench.Load(bench.BaselinePath)

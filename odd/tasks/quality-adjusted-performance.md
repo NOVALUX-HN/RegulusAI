@@ -78,3 +78,24 @@ la dependencia real: línea base → métrica → experimentos → promoción go
 
 L2: F19.4 dejó `Evaluate` sin consumidor y lo declaró. T2 lo cablea; queda anotado acá
 para que no se pierda entre fases.
+
+L3: F21.1 implementada. La auditoría (docs/quality-adjusted-performance-audit.md)
+encontró que casi todas las piezas ya existían — y una respuesta incómoda para mi
+propia sospecha: **el holdout NO falta** (`agent-tasks-v3`, 34 exploración + 10
+holdout, 22.7%, con el loader rechazando solapamiento). Tampoco faltaban la
+disciplina de N mínima (`internal/quality`, MinN 5/5/10/20) ni la procedencia de
+tokens (`internal/trace`).
+
+Lo que faltaba era más chico y más grave: `bench/baseline.json` es **una sola
+captura** y `Compare` devolvía **ADOPT** con una captura contra otra. Eso es promover
+sin evidencia, con la excepción de la fase violada por el propio tooling.
+
+Cerrado: `Reps`, `Seed`, `Env` y `FinishedAt` en el reporte; `MinReps = 3` con
+`INCONCLUSIVE` y el déficit nombrado por debajo; `RunN` que exige que una tarea pase
+en **todas** las repeticiones (una que oscila no es una prueba); y
+`bench baseline --set --reps` que por defecto graba un baseline controlado.
+
+Queda abierto y declarado: el baseline commiteado sigue siendo legacy y por eso sus
+comparaciones ahora dicen INCONCLUSIVE (correcto, hay que regrabarlo); las tareas
+macizo son chequeos de comportamiento, no A/B de optimizaciones (eso es F21.3); y no
+hay métrica conjunta calidad-coste (F21.2, con `Evaluate` de F19.4 como consumidor).

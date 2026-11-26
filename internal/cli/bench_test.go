@@ -192,7 +192,10 @@ func TestBenchBaselineMissing(t *testing.T) {
 
 func writeBenchReport(t *testing.T, path string, flipFirst bool) {
 	t.Helper()
-	rep := bench.Run("tree", "abc")
+	// A report meant to be compared comes from a controlled baseline: since F21.1
+	// Compare reports INCONCLUSIVE below bench.MinReps, so a fixture built from a
+	// single Run would be testing the floor instead of the verdict it names.
+	rep := bench.RunN("tree", "abc", bench.MinReps, 0)
 	if flipFirst {
 		rep.Tasks[0].Pass = false
 		rep.Passed--

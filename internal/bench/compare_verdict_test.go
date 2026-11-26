@@ -6,6 +6,7 @@ import "testing"
 func TestCompareVerdictRejectPaths(t *testing.T) {
 	base := Report{
 		Suite:   "s",
+		Reps:    MinReps,
 		Surface: "base",
 		GitHead: "abc",
 		Tasks: []TaskResult{
@@ -18,6 +19,7 @@ func TestCompareVerdictRejectPaths(t *testing.T) {
 	// Regression: T1 drops from PASS to FAIL.
 	candReg := Report{
 		Suite:   "s",
+		Reps:    MinReps,
 		Surface: "cand",
 		GitHead: "def",
 		Tasks: []TaskResult{
@@ -44,6 +46,7 @@ func TestCompareVerdictRejectPaths(t *testing.T) {
 	// Pass-count drop without a direct regression (extra task missing).
 	candDrop := Report{
 		Suite:   "s",
+		Reps:    MinReps,
 		Surface: "cand",
 		GitHead: "def",
 		Tasks: []TaskResult{
@@ -60,6 +63,7 @@ func TestCompareVerdictRejectPaths(t *testing.T) {
 	// Improvement: T2 flips to PASS, no regressions -> ADOPT.
 	candImp := Report{
 		Suite:   "s",
+		Reps:    MinReps,
 		Surface: "cand",
 		GitHead: "def",
 		Tasks: []TaskResult{
