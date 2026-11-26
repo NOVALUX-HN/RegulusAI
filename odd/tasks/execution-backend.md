@@ -36,9 +36,13 @@ Ejemplo literal del usuario: "verifica que funcionen tanto en Windows como en Li
 Slice boundaries, recorded because T1 exceeded the ~400-line review slice:
 
 1. `d40f596` — `internal/execbackend` only (657 lines, 295 of them tests). Reviewed alone: the decision layer has no callers yet, so it cannot change behaviour.
-2. `scripts/verify-wsl.sh` + `scripts/regulus-wsl.sh` — the operating entry points.
-3. `docs/execution-backend.md` — the runbook.
-4. This feature document.
+2. `efae1b6` — `scripts/verify-wsl.sh` + `scripts/regulus-wsl.sh`, the operating entry points.
+3. `6fc8288` — `docs/execution-backend.md`, the runbook.
+4. `3c2e2d3` — this feature document.
+5. `00a7233` — version stamping in the launcher (behaviour of the entry point, not of the decision layer).
+6. `f7fd2d5` — the consumer note for `internal/execbackend`.
+
+Cumulative: 6 commits, ~1035 authored lines. The slice rule was exceeded once, at slice 1, and the split above is the delivery strategy from that point on.
 
 T3's second half (routing `internal/gates/gates_exec.go` through the executor) stays open: it only matters on a host where the product binary is trusted but its children are not, which today is the signed-release scenario, not a local one.
 
