@@ -1,5 +1,5 @@
 {
-  "generation": "DO NOT EDIT — generated file. sources: regulus.json (.gates: name/layer/required/profiles, 23 gates) + internal/gates/quick_lean.go QuickLeanNames (T5 --quick preset, 6 names). regenerate from repo root: jq --argjson lean '[\"typecheck\",\"lint\",\"build\",\"unit-tests\",\"spec\",\"gofmt\"]' '{gates: [.gates[] | {name, layer, required, profiles: (.profiles // [])}], quick_lean: $lean}' regulus.json > /tmp/gauntlet-data.json, then re-insert this generation key as the first object field (key order: generation, gates, quick_lean).",
+  "generation": "DO NOT EDIT — generated file. sources: regulus.json (.gates: name/layer/required/profiles, 25 gates) + internal/gates/quick_lean.go QuickLeanNames (T5 --quick preset, 6 names). regenerate from repo root: jq --argjson lean '[\"typecheck\",\"lint\",\"build\",\"unit-tests\",\"spec\",\"gofmt\"]' '{gates: [.gates[] | {name, layer, required, profiles: (.profiles // [])}], quick_lean: $lean}' regulus.json > /tmp/gauntlet-data.json, then re-insert this generation key as the first object field (key order: generation, gates, quick_lean).",
   "gates": [
     {
       "name": "manifest-check",
@@ -157,6 +157,22 @@
     {
       "name": "race-guardians",
       "layer": 23,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "mutation-evidence",
+      "layer": 24,
+      "required": false,
+      "profiles": [
+        "full"
+      ]
+    },
+    {
+      "name": "mutation-recovery",
+      "layer": 25,
       "required": false,
       "profiles": [
         "full"
