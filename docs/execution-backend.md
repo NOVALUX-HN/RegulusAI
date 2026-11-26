@@ -102,6 +102,10 @@ wsl -d Ubuntu -e bash -lc 'rm -rf ~/.local/go ~/.local/node ~/go ~/.regulus'
 | `REGULUS_WSL_DISTRO` | `Ubuntu` | distro used for execution |
 | `REGULUS_WSL_GO` | `1.27.3` | Go version bootstrapped on first run |
 
+## Version stamping
+
+`regulus-wsl.sh` stamps `main.version` from `package.json` with the same`-X` ldflag `scripts/build.bash` uses, and rebuilds when `package.json` or any source is newer than the cached binary. Without it `regulus doctor` reports *unstamped dev build* and no receipt can attribute the binary that produced it.
+
 ## Design rule for future Go code
 
 Anything that spawns a process must go through `internal/pxexec`, never `os/exec`. The suite enforces this: `TestNoRawProcessLaunch` and `TestEveryProductionSpawnHidesWindow` walk `internal/` and fail on a raw launch. `internal/execbackend` follows the same rule — its runner calls `pxexec.Run`, so console hiding, the minimal environment and the `BLOCKED` classification are not re-implemented.

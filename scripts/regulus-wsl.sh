@@ -72,9 +72,14 @@ cd "$(wslpath -a "$repo_root")"
 # Build into the distro own filesystem: the 9p mount is fine for
 # reading sources, but a binary written there is slow and pointless.
 mkdir -p "$BIN_DIR"
-if [ ! -x "$BIN_DIR/regulus" ] || [ -n "$(find cmd internal -name "*.go" -newer "$BIN_DIR/regulus" -print -quit)" ]; then
-	echo "regulus-wsl: building linux/amd64 regulus" >&2
-	go build -o "$BIN_DIR/regulus" ./cmd/regulus
+if [ ! -x "$BIN_DIR/regulus" ] || [ package.json -nt "$BIN_DIR/regulus" ] || [ -n "$(find cmd internal -name "*.go" -newer "$BIN_DIR/regulus" -print -quit)" ]; then
+	# Stamp the version the same way scripts/build.bash does, so doctor and
+	# every receipt can attribute the binary instead of reporting an
+	# unstamped dev build.
+	version="$(sed -n "s/.*\"version\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" package.json | head -n 1)"
+	[ -n "$version" ] || version="dev"
+	echo "regulus-wsl: building linux/amd64 regulus $version" >&2
+	go build -ldflags "-X main.version=$version" -o "$BIN_DIR/regulus" ./cmd/regulus
 fi
 
 exec "$BIN_DIR/regulus" "$@"
