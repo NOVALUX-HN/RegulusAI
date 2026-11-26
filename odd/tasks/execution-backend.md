@@ -42,6 +42,8 @@ Slice boundaries, recorded because T1 exceeded the ~400-line review slice:
 
 T3's second half (routing `internal/gates/gates_exec.go` through the executor) stays open: it only matters on a host where the product binary is trusted but its children are not, which today is the signed-release scenario, not a local one.
 
+`internal/execbackend` has no caller today, on purpose. F16.2 (normalize capability states and evidence) consumes `HostProbe` as the "this host can execute freshly built binaries" capability, so the package is a prepared dependency of the next phase rather than dead code. If F16.2 ends up not needing it, delete it instead of leaving it unowned.
+
 T1 — paquete `internal/execbackend`: enum cerrado de backends, probe que distingue bloqueo de política de un binario ausente, y ejecución de un comando dentro del distro con traducción de rutas. Sin efecto sobre el camino nativo.
 
 T2 — superficie de CLI para que el backend sea usable y auditable: estado resuelto y ejecución de un comando arbitrario. Es lo que permite verificar Windows y Linux con el mismo binario.
