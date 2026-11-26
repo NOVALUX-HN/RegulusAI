@@ -28,6 +28,10 @@ func TestRunDispatchTableCompleteness(t *testing.T) {
 		// knowledge is the write surface for corroboration and revalidation:
 		// both amend a record as a new revision instead of rewriting the log.
 		"knowledge",
+		// protocol prints the engineering protocol as it is actually held, and
+		// refuses to print a table whose citations no longer exist. Adding it is
+		// the F20.1 integration: the protocol is now executable, not prose.
+		"protocol",
 	}
 	if len(cliDispatch) != len(want) {
 		t.Fatalf("dispatch table has %d entries, want %d (%v)", len(cliDispatch), len(want), cliDispatch)

@@ -56,6 +56,22 @@ cierre como audit-only.
 | T3 | NOV-152 | S5 S10 | Efectividad de mutation testing en rutas críticas |
 | T4 | NOV-153 | S7 S8 | Efectividad de reviewer, gates y verificación |
 
+### Estado de T1 (NOV-150)
+
+Auditoría entregada en `docs/reqp-integration-audit.md` (`e22fc53`). Conclusión:
+mitad de REQP ya bloquea (gates requeridos, barrera de chart, contrato de cierre,
+receipts, idempotencia) y la otra mitad es prosa.
+
+Integración elegida, mínima: `internal/protocol` registra las once prácticas con
+su nivel real — `enforced`, `advisory` o `judgement` — y **ancla cada cita a un
+marcador que debe seguir existiendo en el archivo**. `regulus protocol` lo imprime
+y se niega a imprimir una tabla inválida. `docs/engineering-protocol.md` es la
+página única que el protocolo no tenía.
+
+Lo que deliberadamente **no** se hizo: siete gates nuevos para prácticas sin
+oráculo, tocar el contrato de receipts del reviewer, o exigir que los charts
+declaren sus prácticas. Los tres habrían roto invariantes para parecer completos.
+
 T1 abre la fase porque condiciona a los otros tres: si REQP no está integrado en el
 flujo, medir tooling (T2), mutation (T3) o reviewer (T4) no tiene dónde engancharse.
 
@@ -107,3 +123,9 @@ después. Este documento es el análisis que pediste, listo para ejecutar.
 L3: NOV-151 ya no dice "Crapper/Dryer": el título es ahora "Evaluate CRAP,
 duplication and dead-code metrics/tooling". La corrección que pedí en el comentario
 de mejoras quedó aplicada, así que esa parte del hallazgo está cerrada.
+
+L4: T1 implementado. La auditoría había mostrado que la brecha real no era "falta
+un protocolo" sino "el protocolo está repartido y la mitad de sus prácticas no
+tiene diente". La integración ataca eso en el único punto honesto: la tabla de
+prácticas con su nivel de enforcement real, y un test que rompe si una cita deja de
+existir. Verificado: `go build ./...` 0, `go vet` 0, `gofmt` limpio.
