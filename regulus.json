@@ -12,8 +12,6 @@
     { "name": "coverage-floor", "layer": 6, "command": "go tool cover -func .regulus/coverage.out", "metric": { "extract": "last-line-percent", "threshold": 80, "operator": ">=" }, "category": "test", "required": true },
     { "name": "mutation-receipts", "layer": 7, "command": "gremlins unleash ./internal/receipts --threshold-efficacy 95 --workers 4 --timeout-coefficient 10", "timeout_sec": 300, "category": "test", "required": false, "profiles": ["full"] },
     { "name": "mutation-gates", "layer": 8, "command": "gremlins unleash ./internal/gates --threshold-efficacy 95 --workers 4 --timeout-coefficient 10", "timeout_sec": 600, "category": "test", "required": false, "profiles": ["full"] },
-    { "name": "mutation-evidence", "layer": 24, "command": "gremlins unleash ./internal/evidence --threshold-efficacy 82 --workers 4 --timeout-coefficient 10", "timeout_sec": 300, "category": "test", "required": false, "profiles": ["full"] },
-    { "name": "mutation-recovery", "layer": 25, "command": "gremlins unleash ./internal/recovery --threshold-efficacy 76 --workers 4 --timeout-coefficient 10", "timeout_sec": 300, "category": "test", "required": false, "profiles": ["full"] },
     { "name": "crap", "layer": 9, "command": "go run ./cmd/regulus crap --profile .regulus/coverage.out --max 30 --max-critical 30 --max-standard 50 --top 5", "category": "analysis", "required": true },
     { "name": "vulncheck", "layer": 10, "command": "govulncheck ./...", "timeout_sec": 120, "category": "security", "required": false, "profiles": ["full", "security"] },
     { "name": "spec", "layer": 11, "command": "go run ./cmd/regulus spec check charts/", "reproducibility": "exact", "category": "proof", "required": true },
@@ -28,6 +26,8 @@
     { "name": "race-httpapi", "layer": 20, "command": "go test -race -count=1 ./internal/httpapi/", "category": "test", "required": false, "profiles": ["full"] },
     { "name": "race-mcp", "layer": 21, "command": "go test -race -count=1 ./internal/mcp/", "category": "test", "required": false, "profiles": ["full"] },
     { "name": "race-trace", "layer": 22, "command": "go test -race -count=1 ./internal/trace/", "category": "test", "required": false, "profiles": ["full"] },
-    { "name": "race-guardians", "layer": 23, "command": "go test -race -count=1 ./internal/guardians/", "category": "test", "required": false, "profiles": ["full"] }
+    { "name": "race-guardians", "layer": 23, "command": "go test -race -count=1 ./internal/guardians/", "category": "test", "required": false, "profiles": ["full"] },
+    { "name": "mutation-evidence", "layer": 24, "command": "gremlins unleash ./internal/evidence --threshold-efficacy 82 --workers 4 --timeout-coefficient 10", "timeout_sec": 300, "category": "test", "required": false, "profiles": ["full"] },
+    { "name": "mutation-recovery", "layer": 25, "command": "gremlins unleash ./internal/recovery --threshold-efficacy 76 --workers 4 --timeout-coefficient 10", "timeout_sec": 300, "category": "test", "required": false, "profiles": ["full"] }
   ]
 }

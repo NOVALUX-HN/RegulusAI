@@ -128,7 +128,7 @@ func assertLeanSelection(cfg gates.Config) error {
 	return nil
 }
 
-// realGateConfig mirrors the shipped twenty-three-gate gauntlet in declaration
+// realGateConfig mirrors the shipped twenty-five-gate gauntlet in declaration
 // order. The suite tests validate the mirror against the checked-in
 // bench/gauntlet-shape.json (generated from regulus.json), so a renamed
 // gate or a flipped required flag fails `go test` instead of staying
@@ -137,7 +137,7 @@ func assertLeanSelection(cfg gates.Config) error {
 // quick select every required gate in order, unknown profiles refuse.
 // Commands are shape-only; selection is what the check pins.
 func realGateConfig() gates.Config {
-	names := []string{"manifest-check", "typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation-receipts", "mutation-gates", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt", "race-almanac", "size", "race-evolve", "race-gates", "race-runtime", "race-httpapi", "race-mcp", "race-trace", "race-guardians"}
+	names := []string{"manifest-check", "typecheck", "lint", "build", "unit-tests", "coverage-floor", "mutation-receipts", "mutation-gates", "crap", "vulncheck", "spec", "ts-typecheck", "ts-unit-tests", "gofmt", "race-almanac", "size", "race-evolve", "race-gates", "race-runtime", "race-httpapi", "race-mcp", "race-trace", "race-guardians", "mutation-evidence", "mutation-recovery"}
 	cmds := []string{
 		"regulus manifest check", "go build ./...", "go vet ./...", "go build -o bin/regulus ./cmd/regulus",
 		"go test ./...", "go tool cover -func .regulus/coverage.out",
@@ -149,13 +149,14 @@ func realGateConfig() gates.Config {
 		"go test -race -count=1 ./internal/runtime", "go test -race -count=1 ./internal/httpapi",
 		"go test -race -count=1 ./internal/mcp", "go test -race -count=1 ./internal/trace",
 		"go test -race -count=1 ./internal/guardians",
+		"gremlins unleash ./internal/evidence", "gremlins unleash ./internal/recovery",
 	}
 	cfg := gates.Config{}
 	for i, name := range names {
 		g := gates.Gate{
 			Name: name, Layer: i + 1, Command: cmds[i],
 		}
-		if name == "mutation-receipts" || name == "mutation-gates" || name == "vulncheck" || name == "race-almanac" || name == "race-evolve" || name == "race-gates" || name == "race-runtime" || name == "race-httpapi" || name == "race-mcp" || name == "race-trace" || name == "race-guardians" {
+		if name == "mutation-receipts" || name == "mutation-gates" || name == "mutation-evidence" || name == "mutation-recovery" || name == "vulncheck" || name == "race-almanac" || name == "race-evolve" || name == "race-gates" || name == "race-runtime" || name == "race-httpapi" || name == "race-mcp" || name == "race-trace" || name == "race-guardians" {
 			g.Required = boolPtr(false)
 			g.Profiles = []string{"full"}
 		}
@@ -168,7 +169,7 @@ func realGateConfig() gates.Config {
 }
 
 // checkRealGateProfile pins the real gauntlet shape through profile
-// selection: full keeps all twenty-three gates in declaration order with halt
+// selection: full keeps all twenty-five gates in declaration order with halt
 // policy, quick keeps the 12 required gates (mutation-* + vulncheck + race-*
 // are full-only), and an unknown profile refuses.
 func checkRealGateProfile() (string, error) {
@@ -177,8 +178,8 @@ func checkRealGateProfile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(full) != 23 {
-		return "", fmt.Errorf("full profile: got %d gates, want 23", len(full))
+	if len(full) != 25 {
+		return "", fmt.Errorf("full profile: got %d gates, want 25", len(full))
 	}
 	for i, g := range full {
 		if g.Name != cfg.Gates[i].Name {
@@ -198,5 +199,5 @@ func checkRealGateProfile() (string, error) {
 	if _, err := gates.SelectGates(cfg, "nope"); err == nil {
 		return "", fmt.Errorf("unknown profile accepted")
 	}
-	return "full=23, quick=12 required in order, unknown refused", nil
+	return fmt.Sprintf("full=%d, quick=%d required in order, unknown refused", len(full), len(quick)), nil
 }

@@ -252,11 +252,11 @@ func checkQuickHasNoFullOnly(quick []gates.Gate) error {
 }
 
 // checkFullAndForcedProfiles pins the precision side: gate code rides
-// the 23-gate gauntlet and a forced full always wins over quick.
+// the 25-gate gauntlet and a forced full always wins over quick.
 func checkFullAndForcedProfiles(cfg gates.Config) error {
 	full, err := gates.SelectGates(cfg, chooseGateProfile([]string{"internal/gates/gates.go"}, false))
-	if err != nil || len(full) != 23 {
-		return fmt.Errorf("gate code: got %d gates (%v), want 23 full", len(full), err)
+	if err != nil || len(full) != 25 {
+		return fmt.Errorf("gate code: got %d gates (%v), want 25 full", len(full), err)
 	}
 	if got := chooseGateProfile([]string{"charts/flow.md"}, true); got != "" {
 		return fmt.Errorf("forced full: chose %q, want full", got)
@@ -269,7 +269,7 @@ func checkFullAndForcedProfiles(cfg gates.Config) error {
 
 // checkGateProfileDecision pins the tradeoff through real selection:
 // docs-only chooses quick (12 required, no full-only gates), gate code
-// or forced full chooses the 23-gate gauntlet.
+// or forced full chooses the 25-gate gauntlet.
 func checkGateProfileDecision() (string, error) {
 	cfg := realGateConfig()
 	quick, err := checkDocsOnlyQuick(cfg)
@@ -282,7 +282,7 @@ func checkGateProfileDecision() (string, error) {
 	if err := checkFullAndForcedProfiles(cfg); err != nil {
 		return "", err
 	}
-	return "docs-only edits ride quick=12, gate code rides full=23, forced full honored", nil
+	return "docs-only edits ride quick=12, gate code rides full=25, forced full honored", nil
 }
 
 // missDoc is one eval corpus entry for the miss-rate golden (B14).

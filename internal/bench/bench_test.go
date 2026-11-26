@@ -150,7 +150,7 @@ func TestB13GateProfileDecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("B13 check failed: %v", err)
 	}
-	for _, want := range []string{"quick=12", "full=23", "docs-only"} {
+	for _, want := range []string{"quick=12", "full=25", "docs-only"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B13 detail must contain %q, got %q", want, detail)
 		}
@@ -305,13 +305,13 @@ func TestB8RetrievalGolden(t *testing.T) {
 	}
 }
 
-// P1: B9 pins the real twenty-three-gate profile contract (quick=12, full-only mutation-receipts/mutation-gates/vulncheck plus race-*).
+// P1: B9 pins the real twenty-five-gate profile contract (quick=12, full-only mutation-receipts/mutation-gates/vulncheck plus race-*).
 func TestB9RealGateProfile(t *testing.T) {
 	detail, err := checkRealGateProfile()
 	if err != nil {
 		t.Fatalf("B9 check failed: %v", err)
 	}
-	for _, want := range []string{"full=23", "quick=12", "unknown refused"} {
+	for _, want := range []string{"full=25", "quick=12", "unknown refused"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B9 detail must contain %q, got %q", want, detail)
 		}
@@ -489,7 +489,7 @@ func TestB5LeanPreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("B5 check failed: %v", err)
 	}
-	for _, want := range []string{"full=23", "lean=6", "unknown refused"} {
+	for _, want := range []string{"full=25", "lean=6", "unknown refused"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("B5 detail must contain %q, got %q", want, detail)
 		}
