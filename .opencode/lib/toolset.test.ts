@@ -185,10 +185,23 @@ describe("usage pruning (T3 measured toolset)", () => {
       { tool: "regulus_memory_search", calls: 2, sessions: ["s1"] },
     ],
   });
+  test("non-expendable tools survive zero recorded calls", () => {
+    // Source of truth: NON_EXPENDABLE_TOOLS in domain-toolset.ts. This test used
+    // to assert the opposite for gate_run, which pinned the violation the phase
+    // forbids: a validation surface disappearing for being rare.
+    const got = applyUsagePruning("full", parseTraceUsage(usage3));
+    expect(got.tools).toContain("gate_run");
+    expect(got.tools).toContain("spec_check");
+    expect(got.tools).toContain("audit");
+    expect(got.pruned).not.toContain("gate_run");
+    expect(got.tools).toContain("doctor");
+    expect(got.tools).toContain("memory_context");
+  });
   test("unused full-only tools prune, minimal tools stay", () => {
     const got = applyUsagePruning("full", parseTraceUsage(usage3));
     expect(got.tools).not.toContain("probe_compose");
-    expect(got.tools).not.toContain("gate_run");
+    // gate_run is non-expendable now, so an expendable surface proves the prune.
+    expect(got.tools).not.toContain("evolve_report");
     expect(got.tools).toContain("doctor");
     expect(got.tools).toContain("memory_search");
     expect(got.tools).toContain("memory_context");

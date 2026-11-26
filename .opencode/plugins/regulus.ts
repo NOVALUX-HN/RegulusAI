@@ -223,7 +223,7 @@ export default Plugin.define({
     // exposes 3 definitions instead of 16. Per-session switching is
     // impossible with this SDK (setup/transform carry no session; see
     // TOOLSET_* in lib/domain.ts). Reversal: TE_TOOLSET=full restores
-    // all 16; unset restores auto (charts/ present → full).
+    // the full set; unset restores auto (charts/ present → full).
     const toolset = resolveToolset({ hasCharts: hasChartFiles(dir) })
     console.error(`[regulus] toolset: ${toolset} (${toolsetTools(toolset).length}/${TOOLSET_FULL.length} tools, TE_TOOLSET=${process.env.TE_TOOLSET ?? ""})`)
     // T3 (pro-harness) + T6 (speed-tokens): measured pruning — the

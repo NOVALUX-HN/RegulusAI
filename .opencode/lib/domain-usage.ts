@@ -1,7 +1,7 @@
 // Usage parsing and measured-use pruning (NOV-67 split).
 
 import type { RunBin } from "./domain-charts.js";
-import { TOOLSET_MINIMAL, toolsetTools } from "./domain-toolset.js";
+import { NON_EXPENDABLE_TOOLS, TOOLSET_MINIMAL, toolsetTools } from "./domain-toolset.js";
 import type { ToolsetMode } from "./domain-toolset.js";
 
 // TraceToolUsage is one row of `trace usage --json`: a host-side tool
@@ -60,8 +60,14 @@ export function applyUsagePruning(
   if (usage.sessions < PRUNE_MIN_SESSIONS) return { tools: base, pruned: [] };
   const called = (name: string) =>
     usage.tools.some((u) => u.calls > 0 && (u.tool === name || u.tool.endsWith(`_${name}`)));
+  // Non-expendable tools survive regardless of use. Frequency is evidence of
+  // cost, never of expendability: a validation or recovery surface that nobody
+  // happened to call must still be there when it is needed.
   const tools = base.filter(
-    (name) => (TOOLSET_MINIMAL as readonly string[]).includes(name) || called(name),
+    (name) =>
+      NON_EXPENDABLE_TOOLS.includes(name) ||
+      (TOOLSET_MINIMAL as readonly string[]).includes(name) ||
+      called(name),
   );
   const pruned = base.filter((name) => !tools.includes(name));
   return { tools, pruned };

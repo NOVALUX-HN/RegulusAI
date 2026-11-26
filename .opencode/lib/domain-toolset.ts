@@ -51,6 +51,20 @@ export const TOOLSET_FULL: readonly string[] = [
 // check the spec example names.
 export const TOOLSET_MINIMAL: readonly string[] = ["doctor", "memory_search", "memory_context"];
 
+// NON_EXPENDABLE_TOOLS are never removed by usage pruning, whatever their call
+// count. The phase rule is explicit: critical, security, governance, validation
+// and recovery surfaces are never expendable, and low frequency is evidence of
+// cost — never of expendability. Each entry names the category that protects it;
+// an addition without a category is a change to that rule, not to a list.
+export const NON_EXPENDABLE_TOOLS: readonly string[] = [
+  "gate_run", // validation: the gauntlet that blocks a close
+  "spec_check", // validation: the acceptance contract
+  "doctor", // recovery: install health, the first thing to reach for
+  "memory_context", // recovery: resume after a restart or a compaction
+  "audit", // governance: repo-wide quality and must-fix surface
+  "evolve_tick", // governance: the mutating evolution driver
+];
+
 export type ToolsetMode = "full" | "minimal";
 
 // resolveToolset selects the subset: explicit TE_TOOLSET=full|minimal
