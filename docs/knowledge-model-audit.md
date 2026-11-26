@@ -12,9 +12,13 @@ to a universal rule, no executing stored commands, no granting permissions.
 `Content`, `TopicKey`, `Domain`, `Lesson`, `Provenance`, `Source`, `Origin`,
 `Author`, `Version`, `Scope`, `Confidence`, `Evidence`, `ExpiresAt`, `SavedAt`.
 
-Everything a record can say about *where it applies* is `Scope`, `Domain` and
-`Provenance` (task, git head, paths, receipts). **There is no host and no
-environment field** — verified against the struct, not inferred.
+Everything a record can say about *where it applies* is `Scope`, `Domain`,
+`Provenance` (task, git head, paths, receipts) and `Lesson.Dimension`
+(`inv`/`dom`, `internal/almanac/almanac.go:39-47`). **There is no host and no
+environment field** — verified against the struct, not inferred. Retrieval is
+broader than the scope struct suggests: `Query`
+(`internal/almanac/almanac.go:431-438`) already buckets on topic, domain, type,
+dimension, path and system, and filters Dimension at `:511`.
 
 ## 2. What already works (do not rebuild)
 
@@ -38,8 +42,8 @@ Promotion today rests on three fixed rules:
 * `internal/envfacts/envfacts.go:31` `MinSessions = 3` — a failure repeating in
   three distinct sessions may become a lesson;
 * `internal/reflect/reflect.go:43` requires at least one passing receipt;
-* `internal/almanac/learn.go:166` requires a verified-solution to carry evidence,
-  an author, a scope and a confidence.
+* `internal/almanac/learn.go:100-124` requires a verified-solution to carry
+  evidence, an author, a scope and a confidence.
 
 None of them can express: how many independent sources corroborate a claim, how
 many distinct actors or hosts saw it, or a confidence derived from that count.
@@ -57,20 +61,25 @@ and `Search` hides stale ones by default. What does not exist is
 expired claim is discarded rather than refreshed, and a claim that is still
 correct must be re-saved as a new observation.
 
-Scope-wise, retrieval accepts `Task/Path/System/Budget`
-(`internal/almanac/context.go:118`) and records carry `Scope`/`Domain`. A host or
-environment dimension — the one that matters when the same lesson is true on
-Linux and false on Windows — has nowhere to live. This is the same class of
-defect F16 found in the capability matrix, in a different subsystem.
+Scope-wise, the context builder accepts `Task/Path/System/Budget`
+(`internal/almanac/context.go:72-77`, matched at `:83-95`) and records carry
+`Scope`/`Domain`/`Lesson.Dimension`. A host or environment dimension — the one
+that matters when the same lesson is true on Linux and false on Windows — has
+nowhere to live. This is the same class of defect F16 found in the capability
+matrix, in a different subsystem.
 
 ## 5. Gap G3 — measurement and isolation are unproven
 
 Three distinct absences, all verifiable:
 
 1. **Contextual coexistence has no state.** `ResolveContradiction` forces a
-   winner and a loser (`learn.go:441`), so two claims that are both true in
+   winner and a loser (`learn.go:441-463`), so two claims that are both true in
    different contexts can only be recorded by writing the context into the text.
-   There is no field or status that says "A holds here, B holds there".
+   There is no field or status that says "A holds here, B holds there". A
+   contradiction *window* does exist, but in other domains: `IsContradicted` and
+   `ContradictionWindow` (`internal/envfacts/envfacts.go:129-140`) decide when
+   mined facts disagree, and `internal/evolve/tick.go:238-244` treats rot as a
+   contradiction. Neither is a coexistence state for stored knowledge.
 2. **Usefulness is not measured.** `ComputeLearnMetrics`
    (`learn.go:654`) reports precision, useful-recall, obsolescence and noise, and
    `misses.go` records retrieval misses. There is **no** measurement of
@@ -93,13 +102,36 @@ Three distinct absences, all verifiable:
 ## 7. Explicit non-gaps (do not spend effort here)
 
 * Redaction at the save and import choke — present and tested.
-* `contentHash` idempotency and the 0.92 dedup bar — correct.
+* `contentHash` idempotency and the dedup bar — correct. Note the 0.92 default is
+  overridable through `REGULUS_DEDUP_THRESHOLD` (`dedup.go:39-50`), so it is a
+  default, not a constant.
 * The store lock and second-writer refusal — tested.
 * Backup manifest verification — correct.
 * Ranking order and stale-by-default hiding — correct.
 * `Source=import`/`PROPOSED` distrust on import — correct, and the right default.
 
-## 8. Verification of this audit
+## 8. Machinery that exists elsewhere — F18.2 must not rebuild it
+
+The audit's first pass missed these; the independent review found them. None of
+them satisfies F18.2, but each is adjacent enough that duplicating it would be a
+defect:
+
+| Mechanism | Location | Why it is not the F18 answer |
+|---|---|---|
+| `SupportOf` | `internal/almanac/support.go:22` | counts how many receipts cite an observation — evidence linkage, not corroboration across independent sources |
+| `CitedRot` | `internal/evidence/verify.go:329` | flags evidence that rotted, at verification time, not knowledge that needs revalidation |
+| `lessonEvidence` | `internal/evolve/report.go:66-76` | reports the evidence behind an evolution lesson |
+| keep/drop validation | `internal/evolve/validate.go:7-11` | experiment verdicts |
+| rot-as-contradiction | `internal/evolve/tick.go:238-244` | evolution domain |
+| `IsContradicted`, `ContradictionWindow` | `internal/envfacts/envfacts.go:129-140` | mined environment facts, window of 3 sessions |
+| `MinSupport`, `Generalizable` | `internal/evolve/observe.go:31-49` | evolution observation bar |
+| governed promotion | `internal/evolve/governed_eval.go:461-505` | promotion of harness changes, with canary and rollback |
+| `RobustMinDelta`, `SignificanceFloor` | `internal/evolve/robust.go:30-39` | experiment significance, not knowledge confidence |
+
+F18.2's corroboration and revalidation must be expressed on the Almanac record,
+which is what makes a stored claim trustworthy at retrieval time.
+
+## 9. Verification of this audit
 
 ```bash
 bash scripts/verify-wsl.sh ./internal/almanac/ ./internal/envfacts/ ./internal/reflect/
