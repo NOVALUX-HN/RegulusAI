@@ -174,6 +174,12 @@ type Report struct {
 	Denied          int     `json:"denied"`
 	Redacted        int     `json:"redacted"`
 	BudgetTrimmed   int     `json:"budget_trimmed"`
+	// Loss and recovery are measured from the same selection that produced the
+	// context, so the number can never disagree with the decision (F19.3).
+	Omitted     int `json:"omitted"`
+	LossPct     int `json:"loss_pct"`
+	Recoverable int `json:"recoverable"`
+	RecoveryPct int `json:"recovery_rate_pct"`
 }
 
 // CountTokens measures the F11.5 proxy over free text: chars/4
@@ -666,6 +672,19 @@ func finishSelection(sel Selection, layered []Fragment, opts Options) Selection 
 		}
 	}
 	sel.Report.Contradictions = sides / 2
+
+	// Measure what the cut cost and whether it can be reached again. A critical
+	// fragment in the optional layer is reported as a warning, never folded into
+	// the percentage where it would look like a saving.
+	loss := MeasureLoss(sel)
+	recovery := MeasureRecovery(sel)
+	sel.Report.Omitted = loss.Omitted
+	sel.Report.LossPct = loss.LossPct
+	sel.Report.Recoverable = recovery.Recoverable
+	sel.Report.RecoveryPct = recovery.RatePct
+	if loss.EssentialOmitted > 0 {
+		sel.Warnings = append(sel.Warnings, "critical fragments landed in the optional layer: that is a selector bug, not a saving")
+	}
 	if sel.Report.CriticalTotal > 0 {
 		sel.Report.CriticalRecall = float64(sel.Report.CriticalKept) / float64(sel.Report.CriticalTotal)
 	} else {
