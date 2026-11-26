@@ -61,3 +61,31 @@ T4 — adversariales de secretos, prompt injection en conocimiento, contaminaci�
 L1: "procede pero siempre revisa lo que tiene cada tarea para conocer a detalle el alcance de cada una de ellas"
 
 L2: Las cuatro hijas comparten el mismo bloque genérico de Acceptance criteria y las mismas Instrucciones de 6 pasos; el requisito real de cada una vive en su `## Objetivo`. Criterio: cada tarea se juzga contra su Objetivo + las specs de este documento, y el template es checklist mínimo, no alcance. Es el tercer fase consecutiva con este patrón (F16, F17, F18).
+
+L3: F18.1 entregó `docs/knowledge-model-audit.md`. La revisión independiente confirmó todas las afirmaciones y corrigió tres precisiones (dos citas de línea y el umbral de dedup, que es default con override). También encontró maquinaria omitida — `Lesson.Dimension` ya era una dimensión de scope, y `SupportOf`, `CitedRot`, `IsContradicted`/`ContradictionWindow`, `MinSupport` y la promoción gobernada ya existen en evidence, envfacts y evolve — ahora en una sección propia para que F18.2 no la reconstruya.
+
+L4: F18.2 (`1809a46`). `Corroborate` idempotente por fuente, rechaza fuente vacía y auto-corroboración; `DerivedConfidence` 2→medium, 4→high, nunca promueve con una sola y nunca baja lo asignado; `Revalidate` renueva con actor y TTL positivo; `CompatibleContexts` permite que dos claims coexistan por host o entorno. El record gana `Host`, `Environment`, `Corroborations` y `RevalidatedAt`. Sin segundo store.
+
+L5: F18.3 (`8a4346a`). `ContextScope` gana `Host`/`Environment`; `ReuseEvent` + `Summarize` comparan el grupo con reuso contra el baseline sin reuso, con `Comparable` falso cuando falta un grupo. Cableado como `regulus usefulness --events <file.json>`. Pin del dispatch 39 → 40.
+
+L6: F18.4 (`9df0628`). Adversariales de secretos, injection, comandos almacenados, contaminación entre proyectos, ACL privada y lifecycle de rechazo.
+
+L7: La revisión de fase confirmó C1–C7 y calificó C8 como **MIXED**: los fixtures de secretos, injection, rechazo y ACL son significativos, pero el de aislamiento entre proyectos es **documentación de conducta, no un tripwire** (la separación viene de la raíz por proyecto, no hay llamada que remover), y el guard de ejecución es un tripwire que nada dice sobre un llamador externo. Ambos comentarios están ahora corregidos en el código.
+
+## Estado final
+
+| Commit | Contenido |
+|---|---|
+| `751b8e7` | F18.1 auditoría de schema y lifecycle |
+| `743293b` | correcciones tras revisión de F18.1 |
+| `1809a46` | F18.2 corroboración, confianza, revalidación, coexistencia |
+| `8a4346a` | F18.3 scope por host/entorno y utilidad medida |
+| `9df0628` | F18.4 adversariales de seguridad y lifecycle |
+
+Gauntlet 6/6 PASS en cada tarea: `f18/T2` `1640165b99333819`, `f18/T3` `ee19b6e1fcb3741a`, `f18/T4` `7894cf19c3ea22a1`.
+
+### Limitaciones declaradas, no escondidas
+
+1. **Cuatro funciones de lifecycle sin llamador.** `Corroborate`, `DerivedConfidence`, `Revalidate` y `CompatibleContexts` tienen **cero call sites fuera de los tests**. `Summarize` sí está cableado. Es la tercera vez que aparece este patrón en el programa (antes: `execbackend` y el clasificador de F17), así que la deuda es estructural, no un descuido aislado: falta una superficie que registre corroboraciones y revalidaciones.
+2. **`Query` no filtra por host ni entorno.** La dimensión nueva es usable desde `ContextScope` (el bloque de contexto), no desde `Search`. Llevarla a `Query` es el paso siguiente natural junto al punto 1.
+3. **El aislamiento entre proyectos está documentado, no pineado.** Si alguien hiciera que `Search` lea una ruta compartida, ningún test fallaría todavía.

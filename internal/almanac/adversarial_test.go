@@ -93,8 +93,11 @@ func TestContextDeclaresDataNotInstructions(t *testing.T) {
 	}
 }
 
-// TestAlmanacCannotExecuteAnything pins S9 structurally at the package that
-// stores knowledge: a stored command has no interpreter here.
+// TestAlmanacCannotExecuteAnything is a tripwire, not an execution proof: it
+// guarantees that nothing in this package can reach an interpreter, so stored
+// text has no way to act from here. It says nothing about a caller outside the
+// package that might choose to execute read-back text — that boundary is the
+// caller's, and the DATA header is what warns it.
 func TestAlmanacCannotExecuteAnything(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -119,8 +122,11 @@ func TestAlmanacCannotExecuteAnything(t *testing.T) {
 	}
 }
 
-// TestKnowledgeDoesNotLeakAcrossProjects is the contamination fixture the audit
-// said was missing: what one project stored must not be visible to another.
+// TestKnowledgeDoesNotLeakAcrossProjects documents the isolation behaviour
+// rather than pinning a guard: separation comes from the per-project store root,
+// so there is no single call to remove and the fixture cannot fail that way. What
+// it does catch is a future change that makes Search read a shared path, or a
+// default that starts merging roots.
 func TestKnowledgeDoesNotLeakAcrossProjects(t *testing.T) {
 	projectA, projectB := t.TempDir(), t.TempDir()
 	o := &Observation{Type: "discovery", Title: "only for A", Content: "A-only knowledge", Author: "a1"}
