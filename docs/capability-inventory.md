@@ -1,6 +1,7 @@
 # Capability inventory — F16.1 audit (NOV-134)
 
-Baseline: `develop`, `HEAD 5d57337`, clean tree, 2026-11-25. Audit-only artifact:
+Baseline: `develop`, audit performed at `HEAD 5d57337`, committed as `45a0b8a`, clean tree,
+2026-11-25. Audit-only artifact:
 every claim below cites code that was read in this checkout. Nothing here is a
 roadmap promise; the gaps are what F16.2–F16.4 may act on, and only if they
 survive their own evidence check.
@@ -65,8 +66,9 @@ never journey-met."*
 `JourneyCoveredCaps()` therefore covers 8 of 12: install, sessions, tools, gate, close,
 tokens, filesystem, MCP.
 
-But `codexCaps` (`:161-174`) and `claudeCaps` (`:176-189`) mark **all twelve** as
-`probada`, and for the four uncovered dimensions they cite journey evidence anyway:
+But **all three** host manifests mark all twelve as `probada` — `opencodeCaps`
+(`:147-159`) exactly like `codexCaps` (`:161-174`) and `claudeCaps` (`:176-189`) — and for
+the four uncovered dimensions they cite journey evidence anyway:
 
 ```go
 verified(CapHooks,       "version-gated: …", "contract tests + " + journeyGreen)
@@ -75,10 +77,20 @@ verified(CapPermissions, "respeta permisos…", "contract tests + " + journeyGre
 verified(CapLimits,      "presupuestos y cotas…", "contract tests + " + journeyGreen)
 ```
 
-`journeyGreen` is a single fixture citation (NOV-76, 2026-11-16). So four dimensions
-claim a verified state backed by evidence that the same file says does not cover them.
-`ValidateCapabilitiesAttributable` cannot catch this: it validates that the *word* is in
-the allowlist, not that the citation supports the dimension.
+`journeyGreen` is a single fixture citation (NOV-76, 2026-11-16). So **three hosts × four
+dimensions = twelve claims** assert a verified state backed by evidence the same file says
+does not cover them. `ValidateCapabilitiesAttributable` cannot catch this: it validates
+that the *word* is in the allowlist, not that the citation supports the dimension.
+
+`ValidateNoProbeAsJourney` (`:345`) is the nearest guard and does not help either: it
+builds the covered set from `JourneyCoveredCaps()` (`:346-349`) but applies it only to
+`ClassProbe` manifests (`:357`), so the journey-class manifests carrying the over-claim are
+never checked. **G1 currently has zero enforcement.**
+
+A second symptom points at the same missing vocabulary: Codex and Claude declare
+`CapTokens` as `probada` while their own detail text says *"receipts con tokens cuando el
+host los expone, unknown si no"*. A state that means "verified, unless it is not" is
+exactly what `inferred` and `partial` exist for.
 
 This is the gap F16.2 must close: an evidence field that can only assert what the cited
 run actually exercised, plus the states needed to say "declared but not observed"
@@ -100,8 +112,8 @@ the vocabulary and the docs agree.
 
 ## 6. Gap G3 — Devin is fully declared, never observed
 
-`DefaultHostManifests` (`:188-200`) declares Devin across the 12 dimensions as 9×
-not-executed plus unsupported/unknown, and `hostjourney.go:83` records the reason:
+`DefaultHostManifests` declares Devin across the 12 dimensions as **7 not-executed, 3
+unsupported and 2 unknown** — zero `probada` — and `hostjourney.go:83` records the reason:
 *"desktop-only, no non-interactive CLI"*. The probe always fails, so no Devin capability
 is ever observed — the row is strategy documentation, not evidence.
 
