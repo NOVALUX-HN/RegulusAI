@@ -92,8 +92,6 @@ type Sample struct {
 	// changed, a gate that moved, an artifact that appeared. Elapsed time
 	// alone is never progress.
 	Progressed bool
-	// AtMS is the monotonic time of the sample, for cooldown arithmetic.
-	AtMS int64
 }
 
 // Verdict is the classification plus the evidence behind it. Asks and

@@ -189,13 +189,3 @@ func (o StrategyOutcome) Delta() string {
 		o.Strategy, o.TaskID, o.AgentID, o.Before.State, o.After.State,
 		o.After.EffectsApplied, o.Retries, o.CostMS, verdict)
 }
-
-// knownState reports whether s is one of the durable checkpoint states.
-func knownState(s string) bool {
-	switch s {
-	case StatePending, StateRunning, StateCheckpointed, StateSucceeded,
-		StateFailed, StateTimedOut, StateCancelled, StateRolledBack, StateRolledBackPartial:
-		return true
-	}
-	return false
-}

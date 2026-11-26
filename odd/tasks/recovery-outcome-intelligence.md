@@ -62,4 +62,32 @@ L1: "arranca pero siempre viendo la informacion completa de cada tarea y haciend
 
 L2: Las cuatro hijas comparten el mismo bloque de Acceptance criteria genérico y las mismas Instrucciones de 6 pasos; el requisito real de cada una vive en su `## Objetivo`. Criterio: cada tarea se juzga contra su Objetivo + las specs de este documento, y el template es checklist mínimo, no alcance.
 
-L3: El padre nombra "LoopGuard" entre los sistemas a no duplicar. Pendiente de verificar si existe en este repo o si proviene de otro proyecto; si no existe, se documenta y no se inventa.
+L3: El padre nombra "LoopGuard" entre los sistemas a no duplicar. Verificado: existe, pero **sólo en TypeScript** (`.opencode/lib/domain-loopguard.ts:10`, `LOOPGUARD_THRESHOLD = 3`), advisory por diseño, sin equivalente Go.
+
+L4: F17.1 entregada como `docs/progress-signals.md`. La revisión independiente refutó tres afirmaciones: son **nueve** estados durables (no diez), los tokens están **excluidos a propósito** de los spans (el deny-list de redacción borra claves con "token"), y el marco de alcance attempt/task/exploration no coincidía con el código (los reales son run, task+agent, host y mission). También aparecieron superficies omitidas que estrechan G1: `evolve` ya promueve a repeated-failures con `MinSupport 2`, `bench` ya reporta `Progress` por intento, `sextant.CheckProgress` ya sigue progreso de plan, `ReconstructRun` ya dictamina crashed/incomplete.
+
+L5: F17.2, `internal/recovery/progress.go`. `Classify` con vocabulario cerrado y budgets 3/4/300000. El orden de las reglas es el guard de falsos positivos: la última observación vence a todo detector, y un presupuesto a medio gastar no escala.
+
+L6: F17.3, `internal/recovery/outcome.go`. `StrategyOutcome` como documento hermano con pin `recovery-outcome-v1`: no se extendió `recovery-v1` para no cambiar un contrato persistido. `Effective` se mide (estado, efectos, compensaciones), nunca por tiempo ni retries.
+
+L7: F17.4, `internal/recovery/safety_test.go`. Guards estructurales: ningún archivo del paquete puede referenciar `os/exec`, `os.Process`, `.Kill(`, `Process.Signal` ni `syscall.Kill`; `progress.go` tampoco. Tres expectativas iniciales eran mías y estaban mal (cancel devuelve error, reassign mueve); se corrigieron los tests, no el código.
+
+L8: Revisión de fase: C1-C7 verificadas, y tres hallazgos corregidos — `Sample.AtMS` era un campo muerto (eliminado), y `knownState` duplicaba la allowlist de `ValidateCheckpoint` (unificada en un solo helper).
+
+## Estado final
+
+| Commit | Contenido |
+|---|---|
+| `861f99a` | F17.1 matriz de señales |
+| `576eb70` | correcciones tras la revisión de F17.1 |
+| `2c0f173` | F17.2 clasificador |
+| `d513fe5` | F17.3 outcome medido |
+| `066ef0a` | F17.4 validación de seguridad |
+
+Gauntlet 6/6 PASS en cada tarea: `f17/T2` `ca65aab09ae4b2d7`, `f17/T3` `ab6bdf20d2156c11`, `f17/T4` `1baea416d5455269`.
+
+### Limitación declarada, no escondida
+
+**F17 no cableó nada.** `progress.go` y `outcome.go` son biblioteca lista y testeada, pero **sin llamador en producción**: ninguna ruta fuera de `internal/recovery` y sus tests usa `Classify` ni `StrategyOutcome`. La fase implementó la capacidad, no la integración; decir lo contrario sería inflar el resultado. El paso siguiente natural es consumirlos desde `cmdx` (un comando que clasifique un run y registre el outcome), igual que `internal/execbackend` espera a F16.2.
+
+Residual anotado por la revisión: conviven cuatro vocabularios de clasificación en el repo (`recovery.ClassifyError`, `failure.Classify`, `gates`/`sextant.Classify`, y ahora el de progreso). Unificarlos es una decisión de contrato, no un refactor: quedó fuera de alcance a propósito.

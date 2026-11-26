@@ -6,10 +6,10 @@ import (
 )
 
 // failed builds a non-progressing sample with a signature.
-func failed(sig string, atMS int64) Sample { return Sample{Signature: sig, AtMS: atMS} }
+func failed(sig string) Sample { return Sample{Signature: sig} }
 
 // moved builds a progressing sample.
-func moved(atMS int64) Sample { return Sample{Progressed: true, AtMS: atMS} }
+func moved() Sample { return Sample{Progressed: true} }
 
 // TestClassifyDefaultsMatchLoopGuard pins the repeated-failure bar to the one
 // LoopGuard already uses, so the two detectors cannot contradict each other.
@@ -26,7 +26,7 @@ func TestClassifyDefaultsMatchLoopGuard(t *testing.T) {
 // TestClassifyRepeatedFailure: the same signature up to the bar escalates.
 func TestClassifyRepeatedFailure(t *testing.T) {
 	in := ClassifyInput{
-		Samples: []Sample{failed("tool=go test err=exit 1", 100), failed("tool=go test err=exit 1", 200), failed("tool=go test err=exit 1", 300)},
+		Samples: []Sample{failed("tool=go test err=exit 1"), failed("tool=go test err=exit 1"), failed("tool=go test err=exit 1")},
 		Policy:  DefaultProgressPolicy(),
 		NowMS:   1000,
 	}
@@ -44,7 +44,7 @@ func TestClassifyRepeatedFailure(t *testing.T) {
 // cannot see, because each class is retryable on its own.
 func TestClassifyStagnationWithoutRepeating(t *testing.T) {
 	in := ClassifyInput{
-		Samples: []Sample{failed("a", 1), failed("b", 2), failed("c", 3), failed("d", 4)},
+		Samples: []Sample{failed("a"), failed("b"), failed("c"), failed("d")},
 		Policy:  DefaultProgressPolicy(),
 		NowMS:   1000,
 	}
@@ -64,9 +64,9 @@ func TestClassifyBelowBarIsNotStagnation(t *testing.T) {
 		name    string
 		samples []Sample
 	}{
-		{"two identical failures", []Sample{failed("x", 1), failed("x", 2)}},
-		{"three differing failures", []Sample{failed("a", 1), failed("b", 2), failed("c", 3)}},
-		{"one failure", []Sample{failed("a", 1)}},
+		{"two identical failures", []Sample{failed("x"), failed("x")}},
+		{"three differing failures", []Sample{failed("a"), failed("b"), failed("c")}},
+		{"one failure", []Sample{failed("a")}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,9 +87,9 @@ func TestClassifyBelowBarIsNotStagnation(t *testing.T) {
 func TestClassifyProgressOutranksEveryDetector(t *testing.T) {
 	samples := make([]Sample, 0, 12)
 	for i := 0; i < 11; i++ {
-		samples = append(samples, failed("tool=go test err=exit 1", int64(i+1)))
+		samples = append(samples, failed("tool=go test err=exit 1"))
 	}
-	samples = append(samples, moved(12))
+	samples = append(samples, moved())
 
 	v := Classify(ClassifyInput{Samples: samples, Policy: DefaultProgressPolicy(), NowMS: 5000})
 	if v.Class != ClassProgress {
@@ -105,15 +105,15 @@ func TestClassifyProgressOutranksEveryDetector(t *testing.T) {
 // half is the false-positive fixture the audit said was missing.
 func TestClassifyLongIsNotProgress(t *testing.T) {
 	long := []Sample{
-		{Signature: "s", AtMS: 1},
-		{Signature: "s", AtMS: 3_600_000},
-		{Signature: "s", AtMS: 7_200_000},
+		{Signature: "s"},
+		{Signature: "s"},
+		{Signature: "s"},
 	}
 	v := Classify(ClassifyInput{Samples: long, Policy: DefaultProgressPolicy(), NowMS: 7_200_001})
 	if v.Class != ClassRepeatedFailure {
 		t.Fatalf("long identical failures are still a repeat, got %q", v.Class)
 	}
-	single := Classify(ClassifyInput{Samples: []Sample{{Signature: "s", AtMS: 7_200_000}}, Policy: DefaultProgressPolicy(), NowMS: 9_999_999})
+	single := Classify(ClassifyInput{Samples: []Sample{{Signature: "s"}}, Policy: DefaultProgressPolicy(), NowMS: 9_999_999})
 	if single.Class != ClassProgress || single.Escalate {
 		t.Fatalf("one long attempt must not be flagged: %+v", single)
 	}
@@ -123,7 +123,7 @@ func TestClassifyLongIsNotProgress(t *testing.T) {
 // honest while the escalation waits. Suppression is not a downgrade.
 func TestClassifyCooldownSuppressesEscalationButKeepsClass(t *testing.T) {
 	in := ClassifyInput{
-		Samples:          []Sample{failed("x", 100), failed("x", 200), failed("x", 300)},
+		Samples:          []Sample{failed("x"), failed("x"), failed("x")},
 		Policy:           DefaultProgressPolicy(),
 		LastEscalationMS: 1000,
 		NowMS:            1000 + 60_000, // inside the 300000ms cooldown
@@ -153,7 +153,7 @@ func TestClassifyCooldownSuppressesEscalationButKeepsClass(t *testing.T) {
 // so a single later failure is not a repeat.
 func TestClassifyProgressResetsTheStreak(t *testing.T) {
 	in := ClassifyInput{
-		Samples: []Sample{failed("x", 1), failed("x", 2), moved(3), failed("x", 4)},
+		Samples: []Sample{failed("x"), failed("x"), moved(), failed("x")},
 		Policy:  DefaultProgressPolicy(),
 		NowMS:   1000,
 	}
@@ -165,7 +165,7 @@ func TestClassifyProgressResetsTheStreak(t *testing.T) {
 // TestClassifyIsDeterministic: no hidden clock and no global state, so the same
 // input always yields the same verdict.
 func TestClassifyIsDeterministic(t *testing.T) {
-	in := ClassifyInput{Samples: []Sample{failed("a", 1), failed("b", 2)}, Policy: DefaultProgressPolicy(), NowMS: 10}
+	in := ClassifyInput{Samples: []Sample{failed("a"), failed("b")}, Policy: DefaultProgressPolicy(), NowMS: 10}
 	first, second := Classify(in), Classify(in)
 	if first.Class != second.Class || first.Escalate != second.Escalate || len(first.Reasons) != len(second.Reasons) {
 		t.Fatalf("same input must yield the same verdict: %+v vs %+v", first, second)
@@ -204,7 +204,7 @@ func TestProgressPolicyValidate(t *testing.T) {
 // silently disabling every detector.
 func TestClassifyZeroPolicyFallsBackToDefault(t *testing.T) {
 	in := ClassifyInput{
-		Samples: []Sample{failed("x", 1), failed("x", 2), failed("x", 3)},
+		Samples: []Sample{failed("x"), failed("x"), failed("x")},
 		NowMS:   1000,
 	}
 	if v := Classify(in); v.Class != ClassRepeatedFailure {

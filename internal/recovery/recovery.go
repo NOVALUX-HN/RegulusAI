@@ -217,6 +217,19 @@ func ValidateRunID(runID string) error {
 }
 
 // ValidateCheckpoint refuses empty task/agent ids, unknown states
+// knownState reports whether s is one of the durable checkpoint states. There
+// is exactly one allowlist: ValidateCheckpoint and the strategy-outcome record
+// both use it, so the two can never disagree about what a valid state is.
+func knownState(s string) bool {
+	switch s {
+	case StatePending, StateRunning, StateCheckpointed, StateSucceeded,
+		StateFailed, StateTimedOut, StateCancelled,
+		StateRolledBack, StateRolledBackPartial:
+		return true
+	}
+	return false
+}
+
 // and relative-path-hostile values before recording.
 func ValidateCheckpoint(c *Checkpoint) error {
 	if !validID(c.TaskID) {
@@ -225,10 +238,7 @@ func ValidateCheckpoint(c *Checkpoint) error {
 	if !validID(c.AgentID) {
 		return fmt.Errorf("recovery: invalid agent id %q", c.AgentID)
 	}
-	switch c.State {
-	case StatePending, StateRunning, StateCheckpointed, StateSucceeded,
-		StateFailed, StateTimedOut, StateCancelled,
-		StateRolledBack, StateRolledBackPartial:
+	if knownState(c.State) {
 		return nil
 	}
 	return fmt.Errorf("recovery: unknown state %q", c.State)
