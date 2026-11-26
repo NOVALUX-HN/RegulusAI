@@ -92,19 +92,28 @@ type StrategyOutcome struct {
 // measured elapsed time of the action; a negative cost is refused because it
 // would be a fabricated measurement.
 func NewStrategyOutcome(strategy string, before, after Checkpoint, beforeCircuit, afterCircuit Circuit, cost time.Duration, now time.Time) (StrategyOutcome, error) {
-	b := EvidenceOf(before, beforeCircuit)
-	a := EvidenceOf(after, afterCircuit)
+	return OutcomeFrom(strategy, before.TaskID, before.AgentID,
+		EvidenceOf(before, beforeCircuit), EvidenceOf(after, afterCircuit), cost, now)
+}
+
+// OutcomeFrom builds the record from two captured Evidence snapshots.
+//
+// This entry point exists for callers that must snapshot twice around a
+// mutating call: a Checkpoint pointer is updated in place, so capturing a value
+// copy before the call would still share the maps and slices the call mutates.
+// Evidence is a flat value, so the before/after pair cannot drift.
+func OutcomeFrom(strategy, taskID, agentID string, before, after Evidence, cost time.Duration, now time.Time) (StrategyOutcome, error) {
 	o := StrategyOutcome{
 		Version:   OutcomeVersion,
-		TaskID:    before.TaskID,
-		AgentID:   before.AgentID,
+		TaskID:    taskID,
+		AgentID:   agentID,
 		Strategy:  strategy,
-		Before:    b,
-		After:     a,
-		Effective: Effective(b, a),
+		Before:    before,
+		After:     after,
+		Effective: Effective(before, after),
 		CostMS:    cost.Milliseconds(),
-		Retries:   b.Retries,
-		Escalated: strategy == StrategyEscalate || (a.CircuitOpen && !b.CircuitOpen),
+		Retries:   before.Retries,
+		Escalated: strategy == StrategyEscalate || (after.CircuitOpen && !before.CircuitOpen),
 		At:        now,
 	}
 	o.Reasons = o.measuredReasons()

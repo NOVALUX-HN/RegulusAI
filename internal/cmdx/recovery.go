@@ -27,7 +27,7 @@ import (
 )
 
 func recoveryUsage() string {
-	return "usage: regulus recovery checkpoint --run <id> --task <t> --agent <a> --state <s> [--host <h>] [--version <v>] [--scope <a,b>] [--cap <a,b>] [--require-cap <a,b>] [--input <k=v,...>] [--output <k=v,...>] [--artifact <k=v,...>] [--compensate <k=desc,...>] | regulus recovery resume --run <id> --task <t> --agent <a> [--new-agent <b>] [--agent-caps <a,b>] [--to-host <h>] [--scope <a,b>] [--reason <r>] [--effect <e,...>] [--max-retries N] [--timeout-ms N] | regulus recovery retry --run <id> --task <t> --agent <a> [--error <text>] [--class <c>] [--max-retries N] [--timeout-ms N] | regulus recovery status --run <id> [--task <t>] [--json] | regulus recovery rollback --run <id> --task <t> --agent <a> | regulus recovery cancel --run <id> [--task <t>] [--agent <a>] --reason <r>"
+	return "usage: regulus recovery checkpoint --run <id> --task <t> --agent <a> --state <s> [--host <h>] [--version <v>] [--scope <a,b>] [--cap <a,b>] [--require-cap <a,b>] [--input <k=v,...>] [--output <k=v,...>] [--artifact <k=v,...>] [--compensate <k=desc,...>] | regulus recovery resume --run <id> --task <t> --agent <a> [--new-agent <b>] [--agent-caps <a,b>] [--to-host <h>] [--scope <a,b>] [--reason <r>] [--effect <e,...>] [--max-retries N] [--timeout-ms N] | regulus recovery retry --run <id> --task <t> --agent <a> [--error <text>] [--class <c>] [--max-retries N] [--timeout-ms N] | regulus recovery status --run <id> [--task <t>] [--json] | regulus recovery rollback --run <id> --task <t> --agent <a> | regulus recovery cancel --run <id> [--task <t>] [--agent <a>] --reason <r> | regulus recovery progress --run <id> [--task <t>] [--json] | regulus recovery outcomes --run <id> [--json]"
 }
 
 // RecoveryCmd routes `regulus recovery ...`.
@@ -53,6 +53,10 @@ func (io IO) RecoveryCmd(args []string) int {
 		return io.RecoveryRollbackCmd(args[1:])
 	case "cancel":
 		return io.RecoveryCancelCmd(args[1:])
+	case "progress":
+		return io.RecoveryProgressCmd(args[1:])
+	case "outcomes":
+		return io.RecoveryOutcomesCmd(args[1:])
 	default:
 		fmt.Fprintf(io.Stderr, "recovery: unknown subcommand %q\n", args[0])
 		fmt.Fprintln(io.Stderr, recoveryUsage())

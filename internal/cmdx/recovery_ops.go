@@ -174,6 +174,11 @@ func (io IO) RecoveryRetryCmd(args []string) int {
 		fmt.Fprintf(io.Stderr, "recovery retry: %v\n", lookErr)
 		return 1
 	}
+	// Snapshot the evidence BEFORE the retry mutates the checkpoint in place:
+	// Evidence is a flat value, so the before/after pair cannot drift through
+	// the shared maps the record owns.
+	beforeEv := recovery.EvidenceOf(*cp, rec.Circuit)
+	started := time.Now()
 	delay, err := rec.AttemptRetry(*task, *agent, cls, *errText, now, policy)
 	// AttemptRetry may land the checkpoint on failed while
 	// refusing: persist either way so the refusal is durable.
@@ -196,6 +201,20 @@ func (io IO) RecoveryRetryCmd(args []string) int {
 	io.emitRecoveryEvent(*run, *task, "recovery retry", recovery.StateRunning, map[string]any{"agent": *agent, "class": cls})
 	fmt.Fprintf(io.Stdout, "recovery: retry %s/%s attempt=%d backoff=%dms class=%s key=%s\n",
 		*task, *agent, cp.Attempt, delay, cls, cp.IdemKey)
+
+	// Record the measured outcome. Bookkeeping failure must not fail a retry
+	// that already happened, so it is reported on stderr and the command
+	// still exits 0.
+	if after, lerr := rec.Lookup(*task, *agent); lerr == nil {
+		afterEv := recovery.EvidenceOf(*after, rec.Circuit)
+		if outcome, oerr := recovery.OutcomeFrom(recovery.StrategyRetry, *task, *agent, beforeEv, afterEv, time.Since(started), now); oerr == nil {
+			if _, serr := recovery.AppendOutcome(io.Dir, *run, outcome, now); serr != nil {
+				fmt.Fprintf(io.Stderr, "recovery retry: outcome not recorded: %v\n", serr)
+			} else {
+				fmt.Fprintf(io.Stdout, "recovery: outcome %s\n", outcome.Delta())
+			}
+		}
+	}
 	return 0
 }
 
