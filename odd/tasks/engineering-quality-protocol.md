@@ -157,3 +157,24 @@ L5: T2 implementado tras inventario. Cuatro señales ya estaban gateadas y no se
 tocaron (subtract before you add). El módulo no tiene dependencias: eso decidió
 nativo para duplicación y diferido para dead code, en vez de agregar el primer
 `require` para una métrica.
+
+L6: T3 medido con gremlins sobre cuatro paquetes. La tabla resultó ser el hallazgo:
+la eficacia sigue a los gates. `receipts` 100% y `gates` 98.64% ya tenían gate; los
+dos que no lo tenían — justo los que sostienen las afirmaciones de integridad —
+estaban en 78.4% (`evidence`) y 77.83% (`recovery`).
+
+Cerrados con test y re-medidos: 4 mutantes de borde de charset en `validateGateID` y
+**7 en `isWindowsAbsolute`**, una guarda de escape de rutas sin un solo test directo.
+`gates` 98.64% → 99.73%, `evidence` 78.40% → 84.00%.
+
+Equivalente con prueba, no con intuición: `quick_lean.go:35`, porque `validate`
+rechaza layers duplicados y ése es el único input donde `<` y `<=` difieren. No se
+toca el código.
+
+Abiertos y clasificados: 47 en `recovery`, agrupados en `progress.go:184` y
+`outcome.go:149/152` — umbrales de presupuesto de F17, trabajo propio.
+
+Gates: cuatro, todos `required:false` y sólo `full`, con umbrales medidos como piso
+anti-regresión (receipts/gates 70→95, evidence 82, recovery 76), no como meta.
+Coste medido total: ~9m40s. Las capas 24 y 25 porque 9 y 10 ya eran `crap` y
+`vulncheck`, y el validador rechaza duplicados.
